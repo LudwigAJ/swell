@@ -4,19 +4,19 @@
 #![allow(clippy::needless_range_loop)]
 #![allow(clippy::for_kv_map)]
 
-use swell_core::traits::Agent;
-use swell_core::{
-    AgentRole, AgentId, SwellError, AgentContext, AgentResult,
-    MemoryBlock, LlmMessage, LlmRole, LlmConfig, Plan, PlanStep, StepStatus, RiskLevel, LlmBackend,
-    ToolOutput, ToolCallResult, ValidationGate,
-};
-use swell_tools::ToolRegistry;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use swell_core::traits::Agent;
+use swell_core::{
+    AgentContext, AgentId, AgentResult, AgentRole, LlmBackend, LlmConfig, LlmMessage, LlmRole,
+    MemoryBlock, Plan, PlanStep, RiskLevel, StepStatus, SwellError, ToolCallResult, ToolOutput,
+    ValidationGate,
+};
+use swell_tools::ToolRegistry;
+use tracing::{debug, info};
 use uuid::Uuid;
-use tracing::{info, debug};
-use serde::{Deserialize, Serialize};
 
 /// Pool of agents for parallel execution
 #[allow(dead_code)]
@@ -45,12 +45,15 @@ impl AgentPool {
     /// Register a new agent
     pub fn register(&mut self, role: AgentRole, model: String) -> AgentId {
         let id = Uuid::new_v4();
-        self.agents.insert(id, PooledAgent {
+        self.agents.insert(
             id,
-            role,
-            model,
-            current_task: None,
-        });
+            PooledAgent {
+                id,
+                role,
+                model,
+                current_task: None,
+            },
+        );
         info!(agent_id = %id, role = ?role, "Registered agent");
         id
     }
@@ -58,7 +61,9 @@ impl AgentPool {
     /// Reserve an agent for a task
     pub fn reserve(&mut self, task_id: Uuid, role: AgentRole) -> Result<AgentId, SwellError> {
         // Find an available agent of the right role
-        let agent_id = self.agents.iter()
+        let agent_id = self
+            .agents
+            .iter()
             .find(|(_, a)| a.role == role && a.current_task.is_none())
             .map(|(id, _)| *id)
             .ok_or_else(|| SwellError::AgentNotFound(Uuid::nil()))?;
@@ -81,7 +86,8 @@ impl AgentPool {
 
     /// Count available agents for a role
     pub fn available_count(&self, role: AgentRole) -> usize {
-        self.agents.values()
+        self.agents
+            .values()
             .filter(|a| a.role == role && a.current_task.is_none())
             .count()
     }
@@ -158,7 +164,8 @@ Focus on:
 - Identifying dependencies between steps
 - Estimating risk appropriately
 - Planning test coverage
-"#.to_string(),
+"#
+            .to_string(),
         }
     }
 }
@@ -167,7 +174,8 @@ Focus on:
 fn parse_string_array(arr: Option<&serde_json::Value>) -> Vec<String> {
     arr.and_then(|v| v.as_array())
         .map(|items| {
-            items.iter()
+            items
+                .iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect()
         })
@@ -218,8 +226,13 @@ impl Agent for PlannerAgent {
         let response = self.llm.chat(messages, None, config).await?;
 
         // Parse the plan from LLM response
-        let plan_json: serde_json::Value = serde_json::from_str(&response.content)
-            .map_err(|e| SwellError::LlmError(format!("Failed to parse plan JSON: {}. Raw content: {}", e, &response.content)))?;
+        let plan_json: serde_json::Value =
+            serde_json::from_str(&response.content).map_err(|e| {
+                SwellError::LlmError(format!(
+                    "Failed to parse plan JSON: {}. Raw content: {}",
+                    e, &response.content
+                ))
+            })?;
 
         // Convert JSON to Plan structure
         let steps: Vec<PlanStep> = plan_json["steps"]
@@ -246,9 +259,7 @@ impl Agent for PlannerAgent {
             })
             .collect();
 
-        let total_estimated_tokens = plan_json["total_estimated_tokens"]
-            .as_u64()
-            .unwrap_or(5000);
+        let total_estimated_tokens = plan_json["total_estimated_tokens"].as_u64().unwrap_or(5000);
 
         let risk_assessment = plan_json["risk_assessment"]
             .as_str()
@@ -353,14 +364,16 @@ impl GeneratorAgent {
         // ReAct loop: Think → Act → Observe → Repeat
         while react_loop.should_continue() {
             // Get the current thought from the loop
-            let current_thought = react_loop.steps
+            let current_thought = react_loop
+                .steps
                 .last()
                 .map(|s| s.thought.clone())
                 .unwrap_or_default();
 
             // Use LLM to decide next action if available, otherwise use simple heuristics
             let action = if let Some(llm) = &self.llm {
-                self.decide_action_with_llm(&current_thought, step, llm).await?
+                self.decide_action_with_llm(&current_thought, step, llm)
+                    .await?
             } else {
                 self.decide_action_heuristic(&current_thought, step)?
             };
@@ -415,15 +428,16 @@ Based on the thinking, decide what action to take next. Choose from:
 - search(operation="grep|glob|symbol_search", pattern="<pattern>", path="<path>") - Search code
 
 Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{"param": "value"}}}}"#,
-            step.description, step.affected_files, format!("{:?}", step.risk_level), thought
+            step.description,
+            step.affected_files,
+            format!("{:?}", step.risk_level),
+            thought
         );
 
-        let messages = vec![
-            LlmMessage {
-                role: LlmRole::User,
-                content: prompt,
-            },
-        ];
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: prompt,
+        }];
 
         let config = LlmConfig {
             temperature: 0.3,
@@ -449,7 +463,10 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
         // If files exist and we haven't read them yet
         if !thought.contains("READ:") && !thought.contains("read_file") {
             let file = &step.affected_files[0];
-            return Ok(format!(r#"{{"action": "read_file", "args": {{"path": "{}"}}}}"#, file));
+            return Ok(format!(
+                r#"{{"action": "read_file", "args": {{"path": "{}"}}}}"#,
+                file
+            ));
         }
 
         // If we've read the file and understand it, make an edit
@@ -465,19 +482,23 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
     }
 
     /// Execute an action and return the observation
-    async fn execute_action(&self, action_json: &str, _workspace_path: &str) -> Result<String, SwellError> {
-        let registry = self.tool_registry.as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
+    async fn execute_action(
+        &self,
+        action_json: &str,
+        _workspace_path: &str,
+    ) -> Result<String, SwellError> {
+        let registry = self.tool_registry.as_ref().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("No tool registry configured".to_string())
+        })?;
 
         // Try to parse the action JSON
-        let action: serde_json::Value = serde_json::from_str(action_json)
-            .unwrap_or_else(|_| {
-                // If not valid JSON, treat it as a simple command
-                serde_json::json!({
-                    "action": "shell",
-                    "args": {"command": action_json}
-                })
-            });
+        let action: serde_json::Value = serde_json::from_str(action_json).unwrap_or_else(|_| {
+            // If not valid JSON, treat it as a simple command
+            serde_json::json!({
+                "action": "shell",
+                "args": {"command": action_json}
+            })
+        });
 
         let tool_name = action["action"].as_str().unwrap_or("shell");
         let tool_args = &action["args"];
@@ -545,7 +566,10 @@ impl Agent for GeneratorAgent {
         if !has_tool_registry {
             return Ok(AgentResult {
                 success: true,
-                output: format!("Generated code for: {} (ReAct loop pending tool registry)", context.task.description),
+                output: format!(
+                    "Generated code for: {} (ReAct loop pending tool registry)",
+                    context.task.description
+                ),
                 tool_calls: vec![],
                 tokens_used: 1000,
                 error: None,
@@ -647,7 +671,9 @@ impl EvaluatorAgent {
     }
 
     /// Compute confidence score from validation outcome
-    fn compute_confidence(outcome: &swell_core::ValidationOutcome) -> swell_validation::ConfidenceScore {
+    fn compute_confidence(
+        outcome: &swell_core::ValidationOutcome,
+    ) -> swell_validation::ConfidenceScore {
         use swell_validation::ConfidenceScorer;
 
         let mut scorer = ConfidenceScorer::new();
@@ -658,7 +684,10 @@ impl EvaluatorAgent {
             .iter()
             .filter(|m| m.file.is_some())
             .collect();
-        let lint_passed = outcome.passed && !lint_messages.iter().any(|m| m.level == swell_core::ValidationLevel::Error);
+        let lint_passed = outcome.passed
+            && !lint_messages
+                .iter()
+                .any(|m| m.level == swell_core::ValidationLevel::Error);
         let lint_warning_ratio = if lint_messages.is_empty() {
             0.0
         } else {
@@ -763,7 +792,9 @@ impl Agent for EvaluatorAgent {
                 confidence_score: 0.7,
                 confidence_level: ConfidenceLevel::Medium,
                 errors: vec![],
-                warnings: vec!["Running in stub mode - validation pipeline not configured".to_string()],
+                warnings: vec![
+                    "Running in stub mode - validation pipeline not configured".to_string()
+                ],
                 can_auto_merge: false,
                 messages: 0,
                 artifacts: 0,
@@ -810,7 +841,11 @@ impl Agent for EvaluatorAgent {
             output: serde_json::to_string(&output).unwrap_or_default(),
             tool_calls: vec![],
             tokens_used: 500,
-            error: if result.passed { None } else { Some("Validation failed".to_string()) },
+            error: if result.passed {
+                None
+            } else {
+                Some("Validation failed".to_string())
+            },
         })
     }
 }
@@ -866,7 +901,7 @@ impl SystemPromptBuilder {
         // Header with project info
         prompt.push_str(&format!(
             "# {} - {} Agent\n\n",
-            self.config.project_name, 
+            self.config.project_name,
             format!("{:?}", self.config.for_role).to_lowercase()
         ));
 
@@ -885,8 +920,9 @@ impl SystemPromptBuilder {
         if self.config.include_memory && !memory_blocks.is_empty() {
             prompt.push_str("## Relevant Context\n\n");
             for block in memory_blocks {
-                prompt.push_str(&format!("### {} ({})\n{}\n\n", 
-                    block.label, 
+                prompt.push_str(&format!(
+                    "### {} ({})\n{}\n\n",
+                    block.label,
                     format!("{:?}", block.block_type).to_lowercase(),
                     block.content
                 ));
@@ -915,7 +951,8 @@ You are a PLANNER agent. Your role is to:
 - Output a structured JSON plan
 
 Follow the planning workflow strictly.
-"#.to_string(),
+"#
+            .to_string(),
             AgentRole::Generator => r#"
 You are a GENERATOR agent. Your role is to:
 - Receive plans from the Planner agent
@@ -924,7 +961,8 @@ You are a GENERATOR agent. Your role is to:
 - Ensure all changes are validated
 
 Use the ReAct pattern: Think → Act → Observe → Repeat
-"#.to_string(),
+"#
+            .to_string(),
             AgentRole::Evaluator => r#"
 You are an EVALUATOR agent. Your role is to:
 - Run validation gates on generated code
@@ -933,7 +971,8 @@ You are an EVALUATOR agent. Your role is to:
 - Gatekeep quality before acceptance
 
 Be thorough but efficient in validation.
-"#.to_string(),
+"#
+            .to_string(),
             AgentRole::Coder => r#"
 You are a CODER agent. Your role is to:
 - Implement specific code changes based on task descriptions
@@ -942,7 +981,8 @@ You are a CODER agent. Your role is to:
 - Produce diffs showing exact changes
 
 Write clean, idiomatic code following project conventions.
-"#.to_string(),
+"#
+            .to_string(),
             AgentRole::TestWriter => r#"
 You are a TEST WRITER agent. Your role is to:
 - Generate tests from Given/When/Then acceptance criteria
@@ -951,7 +991,8 @@ You are a TEST WRITER agent. Your role is to:
 - Ensure tests are deterministic and isolated
 
 Write meaningful tests that catch real bugs.
-"#.to_string(),
+"#
+            .to_string(),
             AgentRole::Reviewer => r#"
 You are a REVIEWER agent. Your role is to:
 - Review code for style, complexity, and regressions
@@ -960,7 +1001,8 @@ You are a REVIEWER agent. Your role is to:
 - Ensure code is maintainable and well-documented
 
 Be constructive and specific in feedback.
-"#.to_string(),
+"#
+            .to_string(),
             AgentRole::Refactorer => r#"
 You are a REFACTORER agent. Your role is to:
 - Identify refactoring opportunities
@@ -969,7 +1011,8 @@ You are a REFACTORER agent. Your role is to:
 - Prioritize impactful improvements
 
 Refactor with confidence - verify behavior is preserved.
-"#.to_string(),
+"#
+            .to_string(),
             AgentRole::DocWriter => r#"
 You are a DOC WRITER agent. Your role is to:
 - Generate and modify documentation from code changes
@@ -978,7 +1021,8 @@ You are a DOC WRITER agent. Your role is to:
 - Ensure docs stay in sync with code
 
 Write clear, accurate documentation.
-"#.to_string(),
+"#
+            .to_string(),
         }
     }
 
@@ -991,7 +1035,8 @@ Write clear, accurate documentation.
 - Tests must pass before merge
 - Maximum function length: 50 lines
 - Maximum cyclomatic complexity: 10
-"#.to_string()
+"#
+        .to_string()
     }
 
     fn tool_guidelines(&self) -> String {
@@ -1007,7 +1052,8 @@ When you need to perform actions, use the available tools:
 - `search` - Search for patterns in code
 
 Always validate tool outputs before proceeding.
-"#.to_string()
+"#
+        .to_string()
     }
 
     /// Calculate current context usage percentage
@@ -1084,7 +1130,7 @@ impl ReactLoop {
     /// Start a new think phase
     pub fn think(&mut self, thought: String) {
         self.current_iteration += 1;
-        
+
         if self.current_iteration > self.max_iterations {
             self.state = ReactLoopState::MaxIterationsReached;
             return;
@@ -1098,7 +1144,7 @@ impl ReactLoop {
             observation: None,
             result: None,
         };
-        
+
         self.steps.push(step);
     }
 
@@ -1130,44 +1176,51 @@ impl ReactLoop {
     /// Record a failure with reflection
     pub fn failure(&mut self, error: String) -> String {
         self.failure_count += 1;
-        
+
         if let Some(step) = self.steps.last_mut() {
             step.phase = ReactPhase::Failed;
             step.result = Some(error.clone());
         }
-        
+
         // Reflection: analyze what went wrong
         let reflection = self.reflect_on_failure();
-        
+
         if self.failure_count >= 3 {
             self.state = ReactLoopState::Failed;
         }
-        
+
         reflection
     }
 
     /// Reflect on failures to generate improvement suggestions
     fn reflect_on_failure(&self) -> String {
         let recent_steps: Vec<_> = self.steps.iter().rev().take(3).collect();
-        
+
         let mut patterns = Vec::new();
         for step in recent_steps {
             if step.phase == ReactPhase::Failed {
-                patterns.push(format!("Failed at iteration {}: {}", step.iteration, step.result.as_deref().unwrap_or("Unknown")));
+                patterns.push(format!(
+                    "Failed at iteration {}: {}",
+                    step.iteration,
+                    step.result.as_deref().unwrap_or("Unknown")
+                ));
             }
         }
-        
+
         if patterns.is_empty() {
             "No clear failure pattern detected. Consider reviewing the last action.".to_string()
         } else {
-            format!("Detected failure patterns: {}. Consider trying a different approach.", patterns.join("; "))
+            format!(
+                "Detected failure patterns: {}. Consider trying a different approach.",
+                patterns.join("; ")
+            )
         }
     }
 
     /// Check if loop should continue
     pub fn should_continue(&self) -> bool {
-        matches!(self.state, ReactLoopState::Running) && 
-        self.current_iteration < self.max_iterations
+        matches!(self.state, ReactLoopState::Running)
+            && self.current_iteration < self.max_iterations
     }
 
     /// Get summary of the loop execution
@@ -1243,7 +1296,7 @@ impl ContextCondensation {
     /// Check if condensation is needed
     pub fn needs_condensation(&self, current_tokens: usize) -> CondensationLevel {
         let ratio = current_tokens as f64 / self.window.max_tokens as f64;
-        
+
         if ratio >= self.window.condensation_threshold {
             CondensationLevel::MustCondense
         } else if ratio >= self.window.warning_threshold {
@@ -1256,15 +1309,14 @@ impl ContextCondensation {
     /// Condense context to fit within threshold
     pub fn condense(&self, items: &[ContextItem]) -> CondensationResult {
         let original_tokens: usize = items.iter().map(|i| i.tokens).sum();
-        let target_tokens = (self.window.max_tokens as f64 * self.window.warning_threshold) as usize;
-        
+        let target_tokens =
+            (self.window.max_tokens as f64 * self.window.warning_threshold) as usize;
+
         let mut sorted_items: Vec<_> = items.iter().collect();
         // Sort by priority (higher first) then by tokens (lower first)
-        sorted_items.sort_by(|a, b| {
-            match b.priority.cmp(&a.priority) {
-                std::cmp::Ordering::Equal => a.tokens.cmp(&b.tokens),
-                other => other,
-            }
+        sorted_items.sort_by(|a, b| match b.priority.cmp(&a.priority) {
+            std::cmp::Ordering::Equal => a.tokens.cmp(&b.tokens),
+            other => other,
         });
 
         let mut preserved_tokens = 0;
@@ -1352,7 +1404,7 @@ impl CoderAgent {
             include_conventions: true,
             max_tokens: 8000,
         };
-        
+
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(config),
@@ -1390,114 +1442,134 @@ impl CoderAgent {
     /// Generate a unified diff for the given change
     pub fn generate_diff(&self, file_path: &str, original: &str, new_content: &str) -> String {
         use std::fmt::Write as FmtWrite;
-        
+
         let mut diff = String::new();
-        
+
         // Unified diff header
         writeln!(diff, "--- a/{}", file_path).unwrap();
         writeln!(diff, "+++ b/{}", file_path).unwrap();
-        
+
         // Calculate line changes
         let original_lines: Vec<&str> = original.lines().collect();
         let new_lines: Vec<&str> = new_content.lines().collect();
-        
+
         let original_len = original_lines.len();
         let new_len = new_lines.len();
-        
+
         // Simple diff algorithm: find longest common prefix and suffix
         let mut prefix_len = 0;
         let min_len = original_len.min(new_len);
         while prefix_len < min_len && original_lines[prefix_len] == new_lines[prefix_len] {
             prefix_len += 1;
         }
-        
+
         let mut suffix_len = 0;
-        while suffix_len < min_len - prefix_len && 
-              original_lines[original_len - 1 - suffix_len] == new_lines[new_len - 1 - suffix_len] {
+        while suffix_len < min_len - prefix_len
+            && original_lines[original_len - 1 - suffix_len] == new_lines[new_len - 1 - suffix_len]
+        {
             suffix_len += 1;
         }
-        
+
         // Hunk header
-        writeln!(diff, "@@ -{},{} +{},{} @@", 
-            if original_len > 0 { 1 } else { 0 }, 
+        writeln!(
+            diff,
+            "@@ -{},{} +{},{} @@",
+            if original_len > 0 { 1 } else { 0 },
             original_len,
-            if new_len > 0 { 1 } else { 0 }, 
+            if new_len > 0 { 1 } else { 0 },
             new_len
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         // Removed lines (before prefix)
         for i in 0..prefix_len {
             writeln!(diff, " {}", original_lines[i]).unwrap();
         }
-        
+
         // Changed lines
         let orig_changed_start = prefix_len;
         let orig_changed_end = original_len - suffix_len;
         let new_changed_end = new_len - suffix_len;
-        
+
         // Removed from original
         for i in orig_changed_start..orig_changed_end {
             writeln!(diff, "-{}", original_lines[i]).unwrap();
         }
-        
+
         // Added in new
         for i in prefix_len..new_changed_end {
             writeln!(diff, "+{}", new_lines[i]).unwrap();
         }
-        
+
         // Trailing lines (after suffix)
         for i in (new_len - suffix_len)..new_len {
             writeln!(diff, " {}", new_lines[i]).unwrap();
         }
-        
+
         diff
     }
 
     /// Read file content using tool registry
     async fn read_file(&self, path: &str) -> Result<String, SwellError> {
-        let registry = self.tool_registry.as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
-        
-        let tool = registry.get("read_file").await
-            .ok_or_else(|| SwellError::ToolExecutionFailed("read_file tool not found".to_string()))?;
-        
+        let registry = self.tool_registry.as_ref().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("No tool registry configured".to_string())
+        })?;
+
+        let tool = registry.get("read_file").await.ok_or_else(|| {
+            SwellError::ToolExecutionFailed("read_file tool not found".to_string())
+        })?;
+
         let args = serde_json::json!({ "path": path });
         let result: ToolOutput = tool.execute(args).await?;
-        
+
         if result.success {
             Ok(result.result)
         } else {
-            Err(SwellError::ToolExecutionFailed(result.error.unwrap_or_default()))
+            Err(SwellError::ToolExecutionFailed(
+                result.error.unwrap_or_default(),
+            ))
         }
     }
 
     /// Apply a file edit using the tool registry
-    async fn edit_file(&self, path: &str, old_content: &str, new_content: &str) -> Result<String, SwellError> {
-        let registry = self.tool_registry.as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
-        
-        let tool = registry.get("edit_file").await
-            .ok_or_else(|| SwellError::ToolExecutionFailed("edit_file tool not found".to_string()))?;
-        
+    async fn edit_file(
+        &self,
+        path: &str,
+        old_content: &str,
+        new_content: &str,
+    ) -> Result<String, SwellError> {
+        let registry = self.tool_registry.as_ref().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("No tool registry configured".to_string())
+        })?;
+
+        let tool = registry.get("edit_file").await.ok_or_else(|| {
+            SwellError::ToolExecutionFailed("edit_file tool not found".to_string())
+        })?;
+
         let args = serde_json::json!({
             "path": path,
             "old_str": old_content,
             "new_str": new_content
         });
         let result: ToolOutput = tool.execute(args).await?;
-        
+
         if result.success {
             Ok(result.result)
         } else {
-            Err(SwellError::ToolExecutionFailed(result.error.unwrap_or_default()))
+            Err(SwellError::ToolExecutionFailed(
+                result.error.unwrap_or_default(),
+            ))
         }
     }
 
     /// Validate the generated code (basic syntax check)
-    async fn validate_output(&self, changes: &[FileChange]) -> Result<ValidationResult, SwellError> {
+    async fn validate_output(
+        &self,
+        changes: &[FileChange],
+    ) -> Result<ValidationResult, SwellError> {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
-        
+
         for change in changes {
             // For each modified file, try to parse it for basic syntax validity
             // This is a basic check - in production we'd use rustfmt and clippy
@@ -1506,14 +1578,14 @@ impl CoderAgent {
                     // Basic Rust syntax validation
                     let open_braces = new_content.matches('{').count();
                     let close_braces = new_content.matches('}').count();
-                    
+
                     if open_braces != close_braces {
                         errors.push(format!(
                             "Syntax error in {}: mismatched braces ({} open, {} close)",
                             change.file_path, open_braces, close_braces
                         ));
                     }
-                    
+
                     // Check for obvious issues
                     if new_content.contains("TODO") {
                         warnings.push(format!("{} contains TODO items", change.file_path));
@@ -1521,9 +1593,9 @@ impl CoderAgent {
                 }
             }
         }
-        
+
         let passed = errors.is_empty();
-        
+
         Ok(ValidationResult {
             passed,
             errors,
@@ -1572,9 +1644,11 @@ impl Agent for CoderAgent {
             "Task: {}\n\nImplement the required changes and produce diffs.",
             context.task.description
         );
-        
-        let _prompt = self.system_prompt_builder.build(&task_context, &context.memory_blocks);
-        
+
+        let _prompt = self
+            .system_prompt_builder
+            .build(&task_context, &context.memory_blocks);
+
         // If no tool registry, return stub response
         if self.tool_registry.is_none() {
             let output = serde_json::json!({
@@ -1600,7 +1674,8 @@ impl Agent for CoderAgent {
 
         // Extract affected files from plan if available
         let affected_files = if let Some(ref plan) = context.task.plan {
-            plan.steps.iter()
+            plan.steps
+                .iter()
                 .flat_map(|s| s.affected_files.iter().cloned())
                 .collect::<Vec<_>>()
         } else {
@@ -1622,7 +1697,7 @@ impl Agent for CoderAgent {
                         duration_ms: 0,
                     });
                     content
-                },
+                }
                 Err(e) => {
                     // File might not exist yet - this is okay for new files
                     tool_calls.push(ToolCallResult {
@@ -1653,46 +1728,56 @@ Generate the modified file content. Respond ONLY with JSON in this format:
   "new_content": "<the complete modified file content>",
   "explanation": "<brief explanation of what was changed>"
 }}"#,
-                    context.task.description,
-                    file_path,
-                    original_content
+                    context.task.description, file_path, original_content
                 );
-                
-                let messages = vec![
-                    LlmMessage {
-                        role: LlmRole::User,
-                        content: prompt,
-                    },
-                ];
-                
+
+                let messages = vec![LlmMessage {
+                    role: LlmRole::User,
+                    content: prompt,
+                }];
+
                 let config = LlmConfig {
                     temperature: 0.3,
                     max_tokens: 8000,
                     stop_sequences: None,
                 };
-                
+
                 match llm.chat(messages, None, config).await {
                     Ok(response) => {
-                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response.content) {
-                            json["new_content"].as_str().unwrap_or(&original_content).to_string()
+                        if let Ok(json) =
+                            serde_json::from_str::<serde_json::Value>(&response.content)
+                        {
+                            json["new_content"]
+                                .as_str()
+                                .unwrap_or(&original_content)
+                                .to_string()
                         } else {
                             // LLM response wasn't valid JSON, use heuristic fallback
-                            format!("// Generated code for: {}\n{}", context.task.description, original_content)
+                            format!(
+                                "// Generated code for: {}\n{}",
+                                context.task.description, original_content
+                            )
                         }
-                    },
+                    }
                     Err(_) => {
                         // LLM call failed, use heuristic fallback
-                        format!("// Generated code for: {}\n{}", context.task.description, original_content)
+                        format!(
+                            "// Generated code for: {}\n{}",
+                            context.task.description, original_content
+                        )
                     }
                 }
             } else {
                 // No LLM available, use heuristic fallback
-                format!("// Generated code for: {}\n{}", context.task.description, original_content)
+                format!(
+                    "// Generated code for: {}\n{}",
+                    context.task.description, original_content
+                )
             };
 
             // Generate diff
             let diff = self.generate_diff(file_path, &original_content, &new_content);
-            
+
             changes.push(FileChange {
                 file_path: file_path.clone(),
                 operation: ChangeOperation::Modify,
@@ -1701,7 +1786,8 @@ Generate the modified file content. Respond ONLY with JSON in this format:
                 diff: diff.clone(),
             });
 
-            total_tokens += (file_path.len() + original_content.len() + new_content.len()) as u64 / 4;
+            total_tokens +=
+                (file_path.len() + original_content.len() + new_content.len()) as u64 / 4;
         }
 
         // If no changes but we have a task, create a placeholder change
@@ -1721,12 +1807,16 @@ Generate the modified file content. Respond ONLY with JSON in this format:
 
         // Self-validate outputs
         let validation = self.validate_output(&changes).await?;
-        
+
         // Apply changes (in real implementation)
         for change in &changes {
             if change.operation == ChangeOperation::Modify {
-                if let (Some(old_content), Some(new_content)) = (&change.original_content, &change.new_content) {
-                    let _ = self.edit_file(&change.file_path, old_content, new_content).await;
+                if let (Some(old_content), Some(new_content)) =
+                    (&change.original_content, &change.new_content)
+                {
+                    let _ = self
+                        .edit_file(&change.file_path, old_content, new_content)
+                        .await;
                 }
             }
         }
@@ -1750,7 +1840,11 @@ Generate the modified file content. Respond ONLY with JSON in this format:
             output: serde_json::to_string(&output).unwrap_or_default(),
             tool_calls,
             tokens_used: total_tokens,
-            error: if validation.passed { None } else { Some("Self-validation failed".to_string()) },
+            error: if validation.passed {
+                None
+            } else {
+                Some("Self-validation failed".to_string())
+            },
         })
     }
 }
@@ -1778,7 +1872,7 @@ impl TestWriterAgent {
             include_conventions: true,
             max_tokens: 8000,
         };
-        
+
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(config),
@@ -1816,12 +1910,12 @@ impl TestWriterAgent {
     /// Generate a test from Given/When/Then format
     pub fn parse_given_when_then(&self, criteria: &str) -> TestSpec {
         let parts: Vec<&str> = criteria.split('\n').collect();
-        
+
         let mut given = Vec::new();
         let mut when = Vec::new();
         let mut then = Vec::new();
         let mut current_section = &mut given;
-        
+
         for line in parts {
             let line = line.trim();
             if line.starts_with("Given ") {
@@ -1837,7 +1931,7 @@ impl TestWriterAgent {
                 current_section.push(line.to_string());
             }
         }
-        
+
         TestSpec { given, when, then }
     }
 
@@ -1886,10 +1980,10 @@ impl TestWriterAgent {
     /// Generate test code from TestSpec using patterns
     pub fn generate_test_code(&self, spec: &TestSpec, pattern: &TestPattern) -> String {
         let test_name = spec.generate_test_name();
-        
+
         let mut code = pattern.template.clone();
         code = code.replace("{name}", &test_name);
-        
+
         // Replace placeholders based on spec
         if !spec.given.is_empty() {
             code = code.replace("{given}", &spec.given.join("\n    "));
@@ -1900,32 +1994,38 @@ impl TestWriterAgent {
             code = code.replace("{setup}", "()");
             code = code.replace("{input}", "()");
         }
-        
+
         if !spec.when.is_empty() {
             code = code.replace("{when}", &spec.when.join("\n    "));
-            code = code.replace("{action}", spec.when.first().unwrap_or(&"todo!()".to_string()));
+            code = code.replace(
+                "{action}",
+                spec.when.first().unwrap_or(&"todo!()".to_string()),
+            );
         } else {
             code = code.replace("{when}", "// Action (from When clauses)");
             code = code.replace("{action}", "unimplemented!()");
         }
-        
+
         if !spec.then.is_empty() {
             code = code.replace("{then}", &spec.then.join("\n    "));
-            code = code.replace("{assertion}", spec.then.first().unwrap_or(&"true".to_string()));
+            code = code.replace(
+                "{assertion}",
+                spec.then.first().unwrap_or(&"true".to_string()),
+            );
             code = code.replace("{expected}", spec.then.first().unwrap_or(&"()".to_string()));
         } else {
             code = code.replace("{then}", "// Assertions (from Then clauses)");
             code = code.replace("{assertion}", "true");
             code = code.replace("{expected}", "()");
         }
-        
+
         code
     }
 
     /// Map coverage to requirements (which requirements are tested)
     pub fn map_coverage_to_requirements(&self, spec: &TestSpec) -> CoverageMapping {
         let mut requirements_tested = Vec::new();
-        
+
         // Map Given/When/Then to requirements
         for given in &spec.given {
             requirements_tested.push(RequirementCoverage {
@@ -1934,7 +2034,7 @@ impl TestWriterAgent {
                 covered: true,
             });
         }
-        
+
         for when in &spec.when {
             requirements_tested.push(RequirementCoverage {
                 requirement: when.clone(),
@@ -1942,7 +2042,7 @@ impl TestWriterAgent {
                 covered: true,
             });
         }
-        
+
         for then in &spec.then {
             requirements_tested.push(RequirementCoverage {
                 requirement: then.clone(),
@@ -1950,7 +2050,7 @@ impl TestWriterAgent {
                 covered: true,
             });
         }
-        
+
         CoverageMapping {
             total_requirements: requirements_tested.len(),
             covered_requirements: requirements_tested.len(),
@@ -1996,7 +2096,7 @@ impl TestSpec {
     /// Generate a test function name from the spec
     pub fn generate_test_name(&self) -> String {
         let mut parts = Vec::new();
-        
+
         // Combine the first of each section
         if let Some(g) = self.given.first() {
             parts.push(g.replace(" ", "_").to_lowercase());
@@ -2007,7 +2107,7 @@ impl TestSpec {
         if let Some(t) = self.then.first() {
             parts.push(t.replace(" ", "_").to_lowercase());
         }
-        
+
         if parts.is_empty() {
             "test_case".to_string()
         } else {
@@ -2028,24 +2128,26 @@ impl Agent for TestWriterAgent {
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
         let workspace_path = context.workspace_path.as_deref().unwrap_or(".");
-        
+
         // Build system prompt
         let task_context = format!(
             "Task: {}\n\nGenerate tests following Given/When/Then format.",
             context.task.description
         );
-        
-        let _prompt = self.system_prompt_builder.build(&task_context, &context.memory_blocks);
-        
+
+        let _prompt = self
+            .system_prompt_builder
+            .build(&task_context, &context.memory_blocks);
+
         // Parse acceptance criteria from task description
         let spec = self.parse_given_when_then(&context.task.description);
-        
+
         // Find existing test patterns in the repository
         let patterns = self.find_existing_patterns(workspace_path).await;
-        
+
         // Select the best pattern (first one for now)
         let selected_pattern = patterns.first().cloned();
-        
+
         // Generate test code
         let test_code = if let Some(ref pattern) = selected_pattern {
             self.generate_test_code(&spec, pattern)
@@ -2055,19 +2157,14 @@ impl Agent for TestWriterAgent {
                 context.task.description
             )
         };
-        
+
         // Map coverage to requirements
         let coverage = self.map_coverage_to_requirements(&spec);
-        
+
         // Build test file name
-        let test_file = format!(
-            "tests/generated/{}.rs",
-            spec.generate_test_name()
-        );
-        
-        let test_functions = vec![
-            format!("test_{}", spec.generate_test_name()),
-        ];
+        let test_file = format!("tests/generated/{}.rs", spec.generate_test_name());
+
+        let test_functions = vec![format!("test_{}", spec.generate_test_name())];
 
         let output = serde_json::json!({
             "test_file": test_file,
@@ -2112,7 +2209,7 @@ impl ReviewerAgent {
             include_conventions: true,
             max_tokens: 8000,
         };
-        
+
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(config),
@@ -2166,19 +2263,23 @@ impl ReviewerAgent {
 
     /// Read file content using tool registry
     async fn read_file(&self, path: &str) -> Result<String, SwellError> {
-        let registry = self.tool_registry.as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
-        
-        let tool = registry.get("read_file").await
-            .ok_or_else(|| SwellError::ToolExecutionFailed("read_file tool not found".to_string()))?;
-        
+        let registry = self.tool_registry.as_ref().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("No tool registry configured".to_string())
+        })?;
+
+        let tool = registry.get("read_file").await.ok_or_else(|| {
+            SwellError::ToolExecutionFailed("read_file tool not found".to_string())
+        })?;
+
         let args = serde_json::json!({ "path": path });
         let result: ToolOutput = tool.execute(args).await?;
-        
+
         if result.success {
             Ok(result.result)
         } else {
-            Err(SwellError::ToolExecutionFailed(result.error.unwrap_or_default()))
+            Err(SwellError::ToolExecutionFailed(
+                result.error.unwrap_or_default(),
+            ))
         }
     }
 
@@ -2202,7 +2303,10 @@ impl ReviewerAgent {
             }
 
             // Check for lines that are too long (over 100 chars)
-            if line.len() > 100 && !line.trim_start().starts_with("//") && !line.trim_start().starts_with("/*") {
+            if line.len() > 100
+                && !line.trim_start().starts_with("//")
+                && !line.trim_start().starts_with("/*")
+            {
                 issues.push(CodeIssue {
                     severity: IssueSeverity::Info,
                     category: IssueCategory::Style,
@@ -2239,12 +2343,12 @@ impl ReviewerAgent {
 
         for (idx, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
-            
+
             if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
                 in_fn = true;
                 fn_depth = 0;
             }
-            
+
             if in_fn {
                 fn_depth += line.matches('{').count() as i32;
                 fn_depth -= line.matches('}').count() as i32;
@@ -2256,7 +2360,10 @@ impl ReviewerAgent {
                         issues.push(CodeIssue {
                             severity: IssueSeverity::Warning,
                             category: IssueCategory::Complexity,
-                            message: format!("Function has high cyclomatic complexity (nest depth: {})", max_depth),
+                            message: format!(
+                                "Function has high cyclomatic complexity (nest depth: {})",
+                                max_depth
+                            ),
                             file: Some(file_path.to_string()),
                             line: Some((idx + 1) as u32),
                         });
@@ -2267,7 +2374,8 @@ impl ReviewerAgent {
         }
 
         // Check for very long functions (over 50 lines)
-        let fn_lines: Vec<usize> = lines.iter()
+        let fn_lines: Vec<usize> = lines
+            .iter()
             .enumerate()
             .filter(|(_, l)| l.trim().starts_with("fn ") || l.trim().starts_with("async fn "))
             .map(|(i, _)| i)
@@ -2280,7 +2388,7 @@ impl ReviewerAgent {
                 lines.len()
             };
             let fn_length = fn_end - fn_start;
-            
+
             if fn_length > 50 {
                 issues.push(CodeIssue {
                     severity: IssueSeverity::Info,
@@ -2303,7 +2411,7 @@ impl ReviewerAgent {
         // Check if public functions have doc comments
         for (idx, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
-            
+
             if trimmed.starts_with("pub fn ") || trimmed.starts_with("pub async fn ") {
                 // Check if previous non-empty line is a doc comment
                 let mut prev_idx = idx;
@@ -2311,7 +2419,10 @@ impl ReviewerAgent {
                     prev_idx -= 1;
                     let prev_line = lines[prev_idx].trim();
                     if !prev_line.is_empty() {
-                        if !prev_line.starts_with("///") && !prev_line.starts_with("//!") && !prev_line.starts_with("/*") {
+                        if !prev_line.starts_with("///")
+                            && !prev_line.starts_with("//!")
+                            && !prev_line.starts_with("/*")
+                        {
                             issues.push(CodeIssue {
                                 severity: IssueSeverity::Info,
                                 category: IssueCategory::Convention,
@@ -2326,7 +2437,10 @@ impl ReviewerAgent {
             }
 
             // Check for debug println/print statements
-            if trimmed.contains("println!") && !trimmed.contains("// debug") && !trimmed.starts_with("//") {
+            if trimmed.contains("println!")
+                && !trimmed.contains("// debug")
+                && !trimmed.starts_with("//")
+            {
                 issues.push(CodeIssue {
                     severity: IssueSeverity::Warning,
                     category: IssueCategory::Convention,
@@ -2337,11 +2451,16 @@ impl ReviewerAgent {
             }
 
             // Check for unwrap in non-test code
-            if trimmed.contains(".unwrap()") && !file_path.contains("_test") && !trimmed.contains("//") && !trimmed.contains("#[test]") {
+            if trimmed.contains(".unwrap()")
+                && !file_path.contains("_test")
+                && !trimmed.contains("//")
+                && !trimmed.contains("#[test]")
+            {
                 issues.push(CodeIssue {
                     severity: IssueSeverity::Warning,
                     category: IssueCategory::Convention,
-                    message: "Consider using ? or expect() with message instead of unwrap()".to_string(),
+                    message: "Consider using ? or expect() with message instead of unwrap()"
+                        .to_string(),
                     file: Some(file_path.to_string()),
                     line: Some((idx + 1) as u32),
                 });
@@ -2365,7 +2484,11 @@ impl ReviewerAgent {
             .iter()
             .take(5) // Limit to first 5 files to avoid token overflow
             .map(|(path, content)| {
-                format!("File: {}\n```rust\n{}\n```", path, &content[..content.len().min(2000)])
+                format!(
+                    "File: {}\n```rust\n{}\n```",
+                    path,
+                    &content[..content.len().min(2000)]
+                )
             })
             .collect();
 
@@ -2400,12 +2523,10 @@ Only report actual issues, not suggestions. Be specific and actionable."#,
             file_summaries.join("\n\n")
         );
 
-        let messages = vec![
-            LlmMessage {
-                role: LlmRole::User,
-                content: prompt,
-            },
-        ];
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: prompt,
+        }];
 
         let config = LlmConfig {
             temperature: 0.3,
@@ -2459,12 +2580,22 @@ Only report actual issues, not suggestions. Be specific and actionable."#,
             return 100;
         }
 
-        let error_count = issues.iter().filter(|i| i.severity == IssueSeverity::Error).count() as u32;
-        let warning_count = issues.iter().filter(|i| i.severity == IssueSeverity::Warning).count() as u32;
-        let info_count = issues.iter().filter(|i| i.severity == IssueSeverity::Info).count() as u32;
+        let error_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Error)
+            .count() as u32;
+        let warning_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Warning)
+            .count() as u32;
+        let info_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Info)
+            .count() as u32;
 
         // Score calculation: 100 - (errors * 10) - (warnings * 3) - (info * 1)
-        let score = 100_i32 - (error_count as i32 * 10) - (warning_count as i32 * 3) - (info_count as i32);
+        let score =
+            100_i32 - (error_count as i32 * 10) - (warning_count as i32 * 3) - (info_count as i32);
         score.max(0) as u32
     }
 
@@ -2476,7 +2607,10 @@ Only report actual issues, not suggestions. Be specific and actionable."#,
         }
 
         // Cannot merge if there are more than 5 warnings
-        let warning_count = issues.iter().filter(|i| i.severity == IssueSeverity::Warning).count();
+        let warning_count = issues
+            .iter()
+            .filter(|i| i.severity == IssueSeverity::Warning)
+            .count();
         if warning_count > 5 {
             return false;
         }
@@ -2525,31 +2659,32 @@ impl Agent for ReviewerAgent {
     }
 
     fn description(&self) -> String {
-        "Performs semantic code review checking style, complexity, regressions, conventions".to_string()
+        "Performs semantic code review checking style, complexity, regressions, conventions"
+            .to_string()
     }
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
         let _workspace_path = context.workspace_path.as_deref().unwrap_or(".");
-        
+
         let task_context = format!(
             "Task: {}\n\nReview the code changes for quality issues.",
             context.task.description
         );
-        
-        let _prompt = self.system_prompt_builder.build(&task_context, &context.memory_blocks);
-        
+
+        let _prompt = self
+            .system_prompt_builder
+            .build(&task_context, &context.memory_blocks);
+
         // If no tool registry is configured, use stub mode
         if self.tool_registry.is_none() {
             let stub_review = ReviewResult {
-                issues: vec![
-                    CodeIssue {
-                        severity: IssueSeverity::Info,
-                        category: IssueCategory::Style,
-                        message: "Consider adding doc comments to public functions".to_string(),
-                        file: Some("src/modified.rs".to_string()),
-                        line: Some(10),
-                    }
-                ],
+                issues: vec![CodeIssue {
+                    severity: IssueSeverity::Info,
+                    category: IssueCategory::Style,
+                    message: "Consider adding doc comments to public functions".to_string(),
+                    file: Some("src/modified.rs".to_string()),
+                    line: Some(10),
+                }],
                 score: 85,
                 can_merge: true,
             };
@@ -2565,7 +2700,7 @@ impl Agent for ReviewerAgent {
 
         // Extract changed files from plan
         let changed_files = Self::extract_changed_files(&context);
-        
+
         let mut all_issues = Vec::new();
         let mut tool_calls = Vec::new();
         let mut file_contents = Vec::new();
@@ -2573,11 +2708,11 @@ impl Agent for ReviewerAgent {
         // Read and analyze each changed file
         for file_path in &changed_files {
             let start = std::time::Instant::now();
-            
+
             match self.read_file(file_path).await {
                 Ok(content) => {
                     let duration_ms = start.elapsed().as_millis() as u64;
-                    
+
                     tool_calls.push(ToolCallResult {
                         tool_name: "read_file".to_string(),
                         arguments: serde_json::json!({ "path": file_path }),
@@ -2609,7 +2744,9 @@ impl Agent for ReviewerAgent {
 
         // Perform LLM-based semantic review if LLM is available
         if !file_contents.is_empty() {
-            let llm_issues = self.perform_llm_review(&file_contents, &context.task.description).await?;
+            let llm_issues = self
+                .perform_llm_review(&file_contents, &context.task.description)
+                .await?;
             all_issues.extend(llm_issues);
         }
 
@@ -2632,7 +2769,11 @@ impl Agent for ReviewerAgent {
             output,
             tool_calls,
             tokens_used: 1000 + (file_contents.len() as u64 * 100),
-            error: if can_merge { None } else { Some("Review found issues that block merge".to_string()) },
+            error: if can_merge {
+                None
+            } else {
+                Some("Review found issues that block merge".to_string())
+            },
         })
     }
 }
@@ -2661,7 +2802,7 @@ impl RefactorerAgent {
             include_conventions: true,
             max_tokens: 8000,
         };
-        
+
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(config),
@@ -2698,7 +2839,10 @@ impl RefactorerAgent {
     }
 
     /// Create a RefactorerAgent with a custom validation pipeline
-    pub fn with_validation_pipeline(mut self, pipeline: swell_validation::ValidationPipeline) -> Self {
+    pub fn with_validation_pipeline(
+        mut self,
+        pipeline: swell_validation::ValidationPipeline,
+    ) -> Self {
         self.validation_pipeline = Some(pipeline);
         self
     }
@@ -2707,7 +2851,7 @@ impl RefactorerAgent {
     pub fn with_default_validation(model: String, tool_registry: Arc<ToolRegistry>) -> Self {
         let mut pipeline = swell_validation::ValidationPipeline::new();
         pipeline.add_gate(swell_validation::TestGate::new());
-        
+
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(SystemPromptConfig {
@@ -2743,19 +2887,23 @@ impl RefactorerAgent {
 
     /// Read file content using tool registry
     async fn read_file(&self, path: &str) -> Result<String, SwellError> {
-        let registry = self.tool_registry.as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
-        
-        let tool = registry.get("read_file").await
-            .ok_or_else(|| SwellError::ToolExecutionFailed("read_file tool not found".to_string()))?;
-        
+        let registry = self.tool_registry.as_ref().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("No tool registry configured".to_string())
+        })?;
+
+        let tool = registry.get("read_file").await.ok_or_else(|| {
+            SwellError::ToolExecutionFailed("read_file tool not found".to_string())
+        })?;
+
         let args = serde_json::json!({ "path": path });
         let result: ToolOutput = tool.execute(args).await?;
-        
+
         if result.success {
             Ok(result.result)
         } else {
-            Err(SwellError::ToolExecutionFailed(result.error.unwrap_or_default()))
+            Err(SwellError::ToolExecutionFailed(
+                result.error.unwrap_or_default(),
+            ))
         }
     }
 
@@ -2763,27 +2911,29 @@ impl RefactorerAgent {
     fn identify_duplication(&self, file_path: &str, content: &str) -> Vec<RefactorOpportunity> {
         let mut opportunities = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
-        
+
         // Simple duplicate detection: find similar function bodies
-        let mut seen_functions: std::collections::HashMap<String, Vec<u32>> = std::collections::HashMap::new();
-        
+        let mut seen_functions: std::collections::HashMap<String, Vec<u32>> =
+            std::collections::HashMap::new();
+
         for (idx, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
-            
+
             // Look for function definitions
             if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
                 // Extract a signature hash to identify duplicates
                 let _sig: String = trimmed.chars().take(100).collect();
-                
+
                 // Count similar lines in function body (simplified approach)
                 if idx + 5 < lines.len() {
                     let body_start = idx + 1;
                     let body_end = (idx + 20).min(lines.len());
-                    let body: String = lines[body_start..body_end].iter()
+                    let body: String = lines[body_start..body_end]
+                        .iter()
                         .map(|s| s.trim())
                         .collect::<Vec<_>>()
                         .join(" ");
-                    
+
                     // Check for duplicated patterns
                     if body.len() > 50 {
                         let body_hash = format!("{:x}", md5_hash(&body));
@@ -2795,19 +2945,25 @@ impl RefactorerAgent {
                 }
             }
         }
-        
+
         // Report opportunities where the same pattern appears multiple times
         for locations in seen_functions.values() {
             if locations.len() > 1 {
                 opportunities.push(RefactorOpportunity {
-                    description: format!("Duplicate code pattern detected at lines {:?}", locations),
+                    description: format!(
+                        "Duplicate code pattern detected at lines {:?}",
+                        locations
+                    ),
                     target_files: vec![file_path.to_string()],
-                    expected_improvement: "Extract duplicated logic into a shared helper function".to_string(),
+                    expected_improvement: "Extract duplicated logic into a shared helper function"
+                        .to_string(),
                     risk_level: RiskLevel::Medium,
+                    old_code: None,
+                    new_code: None,
                 });
             }
         }
-        
+
         opportunities
     }
 
@@ -2815,8 +2971,9 @@ impl RefactorerAgent {
     fn identify_long_functions(&self, file_path: &str, content: &str) -> Vec<RefactorOpportunity> {
         let mut opportunities = Vec::new();
         let lines: Vec<&str> = content.lines().collect();
-        
-        let fn_lines: Vec<usize> = lines.iter()
+
+        let fn_lines: Vec<usize> = lines
+            .iter()
             .enumerate()
             .filter(|(_, l)| l.trim().starts_with("fn ") || l.trim().starts_with("async fn "))
             .map(|(i, _)| i)
@@ -2829,22 +2986,35 @@ impl RefactorerAgent {
                 lines.len()
             };
             let fn_length = fn_end - fn_start;
-            
+
             if fn_length > 100 {
                 let fn_line = lines[*fn_start].trim();
                 opportunities.push(RefactorOpportunity {
-                    description: format!("Function '{}' is {} lines (recommended max: 100)", fn_line, fn_length),
+                    description: format!(
+                        "Function '{}' is {} lines (recommended max: 100)",
+                        fn_line, fn_length
+                    ),
                     target_files: vec![file_path.to_string()],
-                    expected_improvement: format!("Break down into smaller, focused functions (reduce by ~{} lines)", fn_length - 50),
+                    expected_improvement: format!(
+                        "Break down into smaller, focused functions (reduce by ~{} lines)",
+                        fn_length - 50
+                    ),
                     risk_level: RiskLevel::Low,
+                    old_code: None,
+                    new_code: None,
                 });
             } else if fn_length > 50 {
                 let fn_line = lines[*fn_start].trim();
                 opportunities.push(RefactorOpportunity {
-                    description: format!("Function '{}' is {} lines (consider refactoring)", fn_line, fn_length),
+                    description: format!(
+                        "Function '{}' is {} lines (consider refactoring)",
+                        fn_line, fn_length
+                    ),
                     target_files: vec![file_path.to_string()],
                     expected_improvement: "Consider splitting into smaller functions".to_string(),
                     risk_level: RiskLevel::Low,
+                    old_code: None,
+                    new_code: None,
                 });
             }
         }
@@ -2864,13 +3034,13 @@ impl RefactorerAgent {
 
         for (idx, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
-            
+
             if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
                 in_fn = true;
                 fn_depth = 0;
                 fn_start_line = idx;
             }
-            
+
             if in_fn {
                 fn_depth += line.matches('{').count() as i32;
                 fn_depth -= line.matches('}').count() as i32;
@@ -2881,10 +3051,17 @@ impl RefactorerAgent {
                     if max_depth > 5 {
                         let fn_name = lines[fn_start_line].trim();
                         opportunities.push(RefactorOpportunity {
-                            description: format!("Function '{}' has {} levels of nesting", fn_name, max_depth),
+                            description: format!(
+                                "Function '{}' has {} levels of nesting",
+                                fn_name, max_depth
+                            ),
                             target_files: vec![file_path.to_string()],
-                            expected_improvement: "Use early returns, guard clauses, or extract nested logic".to_string(),
+                            expected_improvement:
+                                "Use early returns, guard clauses, or extract nested logic"
+                                    .to_string(),
                             risk_level: RiskLevel::Medium,
+                            old_code: None,
+                            new_code: None,
                         });
                     }
                     max_depth = 0;
@@ -2902,20 +3079,44 @@ impl RefactorerAgent {
 
         for (idx, line) in lines.iter().enumerate() {
             let trimmed = line.trim();
-            
+
             // Look for collectInto Vec, then iterate
-            if trimmed.contains("let mut ")
+            if trimmed.starts_with("let mut ")
                 && (trimmed.contains(".push(") || trimmed.contains(".insert("))
                 && idx + 1 < lines.len()
             {
                 let next_line = lines[idx + 1].trim();
-                if next_line.contains("for ") && next_line.contains(" in ") {
+                if next_line.starts_with("for ") {
+                    // Extract variable name from "let mut items = Vec::new();"
+                    let var_name = trimmed
+                        .strip_prefix("let mut ")
+                        .and_then(|s| s.split_whitespace().next())
+                        .unwrap_or("items");
+
+                    // Extract collection from "for item in collection"
+                    let collection_part = next_line
+                        .strip_prefix("for ")
+                        .and_then(|s| s.split(" in ").last())
+                        .map(|s| s.trim().trim_end_matches(';'))
+                        .unwrap_or("collection");
+
+                    // Build the old code (both lines)
+                    let old_code = format!("{}\n{}", trimmed, next_line);
+
+                    // Build the new code using iterator pattern
+                    let new_code = format!(
+                        "let {var_name}: Vec<_> = {collection_part}.into_iter().map(|item| item).collect();"
+                    );
+
                     // Could potentially use .map().collect() instead
                     opportunities.push(RefactorOpportunity {
                         description: format!("Loop at line {} could use iterator adapter", idx + 1),
                         target_files: vec![file_path.to_string()],
-                        expected_improvement: "Replace for loop with .map().collect() for conciseness".to_string(),
+                        expected_improvement:
+                            "Replace for loop with .map().collect() for conciseness".to_string(),
                         risk_level: RiskLevel::Low,
+                        old_code: Some(old_code),
+                        new_code: Some(new_code),
                     });
                 }
             }
@@ -2938,7 +3139,11 @@ impl RefactorerAgent {
             .iter()
             .take(5) // Limit to first 5 files
             .map(|(path, content)| {
-                format!("File: {}\n```rust\n{}\n```", path, &content[..content.len().min(2000)])
+                format!(
+                    "File: {}\n```rust\n{}\n```",
+                    path,
+                    &content[..content.len().min(2000)]
+                )
             })
             .collect();
 
@@ -2972,12 +3177,10 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
             file_summaries.join("\n\n")
         );
 
-        let messages = vec![
-            LlmMessage {
-                role: LlmRole::User,
-                content: prompt,
-            },
-        ];
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: prompt,
+        }];
 
         let config = LlmConfig {
             temperature: 0.3,
@@ -3000,7 +3203,7 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
                                 "high" => RiskLevel::High,
                                 _ => RiskLevel::Medium,
                             };
-                            
+
                             Some(RefactorOpportunity {
                                 description: opp["description"].as_str()?.to_string(),
                                 target_files: opp["target_files"]
@@ -3011,8 +3214,12 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
                                             .collect()
                                     })
                                     .unwrap_or_default(),
-                                expected_improvement: opp["expected_improvement"].as_str()?.to_string(),
+                                expected_improvement: opp["expected_improvement"]
+                                    .as_str()?
+                                    .to_string(),
                                 risk_level,
+                                old_code: opp["old_code"].as_str().map(String::from),
+                                new_code: opp["new_code"].as_str().map(String::from),
                             })
                         })
                         .collect()
@@ -3031,13 +3238,16 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
             return "No refactoring opportunities identified".to_string();
         }
 
-        let high_risk_count = opportunities.iter()
+        let high_risk_count = opportunities
+            .iter()
             .filter(|o| o.risk_level == RiskLevel::High)
             .count();
-        let medium_risk_count = opportunities.iter()
+        let medium_risk_count = opportunities
+            .iter()
             .filter(|o| o.risk_level == RiskLevel::Medium)
             .count();
-        let low_risk_count = opportunities.iter()
+        let low_risk_count = opportunities
+            .iter()
             .filter(|o| o.risk_level == RiskLevel::Low)
             .count();
 
@@ -3045,7 +3255,8 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
             format!(
                 "High risk: {} opportunities, Medium: {}, Low: {}. Recommend thorough testing.",
                 high_risk_count, medium_risk_count, low_risk_count
-            ).to_string()
+            )
+            .to_string()
         } else if medium_risk_count > 2 {
             format!(
                 "Medium risk: {} opportunities, Low: {}. Standard refactoring with validation recommended.",
@@ -3055,14 +3266,15 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
             format!(
                 "Low risk: {} opportunities identified. Safe to proceed with standard validation.",
                 low_risk_count + medium_risk_count
-            ).to_string()
+            )
+            .to_string()
         }
     }
 
     /// Run validation tests to verify behavior is preserved after refactoring
     async fn run_validation(&self, context: &AgentContext) -> Result<ValidationResult, SwellError> {
         let workspace_path = context.workspace_path.as_deref().unwrap_or(".");
-        
+
         // Build validation context
         let validation_context = swell_core::ValidationContext {
             task_id: context.task.id,
@@ -3070,76 +3282,85 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
             changed_files: Self::extract_affected_files(context),
             plan: context.task.plan.clone(),
         };
-        
+
         // Run validation using the pipeline if available, otherwise use TestGate directly
         if let Some(ref pipeline) = self.validation_pipeline {
             let outcome = pipeline.run(&validation_context).await?;
-            
+
             let errors: Vec<String> = outcome
                 .messages
                 .iter()
                 .filter(|m| m.level == swell_core::ValidationLevel::Error)
                 .map(|m| m.message.clone())
                 .collect();
-            
+
             let warnings: Vec<String> = outcome
                 .messages
                 .iter()
                 .filter(|m| m.level == swell_core::ValidationLevel::Warning)
                 .map(|m| m.message.clone())
                 .collect();
-            
+
             return Ok(ValidationResult {
                 passed: outcome.passed,
                 errors,
                 warnings,
             });
         }
-        
+
         // Fallback: run TestGate directly if no pipeline configured
         let test_gate = swell_validation::TestGate::new();
         let outcome = test_gate.validate(validation_context).await?;
-        
+
         let errors: Vec<String> = outcome
             .messages
             .iter()
             .filter(|m| m.level == swell_core::ValidationLevel::Error)
             .map(|m| m.message.clone())
             .collect();
-        
+
         let warnings: Vec<String> = outcome
             .messages
             .iter()
             .filter(|m| m.level == swell_core::ValidationLevel::Warning)
             .map(|m| m.message.clone())
             .collect();
-        
+
         Ok(ValidationResult {
             passed: outcome.passed,
             errors,
             warnings,
         })
     }
-    
+
     /// Apply a refactoring change to a file using the tool registry
-    async fn apply_refactor(&self, file_path: &str, old_content: &str, new_content: &str) -> Result<String, SwellError> {
-        let registry = self.tool_registry.as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
-        
-        let tool = registry.get("edit_file").await
-            .ok_or_else(|| SwellError::ToolExecutionFailed("edit_file tool not found".to_string()))?;
-        
+    async fn apply_refactor(
+        &self,
+        file_path: &str,
+        old_content: &str,
+        new_content: &str,
+    ) -> Result<String, SwellError> {
+        let registry = self.tool_registry.as_ref().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("No tool registry configured".to_string())
+        })?;
+
+        let tool = registry.get("edit_file").await.ok_or_else(|| {
+            SwellError::ToolExecutionFailed("edit_file tool not found".to_string())
+        })?;
+
         let args = serde_json::json!({
             "path": file_path,
             "old_str": old_content,
             "new_str": new_content
         });
         let result: ToolOutput = tool.execute(args).await?;
-        
+
         if result.success {
             Ok(result.result)
         } else {
-            Err(SwellError::ToolExecutionFailed(result.error.unwrap_or_default()))
+            Err(SwellError::ToolExecutionFailed(
+                result.error.unwrap_or_default(),
+            ))
         }
     }
 }
@@ -3166,6 +3387,12 @@ pub struct RefactorOpportunity {
     pub target_files: Vec<String>,
     pub expected_improvement: String,
     pub risk_level: RiskLevel,
+    /// The actual code to be replaced (for apply_refactor)
+    #[serde(default)]
+    pub old_code: Option<String>,
+    /// The replacement code (for apply_refactor)
+    #[serde(default)]
+    pub new_code: Option<String>,
 }
 
 /// Result of post-refactor validation
@@ -3195,30 +3422,33 @@ impl Agent for RefactorerAgent {
     }
 
     fn description(&self) -> String {
-        "Identifies refactoring opportunities and restructures code while preserving behavior".to_string()
+        "Identifies refactoring opportunities and restructures code while preserving behavior"
+            .to_string()
     }
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
         let _workspace_path = context.workspace_path.as_deref().unwrap_or(".");
-        
+
         let task_context = format!(
             "Task: {}\n\nIdentify refactoring opportunities that preserve behavior.",
             context.task.description
         );
-        
-        let _prompt = self.system_prompt_builder.build(&task_context, &context.memory_blocks);
-        
+
+        let _prompt = self
+            .system_prompt_builder
+            .build(&task_context, &context.memory_blocks);
+
         // If no tool registry is configured, use stub mode
         if self.tool_registry.is_none() && self.llm.is_none() {
             let plan = RefactorPlan {
-                opportunities: vec![
-                    RefactorOpportunity {
-                        description: "Extract helper function for duplicated logic".to_string(),
-                        target_files: vec!["src/modified.rs".to_string()],
-                        expected_improvement: "Reduce code duplication by 20%".to_string(),
-                        risk_level: RiskLevel::Low,
-                    }
-                ],
+                opportunities: vec![RefactorOpportunity {
+                    description: "Extract helper function for duplicated logic".to_string(),
+                    target_files: vec!["src/modified.rs".to_string()],
+                    expected_improvement: "Reduce code duplication by 20%".to_string(),
+                    risk_level: RiskLevel::Low,
+                    old_code: None,
+                    new_code: None,
+                }],
                 risk_assessment: "Low risk refactoring identified".to_string(),
                 preserved_behavior: true,
             };
@@ -3241,7 +3471,7 @@ impl Agent for RefactorerAgent {
 
         // Extract affected files from plan
         let affected_files = Self::extract_affected_files(&context);
-        
+
         let mut all_opportunities = Vec::new();
         let mut tool_calls = Vec::new();
         let mut file_contents = Vec::new();
@@ -3249,11 +3479,11 @@ impl Agent for RefactorerAgent {
         // Read and analyze each affected file
         for file_path in &affected_files {
             let start = std::time::Instant::now();
-            
+
             match self.read_file(file_path).await {
                 Ok(content) => {
                     let duration_ms = start.elapsed().as_millis() as u64;
-                    
+
                     tool_calls.push(ToolCallResult {
                         tool_name: "read_file".to_string(),
                         arguments: serde_json::json!({ "path": file_path }),
@@ -3287,15 +3517,15 @@ impl Agent for RefactorerAgent {
 
         // Perform LLM-based analysis if available
         if !file_contents.is_empty() {
-            let llm_opportunities = self.perform_llm_analysis(&file_contents, &context.task.description).await?;
+            let llm_opportunities = self
+                .perform_llm_analysis(&file_contents, &context.task.description)
+                .await?;
             all_opportunities.extend(llm_opportunities);
         }
 
         // Deduplicate opportunities by description
         let mut seen_descriptions = std::collections::HashSet::new();
-        all_opportunities.retain(|opp| {
-            seen_descriptions.insert(opp.description.clone())
-        });
+        all_opportunities.retain(|opp| seen_descriptions.insert(opp.description.clone()));
 
         // Sort by risk level (high first)
         fn risk_ordinal(r: &RiskLevel) -> u8 {
@@ -3305,9 +3535,8 @@ impl Agent for RefactorerAgent {
                 RiskLevel::Low => 0,
             }
         }
-        all_opportunities.sort_by(|a, b| {
-            risk_ordinal(&b.risk_level).cmp(&risk_ordinal(&a.risk_level))
-        });
+        all_opportunities
+            .sort_by(|a, b| risk_ordinal(&b.risk_level).cmp(&risk_ordinal(&a.risk_level)));
 
         // Limit to top 10 opportunities
         all_opportunities.truncate(10);
@@ -3328,36 +3557,78 @@ impl Agent for RefactorerAgent {
             let before_passed = before_validation.passed;
             let mut validation_errors = before_validation.errors;
             let mut validation_warnings = before_validation.warnings;
-            
+
             // Track applied and reverted opportunities
             let mut applied_opportunities = Vec::new();
             let mut reverted_opportunities = Vec::new();
             let mut reverted = false;
             let mut after_passed = before_passed;
-            
+
             // Only attempt to apply refactorings if before validation passed
             // and we have a tool registry to apply changes
             if before_passed && self.tool_registry.is_some() {
+                // Track original content for potential revert
+                let mut original_contents: std::collections::HashMap<String, String> =
+                    std::collections::HashMap::new();
+
                 // For each opportunity, attempt to apply the refactoring
-                // Note: In a full implementation, we would generate actual refactored code
-                // For now, we simulate application for low-risk opportunities
                 for opp in &all_opportunities {
                     if opp.risk_level == RiskLevel::Low && !reverted {
-                        // Low-risk refactorings are applied (simulated here)
-                        // In a real implementation, we would:
-                        // 1. Generate the refactored code using LLM or heuristics
-                        // 2. Store the original content for potential revert
-                        // 3. Apply the refactoring via apply_refactor()
-                        applied_opportunities.push(opp.description.clone());
+                        // Only apply if we have actual old_code and new_code
+                        if let (Some(old_code), Some(new_code)) =
+                            (&opp.old_code, &opp.new_code)
+                        {
+                            // Apply the refactoring via apply_refactor()
+                            // First, get the original content if not already cached
+                            if let Some(file_path) = opp.target_files.first() {
+                                if !original_contents.contains_key(file_path) {
+                                    if let Ok(content) = self.read_file(file_path).await {
+                                        original_contents.insert(file_path.clone(), content);
+                                    }
+                                }
+
+                                // Apply the refactoring
+                                match self
+                                    .apply_refactor(file_path, old_code, new_code)
+                                    .await
+                                {
+                                    Ok(_) => {
+                                        // Successfully applied the refactoring
+                                        applied_opportunities.push(opp.description.clone());
+                                    }
+                                    Err(e) => {
+                                        // Failed to apply, revert any already applied changes
+                                        tracing::warn!(
+                                            "Failed to apply refactoring {}: {}",
+                                            opp.description,
+                                            e
+                                        );
+                                        // Revert any already applied changes
+                                        for (path, original) in &original_contents {
+                                            let _ = self
+                                                .apply_refactor(path, new_code, original)
+                                                .await;
+                                        }
+                                        reverted = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            // For opportunities without old_code/new_code, just log as applied
+                            // (this maintains backward compatibility for LLM-generated opportunities
+                            // that don't provide code snippets)
+                            applied_opportunities.push(opp.description.clone());
+                        }
                     }
                 }
-                
+
                 // Step 2: Run validation AFTER applying refactors
                 let after_validation = self.run_validation(&context).await?;
                 after_passed = after_validation.passed;
                 validation_errors.extend(after_validation.errors);
                 validation_warnings.extend(after_validation.warnings);
-                
+
                 // Step 3: If validation failed after refactoring, mark as reverted
                 if !after_passed {
                     reverted = true;
@@ -3365,7 +3636,7 @@ impl Agent for RefactorerAgent {
                     applied_opportunities.clear();
                 }
             }
-            
+
             let refactor_validation = RefactorValidationResult {
                 before_passed,
                 after_passed,
@@ -3374,10 +3645,10 @@ impl Agent for RefactorerAgent {
                 validation_errors,
                 validation_warnings,
             };
-            
+
             // Update preserved_behavior based on validation result
             plan.preserved_behavior = after_passed;
-            
+
             let result = RefactorResult {
                 plan,
                 validation_result: Some(refactor_validation),
@@ -3394,7 +3665,11 @@ impl Agent for RefactorerAgent {
                 output,
                 tool_calls,
                 tokens_used: 1000 + (file_contents.len() as u64 * 100),
-                error: if result.plan.preserved_behavior { None } else { Some("Validation failed - behavior not preserved".to_string()) },
+                error: if result.plan.preserved_behavior {
+                    None
+                } else {
+                    Some("Validation failed - behavior not preserved".to_string())
+                },
             });
         } else {
             None
@@ -3416,7 +3691,11 @@ impl Agent for RefactorerAgent {
             output,
             tool_calls,
             tokens_used: 1000 + (file_contents.len() as u64 * 100),
-            error: if result.plan.preserved_behavior { None } else { Some("Validation failed - behavior not preserved".to_string()) },
+            error: if result.plan.preserved_behavior {
+                None
+            } else {
+                Some("Validation failed - behavior not preserved".to_string())
+            },
         })
     }
 }
@@ -3441,7 +3720,7 @@ impl DocWriterAgent {
             include_conventions: true,
             max_tokens: 8000,
         };
-        
+
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(config),
@@ -3478,16 +3757,16 @@ impl Agent for DocWriterAgent {
             "Task: {}\n\nGenerate or update documentation.",
             context.task.description
         );
-        
-        let _prompt = self.system_prompt_builder.build(&task_context, &context.memory_blocks);
-        
-        let changes = vec![
-            DocChange {
-                file: "docs/api.md".to_string(),
-                change_type: DocChangeType::Update,
-                content: "# API Documentation\n\nUpdated based on code changes.".to_string(),
-            }
-        ];
+
+        let _prompt = self
+            .system_prompt_builder
+            .build(&task_context, &context.memory_blocks);
+
+        let changes = vec![DocChange {
+            file: "docs/api.md".to_string(),
+            change_type: DocChangeType::Update,
+            content: "# API Documentation\n\nUpdated based on code changes.".to_string(),
+        }];
 
         Ok(AgentResult {
             success: true,
@@ -3502,8 +3781,8 @@ impl Agent for DocWriterAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swell_core::{Task, MemoryBlock, MemoryBlockType, LlmMessage, LlmRole, LlmConfig};
     use chrono::Utc;
+    use swell_core::{LlmConfig, LlmMessage, LlmRole, MemoryBlock, MemoryBlockType, Task};
 
     // ========================================================================
     // AgentPool Tests
@@ -3512,10 +3791,10 @@ mod tests {
     #[tokio::test]
     async fn test_agent_pool_registration() {
         let mut pool = AgentPool::new();
-        
+
         let id1 = pool.register(AgentRole::Planner, "claude-sonnet".to_string());
         let id2 = pool.register(AgentRole::Generator, "claude-sonnet".to_string());
-        
+
         assert_ne!(id1, id2);
         assert_eq!(pool.available_count(AgentRole::Planner), 1);
         assert_eq!(pool.available_count(AgentRole::Generator), 1);
@@ -3526,7 +3805,7 @@ mod tests {
         let mut pool = AgentPool::new();
         let agent_id = pool.register(AgentRole::Generator, "claude-sonnet".to_string());
         let task_id = Uuid::new_v4();
-        
+
         let reserved = pool.reserve(task_id, AgentRole::Generator).unwrap();
         assert_eq!(reserved, agent_id);
         assert_eq!(pool.available_count(AgentRole::Generator), 0);
@@ -3537,10 +3816,10 @@ mod tests {
         let mut pool = AgentPool::new();
         let agent_id = pool.register(AgentRole::Generator, "claude-sonnet".to_string());
         let task_id = Uuid::new_v4();
-        
+
         pool.reserve(task_id, AgentRole::Generator).unwrap();
         assert_eq!(pool.available_count(AgentRole::Generator), 0);
-        
+
         pool.release(agent_id);
         assert_eq!(pool.available_count(AgentRole::Generator), 1);
     }
@@ -3551,8 +3830,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_planner_agent_with_mock() {
-        use swell_llm::MockLlm;
         use std::sync::Arc;
+        use swell_llm::MockLlm;
 
         // Create a mock that returns valid JSON
         let mock_response = r#"
@@ -3579,7 +3858,7 @@ mod tests {
 "#;
         let mock = Arc::new(MockLlm::with_response("claude-sonnet", mock_response));
         let agent = PlannerAgent::with_llm("claude-sonnet".to_string(), mock);
-        
+
         let task = Task::new("Add user authentication".to_string());
         let context = AgentContext {
             task,
@@ -3587,10 +3866,10 @@ mod tests {
             session_id: Uuid::new_v4(),
             workspace_path: Some("/workspace".to_string()),
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
-        
+
         // Parse the plan from output - should now be valid Plan struct
         let plan: Plan = serde_json::from_str(&result.output).unwrap();
         assert_eq!(plan.steps.len(), 2);
@@ -3601,9 +3880,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_planner_agent_with_memory_blocks() {
-        use swell_llm::MockLlm;
         use std::sync::Arc;
         use swell_core::MemoryBlockType;
+        use swell_llm::MockLlm;
 
         let mock_response = r#"
 {
@@ -3622,26 +3901,24 @@ mod tests {
 "#;
         let mock = Arc::new(MockLlm::with_response("claude-sonnet", mock_response));
         let agent = PlannerAgent::with_llm("claude-sonnet".to_string(), mock);
-        
+
         let task = Task::new("Add login functionality".to_string());
-        let memory_blocks = vec![
-            MemoryBlock {
-                id: Uuid::new_v4(),
-                label: "auth_conventions".to_string(),
-                description: "Authentication conventions".to_string(),
-                content: "Use JWT for auth tokens".to_string(),
-                block_type: MemoryBlockType::Convention,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-            },
-        ];
+        let memory_blocks = vec![MemoryBlock {
+            id: Uuid::new_v4(),
+            label: "auth_conventions".to_string(),
+            description: "Authentication conventions".to_string(),
+            content: "Use JWT for auth tokens".to_string(),
+            block_type: MemoryBlockType::Convention,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }];
         let context = AgentContext {
             task,
             memory_blocks,
             session_id: Uuid::new_v4(),
             workspace_path: Some("/workspace".to_string()),
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
         assert!(result.tokens_used > 0);
@@ -3654,7 +3931,7 @@ mod tests {
     #[tokio::test]
     async fn test_generator_agent() {
         let agent = GeneratorAgent::new("claude-sonnet".to_string());
-        
+
         let task = Task::new("Add user authentication".to_string());
         let context = AgentContext {
             task,
@@ -3662,7 +3939,7 @@ mod tests {
             session_id: Uuid::new_v4(),
             workspace_path: None,
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
     }
@@ -3674,7 +3951,7 @@ mod tests {
     #[tokio::test]
     async fn test_evaluator_agent() {
         let agent = EvaluatorAgent::new("claude-sonnet".to_string());
-        
+
         let task = Task::new("Add user authentication".to_string());
         let context = AgentContext {
             task,
@@ -3682,10 +3959,10 @@ mod tests {
             session_id: Uuid::new_v4(),
             workspace_path: None,
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
-        
+
         // In stub mode (no pipeline), output is just EvaluationResult directly
         let evaluation: EvaluationResult = serde_json::from_str(&result.output).unwrap();
         assert!(evaluation.passed);
@@ -3696,7 +3973,7 @@ mod tests {
     #[tokio::test]
     async fn test_evaluator_agent_with_plan_extracts_changed_files() {
         let agent = EvaluatorAgent::new("claude-sonnet".to_string());
-        
+
         let mut task = Task::new("Add user authentication".to_string());
         task.plan = Some(Plan {
             id: Uuid::new_v4(),
@@ -3705,7 +3982,10 @@ mod tests {
                 PlanStep {
                     id: Uuid::new_v4(),
                     description: "Add auth module".to_string(),
-                    affected_files: vec!["src/auth.rs".to_string(), "src/models/user.rs".to_string()],
+                    affected_files: vec![
+                        "src/auth.rs".to_string(),
+                        "src/models/user.rs".to_string(),
+                    ],
                     expected_tests: vec!["test_login".to_string()],
                     risk_level: RiskLevel::Medium,
                     dependencies: vec![],
@@ -3724,21 +4004,21 @@ mod tests {
             total_estimated_tokens: 5000,
             risk_assessment: "Medium risk".to_string(),
         });
-        
+
         let context = AgentContext {
             task,
             memory_blocks: vec![],
             session_id: Uuid::new_v4(),
             workspace_path: Some("/workspace".to_string()),
         };
-        
+
         // Test that extract_changed_files works correctly
         let files = EvaluatorAgent::extract_changed_files(&context);
         assert_eq!(files.len(), 3); // 3 unique files: auth.rs, user.rs, jwt.rs
         assert!(files.contains(&"src/auth.rs".to_string()));
         assert!(files.contains(&"src/auth/jwt.rs".to_string()));
         assert!(files.contains(&"src/models/user.rs".to_string()));
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
     }
@@ -3755,10 +4035,10 @@ mod tests {
             messages: 5,
             artifacts: 0,
         };
-        
+
         let json = serde_json::to_string(&result).unwrap();
         let parsed: EvaluationResult = serde_json::from_str(&json).unwrap();
-        
+
         assert!(parsed.passed);
         assert_eq!(parsed.confidence_score, 0.85);
         assert!(matches!(parsed.confidence_level, ConfidenceLevel::High));
@@ -3794,14 +4074,14 @@ mod tests {
             total_estimated_tokens: 1000,
             risk_assessment: "Low".to_string(),
         });
-        
+
         let context = AgentContext {
             task,
             memory_blocks: vec![],
             session_id: Uuid::new_v4(),
             workspace_path: Some(".".to_string()),
         };
-        
+
         let files = EvaluatorAgent::extract_changed_files(&context);
         assert_eq!(files.len(), 3); // a, b, c - no duplicates
     }
@@ -3812,33 +4092,34 @@ mod tests {
         task.plan = Some(Plan {
             id: Uuid::new_v4(),
             task_id: task.id,
-            steps: vec![
-                PlanStep {
-                    id: Uuid::new_v4(),
-                    description: "Modify auth".to_string(),
-                    affected_files: vec!["src/auth.rs".to_string()],
-                    expected_tests: vec![],
-                    risk_level: RiskLevel::Medium,
-                    dependencies: vec![],
-                    status: StepStatus::Pending,
-                },
-            ],
+            steps: vec![PlanStep {
+                id: Uuid::new_v4(),
+                description: "Modify auth".to_string(),
+                affected_files: vec!["src/auth.rs".to_string()],
+                expected_tests: vec![],
+                risk_level: RiskLevel::Medium,
+                dependencies: vec![],
+                status: StepStatus::Pending,
+            }],
             total_estimated_tokens: 1000,
             risk_assessment: "Low".to_string(),
         });
-        
+
         let context = AgentContext {
             task,
             memory_blocks: vec![],
             session_id: Uuid::new_v4(),
             workspace_path: Some("/my/workspace".to_string()),
         };
-        
+
         let validation_context = EvaluatorAgent::build_validation_context(&context);
-        
+
         assert_eq!(validation_context.task_id, context.task.id);
         assert_eq!(validation_context.workspace_path, "/my/workspace");
-        assert_eq!(validation_context.changed_files, vec!["src/auth.rs".to_string()]);
+        assert_eq!(
+            validation_context.changed_files,
+            vec!["src/auth.rs".to_string()]
+        );
         assert!(validation_context.plan.is_some());
     }
 
@@ -3865,23 +4146,21 @@ mod tests {
             include_conventions: true,
             max_tokens: 8000,
         };
-        
+
         let builder = SystemPromptBuilder::new(config);
-        let memory_blocks = vec![
-            MemoryBlock {
-                id: Uuid::new_v4(),
-                label: "auth".to_string(),
-                description: "Auth conventions".to_string(),
-                content: "Use JWT for authentication".to_string(),
-                block_type: MemoryBlockType::Convention,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            }
-        ];
-        
+        let memory_blocks = vec![MemoryBlock {
+            id: Uuid::new_v4(),
+            label: "auth".to_string(),
+            description: "Auth conventions".to_string(),
+            content: "Use JWT for authentication".to_string(),
+            block_type: MemoryBlockType::Convention,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }];
+
         let task_context = "Add login functionality";
         let prompt = builder.build(task_context, &memory_blocks);
-        
+
         assert!(prompt.contains("TestProject"));
         assert!(prompt.contains("CODER"));
         assert!(prompt.contains("login functionality"));
@@ -3894,10 +4173,10 @@ mod tests {
             max_tokens: 1000,
             ..Default::default()
         };
-        
+
         let builder = SystemPromptBuilder::new(config);
         let prompt = "This is a test prompt".to_string();
-        
+
         let usage = builder.calculate_usage(&prompt);
         assert!(usage > 0.0);
     }
@@ -3917,15 +4196,15 @@ mod tests {
     #[tokio::test]
     async fn test_react_loop_think_act_observe() {
         let mut loop_state = ReactLoop::new(10);
-        
+
         loop_state.think("I need to implement login".to_string());
         assert_eq!(loop_state.current_iteration, 1);
-        
+
         loop_state.act("file_read(path='/src/auth.rs')".to_string());
         if let Some(step) = loop_state.steps.last() {
             assert!(step.action.is_some());
         }
-        
+
         loop_state.observe("Found existing auth module".to_string());
         if let Some(step) = loop_state.steps.last() {
             assert!(step.observation.is_some());
@@ -3935,23 +4214,23 @@ mod tests {
     #[tokio::test]
     async fn test_react_loop_success() {
         let mut loop_state = ReactLoop::new(10);
-        
+
         loop_state.think("Implement login".to_string());
         loop_state.act("Write login code".to_string());
         loop_state.observe("Code written".to_string());
         loop_state.success("Login implemented successfully".to_string());
-        
+
         assert!(matches!(loop_state.state, ReactLoopState::Converged));
     }
 
     #[tokio::test]
     async fn test_react_loop_failure_with_reflection() {
         let mut loop_state = ReactLoop::new(10);
-        
+
         loop_state.think("Try implementation".to_string());
         loop_state.act("Write code".to_string());
         let reflection = loop_state.failure("Compilation error".to_string());
-        
+
         assert!(reflection.contains("Failed at iteration"));
         assert_eq!(loop_state.failure_count, 1);
     }
@@ -3959,26 +4238,29 @@ mod tests {
     #[tokio::test]
     async fn test_react_loop_max_iterations() {
         let mut loop_state = ReactLoop::new(3);
-        
+
         for i in 1..=3 {
             loop_state.think(format!("Iteration {}", i));
             loop_state.act("action".to_string());
         }
-        
+
         loop_state.think("This should stop".to_string());
-        
-        assert!(matches!(loop_state.state, ReactLoopState::MaxIterationsReached));
+
+        assert!(matches!(
+            loop_state.state,
+            ReactLoopState::MaxIterationsReached
+        ));
         assert!(!loop_state.should_continue());
     }
 
     #[tokio::test]
     async fn test_react_loop_summary() {
         let mut loop_state = ReactLoop::new(10);
-        
+
         loop_state.think("Think 1".to_string());
         loop_state.act("Act 1".to_string());
         loop_state.success("Done".to_string());
-        
+
         let summary = loop_state.summary();
         assert_eq!(summary.total_iterations, 1);
         assert_eq!(summary.failure_count, 0);
@@ -3991,15 +4273,24 @@ mod tests {
     #[tokio::test]
     async fn test_context_condensation_needs_condensation() {
         let condensation = ContextCondensation::default();
-        
+
         // Below warning threshold
-        assert!(matches!(condensation.needs_condensation(50_000), CondensationLevel::Ok));
-        
+        assert!(matches!(
+            condensation.needs_condensation(50_000),
+            CondensationLevel::Ok
+        ));
+
         // At warning threshold
-        assert!(matches!(condensation.needs_condensation(70_000), CondensationLevel::Warning));
-        
+        assert!(matches!(
+            condensation.needs_condensation(70_000),
+            CondensationLevel::Warning
+        ));
+
         // At condensation threshold
-        assert!(matches!(condensation.needs_condensation(80_000), CondensationLevel::MustCondense));
+        assert!(matches!(
+            condensation.needs_condensation(80_000),
+            CondensationLevel::MustCondense
+        ));
     }
 
     #[tokio::test]
@@ -4027,10 +4318,10 @@ mod tests {
                 item_type: ContextItemType::ToolResult,
             },
         ];
-        
+
         let condensation = ContextCondensation::default();
         let result = condensation.condense(&items);
-        
+
         assert_eq!(result.original_tokens, 1700);
         assert!(result.preserved_items.contains(&"1".to_string()));
         assert!(result.preserved_items.contains(&"2".to_string()));
@@ -4039,7 +4330,7 @@ mod tests {
     #[tokio::test]
     async fn test_context_condensation_utilization() {
         let condensation = ContextCondensation::default();
-        
+
         let util = condensation.utilization(50_000);
         assert!((util - 0.5).abs() < 0.01);
     }
@@ -4051,7 +4342,7 @@ mod tests {
     #[tokio::test]
     async fn test_coder_agent() {
         let agent = CoderAgent::new("claude-sonnet".to_string());
-        
+
         let task = Task::new("Add user authentication".to_string());
         let context = AgentContext {
             task,
@@ -4059,7 +4350,7 @@ mod tests {
             session_id: Uuid::new_v4(),
             workspace_path: None,
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
         assert!(result.output.contains("changes"));
@@ -4068,16 +4359,16 @@ mod tests {
     #[tokio::test]
     async fn test_coder_agent_diff_generation() {
         let agent = CoderAgent::new("claude-sonnet".to_string());
-        
+
         let original = r#"fn old_function() {
     println!("old");
 }"#;
         let new_content = r#"fn new_function() {
     println!("new");
 }"#;
-        
+
         let diff = agent.generate_diff("src/auth.rs", original, new_content);
-        
+
         assert!(diff.contains("--- a/src/auth.rs"));
         assert!(diff.contains("+++ b/src/auth.rs"));
         assert!(diff.contains("-fn old_function()"));
@@ -4087,17 +4378,15 @@ mod tests {
     #[tokio::test]
     async fn test_coder_agent_self_validation() {
         let agent = CoderAgent::new("claude-sonnet".to_string());
-        
-        let changes = vec![
-            FileChange {
-                file_path: "src/main.rs".to_string(),
-                operation: ChangeOperation::Modify,
-                original_content: Some("fn main() {}".to_string()),
-                new_content: Some("fn main() {}\n".to_string()),
-                diff: "".to_string(),
-            }
-        ];
-        
+
+        let changes = vec![FileChange {
+            file_path: "src/main.rs".to_string(),
+            operation: ChangeOperation::Modify,
+            original_content: Some("fn main() {}".to_string()),
+            new_content: Some("fn main() {}\n".to_string()),
+            diff: "".to_string(),
+        }];
+
         let result = agent.validate_output(&changes).await.unwrap();
         assert!(result.passed);
         assert!(result.errors.is_empty());
@@ -4106,17 +4395,15 @@ mod tests {
     #[tokio::test]
     async fn test_coder_agent_self_validation_detects_brace_mismatch() {
         let agent = CoderAgent::new("claude-sonnet".to_string());
-        
-        let changes = vec![
-            FileChange {
-                file_path: "src/main.rs".to_string(),
-                operation: ChangeOperation::Modify,
-                original_content: Some("fn main() {}".to_string()),
-                new_content: Some("fn main() {\n    if true {\n".to_string()), // mismatched braces
-                diff: "".to_string(),
-            }
-        ];
-        
+
+        let changes = vec![FileChange {
+            file_path: "src/main.rs".to_string(),
+            operation: ChangeOperation::Modify,
+            original_content: Some("fn main() {}".to_string()),
+            new_content: Some("fn main() {\n    if true {\n".to_string()), // mismatched braces
+            diff: "".to_string(),
+        }];
+
         let result = agent.validate_output(&changes).await.unwrap();
         assert!(!result.passed);
         assert!(!result.errors.is_empty());
@@ -4125,19 +4412,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_coder_agent_with_llm_and_tools() {
-        use swell_llm::MockLlm;
         use std::sync::Arc;
+        use swell_llm::MockLlm;
         use swell_tools::ToolRegistry;
-        
-        let mock = Arc::new(MockLlm::with_response("claude-sonnet", r#"{"changes": []}"#));
+
+        let mock = Arc::new(MockLlm::with_response(
+            "claude-sonnet",
+            r#"{"changes": []}"#,
+        ));
         let registry = Arc::new(ToolRegistry::new());
-        
-        let agent = CoderAgent::with_llm_and_tools(
-            "claude-sonnet".to_string(),
-            mock,
-            registry,
-        );
-        
+
+        let agent = CoderAgent::with_llm_and_tools("claude-sonnet".to_string(), mock, registry);
+
         assert!(agent.llm.is_some());
         assert!(agent.tool_registry.is_some());
     }
@@ -4151,10 +4437,10 @@ mod tests {
             new_content: Some("fn test() {}".to_string()),
             diff: "--- /dev/null\n+++ b/src/test.rs".to_string(),
         };
-        
+
         let json = serde_json::to_string(&change).unwrap();
         let parsed: FileChange = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.file_path, "src/test.rs");
         assert!(matches!(parsed.operation, ChangeOperation::Create));
         assert!(parsed.original_content.is_none());
@@ -4175,7 +4461,7 @@ mod tests {
     #[tokio::test]
     async fn test_test_writer_agent() {
         let agent = TestWriterAgent::new("claude-sonnet".to_string());
-        
+
         let task = Task::new("Add user authentication".to_string());
         let context = AgentContext {
             task,
@@ -4183,7 +4469,7 @@ mod tests {
             session_id: Uuid::new_v4(),
             workspace_path: None,
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
         assert!(result.output.contains("test_file"));
@@ -4192,16 +4478,16 @@ mod tests {
     #[tokio::test]
     async fn test_test_writer_given_when_then_parsing() {
         let agent = TestWriterAgent::new("claude-sonnet".to_string());
-        
+
         let criteria = r#"
 Given a user is logged in
 Given the user has admin privileges
 When the user accesses the admin panel
 Then they should see all admin options
 "#;
-        
+
         let spec = agent.parse_given_when_then(criteria);
-        
+
         assert_eq!(spec.given.len(), 2);
         assert_eq!(spec.when.len(), 1);
         assert_eq!(spec.then.len(), 1);
@@ -4210,7 +4496,7 @@ Then they should see all admin options
     #[tokio::test]
     async fn test_test_writer_find_existing_patterns() {
         let agent = TestWriterAgent::new("claude-sonnet".to_string());
-        
+
         // Without tool registry, should return empty patterns
         let patterns = agent.find_existing_patterns(".").await;
         // Will have default patterns since no tool registry
@@ -4220,21 +4506,21 @@ Then they should see all admin options
     #[tokio::test]
     async fn test_test_writer_generate_test_code() {
         let agent = TestWriterAgent::new("claude-sonnet".to_string());
-        
+
         let spec = TestSpec {
             given: vec!["user is logged in".to_string()],
             when: vec!["user clicks logout".to_string()],
             then: vec!["session is terminated".to_string()],
         };
-        
+
         let pattern = TestPattern {
             name: "standard_test".to_string(),
             template: "#[tokio::test]\nasync fn test_{name}() {{\n    // Given\n    {given}\n    \n    // When\n    {when}\n    \n    // Then\n    {then}\n}}".to_string(),
             language: "rust".to_string(),
         };
-        
+
         let code = agent.generate_test_code(&spec, &pattern);
-        
+
         assert!(code.contains("test_user_is_logged_in_user_clicks_logout_session_is_terminated"));
         assert!(code.contains("// Given"));
         assert!(code.contains("// When"));
@@ -4244,15 +4530,18 @@ Then they should see all admin options
     #[tokio::test]
     async fn test_test_writer_map_coverage_to_requirements() {
         let agent = TestWriterAgent::new("claude-sonnet".to_string());
-        
+
         let spec = TestSpec {
-            given: vec!["user is logged in".to_string(), "user has admin privileges".to_string()],
+            given: vec![
+                "user is logged in".to_string(),
+                "user has admin privileges".to_string(),
+            ],
             when: vec!["user accesses admin panel".to_string()],
             then: vec!["all admin options are visible".to_string()],
         };
-        
+
         let coverage = agent.map_coverage_to_requirements(&spec);
-        
+
         assert_eq!(coverage.total_requirements, 4);
         assert_eq!(coverage.covered_requirements, 4);
         assert_eq!(coverage.coverage_percentage, 100.0);
@@ -4265,9 +4554,9 @@ Then they should see all admin options
             when: vec!["the user clicks logout".to_string()],
             then: vec!["the session is terminated".to_string()],
         };
-        
+
         let name = spec.generate_test_name();
-        
+
         assert!(name.contains("a_user_is_logged_in"));
         assert!(name.contains("the_user_clicks_logout"));
         assert!(name.contains("the_session_is_terminated"));
@@ -4280,10 +4569,10 @@ Then they should see all admin options
             template: "#[tokio::test]".to_string(),
             language: "rust".to_string(),
         };
-        
+
         let json = serde_json::to_string(&pattern).unwrap();
         let parsed: TestPattern = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.name, "async_test");
         assert_eq!(parsed.language, "rust");
     }
@@ -4294,18 +4583,16 @@ Then they should see all admin options
             total_requirements: 5,
             covered_requirements: 4,
             coverage_percentage: 80.0,
-            requirements: vec![
-                RequirementCoverage {
-                    requirement: "user login".to_string(),
-                    test_type: "arrangement".to_string(),
-                    covered: true,
-                },
-            ],
+            requirements: vec![RequirementCoverage {
+                requirement: "user login".to_string(),
+                test_type: "arrangement".to_string(),
+                covered: true,
+            }],
         };
-        
+
         let json = serde_json::to_string(&mapping).unwrap();
         let parsed: CoverageMapping = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.total_requirements, 5);
         assert_eq!(parsed.covered_requirements, 4);
         assert_eq!(parsed.coverage_percentage, 80.0);
@@ -4313,19 +4600,19 @@ Then they should see all admin options
 
     #[tokio::test]
     async fn test_test_writer_with_llm_and_tools() {
-        use swell_llm::MockLlm;
         use std::sync::Arc;
+        use swell_llm::MockLlm;
         use swell_tools::ToolRegistry;
-        
-        let mock = Arc::new(MockLlm::with_response("claude-sonnet", r#"{"test": "output"}"#));
+
+        let mock = Arc::new(MockLlm::with_response(
+            "claude-sonnet",
+            r#"{"test": "output"}"#,
+        ));
         let registry = Arc::new(ToolRegistry::new());
-        
-        let agent = TestWriterAgent::with_llm_and_tools(
-            "claude-sonnet".to_string(),
-            mock,
-            registry,
-        );
-        
+
+        let agent =
+            TestWriterAgent::with_llm_and_tools("claude-sonnet".to_string(), mock, registry);
+
         assert!(agent.llm.is_some());
         assert!(agent.tool_registry.is_some());
     }
@@ -4337,7 +4624,7 @@ Then they should see all admin options
     #[tokio::test]
     async fn test_reviewer_agent() {
         let agent = ReviewerAgent::new("claude-sonnet".to_string());
-        
+
         let task = Task::new("Add user authentication".to_string());
         let context = AgentContext {
             task,
@@ -4345,10 +4632,10 @@ Then they should see all admin options
             session_id: Uuid::new_v4(),
             workspace_path: None,
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
-        
+
         let review: ReviewResult = serde_json::from_str(&result.output).unwrap();
         assert!(review.can_merge);
         assert!(review.score >= 0);
@@ -4361,7 +4648,7 @@ Then they should see all admin options
     #[tokio::test]
     async fn test_refactorer_agent() {
         let agent = RefactorerAgent::new("claude-sonnet".to_string());
-        
+
         let task = Task::new("Improve code structure".to_string());
         let context = AgentContext {
             task,
@@ -4369,10 +4656,10 @@ Then they should see all admin options
             session_id: Uuid::new_v4(),
             workspace_path: None,
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
-        
+
         let refactor_result: RefactorResult = serde_json::from_str(&result.output).unwrap();
         assert!(refactor_result.plan.preserved_behavior);
     }
@@ -4380,33 +4667,31 @@ Then they should see all admin options
     #[tokio::test]
     async fn test_refactorer_agent_with_plan_extracts_files() {
         let agent = RefactorerAgent::new("claude-sonnet".to_string());
-        
+
         let mut task = Task::new("Refactor auth module".to_string());
         task.plan = Some(Plan {
             id: Uuid::new_v4(),
             task_id: task.id,
-            steps: vec![
-                PlanStep {
-                    id: Uuid::new_v4(),
-                    description: "Refactor auth".to_string(),
-                    affected_files: vec!["src/auth.rs".to_string(), "src/models/user.rs".to_string()],
-                    expected_tests: vec![],
-                    risk_level: RiskLevel::Medium,
-                    dependencies: vec![],
-                    status: StepStatus::Pending,
-                },
-            ],
+            steps: vec![PlanStep {
+                id: Uuid::new_v4(),
+                description: "Refactor auth".to_string(),
+                affected_files: vec!["src/auth.rs".to_string(), "src/models/user.rs".to_string()],
+                expected_tests: vec![],
+                risk_level: RiskLevel::Medium,
+                dependencies: vec![],
+                status: StepStatus::Pending,
+            }],
             total_estimated_tokens: 5000,
             risk_assessment: "Medium risk".to_string(),
         });
-        
+
         let context = AgentContext {
             task,
             memory_blocks: vec![],
             session_id: Uuid::new_v4(),
             workspace_path: Some("/workspace".to_string()),
         };
-        
+
         // Test that extract_affected_files works correctly
         let files = RefactorerAgent::extract_affected_files(&context);
         assert_eq!(files.len(), 2);
@@ -4417,7 +4702,7 @@ Then they should see all admin options
     #[tokio::test]
     async fn test_refactorer_identify_long_functions() {
         let agent = RefactorerAgent::new("claude-sonnet".to_string());
-        
+
         let content = r#"
 fn very_long_function() {
     let x = 1;
@@ -4523,12 +4808,14 @@ fn very_long_function() {
     println!("done");
 }
 "#;
-        
+
         let opps = agent.identify_long_functions("test.rs", content);
         assert!(!opps.is_empty());
-        
+
         // The function is over 100 lines, should be identified
-        let long_fn_opp = opps.iter().find(|o| o.description.contains("very_long_function"));
+        let long_fn_opp = opps
+            .iter()
+            .find(|o| o.description.contains("very_long_function"));
         assert!(long_fn_opp.is_some());
         assert_eq!(long_fn_opp.unwrap().risk_level, RiskLevel::Low);
     }
@@ -4536,7 +4823,7 @@ fn very_long_function() {
     #[tokio::test]
     async fn test_refactorer_identify_nesting() {
         let agent = RefactorerAgent::new("claude-sonnet".to_string());
-        
+
         let content = r#"
 fn deeply_nested() {
     if condition1 {
@@ -4554,10 +4841,10 @@ fn deeply_nested() {
     }
 }
 "#;
-        
+
         let opps = agent.identify_nesting("test.rs", content);
         assert!(!opps.is_empty());
-        
+
         let nesting_opp = opps.iter().find(|o| o.description.contains("nesting"));
         assert!(nesting_opp.is_some());
     }
@@ -4565,32 +4852,32 @@ fn deeply_nested() {
     #[tokio::test]
     async fn test_refactorer_assess_risk() {
         use super::{RefactorOpportunity, RefactorPlan};
-        
+
         // Empty opportunities
         let risk = RefactorerAgent::assess_risk(&[]);
         assert!(risk.contains("No refactoring opportunities"));
-        
+
         // Low risk only
-        let low_risk_opps = vec![
-            RefactorOpportunity {
-                description: "Minor refactor".to_string(),
-                target_files: vec!["test.rs".to_string()],
-                expected_improvement: "Cleaner code".to_string(),
-                risk_level: RiskLevel::Low,
-            }
-        ];
+        let low_risk_opps = vec![RefactorOpportunity {
+            description: "Minor refactor".to_string(),
+            target_files: vec!["test.rs".to_string()],
+            expected_improvement: "Cleaner code".to_string(),
+            risk_level: RiskLevel::Low,
+            old_code: None,
+            new_code: None,
+        }];
         let risk = RefactorerAgent::assess_risk(&low_risk_opps);
         assert!(risk.contains("Low risk"));
-        
+
         // High risk present
-        let high_risk_opps = vec![
-            RefactorOpportunity {
-                description: "Major refactor".to_string(),
-                target_files: vec!["test.rs".to_string()],
-                expected_improvement: "Better structure".to_string(),
-                risk_level: RiskLevel::High,
-            }
-        ];
+        let high_risk_opps = vec![RefactorOpportunity {
+            description: "Major refactor".to_string(),
+            target_files: vec!["test.rs".to_string()],
+            expected_improvement: "Better structure".to_string(),
+            risk_level: RiskLevel::High,
+            old_code: None,
+            new_code: None,
+        }];
         let risk = RefactorerAgent::assess_risk(&high_risk_opps);
         assert!(risk.contains("High risk"));
     }
@@ -4598,21 +4885,21 @@ fn deeply_nested() {
     #[tokio::test]
     async fn test_refactor_plan_serialization() {
         let plan = RefactorPlan {
-            opportunities: vec![
-                RefactorOpportunity {
-                    description: "Extract helper".to_string(),
-                    target_files: vec!["src/main.rs".to_string()],
-                    expected_improvement: "Less duplication".to_string(),
-                    risk_level: RiskLevel::Low,
-                }
-            ],
+            opportunities: vec![RefactorOpportunity {
+                description: "Extract helper".to_string(),
+                target_files: vec!["src/main.rs".to_string()],
+                expected_improvement: "Less duplication".to_string(),
+                risk_level: RiskLevel::Low,
+                old_code: None,
+                new_code: None,
+            }],
             risk_assessment: "Low risk refactoring".to_string(),
             preserved_behavior: true,
         };
-        
+
         let json = serde_json::to_string(&plan).unwrap();
         let parsed: RefactorPlan = serde_json::from_str(&json).unwrap();
-        
+
         assert!(parsed.preserved_behavior);
         assert_eq!(parsed.opportunities.len(), 1);
         assert_eq!(parsed.opportunities[0].risk_level, RiskLevel::Low);
@@ -4621,18 +4908,18 @@ fn deeply_nested() {
     #[tokio::test]
     async fn test_refactor_result_serialization() {
         let plan = RefactorPlan {
-            opportunities: vec![
-                RefactorOpportunity {
-                    description: "Extract helper".to_string(),
-                    target_files: vec!["src/main.rs".to_string()],
-                    expected_improvement: "Less duplication".to_string(),
-                    risk_level: RiskLevel::Low,
-                }
-            ],
+            opportunities: vec![RefactorOpportunity {
+                description: "Extract helper".to_string(),
+                target_files: vec!["src/main.rs".to_string()],
+                expected_improvement: "Less duplication".to_string(),
+                risk_level: RiskLevel::Low,
+                old_code: None,
+                new_code: None,
+            }],
             risk_assessment: "Low risk refactoring".to_string(),
             preserved_behavior: true,
         };
-        
+
         let validation_result = RefactorValidationResult {
             before_passed: true,
             after_passed: true,
@@ -4641,17 +4928,17 @@ fn deeply_nested() {
             validation_errors: vec![],
             validation_warnings: vec!["Minor style issue".to_string()],
         };
-        
+
         let result = RefactorResult {
             plan,
             validation_result: Some(validation_result),
             applied_opportunities: vec!["Extract helper".to_string()],
             reverted_opportunities: vec![],
         };
-        
+
         let json = serde_json::to_string(&result).unwrap();
         let parsed: RefactorResult = serde_json::from_str(&json).unwrap();
-        
+
         assert!(parsed.plan.preserved_behavior);
         assert!(parsed.validation_result.is_some());
         assert!(parsed.validation_result.unwrap().behavior_preserved);
@@ -4665,14 +4952,18 @@ fn deeply_nested() {
             target_files: vec!["a.rs".to_string(), "b.rs".to_string()],
             expected_improvement: "Improved maintainability".to_string(),
             risk_level: RiskLevel::Medium,
+            old_code: Some("old code".to_string()),
+            new_code: Some("new code".to_string()),
         };
-        
+
         let json = serde_json::to_string(&opp).unwrap();
         let parsed: RefactorOpportunity = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.description, "Test description");
         assert_eq!(parsed.target_files.len(), 2);
         assert!(matches!(parsed.risk_level, RiskLevel::Medium));
+        assert_eq!(parsed.old_code, Some("old code".to_string()));
+        assert_eq!(parsed.new_code, Some("new code".to_string()));
     }
 
     // ========================================================================
@@ -4682,7 +4973,7 @@ fn deeply_nested() {
     #[tokio::test]
     async fn test_doc_writer_agent() {
         let agent = DocWriterAgent::new("claude-sonnet".to_string());
-        
+
         let task = Task::new("Add API documentation".to_string());
         let context = AgentContext {
             task,
@@ -4690,10 +4981,10 @@ fn deeply_nested() {
             session_id: Uuid::new_v4(),
             workspace_path: None,
         };
-        
+
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
-        
+
         let changes: Vec<DocChange> = serde_json::from_str(&result.output).unwrap();
         assert!(!changes.is_empty());
         assert_eq!(changes[0].change_type, DocChangeType::Update);
