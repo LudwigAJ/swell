@@ -99,6 +99,8 @@ impl Default for InMemoryCheckpointStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
+    use swell_core::TaskState;
 
     #[tokio::test]
     async fn test_save_and_load() {

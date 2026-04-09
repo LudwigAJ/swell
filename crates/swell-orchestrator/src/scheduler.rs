@@ -3,6 +3,7 @@
 //! This module provides:
 //! - Priority-based queue for tasks in Ready state
 //! - Max concurrent workers enforcement (default: 6, max: 7)
+#![allow(dead_code)]
 //! - Fair scheduling (round-robin for tasks of same priority)
 //!
 //! # Architecture

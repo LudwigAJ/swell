@@ -1,0 +1,65 @@
+{
+  "milestone": "agents-fix",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": ["fix-refactorer-validation"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "fix-refactorer-validation",
+      "severity": "blocking",
+      "description": "execute() never calls apply_refactor(). Refactorings are identified but never applied before validation. Validation runs on current code state.",
+      "location": "crates/swell-orchestrator/src/agents.rs:3302"
+    },
+    {
+      "featureId": "fix-refactorer-validation",
+      "severity": "blocking",
+      "description": "before_passed is hardcoded to true instead of running tests before refactoring. No before/after comparison occurs.",
+      "location": "crates/swell-orchestrator/src/agents.rs:3312"
+    },
+    {
+      "featureId": "fix-refactorer-validation",
+      "severity": "blocking",
+      "description": "reverted field is hardcoded to false. The apply_refactor() method exists but is never called, so revert logic is not integrated.",
+      "location": "crates/swell-orchestrator/src/agents.rs:3315"
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add enforcement that cargo clippy must be run before completing validation. Workers should verify with 'cargo clippy --workspace' and fix all warnings before marking a feature complete.",
+      "evidence": "fix-refactorer-validation worker did not run clippy despite skill procedure requiring it. The feature passed build but would have caught dead code warnings.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify feature scope boundaries. Consider requiring atomic commits per feature, or explicitly allowing multi-subsystem changes when necessary for a fix.",
+      "evidence": "fix-coder-agent-llm modified files in multiple crates (orchestrator, state, llm, tools) despite being scoped to CoderAgent.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

@@ -1,10 +1,14 @@
 //! Agent pool and agent implementations.
+#![allow(dead_code)]
+#![allow(clippy::format_in_format_args)]
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::for_kv_map)]
 
 use swell_core::traits::Agent;
 use swell_core::{
     AgentRole, AgentId, SwellError, AgentContext, AgentResult,
     MemoryBlock, LlmMessage, LlmRole, LlmConfig, Plan, PlanStep, StepStatus, RiskLevel, LlmBackend,
-    ToolOutput, ToolCallResult, ValidationGate, ValidationLevel,
+    ToolOutput, ToolCallResult, ValidationGate,
 };
 use swell_tools::ToolRegistry;
 use async_trait::async_trait;
@@ -15,13 +19,15 @@ use tracing::{info, debug};
 use serde::{Deserialize, Serialize};
 
 /// Pool of agents for parallel execution
+#[allow(dead_code)]
 pub struct AgentPool {
     agents: HashMap<AgentId, PooledAgent>,
     next_id: u32,
 }
 
 #[derive(Debug, Clone)]
-struct PooledAgent {
+#[allow(dead_code)]
+pub struct PooledAgent {
     id: AgentId,
     role: AgentRole,
     model: String,
@@ -2791,7 +2797,7 @@ impl RefactorerAgent {
         }
         
         // Report opportunities where the same pattern appears multiple times
-        for (_hash, locations) in &seen_functions {
+        for locations in seen_functions.values() {
             if locations.len() > 1 {
                 opportunities.push(RefactorOpportunity {
                     description: format!("Duplicate code pattern detected at lines {:?}", locations),

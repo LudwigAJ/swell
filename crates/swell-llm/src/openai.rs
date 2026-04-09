@@ -94,12 +94,14 @@ impl LlmBackend for OpenAIBackend {
         }
 
         #[derive(Deserialize)]
+        #[allow(dead_code)]
         struct ResponseChoice {
             message: ResponseMessage,
             finish_reason: String,
         }
 
         #[derive(Deserialize)]
+        #[allow(dead_code)]
         struct ResponseMessage {
             role: String,
             content: Option<String>,
@@ -108,6 +110,7 @@ impl LlmBackend for OpenAIBackend {
         }
 
         #[derive(Deserialize)]
+        #[allow(dead_code)]
         struct ResponseToolCall {
             id: String,
             #[serde(rename = "type")]

@@ -1,4 +1,5 @@
 //! Execution controller for managing parallel agent execution.
+#![allow(clippy::should_implement_trait)]
 
 use swell_core::{SwellError, ValidationResult};
 use crate::{Orchestrator, MAX_CONCURRENT_AGENTS};

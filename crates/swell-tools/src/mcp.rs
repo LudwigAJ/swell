@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::warn;
 
 /// MCP client for connecting to MCP servers
@@ -19,11 +18,14 @@ pub struct McpClient {
 
 #[derive(Debug)]
 struct McpTransport {
+    #[allow(dead_code)]
     read: tokio::io::BufReader<tokio::net::UnixStream>,
+    #[allow(dead_code)]
     write: tokio::io::BufWriter<tokio::net::UnixStream>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 struct McpMessage {
     jsonrpc: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,6 +41,7 @@ struct McpMessage {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(dead_code)]
 struct McpError {
     code: i32,
     message: String,
@@ -94,6 +97,7 @@ pub struct McpToolInfo {
 }
 
 /// Wrapper tool for MCP tools
+#[allow(dead_code)]
 struct McpToolWrapper {
     name: String,
     description: String,

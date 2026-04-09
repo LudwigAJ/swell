@@ -177,6 +177,7 @@ impl SqliteCheckpointStore {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+    use swell_core::TaskState;
 
     #[tokio::test]
     async fn test_sqlite_store() {

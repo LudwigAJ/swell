@@ -26,7 +26,7 @@ pub use anthropic::AnthropicBackend;
 pub use openai::OpenAIBackend;
 pub use mock::MockLlm;
 
-use swell_core::{LlmBackend as CoreLlmBackend, LlmMessage, LlmResponse, LlmConfig, LlmToolDefinition, SwellError};
+use swell_core::{LlmBackend as CoreLlmBackend, SwellError};
 use std::sync::Arc;
 
 /// Type alias for boxed LLM backend

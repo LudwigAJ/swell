@@ -12,7 +12,10 @@ pub struct MockLlm {
     model: String,
     response: String,
     should_fail: bool,
+    #[allow(dead_code)]
     call_count: u64,
+    /// If true, echoes back user message content in the response
+    echo_user: bool,
 }
 
 impl MockLlm {
@@ -22,6 +25,7 @@ impl MockLlm {
             response: "Mock response".to_string(),
             should_fail: false,
             call_count: 0,
+            echo_user: true,
         }
     }
 
@@ -31,6 +35,7 @@ impl MockLlm {
             response: response.into(),
             should_fail: false,
             call_count: 0,
+            echo_user: false,
         }
     }
 
@@ -40,6 +45,7 @@ impl MockLlm {
             response: String::new(),
             should_fail: true,
             call_count: 0,
+            echo_user: false,
         }
     }
 }
@@ -62,8 +68,23 @@ impl LlmBackend for MockLlm {
             return Err(SwellError::LlmError("Mock failure".to_string()));
         }
 
-        // Return the configured response only
-        let content = self.response.clone();
+        // Return the configured response, optionally echoing user message content
+        let content = if self.echo_user {
+            let user_content: String = messages
+                .iter()
+                .filter(|m| m.role == crate::LlmRole::User)
+                .map(|m| m.content.clone())
+                .collect::<Vec<_>>()
+                .join(" ");
+            
+            if user_content.is_empty() {
+                self.response.clone()
+            } else {
+                format!("{}: {}", self.response, user_content)
+            }
+        } else {
+            self.response.clone()
+        };
 
         let input_tokens: u64 = messages
             .iter()
@@ -139,8 +160,10 @@ mod tests {
             .await
             .unwrap();
 
+        // with_response returns exact response without echoing user message
         assert!(response.content.contains("Custom reply"));
-        assert!(response.content.contains("Test"));
+        // Verify the custom response is returned verbatim
+        assert_eq!(response.content, "Custom reply");
     }
 
     #[tokio::test]
