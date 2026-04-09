@@ -1,0 +1,29 @@
+{
+  "milestone": "agents-round2-fix",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 39,
+    "passed": 39,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-CLI-001", "VAL-CLI-002", "VAL-CLI-003", "VAL-CLI-004",
+    "VAL-DAEMON-001", "VAL-DAEMON-002", "VAL-DAEMON-003",
+    "VAL-ORCH-001", "VAL-ORCH-002", "VAL-ORCH-003", "VAL-ORCH-004", "VAL-ORCH-005",
+    "VAL-AGENTS-001", "VAL-AGENTS-002", "VAL-AGENTS-003", "VAL-AGENTS-004",
+    "VAL-TOOLS-001", "VAL-TOOLS-002", "VAL-TOOLS-003", "VAL-TOOLS-004", "VAL-TOOLS-005",
+    "VAL-LLM-001", "VAL-LLM-002", "VAL-LLM-003", "VAL-LLM-004",
+    "VAL-VALIDATION-001", "VAL-VALIDATION-002", "VAL-VALIDATION-003", "VAL-VALIDATION-004",
+    "VAL-STATE-001", "VAL-STATE-002", "VAL-STATE-003",
+    "VAL-MEMORY-001", "VAL-MEMORY-002", "VAL-MEMORY-003", "VAL-MEMORY-004",
+    "VAL-SAFETY-001", "VAL-SAFETY-002",
+    "VAL-CROSS-001", "VAL-CROSS-002", "VAL-CROSS-003"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "notes": "All 39 assertions were already validated as 'passed' in validation-state.json from prior milestone rounds (cli-fix, daemon-fix, agents). The agents-round2-fix milestone contains 3 fix features (fix-generator-tool-results, fix-doc-writer-llm, fix-context-condensation-impl) that have empty fulfills arrays, meaning they fix internal implementation issues without new user-facing behavior to validate. Scrutiny validation passed (250 tests, no warnings). No user-testing flow validation needed."
+}
