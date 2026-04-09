@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-checkpoint-valid-transition",
+  "reviewedAt": "2026-04-09T16:00:00Z",
+  "commitId": "4936a4fdf33ee99a2c56643019924d8b24ad4eb3",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly addresses the blocking bug identified in the prior review of state-checkpoint-manager. The transition_with_checkpoint method now calls is_valid_transition() before performing the state transition, returning SwellError::InvalidStateTransition for invalid transitions. The test properly verifies: (1) invalid transitions return error, (2) task state remains unchanged, (3) no checkpoint is created for failed transitions.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The feature specifies skillName: 'rust-worker' but the skill file is at .factory/skills/worker/SKILL.md (named 'worker', not 'rust-worker'). The transcript shows the worker couldn't find a 'rust-worker' skill and proceeded with the base worker skill instead. This mismatch between skill name in features.json and actual skill file path may cause confusion.",
+      "evidence": "Feature has skillName: 'rust-worker' but Glob found ./factory/skills/worker/SKILL.md. Transcript shows: 'The rust-worker skill is not found. Per the mission-worker-base procedure, I should return to the orchestrator immediately.' but worker proceeded anyway."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Fix passes review. The transition_with_checkpoint method now properly validates state transitions before performing them, preventing invalid transitions from being checkpointed. The test verifies error handling, state immutability on error, and no spurious checkpoints. No blocking issues remain."
+}

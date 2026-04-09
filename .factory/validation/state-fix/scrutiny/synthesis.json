@@ -1,6 +1,6 @@
 {
   "milestone": "state-fix",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -50,5 +50,5 @@
       "reason": "Already handled by workers - not actionable guidance for orchestrator"
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/state-fix/scrutiny/synthesis.json"
 }

@@ -1,0 +1,62 @@
+{
+  "featureId": "fix-checkpoint-orchestrator-integration",
+  "reviewedAt": "2026-04-09T15:45:00Z",
+  "commitId": "cf2125f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The implementation adds checkpoint_manager fields and methods to both Orchestrator and GeneratorAgent, but critically fails to wire them together. The GeneratorAgent never receives the orchestrator's checkpoint manager, so checkpointing after tool calls never happens in practice.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 80,
+        "severity": "blocking",
+        "description": "Orchestrator has checkpoint_manager field, and with_checkpoint_manager() constructor exists, but no code path connects the orchestrator's checkpoint manager to any GeneratorAgent instances. The execute_task flow in ExecutionController (lib.rs:127) creates agents but never calls with_checkpoint_manager()."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 4144,
+        "severity": "blocking",
+        "description": "Test at line 4144 creates GeneratorAgent::new() without calling with_checkpoint_manager(). The transcript (line 4144 in worker-transcripts.jsonl) shows: 'let agent = GeneratorAgent::new(\"claude-sonnet\".to_string());' with no checkpoint manager connection."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 267,
+        "severity": "non_blocking",
+        "description": "restore_task method has an async issue: it holds state_machine.write().await across an await (line 277: checkpoint_manager.restore()). While this doesn't deadlock here because the checkpoint_manager doesn't internally use the state machine, it's fragile and should be restructured to avoid holding the lock across await points."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 263,
+        "severity": "non_blocking",
+        "description": "checkpoint_manager() returns Arc<CheckpointManager> but there's no integration test that verifies the full flow: create agent with checkpoint manager -> execute step -> verify checkpoint created -> verify restore works."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 298,
+        "severity": "non_blocking",
+        "description": "checkpoint_manager field is Option<Arc<CheckpointManager>>, but the initialization in all constructors sets it to None. If the field is meant to be used, there should be a path to set it via the orchestrator."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The rust-worker skill procedure doesn't mention checkpoint manager integration. The worker followed the documented procedure but the skill itself doesn't provide guidance on how to wire the checkpoint manager into the execution loop.",
+      "evidence": "Transcript shows skillFeedback.followedProcedure: true, but GeneratorAgent in line 4144 was created without checkpoint manager. The skill (rust-worker/SKILL.md) procedure includes 'Follow Rust conventions' but doesn't specify how to integrate CheckpointManager into agents."
+    },
+    {
+      "area": "conventions",
+      "observation": "The architecture.md in .factory/library documents the intended data flow but doesn't mention how checkpointing fits into the agent execution flow. The integration was done ad-hoc without updating architecture docs.",
+      "evidence": "architecture.md describes Orchestrator, AgentPool, and execution flow but doesn't mention CheckpointManager integration points. Worker implemented checkpoint_manager field on Orchestrator but the architecture docs don't reflect this."
+    },
+    {
+      "area": "conventions",
+      "observation": "No test demonstrates the end-to-end checkpoint integration. The verification steps in the handoff (cargo build, cargo test -p swell-state -- checkpoint, cargo test -p swell-orchestrator) don't actually test the integration - they only verify existing tests pass.",
+      "evidence": "Handoff verification section shows 'All 16 checkpoint tests passed' and 'All 188 orchestrator tests passed' but these are pre-existing tests, not new integration tests for this feature. No test creates a GeneratorAgent with checkpoint manager, executes a step, and verifies checkpointing occurred."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Implementation partially complete but fails to actually connect CheckpointManager to GeneratorAgent. Orchestrator has the checkpoint_manager field and restore_task() method, GeneratorAgent has checkpoint_manager field and with_checkpoint_manager() builder, but the critical wiring - actually calling with_checkpoint_manager() when creating agents for task execution - is missing. The code compiles and existing tests pass, but no checkpoint is ever created because the integration is incomplete. Additionally, there are no integration tests that verify the full checkpoint flow works end-to-end."
+}
