@@ -1,6 +1,6 @@
 {
   "milestone": "agents-fix",
-  "round": 2,
+  "round": 3,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -17,8 +17,8 @@
     {
       "featureId": "fix-refactorer-apply",
       "severity": "blocking",
-      "description": "apply_refactor() method exists at line ~3118 but is never called in execute(). The code pushes to applied_opportunities but only simulates application with comments like 'In a full implementation, we would generate actual refactored code'. The method is dead code - never actually invoked.",
-      "location": "crates/swell-orchestrator/src/agents.rs:3346"
+      "description": "apply_refactor() method exists at line 3304 but is never invoked in execute(). The method signature and implementation are complete, but execute() only simulates refactoring application at lines 3533-3537 where it pushes to applied_opportunities with comments referencing apply_refactor() but never calling it. The method is dead code - confirmed via grep across entire codebase.",
+      "location": "crates/swell-orchestrator/src/agents.rs:3304,3533-3537"
     }
   ],
   "appliedUpdates": [],
@@ -33,6 +33,18 @@
       "target": "AGENTS.md",
       "suggestion": "Clarify feature scope boundaries. Consider requiring atomic commits per feature, or explicitly allowing multi-subsystem changes when necessary for a fix.",
       "evidence": "fix-coder-agent-llm modified files in multiple crates (orchestrator, state, llm, tools) despite being scoped to CoderAgent.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention for tracking deferred 'full implementation' items. Comments like 'In a full implementation...' appear but no tracking mechanism (TODO, FIXME, tracked issue) exists. Consider requiring such deferred items to have associated tracking comments.",
+      "evidence": "Lines 3533-3537: 'Note: In a full implementation, we would generate actual refactored code... Apply the refactoring via apply_refactor()' - deferred implementation not tracked",
+      "isSystemic": true
+    },
+    {
+      "target": "skills/rust-worker",
+      "suggestion": "Clarify when apply_refactor() should be called vs when simulation is acceptable. The refactorer-agent skill should specify if analysis-only mode is valid and when actual refactoring must be applied.",
+      "evidence": "execute() flow applies low-risk opportunities by pushing to applied_opportunities without calling apply_refactor(). Reviewer flagged this may be intentional for analysis-only mode but could confuse maintainers.",
       "isSystemic": false
     }
   ],
