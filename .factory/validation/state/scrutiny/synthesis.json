@@ -1,34 +1,19 @@
 {
   "milestone": "state",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test -p swell-state", "exitCode": 0 },
-    "typecheck": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 },
-    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
     "total": 4,
-    "passed": 3,
-    "failed": 1,
-    "failedFeatures": ["state-checkpoint-manager"]
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
   },
-  "blockingIssues": [
-    {
-      "featureId": "state-checkpoint-manager",
-      "severity": "blocking",
-      "description": "transition_with_checkpoint claims to validate state transitions but never calls is_valid_transition. Invalid state transitions (e.g., Created -> Accepted) would be silently allowed and checkpointed, corrupting task state.",
-      "file": "crates/swell-state/src/checkpoint_manager.rs",
-      "line": 138
-    },
-    {
-      "featureId": "state-checkpoint-manager",
-      "severity": "blocking",
-      "description": "The 'Agent checkpointing after each tool call' requirement from the feature description is not implemented. CheckpointManager is standalone and not integrated into the orchestrator's agent execution flow.",
-      "file": "crates/swell-state/src/checkpoint_manager.rs",
-      "line": 1
-    }
-  ],
+  "blockingIssues": [],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
@@ -48,5 +33,5 @@
       "reason": "Acceptable for MVP, noted as non-blocking by reviewer"
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/state/scrutiny/synthesis.json (round 1)"
 }

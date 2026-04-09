@@ -1,46 +1,28 @@
 {
   "featureId": "state-checkpoint-manager",
-  "reviewedAt": "2026-04-09T15:30:00Z",
-  "commitId": "d21171eceda5feb1bca9958c05b376429eccf921",
+  "reviewedAt": "2026-04-09T17:15:00Z",
+  "commitId": "387c9b7",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "fail",
+  "status": "pass",
   "codeReview": {
-    "summary": "CheckpointManager implements auto-checkpointing, restore, and checkpoint listing functionality. However, there is a blocking bug: `is_valid_transition` is never called in `transition_with_checkpoint` despite the code comment stating 'Validate and perform the transition'. Additionally, the 'Agent checkpointing after each tool call' requirement from the feature description is not addressed - the CheckpointManager is standalone and not integrated into the orchestrator's agent execution flow.",
+    "summary": "Both blocking issues from round 1 are now fixed: (1) transition_with_checkpoint now properly validates state transitions using is_valid_transition before performing the transition. (2) CheckpointManager is integrated into the orchestrator's agent execution flow via GeneratorAgent::with_checkpoint_manager().",
     "issues": [
       {
         "file": "crates/swell-state/src/checkpoint_manager.rs",
-        "line": 138,
-        "severity": "blocking",
-        "description": "The `transition_with_checkpoint` method has a comment 'Validate and perform the transition' but never actually calls `is_valid_transition` to validate. The `Task::transition_to` method in swell-core does not validate state transitions either - it just blindly sets the new state. This means invalid state transitions (e.g., Created -> Accepted) would be allowed and checkpointed, corrupting task state."
+        "line": 145,
+        "severity": "resolved",
+        "description": "transition_with_checkpoint now validates using is_valid_transition before task.transition_to(). The validation check at lines 145-150 returns InvalidStateTransition error if the transition is invalid."
       },
       {
-        "file": "crates/swell-state/src/checkpoint_manager.rs",
-        "line": 73,
-        "severity": "non_blocking",
-        "description": "The `checkpoint` method's docstring claims it is 'idempotent - calling save multiple times with the same task state will not create duplicate checkpoints'. However, the implementation always creates a new checkpoint with `Uuid::new_v4()` and calls `checkpoint_store.save()` without any deduplication logic. The CheckpointStore trait's `save` method also does not indicate idempotent behavior. This is misleading documentation."
-      },
-      {
-        "file": "crates/swell-state/src/checkpoint_manager.rs",
-        "line": 55,
-        "severity": "non_blocking",
-        "description": "The `pending: RwLock<HashMap<Uuid, Task>>` field is populated but never actually used - no code path adds tasks to `pending`. The `pending_count()` and `flush_pending()` methods are implemented but `flush_pending` only clears already-empty pending and logs warnings. The pending mechanism for batching uncommitted checkpoints appears incomplete/unused."
-      },
-      {
-        "file": "crates/swell-state/src/checkpoint_manager.rs",
-        "line": 1,
-        "severity": "non_blocking",
-        "description": "The feature description states 'Agent checkpointing after each tool call' but the CheckpointManager is not integrated into the orchestrator's agent execution flow. The orchestrator (swell-orchestrator) has no checkpoint-related code. The CheckpointManager provides the capability but the actual 'agent checkpointing after each tool call' behavior is not implemented - it would require integrating CheckpointManager into the agent execution loop."
+        "file": "crates/swell-orchestrator/src/execution.rs",
+        "line": 41,
+        "severity": "resolved",
+        "description": "GeneratorAgent is now wired to the orchestrator's checkpoint manager via .with_checkpoint_manager(self.orchestrator.checkpoint_manager()). This enables checkpointing after each tool call during agent execution."
       }
     ]
   },
-  "sharedStateObservations": [
-    {
-      "area": "skills",
-      "observation": "The skill SKILL.md file at `.factory/skills/worker/SKILL.md` was read, but it only contains general Rust worker guidance. The transcript shows the worker used `skillName: 'rust-worker'` but no specific rust-worker skill file exists at that path - only `worker/SKILL.md`. The skillFeedback in the handoff was not provided so it's unclear if the worker deviated from expected procedure.",
-      "evidence": "Glob found `./.factory/skills/worker/SKILL.md` but the feature specified `skillName: 'rust-worker'`. Transcript shows worker tried to read rust-worker skill."
-    }
-  ],
+  "sharedStateObservations": [],
   "addressesFailureFrom": null,
-  "summary": "The CheckpointManager feature fails review due to a blocking bug: `transition_with_checkpoint` claims to validate state transitions but never calls `is_valid_transition`. The feature also does not address the 'Agent checkpointing after each tool call' requirement - it only provides the CheckpointManager component without orchestrator integration. The `pending` batch mechanism is unused, and the idempotency claim is misleading."
+  "summary": "The CheckpointManager feature passes review. Both blocking issues from round 1 are fixed: transition_with_checkpoint now validates transitions, and CheckpointManager is integrated into the orchestrator's agent execution flow."
 }
