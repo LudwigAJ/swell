@@ -31,6 +31,7 @@ pub use agents::{
     ReviewResult, CodeIssue, IssueSeverity, IssueCategory,
     RefactorPlan, RefactorOpportunity, DocChange, DocChangeType,
     TestSpec, EvaluationResult, ConfidenceLevel,
+    TestPattern, CoverageMapping, RequirementCoverage,
     FileChange, ChangeOperation,
 };
 pub use execution::ExecutionController;
