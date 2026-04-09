@@ -347,8 +347,10 @@ impl GeneratorAgent {
         &self,
         step: &PlanStep,
         workspace_path: &str,
-    ) -> Result<String, SwellError> {
+    ) -> Result<(String, Vec<ToolCallResult>, u64), SwellError> {
         let mut react_loop = ReactLoop::new(self.max_iterations);
+        let mut step_tool_calls = Vec::new();
+        let mut step_tokens = 0u64;
 
         // Build initial context for the agent
         let initial_thought = format!(
@@ -371,17 +373,35 @@ impl GeneratorAgent {
                 .unwrap_or_default();
 
             // Use LLM to decide next action if available, otherwise use simple heuristics
-            let action = if let Some(llm) = &self.llm {
-                self.decide_action_with_llm(&current_thought, step, llm)
-                    .await?
+            let (action, action_tokens) = if let Some(llm) = &self.llm {
+                let (action_str, tokens) = self.decide_action_with_llm(&current_thought, step, llm).await?;
+                (action_str, tokens)
             } else {
-                self.decide_action_heuristic(&current_thought, step)?
+                (self.decide_action_heuristic(&current_thought, step)?, 0u64)
             };
 
+            step_tokens += action_tokens;
             react_loop.act(action.clone());
 
-            // Execute the action using tools
+            // Execute the action using tools and record the tool call result
+            let start_time = std::time::Instant::now();
             let observation = self.execute_action(&action, workspace_path).await?;
+            let duration_ms = start_time.elapsed().as_millis() as u64;
+
+            // Parse the action to extract tool_name and arguments for the tool call result
+            let (tool_name, tool_args) = self.parse_action(&action);
+            let tool_result = ToolCallResult {
+                tool_name,
+                arguments: tool_args,
+                result: if observation.starts_with("OK:") {
+                    Ok(observation.clone())
+                } else {
+                    Err(observation.clone())
+                },
+                duration_ms,
+            };
+            step_tool_calls.push(tool_result);
+
             react_loop.observe(observation.clone());
 
             // Check if we succeeded (observation indicates completion)
@@ -400,7 +420,29 @@ impl GeneratorAgent {
 
         // Build output from the ReAct loop execution
         let summary = react_loop.summary();
-        Ok(serde_json::to_string(&summary).unwrap_or_default())
+        Ok((
+            serde_json::to_string(&summary).unwrap_or_default(),
+            step_tool_calls,
+            step_tokens,
+        ))
+    }
+
+    /// Parse action JSON to extract tool name and arguments
+    fn parse_action(&self, action_json: &str) -> (String, serde_json::Value) {
+        let action: serde_json::Value = serde_json::from_str(action_json).unwrap_or_else(|_| {
+            serde_json::json!({
+                "action": "shell",
+                "args": {"command": action_json}
+            })
+        });
+
+        let tool_name = action["action"]
+            .as_str()
+            .unwrap_or("shell")
+            .to_string();
+        let tool_args = action["args"].clone();
+
+        (tool_name, tool_args)
     }
 
     /// Use LLM to decide the next action based on current thought
@@ -409,7 +451,7 @@ impl GeneratorAgent {
         thought: &str,
         step: &PlanStep,
         llm: &Arc<dyn LlmBackend>,
-    ) -> Result<String, SwellError> {
+    ) -> Result<(String, u64), SwellError> {
         let prompt = format!(
             r#"You are a coding agent deciding what action to take next.
 
@@ -446,7 +488,7 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
         };
 
         let response = llm.chat(messages, None, config).await?;
-        Ok(response.content)
+        Ok((response.content, response.usage.total_tokens))
     }
 
     /// Simple heuristic-based action decision when LLM is not available
@@ -558,8 +600,8 @@ impl Agent for GeneratorAgent {
         };
 
         let mut all_outputs = Vec::new();
-        let tool_call_results = Vec::new();
-        let total_tokens = 0u64;
+        let mut tool_call_results = Vec::new();
+        let mut total_tokens = 0u64;
 
         // If no tool registry is configured, return a simple success result (MVP behavior)
         let has_tool_registry = self.tool_registry.is_some();
@@ -578,8 +620,11 @@ impl Agent for GeneratorAgent {
 
         // Execute each step in the plan using ReAct loop
         for step in &plan.steps {
-            let step_output = self.execute_step_with_react(step, workspace_path).await?;
+            let (step_output, step_tool_calls, step_tokens) =
+                self.execute_step_with_react(step, workspace_path).await?;
             all_outputs.push(step_output);
+            tool_call_results.extend(step_tool_calls);
+            total_tokens += step_tokens;
         }
 
         let output = serde_json::json!({
