@@ -6,8 +6,10 @@
 //! - Built-in tools: file I/O, git, shell execution
 //! - MCP client for external tool servers
 //! - [`WorktreePool`] - git worktree pool for agent isolation
+//! - [`CommitStrategy`] - atomic commits with metadata trailers
 
 pub mod branch_strategy;
+pub mod commit_strategy;
 pub mod executor;
 pub mod mcp;
 pub mod registry;
@@ -16,6 +18,9 @@ pub mod worktree_pool;
 
 pub use branch_strategy::{
     BranchRequest, BranchResult, BranchStrategy, BranchStrategyConfig, BranchStrategyError,
+};
+pub use commit_strategy::{
+    CommitMetadata, CommitRequest, CommitResult, CommitStrategy, CommitStrategyError,
 };
 pub use executor::ToolExecutor;
 pub use registry::{ToolRegistration, ToolRegistry};
