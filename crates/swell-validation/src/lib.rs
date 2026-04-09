@@ -24,10 +24,12 @@
 
 use async_trait::async_trait;
 use std::process::Command;
+use std::sync::Arc;
 use swell_core::{
     SwellError, ValidationContext, ValidationGate, ValidationLevel, ValidationMessage,
     ValidationOutcome,
 };
+use swell_llm::{LlmBackend, LlmConfig, LlmMessage, LlmRole};
 use tokio::task;
 
 // Re-export confidence scoring for use by other crates
@@ -1169,15 +1171,306 @@ impl ValidationGate for SecurityGate {
 }
 
 // ============================================================================
-// AI Review Gate (Stub)
+// AI Review Gate
 // ============================================================================
 
-/// Gate that performs AI-powered code review (stub implementation for MVP).
-pub struct AiReviewGate;
+/// System prompt for AI code review
+const AI_REVIEW_SYSTEM_PROMPT: &str = r#"You are an expert code reviewer analyzing code changes for quality, correctness, and best practices.
+
+Your role is to:
+1. Review code changes for correctness, clarity, and maintainability
+2. Identify potential bugs, security issues, and code smells
+3. Check adherence to Rust idioms and project conventions
+4. Provide actionable, constructive feedback
+
+Respond with a JSON review in this exact format:
+{
+  "confidence_score": 0.85,
+  "passed": true,
+  "issues": [
+    {
+      "severity": "error|warning|info",
+      "category": "correctness|style|security|performance|best_practice",
+      "file": "src/file.rs",
+      "line": 42,
+      "message": "Description of the issue",
+      "suggestion": "How to fix it (if applicable)"
+    }
+  ],
+  "summary": "Overall assessment of the changes"
+}
+
+Be critical but constructive. Focus on issues that matter most for code quality."#;
+
+/// A comment from the AI review
+#[derive(Debug, Clone)]
+struct AiReviewComment {
+    file: Option<String>,
+    line: Option<u32>,
+    severity: ValidationLevel,
+    category: String,
+    message: String,
+    suggestion: Option<String>,
+}
+
+/// Result of AI code review
+#[derive(Debug, Clone)]
+struct AiReviewResult {
+    confidence_score: f64,
+    passed: bool,
+    comments: Vec<AiReviewComment>,
+    summary: String,
+}
+
+/// Gate that performs AI-powered code review using an LLM backend.
+pub struct AiReviewGate {
+    /// Optional LLM backend for AI-powered review
+    llm: Option<Arc<dyn LlmBackend>>,
+    /// Review prompt template
+    prompt_template: String,
+}
 
 impl AiReviewGate {
+    /// Create a new AiReviewGate with the default stub (no LLM).
     pub fn new() -> Self {
-        Self
+        Self {
+            llm: None,
+            prompt_template: AI_REVIEW_SYSTEM_PROMPT.to_string(),
+        }
+    }
+
+    /// Create with a specific LLM backend.
+    pub fn with_llm(llm: Arc<dyn LlmBackend>) -> Self {
+        Self {
+            llm: Some(llm),
+            prompt_template: AI_REVIEW_SYSTEM_PROMPT.to_string(),
+        }
+    }
+
+    /// Create with a specific model name (requires LLM to be configured separately).
+    pub fn with_model(_model: String) -> Self {
+        Self {
+            llm: None,
+            prompt_template: AI_REVIEW_SYSTEM_PROMPT.to_string(),
+        }
+    }
+
+    /// Read the content of changed files.
+    async fn read_changed_files(
+        &self,
+        workspace_path: &str,
+        changed_files: &[String],
+    ) -> Result<String, SwellError> {
+        let mut content = String::new();
+
+        for file_path in changed_files {
+            let full_path = if file_path.starts_with('/') {
+                file_path.clone()
+            } else {
+                format!("{}/{}", workspace_path, file_path)
+            };
+
+            // Try to read the file
+            match tokio::fs::read_to_string(&full_path).await {
+                Ok(contents) => {
+                    content.push_str(&format!("\n\n// ===== File: {} =====\n", file_path));
+                    content.push_str(&contents);
+                }
+                Err(e) => {
+                    tracing::debug!("Could not read file {}: {}", file_path, e);
+                    // Continue with other files
+                    content.push_str(&format!("\n\n// ===== File: {} (not found) =====\n", file_path));
+                }
+            }
+        }
+
+        Ok(content)
+    }
+
+    /// Build the review prompt with changed files.
+    fn build_review_prompt(&self, files_content: &str, task_description: Option<&str>) -> String {
+        let mut prompt = format!(
+            r#"Review the following code changes:
+
+{}
+"#,
+            files_content
+        );
+
+        if let Some(desc) = task_description {
+            prompt.push_str(&format!(r#"
+
+Task Description:
+{}
+
+"#, desc));
+        }
+
+        prompt.push_str(r#"
+
+Please provide your review in the specified JSON format.
+"#);
+
+        prompt
+    }
+
+    /// Parse the LLM response into an AiReviewResult.
+    fn parse_review_response(&self, response: &str) -> Result<AiReviewResult, SwellError> {
+        // Try to extract JSON from the response
+        let json_str = self.extract_json(response)
+            .ok_or_else(|| SwellError::LlmError("No JSON found in response".to_string()))?;
+
+        let json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
+            SwellError::LlmError(format!("Failed to parse review JSON: {}", e))
+        })?;
+
+        let confidence_score = json["confidence_score"]
+            .as_f64()
+            .unwrap_or(0.5);
+
+        let passed = json["passed"].as_bool().unwrap_or(true);
+
+        let mut comments = Vec::new();
+        if let Some(issues) = json["issues"].as_array() {
+            for issue in issues {
+                let severity_str = issue["severity"].as_str().unwrap_or("warning");
+                let severity = match severity_str {
+                    "error" => ValidationLevel::Error,
+                    "warning" => ValidationLevel::Warning,
+                    _ => ValidationLevel::Info,
+                };
+
+                let line = issue["line"]
+                    .as_u64()
+                    .map(|l| l as u32);
+
+                comments.push(AiReviewComment {
+                    file: issue["file"].as_str().map(String::from),
+                    line,
+                    severity,
+                    category: issue["category"]
+                        .as_str()
+                        .unwrap_or("best_practice")
+                        .to_string(),
+                    message: issue["message"].as_str().unwrap_or("").to_string(),
+                    suggestion: issue["suggestion"].as_str().map(String::from),
+                });
+            }
+        }
+
+        let summary = json["summary"]
+            .as_str()
+            .unwrap_or("No summary provided")
+            .to_string();
+
+        Ok(AiReviewResult {
+            confidence_score,
+            passed,
+            comments,
+            summary,
+        })
+    }
+
+    /// Extract JSON from a response that might have extra text.
+    fn extract_json(&self, response: &str) -> Option<String> {
+        // Look for JSON object pattern
+        let start = response.find('{')?;
+        let end = response.rfind('}')?;
+        if start < end {
+            Some(response[start..=end].to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Perform AI review using the LLM backend.
+    async fn perform_ai_review(
+        &self,
+        workspace_path: &str,
+        changed_files: &[String],
+        task_description: Option<&str>,
+    ) -> Result<AiReviewResult, SwellError> {
+        // Read file contents
+        let files_content = self.read_changed_files(workspace_path, changed_files).await?;
+
+        if files_content.trim().is_empty() {
+            return Ok(AiReviewResult {
+                confidence_score: 1.0,
+                passed: true,
+                comments: vec![],
+                summary: "No files to review".to_string(),
+            });
+        }
+
+        // Build prompt
+        let user_prompt = self.build_review_prompt(&files_content, task_description);
+
+        // Prepare messages
+        let messages = vec![
+            LlmMessage {
+                role: LlmRole::System,
+                content: self.prompt_template.clone(),
+            },
+            LlmMessage {
+                role: LlmRole::User,
+                content: user_prompt,
+            },
+        ];
+
+        let config = LlmConfig {
+            temperature: 0.3, // Lower temperature for more consistent reviews
+            max_tokens: 8192,
+            stop_sequences: None,
+        };
+
+        // Get LLM backend
+        let llm = self.llm.as_ref().ok_or_else(|| {
+            SwellError::LlmError("No LLM backend configured for AI review".to_string())
+        })?;
+
+        // Call LLM
+        let response = llm.chat(messages, None, config).await?;
+
+        // Parse response
+        self.parse_review_response(&response.content)
+    }
+
+    /// Convert review result to validation messages.
+    fn to_validation_messages(&self, result: &AiReviewResult) -> Vec<ValidationMessage> {
+        let mut messages = Vec::new();
+
+        // Add comments as validation messages
+        for comment in &result.comments {
+            let code = Some(format!("AI_{}", comment.category.to_uppercase()));
+            let message = if let Some(ref suggestion) = comment.suggestion {
+                format!("{}: {} (Suggestion: {})", comment.category, comment.message, suggestion)
+            } else {
+                format!("{}: {}", comment.category, comment.message)
+            };
+
+            messages.push(ValidationMessage {
+                level: comment.severity,
+                code,
+                message,
+                file: comment.file.clone(),
+                line: comment.line,
+            });
+        }
+
+        // Add summary as info message
+        messages.push(ValidationMessage {
+            level: ValidationLevel::Info,
+            code: Some("AI_REVIEW_SUMMARY".to_string()),
+            message: format!(
+                "AI Review confidence: {:.0}% - {}",
+                result.confidence_score * 100.0,
+                result.summary
+            ),
+            file: None,
+            line: None,
+        });
+
+        messages
     }
 }
 
@@ -1197,17 +1490,56 @@ impl ValidationGate for AiReviewGate {
         40
     }
 
-    async fn validate(&self, _context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
-        // Stub implementation - AI review not yet implemented
+    async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
+        let start = std::time::Instant::now();
+
+        // If no LLM backend, use stub mode
+        if self.llm.is_none() {
+            tracing::debug!("AiReviewGate running in stub mode - no LLM backend configured");
+            return Ok(ValidationOutcome {
+                passed: true,
+                messages: vec![ValidationMessage {
+                    level: ValidationLevel::Info,
+                    code: Some("AI_REVIEW_STUB".to_string()),
+                    message: "AI review gate: LLM backend not configured, skipping AI review".to_string(),
+                    file: None,
+                    line: None,
+                }],
+                artifacts: vec![],
+            });
+        }
+
+        // Perform AI review
+        let result = self
+            .perform_ai_review(
+                &context.workspace_path,
+                &context.changed_files,
+                context.plan.as_ref().map(|p| p.risk_assessment.as_str()),
+            )
+            .await?;
+
+        // Convert to validation messages
+        let messages = self.to_validation_messages(&result);
+
+        // Determine passed status based on review result and errors
+        let has_errors = messages
+            .iter()
+            .any(|m| m.level == ValidationLevel::Error);
+
+        let passed = result.passed && !has_errors;
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+        tracing::info!(
+            "AI review completed in {}ms: confidence={:.2}, passed={}, issues={}",
+            duration_ms,
+            result.confidence_score,
+            passed,
+            result.comments.len()
+        );
+
         Ok(ValidationOutcome {
-            passed: true,
-            messages: vec![ValidationMessage {
-                level: ValidationLevel::Info,
-                code: None,
-                message: "AI review gate stub: full AI review not yet implemented".to_string(),
-                file: None,
-                line: None,
-            }],
+            passed,
+            messages,
             artifacts: vec![],
         })
     }
@@ -1720,5 +2052,262 @@ mod security_gate_tests {
         
         let vuln = Vulnerability::from_semgrep(&json);
         assert!(vuln.is_none());
+    }
+}
+
+#[cfg(test)]
+mod ai_review_gate_tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_ai_review_gate_name() {
+        let gate = AiReviewGate::new();
+        assert_eq!(gate.name(), "ai_review");
+    }
+
+    #[test]
+    fn test_ai_review_gate_order() {
+        let gate = AiReviewGate::new();
+        assert_eq!(gate.order(), 40);
+    }
+
+    #[test]
+    fn test_ai_review_gate_default() {
+        let gate = AiReviewGate::default();
+        assert_eq!(gate.name(), "ai_review");
+    }
+
+    #[test]
+    fn test_ai_review_gate_new() {
+        let gate = AiReviewGate::new();
+        assert_eq!(gate.name(), "ai_review");
+    }
+
+    #[test]
+    fn test_ai_review_gate_with_model() {
+        let gate = AiReviewGate::with_model("claude-sonnet-4-20250514".to_string());
+        assert_eq!(gate.name(), "ai_review");
+    }
+
+    #[tokio::test]
+    async fn test_ai_review_gate_validate_stub_mode() {
+        // Test that AiReviewGate returns stub result when no LLM is configured
+        let gate = AiReviewGate::new();
+        let context = ValidationContext {
+            task_id: Uuid::new_v4(),
+            workspace_path: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            changed_files: vec!["src/lib.rs".to_string()],
+            plan: None,
+        };
+
+        let result = gate.validate(context).await;
+        assert!(result.is_ok(), "AiReviewGate.validate should succeed");
+
+        let outcome = result.unwrap();
+        // In stub mode, it should pass with a message about no LLM backend
+        assert!(outcome.passed, "Stub mode should pass");
+        assert!(!outcome.messages.is_empty(), "Should have at least one message");
+        
+        let info_msg = outcome.messages.iter().find(|m| {
+            m.message.contains("LLM backend not configured")
+        });
+        assert!(info_msg.is_some(), "Should have message about no LLM backend");
+    }
+
+    #[test]
+    fn test_parse_review_response_valid_json() {
+        let gate = AiReviewGate::new();
+        
+        let response = r#"{
+            "confidence_score": 0.85,
+            "passed": true,
+            "issues": [
+                {
+                    "severity": "warning",
+                    "category": "style",
+                    "file": "src/main.rs",
+                    "line": 42,
+                    "message": "Consider using a constant instead",
+                    "suggestion": "const MY_CONST: i32 = 42;"
+                },
+                {
+                    "severity": "error",
+                    "category": "correctness",
+                    "file": "src/main.rs",
+                    "line": 100,
+                    "message": "Potential null pointer dereference",
+                    "suggestion": "Add null check before use"
+                }
+            ],
+            "summary": "Code looks good overall with minor style suggestions"
+        }"#;
+
+        let result = gate.parse_review_response(response);
+        assert!(result.is_ok(), "Should parse valid JSON");
+
+        let review = result.unwrap();
+        assert_eq!(review.confidence_score, 0.85);
+        assert!(review.passed);
+        assert_eq!(review.comments.len(), 2);
+        assert_eq!(review.summary, "Code looks good overall with minor style suggestions");
+        
+        // Check first comment
+        assert_eq!(review.comments[0].file, Some("src/main.rs".to_string()));
+        assert_eq!(review.comments[0].line, Some(42));
+        assert_eq!(review.comments[0].severity, ValidationLevel::Warning);
+        assert_eq!(review.comments[0].category, "style");
+        
+        // Check second comment (error)
+        assert_eq!(review.comments[1].severity, ValidationLevel::Error);
+    }
+
+    #[test]
+    fn test_parse_review_response_no_issues() {
+        let gate = AiReviewGate::new();
+        
+        let response = r#"{
+            "confidence_score": 1.0,
+            "passed": true,
+            "issues": [],
+            "summary": "Excellent code, no issues found"
+        }"#;
+
+        let result = gate.parse_review_response(response);
+        assert!(result.is_ok());
+
+        let review = result.unwrap();
+        assert_eq!(review.confidence_score, 1.0);
+        assert!(review.comments.is_empty());
+    }
+
+    #[test]
+    fn test_parse_review_response_invalid_json() {
+        let gate = AiReviewGate::new();
+        
+        let response = "This is not JSON at all";
+        let result = gate.parse_review_response(response);
+        assert!(result.is_err(), "Should fail to parse non-JSON");
+    }
+
+    #[test]
+    fn test_parse_review_response_missing_fields() {
+        let gate = AiReviewGate::new();
+        
+        // Missing required confidence_score
+        let response = r#"{
+            "passed": true,
+            "issues": [],
+            "summary": "Test"
+        }"#;
+
+        let result = gate.parse_review_response(response);
+        // Should use default for missing fields
+        assert!(result.is_ok());
+        let review = result.unwrap();
+        assert_eq!(review.confidence_score, 0.5); // default
+    }
+
+    #[test]
+    fn test_extract_json_with_extra_text() {
+        let gate = AiReviewGate::new();
+        
+        let response = "Here is my review:\n{\n  \"confidence_score\": 0.9,\n  \"passed\": true,\n  \"issues\": [],\n  \"summary\": \"Good\"\n}\nHope this helps!";
+        
+        let json = gate.extract_json(response);
+        assert!(json.is_some());
+        
+        let parsed = serde_json::from_str::<serde_json::Value>(&json.unwrap());
+        assert!(parsed.is_ok());
+    }
+
+    #[test]
+    fn test_extract_json_no_json() {
+        let gate = AiReviewGate::new();
+        
+        let response = "This is just plain text without any JSON";
+        let json = gate.extract_json(response);
+        assert!(json.is_none());
+    }
+
+    #[test]
+    fn test_to_validation_messages() {
+        let gate = AiReviewGate::new();
+        
+        let result = AiReviewResult {
+            confidence_score: 0.75,
+            passed: true,
+            comments: vec![
+                AiReviewComment {
+                    file: Some("src/main.rs".to_string()),
+                    line: Some(10),
+                    severity: ValidationLevel::Warning,
+                    category: "style".to_string(),
+                    message: "Use of unwrap() detected".to_string(),
+                    suggestion: Some("Consider using ? operator".to_string()),
+                },
+                AiReviewComment {
+                    file: Some("src/main.rs".to_string()),
+                    line: Some(20),
+                    severity: ValidationLevel::Error,
+                    category: "correctness".to_string(),
+                    message: "Index out of bounds".to_string(),
+                    suggestion: None,
+                },
+            ],
+            summary: "Code needs some fixes".to_string(),
+        };
+
+        let messages = gate.to_validation_messages(&result);
+        
+        // Should have 3 messages: 2 comments + 1 summary
+        assert_eq!(messages.len(), 3);
+        
+        // First message should be the warning
+        assert_eq!(messages[0].level, ValidationLevel::Warning);
+        assert_eq!(messages[0].file, Some("src/main.rs".to_string()));
+        assert!(messages[0].message.contains("style"));
+        assert!(messages[0].message.contains("unwrap()"));
+        
+        // Second message should be the error
+        assert_eq!(messages[1].level, ValidationLevel::Error);
+        assert_eq!(messages[1].line, Some(20));
+        
+        // Third message should be info (summary)
+        assert_eq!(messages[2].level, ValidationLevel::Info);
+        assert!(messages[2].message.contains("confidence"));
+        assert!(messages[2].message.contains("75"));
+    }
+
+    #[test]
+    fn test_ai_review_result_passes_without_errors() {
+        let gate = AiReviewGate::new();
+        
+        // Create a result with only warnings (no errors)
+        let result = AiReviewResult {
+            confidence_score: 0.8,
+            passed: true,
+            comments: vec![
+                AiReviewComment {
+                    file: None,
+                    line: None,
+                    severity: ValidationLevel::Warning,
+                    category: "style".to_string(),
+                    message: "Minor style issue".to_string(),
+                    suggestion: None,
+                },
+            ],
+            summary: "Good code".to_string(),
+        };
+
+        let messages = gate.to_validation_messages(&result);
+        let has_errors = messages.iter().any(|m| m.level == ValidationLevel::Error);
+        
+        // With passed=true and no errors, validation should pass
+        assert!(result.passed);
+        assert!(!has_errors);
     }
 }
