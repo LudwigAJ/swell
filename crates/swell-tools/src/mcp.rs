@@ -478,9 +478,17 @@ impl McpClient {
         name: &str,
         arguments: Value,
     ) -> Result<ToolOutput, SwellError> {
+        // Handle arguments that may already be JSON-encoded as a string
+        let args_value = if let Some(args_str) = arguments.as_str() {
+            // Arguments is a string - parse it as JSON to get the actual object
+            serde_json::from_str(args_str).unwrap_or(arguments)
+        } else {
+            arguments
+        };
+        
         let params = serde_json::json!({
             "name": name,
-            "arguments": arguments
+            "arguments": args_value
         });
 
         let result: Value = self.send_request("tools/call", Some(params)).await?;

@@ -1,0 +1,15 @@
+{
+  "featureId": "fix-git-branch-protection",
+  "reviewedAt": "2026-04-09T19:45:00.000Z",
+  "commitId": "1081583e785eb8e3b5ebd30159bba084f321d0dd",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Fix correctly addresses the original blocking issue. The flawed condition requiring BOTH base_branch protection AND description containing 'main' was replaced with a simple base_branch protection check.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": ".factory/validation/git/scrutiny/reviews/git-branch-strategy.json",
+  "summary": "The fix properly addresses the original failure from git-branch-strategy. The worker correctly identified that line 207's protection logic was flawed because it required description to contain 'main' in addition to base_branch being protected. This meant working directly on 'main' without mentioning 'main' in description would NOT be blocked. The fix removes the description check entirely and now correctly rejects any branch request where base_branch is protected (main/master), regardless of description content. Tests were properly updated to use non-protected base branch 'develop'."
+}

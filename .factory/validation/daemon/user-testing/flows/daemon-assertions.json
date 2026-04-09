@@ -1,0 +1,26 @@
+{
+  "flowId": "daemon-assertions",
+  "assertions": [
+    "VAL-DAEMON-001",
+    "VAL-DAEMON-002",
+    "VAL-DAEMON-003"
+  ],
+  "status": "pass",
+  "results": {
+    "VAL-DAEMON-001": {
+      "status": "pass",
+      "evidence": "TaskCreate returned task ID with correlation_id, TaskList returned task array with 2 tasks. Unix socket communication working correctly."
+    },
+    "VAL-DAEMON-002": {
+      "status": "pass",
+      "evidence": "SIGTERM received and handled properly. Log shows: 'Shutdown in progress', 'All active connections completed', 'Socket file removed', 'Daemon shutdown complete'. No zombie processes."
+    },
+    "VAL-DAEMON-003": {
+      "status": "pass",
+      "evidence": "Invalid command 'InvalidCommand' returned proper Error response with 'message' field. Error structure: {\"type\": \"Error\", \"payload\": {\"message\": \"...\"}}"
+    }
+  },
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["python3 socket client", "kill -TERM", "ps", "ls"]
+}
