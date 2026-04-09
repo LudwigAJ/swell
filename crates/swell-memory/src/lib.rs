@@ -16,6 +16,9 @@ pub use swell_core::MemorySearchResult;
 pub use swell_core::MemoryStore;
 pub use swell_core::SwellError;
 
+// Memory blocks module - Project/User/Task blocks with auto-loading and context assembly
+pub mod blocks;
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
