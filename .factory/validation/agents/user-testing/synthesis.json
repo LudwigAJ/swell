@@ -1,0 +1,21 @@
+{
+  "milestone": "agents",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-AGENTS-001",
+    "VAL-AGENTS-002",
+    "VAL-AGENTS-003",
+    "VAL-AGENTS-004"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
