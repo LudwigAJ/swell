@@ -38,6 +38,9 @@ pub enum SwellError {
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
+    #[error("Invalid operation: {0}")]
+    InvalidOperation(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 }

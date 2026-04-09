@@ -12,6 +12,7 @@
 
 pub mod agents;
 pub mod autonomy;
+pub mod backlog;
 pub mod drift_detector;
 pub mod execution;
 pub mod policy;
@@ -30,6 +31,10 @@ pub use agents::{
     DEFAULT_REACT_MAX_ITERATIONS,
 };
 pub use autonomy::{ApprovalDecision, ApprovalRequest, AutonomyController};
+pub use backlog::{
+    BacklogItem, BacklogSource, BacklogStats, DeduplicationConfig, PriorityScoringConfig,
+    WorkBacklog,
+};
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use execution::ExecutionController;
 pub use policy::{
