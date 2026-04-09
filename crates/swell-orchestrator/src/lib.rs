@@ -16,6 +16,7 @@ pub mod agents;
 pub mod execution;
 pub mod policy;
 pub mod scheduler;
+pub mod drift_detector;
 
 pub use state_machine::TaskStateMachine;
 pub use task_graph::TaskGraph;
@@ -23,6 +24,7 @@ pub use agents::{AgentPool, AgentHandle, PlannerAgent, GeneratorAgent, Evaluator
 pub use execution::ExecutionController;
 pub use policy::{PolicyEngine, PolicyAction, PolicyDecision, PolicyEffect, PolicyFile, PolicyRule, PolicyCondition, action};
 pub use scheduler::{Scheduler, SchedulerConfig, SchedulerStats, TaskPriority, DEFAULT_MAX_WORKERS, MAX_MAX_WORKERS};
+pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 
 use swell_core::{
     Task, TaskState, AgentRole, Plan, AgentId, SwellError,
