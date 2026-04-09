@@ -14,6 +14,7 @@ use swell_core::{
     MemoryBlock, Plan, PlanStep, RiskLevel, StepStatus, SwellError, ToolCallResult, ToolOutput,
     ValidationGate,
 };
+use swell_state::CheckpointManager;
 use swell_tools::ToolRegistry;
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -294,6 +295,7 @@ pub struct GeneratorAgent {
     model: String,
     llm: Option<Arc<dyn LlmBackend>>,
     tool_registry: Option<Arc<ToolRegistry>>,
+    checkpoint_manager: Option<Arc<CheckpointManager>>,
     max_iterations: u32,
 }
 
@@ -304,6 +306,7 @@ impl GeneratorAgent {
             model,
             llm: None,
             tool_registry: None,
+            checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
         }
     }
@@ -314,6 +317,7 @@ impl GeneratorAgent {
             model,
             llm: Some(llm),
             tool_registry: None,
+            checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
         }
     }
@@ -324,6 +328,7 @@ impl GeneratorAgent {
             model,
             llm: None,
             tool_registry: Some(tool_registry),
+            checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
         }
     }
@@ -338,14 +343,22 @@ impl GeneratorAgent {
             model,
             llm: Some(llm),
             tool_registry: Some(tool_registry),
+            checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
         }
+    }
+
+    /// Add a checkpoint manager to enable checkpointing after each tool call
+    pub fn with_checkpoint_manager(mut self, checkpoint_manager: Arc<CheckpointManager>) -> Self {
+        self.checkpoint_manager = Some(checkpoint_manager);
+        self
     }
 
     /// Execute a single plan step using the ReAct loop
     async fn execute_step_with_react(
         &self,
         step: &PlanStep,
+        task: &swell_core::Task,
         workspace_path: &str,
     ) -> Result<(String, Vec<ToolCallResult>, u64), SwellError> {
         let mut react_loop = ReactLoop::new(self.max_iterations);
@@ -400,7 +413,16 @@ impl GeneratorAgent {
                 },
                 duration_ms,
             };
-            step_tool_calls.push(tool_result);
+            step_tool_calls.push(tool_result.clone());
+
+            // Checkpoint after each tool call if checkpoint manager is configured
+            if let Some(ref checkpoint_manager) = self.checkpoint_manager {
+                if let Err(e) = checkpoint_manager.checkpoint(task).await {
+                    tracing::warn!(task_id = %task.id, error = %e, "Failed to checkpoint after tool call, continuing anyway");
+                } else {
+                    tracing::debug!(task_id = %task.id, tool_name = %tool_result.tool_name, "Checkpoint created after tool call");
+                }
+            }
 
             react_loop.observe(observation.clone());
 
@@ -621,7 +643,7 @@ impl Agent for GeneratorAgent {
         // Execute each step in the plan using ReAct loop
         for step in &plan.steps {
             let (step_output, step_tool_calls, step_tokens) =
-                self.execute_step_with_react(step, workspace_path).await?;
+                self.execute_step_with_react(step, &context.task, workspace_path).await?;
             all_outputs.push(step_output);
             tool_call_results.extend(step_tool_calls);
             total_tokens += step_tokens;

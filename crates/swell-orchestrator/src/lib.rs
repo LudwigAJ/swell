@@ -41,7 +41,8 @@ pub use state_machine::TaskStateMachine;
 pub use task_graph::TaskGraph;
 
 use std::sync::Arc;
-use swell_core::{AgentId, AgentRole, Plan, SwellError, Task, TaskState, ValidationResult};
+use swell_core::{AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult};
+use swell_state::{CheckpointManager, traits::in_memory::InMemoryCheckpointStore};
 use tokio::sync::{mpsc, RwLock};
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -76,17 +77,33 @@ pub enum OrchestratorEvent {
 pub struct Orchestrator {
     state_machine: Arc<RwLock<TaskStateMachine>>,
     agent_pool: Arc<RwLock<AgentPool>>,
+    checkpoint_manager: Arc<CheckpointManager>,
     event_sender: mpsc::UnboundedSender<OrchestratorEvent>,
 }
 
 impl Orchestrator {
-    /// Create a new orchestrator
+    /// Create a new orchestrator with default in-memory checkpoint store
     pub fn new() -> Self {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
+        let checkpoint_manager = Arc::new(CheckpointManager::new(checkpoint_store));
+
+        Self {
+            state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
+            agent_pool: Arc::new(RwLock::new(AgentPool::new())),
+            checkpoint_manager,
+            event_sender: tx,
+        }
+    }
+
+    /// Create a new orchestrator with a custom checkpoint manager
+    pub fn with_checkpoint_manager(checkpoint_manager: Arc<CheckpointManager>) -> Self {
         let (tx, _rx) = mpsc::unbounded_channel();
 
         Self {
             state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
             agent_pool: Arc::new(RwLock::new(AgentPool::new())),
+            checkpoint_manager,
             event_sender: tx,
         }
     }
@@ -240,6 +257,54 @@ impl Orchestrator {
     /// Get the state machine for direct access (use sparingly)
     pub fn state_machine(&self) -> Arc<RwLock<TaskStateMachine>> {
         self.state_machine.clone()
+    }
+
+    /// Get the checkpoint manager for direct access (use sparingly)
+    pub fn checkpoint_manager(&self) -> Arc<CheckpointManager> {
+        self.checkpoint_manager.clone()
+    }
+
+    /// Restore a task from its latest checkpoint
+    ///
+    /// Returns the restored task if a checkpoint exists, or None if no checkpoint found.
+    pub async fn restore_task(&self, task_id: Uuid) -> Result<Option<Task>, SwellError> {
+        // Restore from checkpoint
+        let restored_task = self.checkpoint_manager.restore(task_id).await?;
+
+        if let Some(task) = restored_task {
+            // Update the state machine with the restored task
+            let mut sm = self.state_machine.write().await;
+            let existing_task = sm.get_task_mut(task_id);
+
+            match existing_task {
+                Ok(existing) => {
+                    // Update existing task with restored state
+                    *existing = task.clone();
+                    info!(task_id = %task_id, "Task restored from checkpoint");
+                }
+                Err(_) => {
+                    // Task doesn't exist in state machine - this is unusual but we can handle it
+                    // by not inserting - the restored task is returned but not stored
+                    warn!(task_id = %task_id, "Task restored from checkpoint but not found in state machine");
+                }
+            }
+            Ok(Some(task))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Check if a task has any checkpoints
+    pub async fn has_checkpoint(&self, task_id: Uuid) -> Result<bool, SwellError> {
+        self.checkpoint_manager.has_checkpoint(task_id).await
+    }
+
+    /// Get checkpoint history for a task
+    pub async fn get_checkpoint_history(
+        &self,
+        task_id: Uuid,
+    ) -> Result<Vec<Checkpoint>, SwellError> {
+        self.checkpoint_manager.list_checkpoints(task_id).await
     }
 }
 
