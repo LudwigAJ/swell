@@ -312,3 +312,83 @@ pub enum DaemonEvent {
     TaskFailed { id: Uuid, error: String },
     Error { message: String },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cost_guard_add_cost() {
+        let mut guard = CostGuard::new(1_000_000);
+        assert_eq!(guard.spent, 0);
+
+        guard.add_cost(100_000);
+        assert_eq!(guard.spent, 100_000);
+
+        guard.add_cost(50_000);
+        assert_eq!(guard.spent, 150_000);
+    }
+
+    #[test]
+    fn test_cost_guard_warning_threshold() {
+        let mut guard = CostGuard::new(1_000_000);
+
+        // At 0% - no warning
+        assert!(!guard.is_warning_threshold());
+
+        // At 74% - no warning
+        guard.add_cost(740_000);
+        assert_eq!(guard.spent, 740_000);
+        assert!(!guard.is_warning_threshold());
+
+        // At 75% - warning threshold triggered
+        guard.add_cost(10_000);
+        assert_eq!(guard.spent, 750_000);
+        assert!(guard.is_warning_threshold());
+
+        // At 99% - still warning
+        guard.add_cost(240_000);
+        assert_eq!(guard.spent, 990_000);
+        assert!(guard.is_warning_threshold());
+    }
+
+    #[test]
+    fn test_cost_guard_hard_stop() {
+        let mut guard = CostGuard::new(1_000_000);
+
+        // At 0% - no hard stop
+        assert!(!guard.is_hard_stop());
+
+        // At 99% - no hard stop
+        guard.add_cost(990_000);
+        assert_eq!(guard.spent, 990_000);
+        assert!(!guard.is_hard_stop());
+
+        // At 100% - hard stop triggered
+        guard.add_cost(10_000);
+        assert_eq!(guard.spent, 1_000_000);
+        assert!(guard.is_hard_stop());
+
+        // At 150% - still hard stop
+        guard.add_cost(500_000);
+        assert_eq!(guard.spent, 1_500_000);
+        assert!(guard.is_hard_stop());
+    }
+
+    #[test]
+    fn test_cost_guard_warning_before_hard_stop() {
+        let mut guard = CostGuard::new(1_000_000);
+
+        // At 75%, warning should be true but hard stop should be false
+        guard.add_cost(750_000);
+        assert_eq!(guard.spent, 750_000);
+        assert!(guard.is_warning_threshold());
+        assert!(!guard.is_hard_stop());
+
+        // Reset and test at exactly 100%
+        let mut guard = CostGuard::new(1_000_000);
+        guard.add_cost(1_000_000);
+        assert!(!guard.is_warning_threshold());
+        assert!(guard.is_hard_stop());
+    }
+}
