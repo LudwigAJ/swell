@@ -47,6 +47,14 @@ pub use evidence::{
     ReviewComment, SecurityEvidence, SecurityFinding, SignalScore, TestEvidence, TestResult,
 };
 
+// Re-export flakiness detection for use by other crates
+pub mod flakiness;
+pub use flakiness::{
+    FlakinessConfig, FlakinessDetector, FlakinessGate, FlakinessGateConfig, FlakinessReport,
+    QuarantineConfig, QuarantinePool, QuarantineStats, QuarantinedTest, TestFlakinessReport,
+    TestResultRecord,
+};
+
 // ============================================================================
 // Lint Gate
 // ============================================================================

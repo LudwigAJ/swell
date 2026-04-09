@@ -318,6 +318,35 @@ impl FlakinessHistory {
             .cloned()
             .collect()
     }
+
+    /// Get all test names in history
+    pub fn get_all_tests(&self) -> Vec<String> {
+        self.runs.keys().cloned().collect()
+    }
+
+    /// Get runs for a specific test
+    pub fn get_runs(&self, test_name: &str) -> &[TestRun] {
+        self.runs.get(test_name).map(|v| v.as_slice()).unwrap_or(&[])
+    }
+
+    /// Get the number of runs for a specific test
+    pub fn run_count(&self, test_name: &str) -> usize {
+        self.runs.get(test_name).map(|v| v.len()).unwrap_or(0)
+    }
+
+    /// Merge history from another FlakinessHistory
+    pub fn merge(&mut self, other: &FlakinessHistory) {
+        for (test_name, runs) in &other.runs {
+            for run in runs {
+                self.record(test_name.clone(), run.clone());
+            }
+        }
+    }
+
+    /// Clear all history
+    pub fn clear(&mut self) {
+        self.runs.clear();
+    }
 }
 
 impl Default for FlakinessHistory {
