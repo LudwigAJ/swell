@@ -19,6 +19,9 @@ pub use swell_core::SwellError;
 // Memory blocks module - Project/User/Task blocks with auto-loading and context assembly
 pub mod blocks;
 
+// Recall module - BM25 keyword search and temporal queries for conversation logs
+pub mod recall;
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
@@ -78,6 +81,45 @@ impl SqliteMemoryStore {
             .execute(pool)
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        // Initialize conversation_logs schema for recall functionality
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS conversation_logs (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                task_id TEXT,
+                agent_id TEXT NOT NULL,
+                agent_role TEXT NOT NULL,
+                action TEXT NOT NULL,
+                content TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                metadata TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_convlogs_session ON conversation_logs(session_id)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_convlogs_task ON conversation_logs(task_id)")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_convlogs_timestamp ON conversation_logs(timestamp)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(())
     }
