@@ -3,17 +3,15 @@
 use swell_core::traits::Agent;
 use swell_core::{
     AgentRole, AgentId, SwellError, AgentContext, AgentResult,
-    MemoryBlock, MemoryBlockType, LlmMessage, LlmRole, LlmConfig,
-    Task, Plan, PlanStep, StepStatus, RiskLevel, LlmBackend,
+    MemoryBlock, LlmMessage, LlmRole, LlmConfig, Plan, PlanStep, StepStatus, RiskLevel, LlmBackend,
     ToolOutput, ToolCallResult,
 };
 use swell_tools::ToolRegistry;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use uuid::Uuid;
-use tracing::{info, debug, warn};
+use tracing::{info, debug};
 use serde::{Deserialize, Serialize};
 
 /// Pool of agents for parallel execution
@@ -461,7 +459,7 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
     }
 
     /// Execute an action and return the observation
-    async fn execute_action(&self, action_json: &str, workspace_path: &str) -> Result<String, SwellError> {
+    async fn execute_action(&self, action_json: &str, _workspace_path: &str) -> Result<String, SwellError> {
         let registry = self.tool_registry.as_ref()
             .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
 
@@ -533,8 +531,8 @@ impl Agent for GeneratorAgent {
         };
 
         let mut all_outputs = Vec::new();
-        let mut tool_call_results = Vec::new();
-        let mut total_tokens = 0u64;
+        let tool_call_results = Vec::new();
+        let total_tokens = 0u64;
 
         // If no tool registry is configured, return a simple success result (MVP behavior)
         let has_tool_registry = self.tool_registry.is_some();
@@ -644,7 +642,7 @@ impl EvaluatorAgent {
 
     /// Compute confidence score from validation outcome
     fn compute_confidence(outcome: &swell_core::ValidationOutcome) -> swell_validation::ConfidenceScore {
-        use swell_validation::{ConfidenceScorer, ConfidenceLevel};
+        use swell_validation::ConfidenceScorer;
 
         let mut scorer = ConfidenceScorer::new();
 
@@ -1631,12 +1629,60 @@ impl Agent for CoderAgent {
                 }
             };
 
-            // Generate new content based on task (simplified - real impl would use LLM)
-            let new_content = format!(
-                "// Generated code for: {}\n{}",
-                context.task.description,
-                original_content
-            );
+            // Generate new content using LLM if available, otherwise use heuristic fallback
+            let new_content = if let Some(ref llm) = self.llm {
+                let prompt = format!(
+                    r#"You are a code modification agent. Given the task description and original file content, generate the modified file content.
+
+Task: {}
+File: {}
+
+Original content:
+```
+{}
+```
+
+Generate the modified file content. Respond ONLY with JSON in this format:
+{{
+  "new_content": "<the complete modified file content>",
+  "explanation": "<brief explanation of what was changed>"
+}}"#,
+                    context.task.description,
+                    file_path,
+                    original_content
+                );
+                
+                let messages = vec![
+                    LlmMessage {
+                        role: LlmRole::User,
+                        content: prompt,
+                    },
+                ];
+                
+                let config = LlmConfig {
+                    temperature: 0.3,
+                    max_tokens: 8000,
+                    stop_sequences: None,
+                };
+                
+                match llm.chat(messages, None, config).await {
+                    Ok(response) => {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response.content) {
+                            json["new_content"].as_str().unwrap_or(&original_content).to_string()
+                        } else {
+                            // LLM response wasn't valid JSON, use heuristic fallback
+                            format!("// Generated code for: {}\n{}", context.task.description, original_content)
+                        }
+                    },
+                    Err(_) => {
+                        // LLM call failed, use heuristic fallback
+                        format!("// Generated code for: {}\n{}", context.task.description, original_content)
+                    }
+                }
+            } else {
+                // No LLM available, use heuristic fallback
+                format!("// Generated code for: {}\n{}", context.task.description, original_content)
+            };
 
             // Generate diff
             let diff = self.generate_diff(file_path, &original_content, &new_content);
@@ -1790,7 +1836,7 @@ impl TestWriterAgent {
     }
 
     /// Find existing test patterns in the repository
-    pub async fn find_existing_patterns(&self, workspace_path: &str) -> Vec<TestPattern> {
+    pub async fn find_existing_patterns(&self, _workspace_path: &str) -> Vec<TestPattern> {
         let mut patterns = Vec::new();
 
         // Try to find existing patterns from tool registry
@@ -1842,7 +1888,7 @@ impl TestWriterAgent {
         if !spec.given.is_empty() {
             code = code.replace("{given}", &spec.given.join("\n    "));
             code = code.replace("{setup}", &spec.given.join(";\n    "));
-            code = code.replace("{input}", &spec.given.first().unwrap_or(&"()".to_string()));
+            code = code.replace("{input}", spec.given.first().unwrap_or(&"()".to_string()));
         } else {
             code = code.replace("{given}", "// Setup (from Given clauses)");
             code = code.replace("{setup}", "()");
@@ -1851,7 +1897,7 @@ impl TestWriterAgent {
         
         if !spec.when.is_empty() {
             code = code.replace("{when}", &spec.when.join("\n    "));
-            code = code.replace("{action}", &spec.when.first().unwrap_or(&"todo!()".to_string()));
+            code = code.replace("{action}", spec.when.first().unwrap_or(&"todo!()".to_string()));
         } else {
             code = code.replace("{when}", "// Action (from When clauses)");
             code = code.replace("{action}", "unimplemented!()");
@@ -1859,8 +1905,8 @@ impl TestWriterAgent {
         
         if !spec.then.is_empty() {
             code = code.replace("{then}", &spec.then.join("\n    "));
-            code = code.replace("{assertion}", &spec.then.first().unwrap_or(&"true".to_string()));
-            code = code.replace("{expected}", &spec.then.first().unwrap_or(&"()".to_string()));
+            code = code.replace("{assertion}", spec.then.first().unwrap_or(&"true".to_string()));
+            code = code.replace("{expected}", spec.then.first().unwrap_or(&"()".to_string()));
         } else {
             code = code.replace("{then}", "// Assertions (from Then clauses)");
             code = code.replace("{assertion}", "true");
@@ -2477,7 +2523,7 @@ impl Agent for ReviewerAgent {
     }
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
-        let workspace_path = context.workspace_path.as_deref().unwrap_or(".");
+        let _workspace_path = context.workspace_path.as_deref().unwrap_or(".");
         
         let task_context = format!(
             "Task: {}\n\nReview the code changes for quality issues.",
@@ -2692,7 +2738,7 @@ impl RefactorerAgent {
             // Look for function definitions
             if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
                 // Extract a signature hash to identify duplicates
-                let sig: String = trimmed.chars().take(100).collect();
+                let _sig: String = trimmed.chars().take(100).collect();
                 
                 // Count similar lines in function body (simplified approach)
                 if idx + 5 < lines.len() {
@@ -2716,7 +2762,7 @@ impl RefactorerAgent {
         }
         
         // Report opportunities where the same pattern appears multiple times
-        for (hash, locations) in &seen_functions {
+        for (_hash, locations) in &seen_functions {
             if locations.len() > 1 {
                 opportunities.push(RefactorOpportunity {
                     description: format!("Duplicate code pattern detected at lines {:?}", locations),
@@ -3014,7 +3060,7 @@ impl Agent for RefactorerAgent {
     }
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
-        let workspace_path = context.workspace_path.as_deref().unwrap_or(".");
+        let _workspace_path = context.workspace_path.as_deref().unwrap_or(".");
         
         let task_context = format!(
             "Task: {}\n\nIdentify refactoring opportunities that preserve behavior.",
