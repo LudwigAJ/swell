@@ -61,6 +61,9 @@ futures-util = "0.3"
 # Date/time parsing
 time = { version = "0.3", features = ["parsing", "serde"] }
 
+# Regex
+regex = "1"
+
 # Dev dependencies
 tempfile = "3"
 tokio-test = "0.4"
