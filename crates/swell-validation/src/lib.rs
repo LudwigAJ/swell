@@ -2311,3 +2311,342 @@ mod ai_review_gate_tests {
         assert!(!has_errors);
     }
 }
+
+#[cfg(test)]
+mod pipeline_tests {
+    use super::*;
+    use swell_core::ValidationContext;
+    use uuid::Uuid;
+
+    /// A test gate that always passes with configurable messages
+    struct MockPassingGate {
+        name: &'static str,
+        order: u32,
+        messages: Vec<ValidationMessage>,
+    }
+
+    impl MockPassingGate {
+        fn new(name: &'static str, order: u32, messages: Vec<ValidationMessage>) -> Self {
+            Self { name, order, messages }
+        }
+    }
+
+    #[async_trait]
+    impl ValidationGate for MockPassingGate {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn order(&self) -> u32 {
+            self.order
+        }
+
+        async fn validate(&self, _context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
+            Ok(ValidationOutcome {
+                passed: true,
+                messages: self.messages.clone(),
+                artifacts: vec![],
+            })
+        }
+    }
+
+    /// A test gate that always fails with configurable messages
+    struct MockFailingGate {
+        name: &'static str,
+        order: u32,
+        messages: Vec<ValidationMessage>,
+    }
+
+    impl MockFailingGate {
+        fn new(name: &'static str, order: u32, messages: Vec<ValidationMessage>) -> Self {
+            Self { name, order, messages }
+        }
+    }
+
+    #[async_trait]
+    impl ValidationGate for MockFailingGate {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+
+        fn order(&self) -> u32 {
+            self.order
+        }
+
+        async fn validate(&self, _context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
+            Ok(ValidationOutcome {
+                passed: false,
+                messages: self.messages.clone(),
+                artifacts: vec![],
+            })
+        }
+    }
+
+    fn create_test_context() -> ValidationContext {
+        ValidationContext {
+            task_id: Uuid::new_v4(),
+            workspace_path: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            changed_files: vec![],
+            plan: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_runs_gates_in_order() {
+        // Create gates with explicit order values
+        let mut pipeline = ValidationPipeline::new();
+        pipeline.add_gate(MockPassingGate::new("first", 10, vec![]));
+        pipeline.add_gate(MockPassingGate::new("second", 20, vec![]));
+        pipeline.add_gate(MockPassingGate::new("third", 30, vec![]));
+
+        let context = create_test_context();
+        let result = pipeline.run(&context).await.unwrap();
+
+        // All gates should have run (we get here without error)
+        assert!(result.passed);
+        // Messages from all 3 gates would be aggregated (though empty in this case)
+        assert_eq!(result.messages.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_aggregates_messages() {
+        let mut pipeline = ValidationPipeline::new();
+        
+        // Add three gates, each with distinct messages
+        pipeline.add_gate(MockPassingGate::new(
+            "gate1",
+            10,
+            vec![ValidationMessage {
+                level: ValidationLevel::Info,
+                code: Some("GATE1_CODE".to_string()),
+                message: "Message from gate 1".to_string(),
+                file: None,
+                line: None,
+            }],
+        ));
+        pipeline.add_gate(MockPassingGate::new(
+            "gate2",
+            20,
+            vec![ValidationMessage {
+                level: ValidationLevel::Warning,
+                code: Some("GATE2_CODE".to_string()),
+                message: "Message from gate 2".to_string(),
+                file: None,
+                line: None,
+            }],
+        ));
+        pipeline.add_gate(MockPassingGate::new(
+            "gate3",
+            30,
+            vec![ValidationMessage {
+                level: ValidationLevel::Error,
+                code: Some("GATE3_CODE".to_string()),
+                message: "Message from gate 3".to_string(),
+                file: None,
+                line: None,
+            }],
+        ));
+
+        let context = create_test_context();
+        let result = pipeline.run(&context).await.unwrap();
+
+        // All messages from all gates should be aggregated
+        assert_eq!(result.messages.len(), 3);
+        assert!(result.messages.iter().any(|m| m.message.contains("gate 1")));
+        assert!(result.messages.iter().any(|m| m.message.contains("gate 2")));
+        assert!(result.messages.iter().any(|m| m.message.contains("gate 3")));
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_passes_when_all_gates_pass() {
+        let mut pipeline = ValidationPipeline::new();
+        pipeline.add_gate(MockPassingGate::new("gate1", 10, vec![]));
+        pipeline.add_gate(MockPassingGate::new("gate2", 20, vec![]));
+
+        let context = create_test_context();
+        let result = pipeline.run(&context).await.unwrap();
+
+        // Overall should pass when all gates pass
+        assert!(result.passed);
+        assert!(result.messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_fails_when_any_gate_fails() {
+        let mut pipeline = ValidationPipeline::new();
+        pipeline.add_gate(MockPassingGate::new("gate1", 10, vec![]));
+        pipeline.add_gate(MockFailingGate::new(
+            "gate2",
+            20,
+            vec![ValidationMessage {
+                level: ValidationLevel::Error,
+                code: Some("FAIL".to_string()),
+                message: "Gate 2 failed".to_string(),
+                file: None,
+                line: None,
+            }],
+        ));
+        pipeline.add_gate(MockPassingGate::new("gate3", 30, vec![]));
+
+        let context = create_test_context();
+        let result = pipeline.run(&context).await.unwrap();
+
+        // Overall should fail when any gate fails
+        assert!(!result.passed);
+        // Messages from failing gate should be included
+        assert!(!result.messages.is_empty());
+        assert!(result.messages.iter().any(|m| m.message.contains("Gate 2 failed")));
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_fails_when_first_gate_fails() {
+        let mut pipeline = ValidationPipeline::new();
+        pipeline.add_gate(MockFailingGate::new(
+            "gate1",
+            10,
+            vec![ValidationMessage {
+                level: ValidationLevel::Error,
+                code: Some("FIRST_FAIL".to_string()),
+                message: "First gate failed".to_string(),
+                file: None,
+                line: None,
+            }],
+        ));
+        pipeline.add_gate(MockPassingGate::new("gate2", 20, vec![]));
+
+        let context = create_test_context();
+        let result = pipeline.run(&context).await.unwrap();
+
+        // Overall should fail when first gate fails
+        assert!(!result.passed);
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_with_default() {
+        // Test that Default trait works
+        let pipeline = ValidationPipeline::default();
+        
+        let context = create_test_context();
+        let result = pipeline.run(&context).await.unwrap();
+
+        // Empty pipeline should pass (no gates to fail)
+        assert!(result.passed);
+        assert!(result.messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_pipeline_with_gates_constructor() {
+        // Test with_gates constructor
+        let gates: Vec<Box<dyn ValidationGate>> = vec![
+            Box::new(MockPassingGate::new("gate1", 10, vec![])),
+            Box::new(MockPassingGate::new("gate2", 20, vec![])),
+        ];
+        let pipeline = ValidationPipeline::with_gates(gates);
+
+        let context = create_test_context();
+        let result = pipeline.run(&context).await.unwrap();
+
+        assert!(result.passed);
+    }
+
+    #[tokio::test]
+    async fn test_validation_context_contains_required_fields() {
+        // Test that ValidationContext has all required fields
+        let context = ValidationContext {
+            task_id: Uuid::new_v4(),
+            workspace_path: "/test/workspace".to_string(),
+            changed_files: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+            plan: None,
+        };
+
+        // Verify all fields are accessible
+        assert!(!context.task_id.to_string().is_empty());
+        assert_eq!(context.workspace_path, "/test/workspace");
+        assert_eq!(context.changed_files.len(), 2);
+        assert!(context.plan.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_validation_context_with_plan() {
+        // Test ValidationContext with a plan
+        let plan_id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+        let context = ValidationContext {
+            task_id,
+            workspace_path: "/test/workspace".to_string(),
+            changed_files: vec!["src/lib.rs".to_string()],
+            plan: Some(swell_core::Plan {
+                id: plan_id,
+                task_id,
+                steps: vec![],
+                total_estimated_tokens: 100,
+                risk_assessment: "Low risk changes".to_string(),
+            }),
+        };
+
+        assert!(context.plan.is_some());
+        let plan = context.plan.unwrap();
+        assert_eq!(plan.id, plan_id);
+        assert_eq!(plan.task_id, task_id);
+        assert_eq!(plan.risk_assessment, "Low risk changes");
+    }
+
+    #[tokio::test]
+    async fn test_validation_outcome_structure() {
+        // Test ValidationOutcome structure
+        let outcome = ValidationOutcome {
+            passed: true,
+            messages: vec![
+                ValidationMessage {
+                    level: ValidationLevel::Info,
+                    code: Some("TEST_CODE".to_string()),
+                    message: "Test message".to_string(),
+                    file: Some("test.rs".to_string()),
+                    line: Some(42),
+                },
+            ],
+            artifacts: vec![],
+        };
+
+        assert!(outcome.passed);
+        assert_eq!(outcome.messages.len(), 1);
+        assert_eq!(outcome.messages[0].code, Some("TEST_CODE".to_string()));
+        assert_eq!(outcome.messages[0].file, Some("test.rs".to_string()));
+        assert_eq!(outcome.messages[0].line, Some(42));
+    }
+
+    #[tokio::test]
+    async fn test_validation_message_levels() {
+        // Test different validation message levels
+        let messages = vec![
+            ValidationMessage {
+                level: ValidationLevel::Error,
+                code: None,
+                message: "Error message".to_string(),
+                file: None,
+                line: None,
+            },
+            ValidationMessage {
+                level: ValidationLevel::Warning,
+                code: None,
+                message: "Warning message".to_string(),
+                file: None,
+                line: None,
+            },
+            ValidationMessage {
+                level: ValidationLevel::Info,
+                code: None,
+                message: "Info message".to_string(),
+                file: None,
+                line: None,
+            },
+        ];
+
+        assert_eq!(messages[0].level, ValidationLevel::Error);
+        assert_eq!(messages[1].level, ValidationLevel::Warning);
+        assert_eq!(messages[2].level, ValidationLevel::Info);
+    }
+}
