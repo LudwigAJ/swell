@@ -1,50 +1,36 @@
 {
   "milestone": "agents",
-  "round": 2,
-  "status": "fail",
+  "round": 3,
+  "status": "pass",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
     "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
     "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 11,
-    "passed": 8,
-    "failed": 3,
-    "failedFeatures": ["agents-generator-agent", "agents-doc-writer-agent", "agents-context-condensation"]
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": [],
+    "reReviewedFeatures": [
+      "agents-generator-agent",
+      "agents-doc-writer-agent",
+      "agents-context-condensation"
+    ]
   },
-  "blockingIssues": [
-    {
-      "featureId": "agents-generator-agent",
-      "severity": "blocking",
-      "description": "tool_call_results in AgentResult are never populated even when ReAct loop executes with tool registry. Also total_tokens is always 0u64 even when LLM is used - token usage from LLM.chat is not captured.",
-      "location": "crates/swell-orchestrator/src/agents.rs:571-572"
-    },
-    {
-      "featureId": "agents-doc-writer-agent",
-      "severity": "blocking",
-      "description": "DocWriterAgent.execute() is a stub - returns hardcoded DocChange values instead of actually generating documentation from code changes via LLM. The _prompt is built but never used.",
-      "location": "crates/swell-orchestrator/src/agents.rs:3755-3768"
-    },
-    {
-      "featureId": "agents-context-condensation",
-      "severity": "blocking",
-      "description": "Worker did not implement this feature - ContextCondensation was pre-existing in commit 3a8c017, not implemented by worker session 80c83202. Handoff commitId '8ad9098' corresponds to RefactorerAgent enhancement, not this feature.",
-      "location": "handoff file"
-    }
-  ],
+  "blockingIssues": [],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
       "suggestion": "Add convention: all agent implementations should use LLM backend when configured. The llm field must not be ignored - if present, the agent must call llm.chat() and use the response. Stub implementations that return hardcoded output without LLM calls do not fulfill the feature's expected behavior.",
-      "evidence": "agents-doc-writer-agent returns hardcoded DocChange without using _prompt; agents-generator-agent ignores token usage from LLM calls",
+      "evidence": "agents-doc-writer-agent was originally a stub returning hardcoded values; agents-generator-agent was ignoring token usage from LLM calls",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
       "suggestion": "Add convention: when a feature is already implemented (verification scenario), the handoff should clearly state 'verification only - feature was pre-existing' rather than implying implementation. The commitId field should accurately reflect what was changed.",
-      "evidence": "agents-context-condensation handoff claims commitId 8ad9098 but feature was pre-existing in different commit",
+      "evidence": "agents-context-condensation handoff claimed commitId 8ad9098 but feature was pre-existing in different commit (3a8c017)",
       "isSystemic": false
     },
     {
@@ -61,5 +47,17 @@
     }
   ],
   "rejectedObservations": [],
-  "previousRound": ".factory/validation/agents/scrutiny/synthesis.json (round 1)"
+  "previousRound": ".factory/validation/agents/scrutiny/synthesis.json (round 2)",
+  "fixCommitsApplied": [
+    {
+      "commit": "e2a1eb2",
+      "message": "fix(agents): populate tool_call_results and total_tokens in GeneratorAgent",
+      "addressedFeature": "agents-generator-agent"
+    },
+    {
+      "commit": "0124a44",
+      "message": "fix(agents): implement LLM-based DocWriterAgent.execute()",
+      "addressedFeature": "agents-doc-writer-agent"
+    }
+  ]
 }
