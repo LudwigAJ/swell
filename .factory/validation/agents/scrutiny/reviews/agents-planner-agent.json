@@ -1,0 +1,51 @@
+{
+  "featureId": "agents-planner-agent",
+  "reviewedAt": "2026-04-09T05:30:00Z",
+  "commitId": "e925fd9",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "PlannerAgent implementation is structurally correct but has a critical blocking issue: tests in state_machine.rs fail to compile due to missing imports of RiskLevel and StepStatus. Additionally, the model field in PlannerAgent is unused.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/state_machine.rs",
+        "line": 229,
+        "severity": "blocking",
+        "description": "Test function create_test_plan() uses RiskLevel::Low but the type is not imported in the test module. The compiler suggests: `use swell_core::RiskLevel;` This is the same issue for StepStatus::Pending on line 231. This prevents the entire test suite for swell-orchestrator from running."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 120,
+        "severity": "non_blocking",
+        "description": "PlannerAgent.model field is never read - dead code warning"
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 89,
+        "severity": "non_blocking",
+        "description": "AgentPool::agents() method is pub but returns PooledAgent which is pub(self) - private interface warning"
+      },
+      {
+        "file": "crates/swell-llm/src/lib.rs",
+        "line": 29,
+        "severity": "non_blocking",
+        "description": "hidden_glob_reexports warnings - use statements shadow public re-exports of LlmMessage, LlmResponse, LlmConfig, LlmToolDefinition"
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker added test helper function create_test_plan() in state_machine.rs using RiskLevel and StepStatus, but didn't add the imports. AGENTS.md doesn't specify how to handle enum imports in test modules when those enums are imported in the main module.",
+      "evidence": "state_machine.rs:215-217 imports swell_core::{Plan, PlanStep} but missing RiskLevel and StepStatus"
+    },
+    {
+      "area": "skills",
+      "observation": "The skill for rust-worker doesn't include guidance on test module imports. The worker followed the general rust pattern but missed that test modules need explicit imports even for types used in the parent module.",
+      "evidence": "No specific test import guidance in .factory/skills/rust/"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PlannerAgent implementation is functionally correct - it creates plans via LLM calls and produces valid Plan JSON output. The two test cases pass in isolation. However, a compile error in state_machine.rs (missing imports for RiskLevel and StepStatus in tests) blocks the entire test suite from running. This is a blocking issue that needs fixing. Additionally, there are dead code warnings for unused model fields across all agent types."
+}

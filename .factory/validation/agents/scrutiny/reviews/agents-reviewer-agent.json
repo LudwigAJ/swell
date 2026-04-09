@@ -1,0 +1,90 @@
+{
+  "featureId": "agents-reviewer-agent",
+  "reviewedAt": "2026-04-09T05:30:00Z",
+  "commitId": "6489755",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "ReviewerAgent implementation adds semantic code review capabilities including style, complexity, convention analysis and LLM-based review. The implementation is functional but has several edge case bugs and overly simplistic analysis logic.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2173,
+        "severity": "non_blocking",
+        "description": "Bug in analyze_complexity: The function end detection `if fn_depth <= 0 && trimmed.ends_with('}')` is too simplistic. When multiple `}` appear on one line (e.g., `}}`), fn_depth can go negative and trigger incorrect function end detection. Also, reaching 0 doesn't necessarily mean the function ended - it could be a nested block closing."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2234,
+        "severity": "non_blocking",
+        "description": "Bug in analyze_conventions: The doc comment detection logic is inverted. It flags when doc comment is NOT found by checking `!prev_line.starts_with(\"///\")` but this happens AFTER confirming the line is non-empty. However, if the previous non-empty line happens to be a use statement or attribute before the function, it will incorrectly flag the function even though it may have a doc comment on a previous line."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2251,
+        "severity": "non_blocking",
+        "description": "The println! check uses case-sensitive matching `!trimmed.contains(\"// debug\")`. This won't catch `// DEBUG`, `// Debug`, or `// FIXME` style comments. Should use case-insensitive comparison."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2257,
+        "severity": "non_blocking",
+        "description": "The unwrap() check `!trimmed.contains(\"//\")` is overly broad. It skips checking any line with any comment anywhere. For example, `foo.unwrap(); // Safe because we validated above` would be skipped. The comment might be AFTER the unwrap, not related to it."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2170,
+        "severity": "non_blocking",
+        "description": "In analyze_complexity, when detecting function start with `starts_with(\"fn \")`, this matches non-public `fn` but misses pub fn. Actually looking at line 2237 in analyze_conventions, pub fn is handled separately. But the complexity check doesn't distinguish pub vs private, which may be intentional since complexity is about structure not visibility."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2185,
+        "severity": "suggestion",
+        "description": "The cyclomatic complexity check only tracks nesting depth via `{}` count. This is a simplification - real cyclomatic complexity should count branching constructs (if, match, loops). A deeply nested but linear function would be flagged incorrectly."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2498,
+        "severity": "suggestion",
+        "description": "The todo list was created but not actually shown in the transcript. This is informational - the worker created todos for their internal tracking which is fine."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2427,
+        "severity": "non_blocking",
+        "description": "Test only covers stub mode (without tool registry). The test_reviewer_agent test only verifies the fallback path where no tool_registry is configured. There's no test coverage for the actual analysis functions (analyze_style, analyze_complexity, analyze_conventions)."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Feature references skillName 'rust-worker' but this skill does not exist in .factory/skills/. Only '.factory/skills/worker/SKILL.md' exists. The worker appears to have used the generic worker skill but features.json references a non-existent rust-worker skill.",
+      "evidence": "features.json has skillName: 'rust-worker' but ls .factory/skills/ shows only 'worker' directory"
+    },
+    {
+      "area": "skills",
+      "observation": "The transcript shows the worker spent time exploring the codebase structure (reading AGENTS.md, mission.md, validation-contract.md, features.json, and exploring the crate structure) before starting implementation. This suggests there may be missing onboarding documentation or the skill procedure could be clearer about what to read first.",
+      "evidence": "Transcript shows multiple Read tool calls for documentation files before any implementation work"
+    },
+    {
+      "area": "conventions",
+      "observation": "The implementation uses magic numbers (100 for line length limit, 50 for function length, 10 for complexity threshold, 5 for max warnings) that aren't loaded from .swell/settings.json as specified in AGENTS.md. AGENTS.md explicitly states 'Never hardcode magic numbers'.",
+      "evidence": "Lines 2157 (100 chars), 2190 (50 lines), 2191 (>50), 2199 (>10 depth), 2267 (>5 warnings) - all hardcoded"
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md mentions 'All commits must pass lint and type checks before merge' but the worker only ran `cargo build --workspace` and `cargo test -p swell-orchestrator -- reviewer`. The build succeeded but there's no evidence of clippy/lint checks being run, which are mentioned in services.yaml as `typecheck: cargo clippy --workspace -- -D warnings`.",
+      "evidence": "Handoff verification shows only build and test commands run, no lint/clippy"
+    },
+    {
+      "area": "services",
+      "observation": "The worker used standard cargo commands that are documented in services.yaml. No undocumented commands or services were started.",
+      "evidence": "Commands used: cargo build --workspace, cargo test, git commit - all match services.yaml"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "ReviewerAgent implementation passes review with non-blocking issues. The feature successfully enhances ReviewerAgent with style, complexity, and convention analysis. Key issues: magic numbers not loaded from settings, lint not run, doc comment detection has logic issues, complexity check is simplistic, and tests only cover stub mode. The implementation is usable but would benefit from hardening the analysis logic."
+}

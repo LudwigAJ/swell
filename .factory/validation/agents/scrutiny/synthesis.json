@@ -1,0 +1,59 @@
+{
+  "milestone": "agents",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test -p swell-orchestrator", "exitCode": 0, "note": "swell-orchestrator tests pass; swell-state has pre-existing import issues" },
+    "typecheck": { "passed": false, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 101 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 11,
+    "passed": 9,
+    "failed": 2,
+    "failedFeatures": ["agents-coder-agent", "agents-refactorer-agent"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "agents-coder-agent",
+      "severity": "blocking",
+      "description": "CoderAgent.execute() does not use LLM backend despite having llm field - falls back to simple format string",
+      "location": "crates/swell-orchestrator/src/agents.rs:1619"
+    },
+    {
+      "featureId": "agents-refactorer-agent",
+      "severity": "blocking",
+      "description": "RefactorerAgent expected behavior 'Validates after refactor' not implemented",
+      "location": "crates/swell-orchestrator/src/agents.rs:2973"
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "swell-orchestrator/src/state_machine.rs",
+      "description": "Added missing imports: RiskLevel, StepStatus to test module",
+      "sourceFeature": "agents-coder-agent, agents-refactorer-agent (fix)"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add convention for test module imports: when test modules use types from parent or sibling modules, they must use full paths (e.g., `use crate::{RiskLevel, StepStatus}`) rather than assuming `use super::*` will bring in all needed types",
+      "evidence": "state_machine.rs test module at lines 229-231 uses RiskLevel::Low and StepStatus::Pending but these are not imported, causing compilation failure across all swell-orchestrator tests",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify that 'rust-worker' skill name in features.json is incorrect - the actual skill is named 'Rust' (not 'rust-worker')",
+      "evidence": "Multiple features (all 11 agent features) have skillName: 'rust-worker' but .factory/skills/rust/SKILL.md is the actual skill path",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that agents should not use _prompt pattern where SystemPromptBuilder is called but result is discarded",
+      "evidence": "CoderAgent, DocWriterAgent, TestWriterAgent, RefactorerAgent all call system_prompt_builder.build() and assign to _prompt without using it",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

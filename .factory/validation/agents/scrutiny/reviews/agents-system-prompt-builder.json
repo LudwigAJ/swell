@@ -1,0 +1,67 @@
+{
+  "featureId": "agents-system-prompt-builder",
+  "reviewedAt": "2026-04-09T05:20:00Z",
+  "commitId": "8ad9098",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "SystemPromptBuilder is properly implemented and integrated across all 8 agent types. The build() method constructs comprehensive prompts including project context, role-specific instructions, conventions, memory blocks, and task details. Three dedicated tests cover default config, build() output, and usage calculation.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 1570,
+        "severity": "non_blocking",
+        "description": "The build() method is called but the result is assigned to _prompt and never used. The prompt is built but not passed to the LLM. This appears to be placeholder code - the actual LLM integration for CoderAgent hasn't been implemented yet."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 1984,
+        "severity": "non_blocking",
+        "description": "Same issue as above - build() called but result assigned to _prompt and discarded. TestWriterAgent builds prompt but doesn't utilize it for LLM calls."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2485,
+        "severity": "non_blocking",
+        "description": "Same pattern - prompt built but assigned to _prompt and not used. This affects RefactorerAgent."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 3022,
+        "severity": "non_blocking",
+        "description": "Same pattern - prompt built but not used in DocWriterAgent."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 3201,
+        "severity": "non_blocking",
+        "description": "Same pattern - prompt built but not used in EvaluatorAgent."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The rust-worker skill referenced in features.json does not exist. The transcript shows the worker attempted to invoke 'rust-worker' skill which failed with 'Skill \"rust-worker\" not found'. Worker proceeded without skill guidance.",
+      "evidence": "worker-transcripts.jsonl shows: Error: Skill \"rust-worker\" not found. Worker then proceeded to explore codebase directly."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker skill file (.factory/skills/worker/SKILL.md) exists but is named 'worker' not 'rust-worker'. There's a naming mismatch between what features.json expects and what exists.",
+      "evidence": "features.json has skillName: 'rust-worker' but .factory/skills/worker/SKILL.md exists"
+    },
+    {
+      "area": "conventions",
+      "observation": "The SystemPromptBuilder's project_conventions() method returns hardcoded conventions rather than loading from actual project configuration. This works for MVP but may need to load from .swell/settings.json or .swell/policies/default.yaml per AGENTS.md configuration guidelines.",
+      "evidence": "agents.rs:949-958 - hardcoded conventions string, not loaded from config"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker noted that SystemPromptBuilder was 'already fully implemented by a previous worker' - the feature existed before this worker ran. This suggests feature tracking/status in features.json may be inaccurate or features may be completed by multiple workers.",
+      "evidence": "Handoff salientSummary states 'feature was already fully implemented by a previous worker'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "SystemPromptBuilder feature passes review. Implementation is correct with proper struct, config, build() method, role-specific instructions, and tests. However, the build() output is built but not actually utilized in agent execute() methods - it's assigned to _prompt variables and discarded. This is a non-blocking issue as it's clearly marked as placeholder code for future LLM integration. The feature fulfills its expected behavior for prompt assembly, but actual prompt delivery to LLM backends is not yet connected. Shared state gaps include: skill naming mismatch (rust-worker vs worker), hardcoded conventions instead of loading from project config, and feature pre-existence by prior worker."
+}
