@@ -19,11 +19,15 @@
 pub mod anthropic;
 pub mod mock;
 pub mod openai;
+pub mod router;
 pub mod traits;
 
 pub use anthropic::AnthropicBackend;
 pub use mock::MockLlm;
 pub use openai::OpenAIBackend;
+pub use router::{
+    CostOptimizer, ModelRoute, ModelRouter, ModelRouterBuilder, RouteConfig, TaskType,
+};
 pub use traits::*;
 
 use std::sync::Arc;
