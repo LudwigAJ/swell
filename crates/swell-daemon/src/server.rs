@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use tokio::net::{UnixListener, UnixStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
 use swell_core::{CliCommand, DaemonEvent, TaskState};
 use swell_orchestrator::Orchestrator;
-use tracing::{info, error, warn};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::Mutex;
+use tracing::{error, info, warn};
 
 pub struct Daemon {
     orchestrator: Arc<Mutex<Orchestrator>>,
@@ -51,8 +51,8 @@ async fn handle_connection(
     orchestrator: Arc<Mutex<Orchestrator>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut stream = stream;
-    let mut buf = vec![0u8; 4096];
-    
+    let mut buf = Vec::with_capacity(4096);
+
     let n = stream.read_buf(&mut buf).await?;
     if n == 0 {
         return Ok(());
@@ -63,7 +63,7 @@ async fn handle_connection(
         Ok(cmd) => cmd,
         Err(e) => {
             let response = serde_json::to_string(&DaemonEvent::Error {
-                message: format!("Invalid command: {}", e)
+                message: format!("Invalid command: {}", e),
             })?;
             stream.write_all(response.as_bytes()).await?;
             return Ok(());
@@ -84,7 +84,9 @@ async fn handle_connection(
                     id: task_id,
                     state: TaskState::Ready,
                 },
-                Err(e) => DaemonEvent::Error { message: e.to_string() },
+                Err(e) => DaemonEvent::Error {
+                    message: e.to_string(),
+                },
             }
         }
         CliCommand::TaskReject { task_id, reason } => {
@@ -106,9 +108,9 @@ async fn handle_connection(
             let tasks = orch.get_all_tasks().await;
             let json = serde_json::to_string(&tasks).unwrap_or_else(|_| "[]".to_string());
             // Send as a special event
-            DaemonEvent::TaskCompleted { 
+            DaemonEvent::TaskCompleted {
                 id: uuid::Uuid::nil(), // nil UUID indicates list response
-                pr_url: Some(json) 
+                pr_url: Some(json),
             }
         }
         CliCommand::TaskWatch { task_id } => {
@@ -119,7 +121,9 @@ async fn handle_connection(
                     id: task_id,
                     state: task.state,
                 },
-                Err(e) => DaemonEvent::Error { message: e.to_string() },
+                Err(e) => DaemonEvent::Error {
+                    message: e.to_string(),
+                },
             }
         }
     };
