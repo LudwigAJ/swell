@@ -2045,9 +2045,12 @@ impl Agent for TestWriterAgent {
 pub struct ReviewerAgent {
     model: String,
     system_prompt_builder: SystemPromptBuilder,
+    llm: Option<Arc<dyn LlmBackend>>,
+    tool_registry: Option<Arc<ToolRegistry>>,
 }
 
 impl ReviewerAgent {
+    /// Create a new ReviewerAgent with just model name (for testing)
     pub fn new(model: String) -> Self {
         let config = SystemPromptConfig {
             project_name: "SWELL".to_string(),
@@ -2061,7 +2064,372 @@ impl ReviewerAgent {
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(config),
+            llm: None,
+            tool_registry: None,
         }
+    }
+
+    /// Create a ReviewerAgent with LLM backend for semantic analysis
+    pub fn with_llm(model: String, llm: Arc<dyn LlmBackend>) -> Self {
+        let mut agent = Self::new(model);
+        agent.llm = Some(llm);
+        agent
+    }
+
+    /// Create a ReviewerAgent with tool registry for file operations
+    pub fn with_tools(model: String, tool_registry: Arc<ToolRegistry>) -> Self {
+        let mut agent = Self::new(model);
+        agent.tool_registry = Some(tool_registry);
+        agent
+    }
+
+    /// Create a fully configured ReviewerAgent with LLM and tools
+    pub fn with_llm_and_tools(
+        model: String,
+        llm: Arc<dyn LlmBackend>,
+        tool_registry: Arc<ToolRegistry>,
+    ) -> Self {
+        let mut agent = Self::new(model);
+        agent.llm = Some(llm);
+        agent.tool_registry = Some(tool_registry);
+        agent
+    }
+
+    /// Extract changed files from the task's plan
+    fn extract_changed_files(context: &AgentContext) -> Vec<String> {
+        let mut files = Vec::new();
+
+        if let Some(ref plan) = context.task.plan {
+            for step in &plan.steps {
+                for file in &step.affected_files {
+                    if !files.contains(file) {
+                        files.push(file.clone());
+                    }
+                }
+            }
+        }
+
+        files
+    }
+
+    /// Read file content using tool registry
+    async fn read_file(&self, path: &str) -> Result<String, SwellError> {
+        let registry = self.tool_registry.as_ref()
+            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
+        
+        let tool = registry.get("read_file").await
+            .ok_or_else(|| SwellError::ToolExecutionFailed("read_file tool not found".to_string()))?;
+        
+        let args = serde_json::json!({ "path": path });
+        let result: ToolOutput = tool.execute(args).await?;
+        
+        if result.success {
+            Ok(result.result)
+        } else {
+            Err(SwellError::ToolExecutionFailed(result.error.unwrap_or_default()))
+        }
+    }
+
+    /// Analyze code for style issues
+    fn analyze_style(&self, file_path: &str, content: &str) -> Vec<CodeIssue> {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let line_num = (idx + 1) as u32;
+
+            // Check for trailing whitespace
+            if line.ends_with(' ') || line.ends_with('\t') {
+                issues.push(CodeIssue {
+                    severity: IssueSeverity::Info,
+                    category: IssueCategory::Style,
+                    message: "Trailing whitespace found".to_string(),
+                    file: Some(file_path.to_string()),
+                    line: Some(line_num),
+                });
+            }
+
+            // Check for lines that are too long (over 100 chars)
+            if line.len() > 100 && !line.trim_start().starts_with("//") && !line.trim_start().starts_with("/*") {
+                issues.push(CodeIssue {
+                    severity: IssueSeverity::Info,
+                    category: IssueCategory::Style,
+                    message: format!("Line exceeds 100 characters ({} chars)", line.len()),
+                    file: Some(file_path.to_string()),
+                    line: Some(line_num),
+                });
+            }
+
+            // Check for TODO without issue tracker reference
+            if line.contains("TODO") && !line.contains("TODO(#") && !line.contains("TODO:") {
+                issues.push(CodeIssue {
+                    severity: IssueSeverity::Warning,
+                    category: IssueCategory::Convention,
+                    message: "TODO comment should include issue reference".to_string(),
+                    file: Some(file_path.to_string()),
+                    line: Some(line_num),
+                });
+            }
+        }
+
+        issues
+    }
+
+    /// Analyze code for complexity issues
+    fn analyze_complexity(&self, file_path: &str, content: &str) -> Vec<CodeIssue> {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Count nested blocks
+        let mut fn_depth = 0;
+        let mut max_depth = 0;
+        let mut in_fn = false;
+
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            
+            if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
+                in_fn = true;
+                fn_depth = 0;
+            }
+            
+            if in_fn {
+                fn_depth += line.matches('{').count() as i32;
+                fn_depth -= line.matches('}').count() as i32;
+                max_depth = max_depth.max(fn_depth);
+
+                if fn_depth <= 0 && trimmed.ends_with('}') {
+                    in_fn = false;
+                    if max_depth > 10 {
+                        issues.push(CodeIssue {
+                            severity: IssueSeverity::Warning,
+                            category: IssueCategory::Complexity,
+                            message: format!("Function has high cyclomatic complexity (nest depth: {})", max_depth),
+                            file: Some(file_path.to_string()),
+                            line: Some((idx + 1) as u32),
+                        });
+                    }
+                    max_depth = 0;
+                }
+            }
+        }
+
+        // Check for very long functions (over 50 lines)
+        let fn_lines: Vec<usize> = lines.iter()
+            .enumerate()
+            .filter(|(_, l)| l.trim().starts_with("fn ") || l.trim().starts_with("async fn "))
+            .map(|(i, _)| i)
+            .collect();
+
+        for (i, fn_start) in fn_lines.iter().enumerate() {
+            let fn_end = if i + 1 < fn_lines.len() {
+                fn_lines[i + 1]
+            } else {
+                lines.len()
+            };
+            let fn_length = fn_end - fn_start;
+            
+            if fn_length > 50 {
+                issues.push(CodeIssue {
+                    severity: IssueSeverity::Info,
+                    category: IssueCategory::Complexity,
+                    message: format!("Function is {} lines (recommended max: 50)", fn_length),
+                    file: Some(file_path.to_string()),
+                    line: Some((*fn_start + 1) as u32),
+                });
+            }
+        }
+
+        issues
+    }
+
+    /// Analyze code for convention issues
+    fn analyze_conventions(&self, file_path: &str, content: &str) -> Vec<CodeIssue> {
+        let mut issues = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Check if public functions have doc comments
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            
+            if trimmed.starts_with("pub fn ") || trimmed.starts_with("pub async fn ") {
+                // Check if previous non-empty line is a doc comment
+                let mut prev_idx = idx;
+                while prev_idx > 0 {
+                    prev_idx -= 1;
+                    let prev_line = lines[prev_idx].trim();
+                    if !prev_line.is_empty() {
+                        if !prev_line.starts_with("///") && !prev_line.starts_with("//!") && !prev_line.starts_with("/*") {
+                            issues.push(CodeIssue {
+                                severity: IssueSeverity::Info,
+                                category: IssueCategory::Convention,
+                                message: "Public function should have doc comments".to_string(),
+                                file: Some(file_path.to_string()),
+                                line: Some((idx + 1) as u32),
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Check for debug println/print statements
+            if trimmed.contains("println!") && !trimmed.contains("// debug") && !trimmed.starts_with("//") {
+                issues.push(CodeIssue {
+                    severity: IssueSeverity::Warning,
+                    category: IssueCategory::Convention,
+                    message: "Debug println statement should be removed or commented".to_string(),
+                    file: Some(file_path.to_string()),
+                    line: Some((idx + 1) as u32),
+                });
+            }
+
+            // Check for unwrap in non-test code
+            if trimmed.contains(".unwrap()") && !file_path.contains("_test") && !trimmed.contains("//") && !trimmed.contains("#[test]") {
+                issues.push(CodeIssue {
+                    severity: IssueSeverity::Warning,
+                    category: IssueCategory::Convention,
+                    message: "Consider using ? or expect() with message instead of unwrap()".to_string(),
+                    file: Some(file_path.to_string()),
+                    line: Some((idx + 1) as u32),
+                });
+            }
+        }
+
+        issues
+    }
+
+    /// Perform LLM-based semantic review if LLM is available
+    async fn perform_llm_review(
+        &self,
+        files: &[(String, String)],
+        task_description: &str,
+    ) -> Result<Vec<CodeIssue>, SwellError> {
+        let Some(llm) = &self.llm else {
+            return Ok(Vec::new());
+        };
+
+        let file_summaries: Vec<String> = files
+            .iter()
+            .take(5) // Limit to first 5 files to avoid token overflow
+            .map(|(path, content)| {
+                format!("File: {}\n```rust\n{}\n```", path, &content[..content.len().min(2000)])
+            })
+            .collect();
+
+        let prompt = format!(
+            r#"You are a code reviewer for a Rust project. Review the following code changes for:
+1. Style issues (formatting, naming)
+2. Complexity issues (nested depth, function length)
+3. Convention violations (missing docs, debug code)
+4. Potential regressions (breaking changes, security issues)
+5. Performance concerns (unnecessary allocations, inefficient patterns)
+
+Task description: {}
+
+Files to review:
+{}
+
+Provide your review as a JSON array of issues with the following structure:
+{{
+  "issues": [
+    {{
+      "severity": "error|warning|info",
+      "category": "style|complexity|convention|regression|security|performance",
+      "message": "Description of the issue",
+      "file": "path/to/file.rs",
+      "line": 42
+    }}
+  ]
+}}
+
+Only report actual issues, not suggestions. Be specific and actionable."#,
+            task_description,
+            file_summaries.join("\n\n")
+        );
+
+        let messages = vec![
+            LlmMessage {
+                role: LlmRole::User,
+                content: prompt,
+            },
+        ];
+
+        let config = LlmConfig {
+            temperature: 0.3,
+            max_tokens: 3000,
+            stop_sequences: None,
+        };
+
+        let response = llm.chat(messages, None, config).await?;
+
+        // Parse the LLM response
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response.content) {
+            let issues: Vec<CodeIssue> = json["issues"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|issue| {
+                            let severity = match issue["severity"].as_str()? {
+                                "error" => IssueSeverity::Error,
+                                "warning" => IssueSeverity::Warning,
+                                _ => IssueSeverity::Info,
+                            };
+                            let category = match issue["category"].as_str()? {
+                                "style" => IssueCategory::Style,
+                                "complexity" => IssueCategory::Complexity,
+                                "convention" => IssueCategory::Convention,
+                                "regression" => IssueCategory::Regression,
+                                "security" => IssueCategory::Security,
+                                _ => IssueCategory::Performance,
+                            };
+                            Some(CodeIssue {
+                                severity,
+                                category,
+                                message: issue["message"].as_str()?.to_string(),
+                                file: issue["file"].as_str().map(String::from),
+                                line: issue["line"].as_u64().map(|l| l as u32),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            Ok(issues)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Calculate review score based on issues
+    fn calculate_score(&self, issues: &[CodeIssue]) -> u32 {
+        if issues.is_empty() {
+            return 100;
+        }
+
+        let error_count = issues.iter().filter(|i| i.severity == IssueSeverity::Error).count() as u32;
+        let warning_count = issues.iter().filter(|i| i.severity == IssueSeverity::Warning).count() as u32;
+        let info_count = issues.iter().filter(|i| i.severity == IssueSeverity::Info).count() as u32;
+
+        // Score calculation: 100 - (errors * 10) - (warnings * 3) - (info * 1)
+        let score = 100_i32 - (error_count as i32 * 10) - (warning_count as i32 * 3) - (info_count as i32);
+        score.max(0) as u32
+    }
+
+    /// Determine if the code can be merged based on issues
+    fn can_merge(&self, issues: &[CodeIssue]) -> bool {
+        // Cannot merge if there are any errors
+        if issues.iter().any(|i| i.severity == IssueSeverity::Error) {
+            return false;
+        }
+
+        // Cannot merge if there are more than 5 warnings
+        let warning_count = issues.iter().filter(|i| i.severity == IssueSeverity::Warning).count();
+        if warning_count > 5 {
+            return false;
+        }
+
+        true
     }
 }
 
@@ -2081,14 +2449,14 @@ pub struct CodeIssue {
     pub line: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum IssueSeverity {
     Error,
     Warning,
     Info,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum IssueCategory {
     Style,
     Complexity,
@@ -2109,6 +2477,8 @@ impl Agent for ReviewerAgent {
     }
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
+        let workspace_path = context.workspace_path.as_deref().unwrap_or(".");
+        
         let task_context = format!(
             "Task: {}\n\nReview the code changes for quality issues.",
             context.task.description
@@ -2116,26 +2486,101 @@ impl Agent for ReviewerAgent {
         
         let _prompt = self.system_prompt_builder.build(&task_context, &context.memory_blocks);
         
-        let review = ReviewResult {
-            issues: vec![
-                CodeIssue {
-                    severity: IssueSeverity::Info,
-                    category: IssueCategory::Style,
-                    message: "Consider adding doc comments to public functions".to_string(),
-                    file: Some("src/modified.rs".to_string()),
-                    line: Some(10),
+        // If no tool registry is configured, use stub mode
+        if self.tool_registry.is_none() {
+            let stub_review = ReviewResult {
+                issues: vec![
+                    CodeIssue {
+                        severity: IssueSeverity::Info,
+                        category: IssueCategory::Style,
+                        message: "Consider adding doc comments to public functions".to_string(),
+                        file: Some("src/modified.rs".to_string()),
+                        line: Some(10),
+                    }
+                ],
+                score: 85,
+                can_merge: true,
+            };
+
+            return Ok(AgentResult {
+                success: true,
+                output: serde_json::to_string(&stub_review).unwrap_or_default(),
+                tool_calls: vec![],
+                tokens_used: 500,
+                error: None,
+            });
+        }
+
+        // Extract changed files from plan
+        let changed_files = Self::extract_changed_files(&context);
+        
+        let mut all_issues = Vec::new();
+        let mut tool_calls = Vec::new();
+        let mut file_contents = Vec::new();
+
+        // Read and analyze each changed file
+        for file_path in &changed_files {
+            let start = std::time::Instant::now();
+            
+            match self.read_file(file_path).await {
+                Ok(content) => {
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    
+                    tool_calls.push(ToolCallResult {
+                        tool_name: "read_file".to_string(),
+                        arguments: serde_json::json!({ "path": file_path }),
+                        result: Ok(format!("Read {} bytes", content.len())),
+                        duration_ms,
+                    });
+
+                    file_contents.push((file_path.clone(), content.clone()));
+
+                    // Analyze the file
+                    let style_issues = self.analyze_style(file_path, &content);
+                    let complexity_issues = self.analyze_complexity(file_path, &content);
+                    let convention_issues = self.analyze_conventions(file_path, &content);
+
+                    all_issues.extend(style_issues);
+                    all_issues.extend(complexity_issues);
+                    all_issues.extend(convention_issues);
                 }
-            ],
-            score: 85,
-            can_merge: true,
+                Err(e) => {
+                    tool_calls.push(ToolCallResult {
+                        tool_name: "read_file".to_string(),
+                        arguments: serde_json::json!({ "path": file_path }),
+                        result: Err(e.to_string()),
+                        duration_ms: start.elapsed().as_millis() as u64,
+                    });
+                }
+            }
+        }
+
+        // Perform LLM-based semantic review if LLM is available
+        if !file_contents.is_empty() {
+            let llm_issues = self.perform_llm_review(&file_contents, &context.task.description).await?;
+            all_issues.extend(llm_issues);
+        }
+
+        // Calculate score and merge eligibility
+        let score = self.calculate_score(&all_issues);
+        let can_merge = self.can_merge(&all_issues);
+
+        let review = ReviewResult {
+            issues: all_issues,
+            score,
+            can_merge,
         };
 
+        let output = serde_json::to_string(&review).map_err(|e| {
+            SwellError::LlmError(format!("Failed to serialize review result: {}", e))
+        })?;
+
         Ok(AgentResult {
-            success: true,
-            output: serde_json::to_string(&review).unwrap_or_default(),
-            tool_calls: vec![],
-            tokens_used: 500,
-            error: None,
+            success: can_merge,
+            output,
+            tool_calls,
+            tokens_used: 1000 + (file_contents.len() as u64 * 100),
+            error: if can_merge { None } else { Some("Review found issues that block merge".to_string()) },
         })
     }
 }
