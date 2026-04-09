@@ -1,11 +1,15 @@
 //! Execution controller for managing parallel agent execution.
 #![allow(clippy::should_implement_trait)]
 
-use crate::{Orchestrator, MAX_CONCURRENT_AGENTS};
+use crate::{GeneratorAgent, Orchestrator, MAX_CONCURRENT_AGENTS};
 use futures::stream::{self, StreamExt};
 use std::sync::Arc;
-use swell_core::{SwellError, ValidationResult};
+use swell_core::traits::Agent;
+use swell_core::{
+    AgentContext, AgentResult, SwellError, ValidationResult,
+};
 use tracing::info;
+use uuid::Uuid;
 
 /// Manages concurrent task execution with up to 6 agents
 pub struct ExecutionController {
@@ -28,17 +32,41 @@ impl ExecutionController {
         // Step 1: Planning
         self.orchestrator.start_task(task_id).await?;
 
-        // Step 2: Generate & Validate (in MVP, simplified)
+        // Step 2: Get task and create GeneratorAgent with checkpoint manager
+        let task = self.orchestrator.get_task(task_id).await?;
+
+        // Create GeneratorAgent and wire it to the orchestrator's checkpoint manager
+        // This ensures checkpoints are created after each tool call during execution
+        let generator = GeneratorAgent::new("claude-sonnet".to_string())
+            .with_checkpoint_manager(self.orchestrator.checkpoint_manager());
+
+        // Build agent context for execution
+        let session_id = Uuid::new_v4();
+        let context = AgentContext {
+            task,
+            memory_blocks: Vec::new(),
+            session_id,
+            workspace_path: None,
+        };
+
+        // Execute the generator agent (this will checkpoint after each tool call)
+        let agent_result: AgentResult = generator.execute(context).await?;
+
+        // Step 3: Start validation
         self.orchestrator.start_validation(task_id).await?;
 
-        // Step 3: Complete with result
+        // Step 4: Complete with result based on agent execution
         let result = ValidationResult {
-            passed: true,
+            passed: agent_result.success,
             lint_passed: true,
             tests_passed: true,
             security_passed: true,
             ai_review_passed: true,
-            errors: vec![],
+            errors: if let Some(error) = agent_result.error {
+                vec![error]
+            } else {
+                vec![]
+            },
             warnings: vec![],
         };
 
