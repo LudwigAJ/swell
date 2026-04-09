@@ -1,8 +1,10 @@
 pub mod types;
 pub mod error;
+pub mod traits;
 
 pub use types::*;
 pub use error::SwellError;
+pub use traits::*;
 
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 

@@ -1,124 +1,188 @@
+//! Orchestrator crate - coordinates multi-agent task execution.
+//!
+//! # Architecture
+//!
+//! The orchestrator manages:
+//! - [`Orchestrator`] - main coordinator
+//! - [`TaskStateMachine`] - state transitions
+//! - [`AgentPool`] - manages agent instances
+//! - [`ExecutionController`] - handles parallel execution
+
 pub mod state_machine;
+pub mod agents;
+pub mod execution;
 
 pub use state_machine::TaskStateMachine;
+pub use agents::{AgentPool, AgentHandle, PlannerAgent, GeneratorAgent, EvaluatorAgent};
+pub use execution::ExecutionController;
 
-use swell_core::{Task, TaskState, Agent, AgentRole, Plan, AgentId, SwellError};
-use tracing::{info, error, debug};
+use swell_core::{
+    Task, TaskState, AgentRole, Plan, AgentId, SwellError,
+    ValidationResult, AgentContext, AgentResult,
+};
+use std::sync::Arc;
+use tokio::sync::{RwLock, mpsc};
+use tracing::{info, error, warn, debug};
+use uuid::Uuid;
+
+/// Maximum concurrent agents
+pub const MAX_CONCURRENT_AGENTS: usize = 6;
+
+/// Events emitted by the orchestrator
+#[derive(Debug, Clone)]
+pub enum OrchestratorEvent {
+    TaskCreated(Uuid),
+    TaskStateChanged { task_id: Uuid, from: TaskState, to: TaskState },
+    AgentStarted { agent_id: AgentId, task_id: Uuid },
+    AgentFinished { agent_id: AgentId, task_id: Uuid },
+    ExecutionProgress { task_id: Uuid, message: String },
+}
 
 /// The main orchestrator that coordinates agents and tasks
 pub struct Orchestrator {
-    state_machine: TaskStateMachine,
-    agents: std::collections::HashMap<AgentId, Agent>,
+    state_machine: Arc<RwLock<TaskStateMachine>>,
+    agent_pool: Arc<RwLock<AgentPool>>,
+    event_sender: mpsc::UnboundedSender<OrchestratorEvent>,
 }
 
 impl Orchestrator {
+    /// Create a new orchestrator
     pub fn new() -> Self {
-        info!("Initializing orchestrator");
+        let (tx, _rx) = mpsc::unbounded_channel();
+        
         Self {
-            state_machine: TaskStateMachine::new(),
-            agents: std::collections::HashMap::new(),
+            state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
+            agent_pool: Arc::new(RwLock::new(AgentPool::new())),
+            event_sender: tx,
         }
     }
 
-    /// Create a new task from a description
-    pub fn create_task(&mut self, description: String) -> Task {
-        self.state_machine.create_task(description)
+    /// Create a new task
+    pub async fn create_task(&self, description: String) -> Task {
+        let task = {
+            let mut sm = self.state_machine.write().await;
+            sm.create_task(description)
+        };
+        let _ = self.event_sender.send(OrchestratorEvent::TaskCreated(task.id));
+        task
     }
 
-    /// Get task by ID
-    pub fn get_task(&self, id: uuid::Uuid) -> Result<Task, SwellError> {
-        self.state_machine.get_task(id)
+    /// Get a task by ID
+    pub async fn get_task(&self, id: Uuid) -> Result<Task, SwellError> {
+        let sm = self.state_machine.read().await;
+        sm.get_task(id)
     }
 
-    /// Register an agent
-    pub fn register_agent(&mut self, role: AgentRole, model: String) -> Agent {
-        let agent = Agent::new(role, model);
-        info!(agent_id = %agent.id, role = ?agent.role, "Registered agent");
-        self.agents.insert(agent.id, agent.clone());
-        agent
+    /// Register a new agent
+    pub async fn register_agent(&self, role: AgentRole, model: String) -> AgentId {
+        let mut pool = self.agent_pool.write().await;
+        pool.register(role, model)
     }
 
-    /// Get agent by ID
-    pub fn get_agent(&self, id: AgentId) -> Option<&Agent> {
-        self.agents.get(&id)
+    /// Get available agent count for a role
+    pub async fn available_agents(&self, role: AgentRole) -> usize {
+        let pool = self.agent_pool.read().await;
+        pool.available_count(role)
     }
 
-    /// Create a plan for a task
-    pub fn set_task_plan(&mut self, task_id: uuid::Uuid, plan: Plan) -> Result<(), SwellError> {
-        self.state_machine.set_plan(task_id, plan)
-    }
+    /// Assign a task to an available agent
+    pub async fn assign_task(&self, task_id: Uuid, role: AgentRole) -> Result<AgentId, SwellError> {
+        let agent_id = {
+            let mut pool = self.agent_pool.write().await;
+            pool.reserve(task_id, role)?
+        };
 
-    /// Advance task to READY (after planning)
-    pub fn approve_plan(&mut self, task_id: uuid::Uuid) -> Result<(), SwellError> {
-        // First enrich, then set ready
-        self.state_machine.enrich_task(task_id)?;
-        self.state_machine.ready_task(task_id)
-    }
-
-    /// Assign task to an available agent of the right role
-    pub fn assign_task(&mut self, task_id: uuid::Uuid) -> Result<Agent, SwellError> {
-        // Find a free agent of appropriate role
-        // For MVP, we use Generator role for all execution
-        let agent = self.agents.values()
-            .find(|a| a.role == AgentRole::Generator && a.current_task.is_none())
-            .cloned()
-            .ok_or_else(|| SwellError::AgentNotFound(uuid::Uuid::nil()))?;
-
-        self.state_machine.assign_task(task_id, agent.id)?;
-        Ok(agent)
-    }
-
-    /// Start executing a ready task
-    pub fn start_execution(&mut self, task_id: uuid::Uuid) -> Result<(), SwellError> {
-        self.state_machine.start_execution(task_id)
-    }
-
-    /// Start validation for a task
-    pub fn start_validation(&mut self, task_id: uuid::Uuid) -> Result<(), SwellError> {
-        self.state_machine.start_validation(task_id)
-    }
-
-    /// Finalize task after validation
-    pub fn finalize_task(&mut self, task_id: uuid::Uuid, passed: bool) -> Result<(), SwellError> {
-        if passed {
-            self.state_machine.accept_task(task_id)?;
-            info!(task_id = %task_id, "Task accepted");
-        } else {
-            self.state_machine.reject_task(task_id)?;
-            info!(task_id = %task_id, "Task rejected");
-
-            // Check if we should escalate
-            let task = self.state_machine.get_task(task_id)?;
-            if task.iteration_count >= 3 {
-                self.state_machine.escalate_task(task_id)?;
-                error!(task_id = %task_id, "Task escalated after 3 failures");
-            }
+        {
+            let mut sm = self.state_machine.write().await;
+            sm.assign_task(task_id, agent_id)?;
         }
-        Ok(())
+
+        let _ = self.event_sender.send(OrchestratorEvent::AgentStarted { agent_id, task_id });
+        Ok(agent_id)
+    }
+
+    /// Release an agent back to the pool
+    pub async fn release_agent(&self, agent_id: AgentId, task_id: Uuid) {
+        let _ = {
+            let mut pool = self.agent_pool.write().await;
+            pool.release(agent_id)
+        };
+        let _ = self.event_sender.send(OrchestratorEvent::AgentFinished { agent_id, task_id });
     }
 
     /// Get all tasks
-    pub fn get_all_tasks(&self) -> Vec<Task> {
-        self.state_machine.get_all_tasks()
+    pub async fn get_all_tasks(&self) -> Vec<Task> {
+        let sm = self.state_machine.read().await;
+        sm.get_all_tasks()
     }
 
     /// Get tasks by state
-    pub fn get_tasks_by_state(&self, state: TaskState) -> Vec<Task> {
-        self.state_machine.get_tasks_by_state(state)
+    pub async fn get_tasks_by_state(&self, state: TaskState) -> Vec<Task> {
+        let sm = self.state_machine.read().await;
+        sm.get_tasks_by_state(state)
     }
 
-    /// Check if any task has exceeded budget and should be killed
-    pub fn check_safety_limits(&self, task_id: uuid::Uuid) -> Result<(), SwellError> {
-        let task = self.state_machine.get_task(task_id)?;
-        if task.tokens_used >= task.token_budget {
-            return Err(SwellError::BudgetExceeded(format!(
-                "Task {} exceeded token budget", task_id
-            )));
+    /// Set a plan for a task
+    pub async fn set_plan(&self, task_id: Uuid, plan: Plan) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        sm.set_plan(task_id, plan)
+    }
+
+    /// Transition task through planning -> ready -> executing
+    pub async fn start_task(&self, task_id: Uuid) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        
+        sm.enrich_task(task_id)?;
+        
+        let task = sm.get_task(task_id)?;
+        if task.plan.is_none() {
+            return Err(SwellError::InvalidStateTransition("Cannot start task without plan".into()));
         }
-        if task.iteration_count >= 10 {
-            return Err(SwellError::DoomLoopDetected);
-        }
+        
+        sm.ready_task(task_id)?;
+        sm.assign_task(task_id, Uuid::nil())?; // Will be reassigned when agent picks it up
+        sm.start_execution(task_id)?;
+        
         Ok(())
+    }
+
+    /// Transition to validating state
+    pub async fn start_validation(&self, task_id: Uuid) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        sm.start_validation(task_id)
+    }
+
+    /// Complete task with validation result
+    pub async fn complete_task(&self, task_id: Uuid, result: ValidationResult) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        
+        // Store validation result
+        if let Ok(task) = sm.get_task_mut(task_id) {
+            task.validation_result = Some(result.clone());
+        }
+        
+        if result.passed {
+            sm.accept_task(task_id)?;
+            info!(task_id = %task_id, "Task accepted");
+        } else {
+            sm.reject_task(task_id)?;
+            info!(task_id = %task_id, "Task rejected");
+            
+            // Check for escalation
+            if let Ok(task) = sm.get_task(task_id) {
+                if task.iteration_count >= 3 {
+                    sm.escalate_task(task_id)?;
+                    warn!(task_id = %task_id, "Task escalated after 3 failures");
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Get the state machine for direct access (use sparingly)
+    pub fn state_machine(&self) -> Arc<RwLock<TaskStateMachine>> {
+        self.state_machine.clone()
     }
 }
 

@@ -2,11 +2,13 @@
 resolver = "2"
 members = [
     "crates/swell-core",
-    "crates/swell-orchestrator",
+    "crates/swell-llm",
+    "crates/swell-state",
     "crates/swell-memory",
     "crates/swell-tools",
     "crates/swell-sandbox",
     "crates/swell-validation",
+    "crates/swell-orchestrator",
     "crates/swell-daemon",
     "clients/swell-cli",
 ]
@@ -19,17 +21,47 @@ license = "MIT"
 repository = "https://github.com/factory/swell"
 
 [workspace.dependencies]
+# Async runtime
 tokio = { version = "1", features = ["full"] }
+
+# Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
+
+# Error handling
 thiserror = "1"
 anyhow = "1"
+
+# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Types
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-reqwest = { version = "0.12", features = ["json"] }
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+
+# Async traits
+async-trait = "0.1"
+
+# HTTP client for LLM APIs
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "uuid", "chrono", "migrate"] }
+
+# Authentication
+sha2 = "0.10"
+base64 = "0.22"
+
+# Async streams
+futures = "0.3"
+futures-util = "0.3"
+
+# Date/time parsing
+time = { version = "0.3", features = ["parsing", "serde"] }
 
 # Dev dependencies
 tempfile = "3"
+tokio-test = "0.4"
+mockall = "0.13"

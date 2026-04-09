@@ -73,13 +73,13 @@ async fn handle_connection(
     let response = match command {
         CliCommand::TaskCreate { description } => {
             let mut orch = orchestrator.lock().await;
-            let task = orch.create_task(description.clone());
+            let task = orch.create_task(description.clone()).await;
             info!(task_id = %task.id, "Task created via CLI");
             DaemonEvent::TaskCreated(task.id)
         }
         CliCommand::TaskApprove { task_id } => {
             let mut orch = orchestrator.lock().await;
-            match orch.approve_plan(task_id) {
+            match orch.start_task(task_id).await {
                 Ok(()) => DaemonEvent::TaskStateChanged {
                     id: task_id,
                     state: TaskState::Ready,
@@ -103,7 +103,7 @@ async fn handle_connection(
         }
         CliCommand::TaskList => {
             let orch = orchestrator.lock().await;
-            let tasks = orch.get_all_tasks();
+            let tasks = orch.get_all_tasks().await;
             let json = serde_json::to_string(&tasks).unwrap_or_else(|_| "[]".to_string());
             // Send as a special event
             DaemonEvent::TaskCompleted { 
@@ -114,7 +114,7 @@ async fn handle_connection(
         CliCommand::TaskWatch { task_id } => {
             // For MVP, just return current state
             let orch = orchestrator.lock().await;
-            match orch.get_task(task_id) {
+            match orch.get_task(task_id).await {
                 Ok(task) => DaemonEvent::TaskStateChanged {
                     id: task_id,
                     state: task.state,
