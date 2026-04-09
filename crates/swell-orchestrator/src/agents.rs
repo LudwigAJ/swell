@@ -1167,6 +1167,10 @@ pub struct ReactLoop {
     pub steps: Vec<ReactStep>,
     pub state: ReactLoopState,
     pub failure_count: u32,
+    /// Last iteration where files were modified (for no-progress detection)
+    last_file_change_iteration: u32,
+    /// Threshold for no-progress detection (iterations with no file changes before doom)
+    no_progress_threshold: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1175,6 +1179,7 @@ pub enum ReactLoopState {
     Converged,
     Failed,
     MaxIterationsReached,
+    NoProgressDetected,
 }
 
 impl Default for ReactLoop {
@@ -1191,6 +1196,21 @@ impl ReactLoop {
             steps: Vec::new(),
             state: ReactLoopState::Running,
             failure_count: 0,
+            last_file_change_iteration: 0,
+            no_progress_threshold: 5, // Default 5 iterations with no file changes triggers doom
+        }
+    }
+
+    /// Create a new ReactLoop with custom no-progress threshold
+    pub fn with_no_progress_threshold(max_iterations: u32, no_progress_threshold: u32) -> Self {
+        Self {
+            max_iterations,
+            current_iteration: 0,
+            steps: Vec::new(),
+            state: ReactLoopState::Running,
+            failure_count: 0,
+            last_file_change_iteration: 0,
+            no_progress_threshold,
         }
     }
 
@@ -1285,9 +1305,40 @@ impl ReactLoop {
     }
 
     /// Check if loop should continue
-    pub fn should_continue(&self) -> bool {
+    pub fn should_continue(&mut self) -> bool {
+        // Check for no-progress doom loop
+        if self.is_no_progress_doom() {
+            self.state = ReactLoopState::NoProgressDetected;
+            return false;
+        }
         matches!(self.state, ReactLoopState::Running)
             && self.current_iteration < self.max_iterations
+    }
+
+    /// Record that files were modified in this iteration
+    pub fn record_file_change(&mut self) {
+        self.last_file_change_iteration = self.current_iteration;
+    }
+
+    /// Check if no-progress doom loop is detected
+    pub fn is_no_progress_doom(&self) -> bool {
+        let iterations_without_progress = self.current_iteration.saturating_sub(self.last_file_change_iteration);
+        iterations_without_progress >= self.no_progress_threshold && self.last_file_change_iteration > 0
+    }
+
+    /// Get the number of iterations since last file change
+    pub fn iterations_without_progress(&self) -> u32 {
+        self.current_iteration.saturating_sub(self.last_file_change_iteration)
+    }
+
+    /// Get the last file change iteration
+    pub fn last_file_change_iteration(&self) -> u32 {
+        self.last_file_change_iteration
+    }
+
+    /// Get no-progress threshold
+    pub fn no_progress_threshold(&self) -> u32 {
+        self.no_progress_threshold
     }
 
     /// Get summary of the loop execution
@@ -4475,6 +4526,143 @@ mod tests {
         let summary = loop_state.summary();
         assert_eq!(summary.total_iterations, 1);
         assert_eq!(summary.failure_count, 0);
+    }
+
+    // ========================================================================
+    // No-Progress Doom Loop Detection Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_no_progress_detection_no_file_changes() {
+        // Create loop with no_progress_threshold of 5
+        let mut loop_state = ReactLoop::with_no_progress_threshold(15, 5);
+
+        // First, record a file change to establish baseline
+        loop_state.think("Initial iteration".to_string());
+        loop_state.act("Initial action".to_string());
+        loop_state.record_file_change();
+
+        // Now iterate 5 more times without any file changes
+        for i in 1..=5 {
+            loop_state.think(format!("Iteration {} - no progress", i));
+            loop_state.act("action".to_string());
+            // Don't call record_file_change - no progress
+        }
+
+        // After 5 iterations without file changes, should_continue should return false
+        assert!(!loop_state.should_continue());
+        assert!(matches!(loop_state.state, ReactLoopState::NoProgressDetected));
+    }
+
+    #[tokio::test]
+    async fn test_no_progress_detection_with_file_changes() {
+        // Create loop with no_progress_threshold of 5
+        let mut loop_state = ReactLoop::with_no_progress_threshold(15, 5);
+
+        // Record file changes at iterations 1 and 2
+        loop_state.think("Iteration 1".to_string());
+        loop_state.act("Write code".to_string());
+        loop_state.record_file_change();
+
+        loop_state.think("Iteration 2".to_string());
+        loop_state.act("Write more code".to_string());
+        loop_state.record_file_change();
+
+        // No file changes in iterations 3, 4, 5, 6, 7 (5 iterations without change triggers doom)
+        loop_state.think("Iteration 3".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 4".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 5".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 6".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 7".to_string());
+        loop_state.act("action".to_string());
+
+        // Should trigger no-progress doom after 5 iterations without file change
+        assert!(!loop_state.should_continue());
+        assert!(matches!(loop_state.state, ReactLoopState::NoProgressDetected));
+    }
+
+    #[tokio::test]
+    async fn test_no_progress_reset_after_file_change() {
+        // Create loop with no_progress_threshold of 5
+        let mut loop_state = ReactLoop::with_no_progress_threshold(15, 5);
+
+        // No progress for 2 iterations
+        loop_state.think("Iteration 1".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 2".to_string());
+        loop_state.act("action".to_string());
+
+        // Now record a file change
+        loop_state.record_file_change();
+
+        // Progress for 2 more iterations
+        loop_state.think("Iteration 3".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 4".to_string());
+        loop_state.act("action".to_string());
+
+        // No progress for 2 more iterations (shouldn't trigger doom yet)
+        loop_state.think("Iteration 5".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 6".to_string());
+        loop_state.act("action".to_string());
+
+        // Still running - only 2 iterations since last file change
+        assert!(matches!(loop_state.state, ReactLoopState::Running));
+        assert!(loop_state.should_continue());
+    }
+
+    #[tokio::test]
+    async fn test_iterations_without_progress_counter() {
+        let mut loop_state = ReactLoop::with_no_progress_threshold(15, 5);
+
+        assert_eq!(loop_state.iterations_without_progress(), 0);
+
+        loop_state.think("Iteration 1".to_string());
+        assert_eq!(loop_state.iterations_without_progress(), 1);
+
+        loop_state.record_file_change();
+        assert_eq!(loop_state.iterations_without_progress(), 0);
+
+        loop_state.think("Iteration 2".to_string());
+        loop_state.think("Iteration 3".to_string());
+        assert_eq!(loop_state.iterations_without_progress(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_no_progress_with_custom_threshold() {
+        // Create loop with custom no_progress_threshold of 3
+        let mut loop_state = ReactLoop::with_no_progress_threshold(15, 3);
+
+        // First record a file change to establish baseline
+        loop_state.think("Initial".to_string());
+        loop_state.act("action".to_string());
+        loop_state.record_file_change();
+
+        // 3 iterations without file changes should trigger doom
+        loop_state.think("Iteration 1".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 2".to_string());
+        loop_state.act("action".to_string());
+
+        loop_state.think("Iteration 3".to_string());
+        loop_state.act("action".to_string());
+
+        // With threshold of 3, should trigger no-progress doom
+        assert!(!loop_state.should_continue());
+        assert!(matches!(loop_state.state, ReactLoopState::NoProgressDetected));
     }
 
     // ========================================================================
