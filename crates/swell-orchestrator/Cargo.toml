@@ -8,6 +8,7 @@ swell-core = { path = "../swell-core" }
 swell-llm = { path = "../swell-llm" }
 swell-state = { path = "../swell-state" }
 swell-tools = { path = "../swell-tools" }
+swell-validation = { path = "../swell-validation" }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

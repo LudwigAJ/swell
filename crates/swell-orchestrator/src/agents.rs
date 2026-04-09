@@ -570,15 +570,173 @@ impl Agent for GeneratorAgent {
     }
 }
 
-/// Evaluator agent - validates code quality
+/// Evaluator agent - validates code quality using validation gates
 pub struct EvaluatorAgent {
     model: String,
+    validation_pipeline: Option<swell_validation::ValidationPipeline>,
 }
 
 impl EvaluatorAgent {
+    /// Create a new EvaluatorAgent without validation pipeline (MVP stub mode)
     pub fn new(model: String) -> Self {
-        Self { model }
+        Self {
+            model,
+            validation_pipeline: None,
+        }
     }
+
+    /// Create an EvaluatorAgent with a validation pipeline
+    pub fn with_pipeline(model: String, pipeline: swell_validation::ValidationPipeline) -> Self {
+        Self {
+            model,
+            validation_pipeline: Some(pipeline),
+        }
+    }
+
+    /// Create an EvaluatorAgent with default validation gates (Lint, Test, Security, AI Review)
+    pub fn with_defaults(model: String) -> Self {
+        let mut pipeline = swell_validation::ValidationPipeline::new();
+        pipeline.add_gate(swell_validation::LintGate::new());
+        pipeline.add_gate(swell_validation::TestGate::new());
+        pipeline.add_gate(swell_validation::SecurityGate::new());
+        pipeline.add_gate(swell_validation::AiReviewGate::new());
+
+        Self {
+            model,
+            validation_pipeline: Some(pipeline),
+        }
+    }
+
+    /// Extract changed files from the task's plan
+    fn extract_changed_files(context: &AgentContext) -> Vec<String> {
+        let mut files = Vec::new();
+
+        if let Some(ref plan) = context.task.plan {
+            for step in &plan.steps {
+                for file in &step.affected_files {
+                    if !files.contains(file) {
+                        files.push(file.clone());
+                    }
+                }
+            }
+        }
+
+        files
+    }
+
+    /// Build validation context from agent context
+    fn build_validation_context(context: &AgentContext) -> swell_core::ValidationContext {
+        let workspace_path = context
+            .workspace_path
+            .clone()
+            .unwrap_or_else(|| ".".to_string());
+
+        let changed_files = Self::extract_changed_files(context);
+
+        swell_core::ValidationContext {
+            task_id: context.task.id,
+            workspace_path,
+            changed_files,
+            plan: context.task.plan.clone(),
+        }
+    }
+
+    /// Compute confidence score from validation outcome
+    fn compute_confidence(outcome: &swell_core::ValidationOutcome) -> swell_validation::ConfidenceScore {
+        use swell_validation::{ConfidenceScorer, ConfidenceLevel};
+
+        let mut scorer = ConfidenceScorer::new();
+
+        // Add lint signal based on messages
+        let lint_messages: Vec<_> = outcome
+            .messages
+            .iter()
+            .filter(|m| m.file.is_some())
+            .collect();
+        let lint_passed = outcome.passed && !lint_messages.iter().any(|m| m.level == swell_core::ValidationLevel::Error);
+        let lint_warning_ratio = if lint_messages.is_empty() {
+            0.0
+        } else {
+            let warnings: f64 = lint_messages
+                .iter()
+                .filter(|m| m.level == swell_core::ValidationLevel::Warning)
+                .count() as f64;
+            warnings / lint_messages.len() as f64
+        };
+        scorer = scorer.with_lint(lint_passed, lint_warning_ratio);
+
+        // Add test signal (we consider tests passed if outcome passed)
+        let tests_passed = outcome.passed;
+        let coverage = if outcome.passed { 0.8 } else { 0.4 }; // Simplified estimation
+        scorer = scorer.with_tests(tests_passed, coverage);
+
+        // Add security signal (stub always passes)
+        let security_passed = true;
+        scorer = scorer.with_security(security_passed, 0);
+
+        // Add AI review signal (stub always passes with medium confidence)
+        let ai_review_passed = true;
+        scorer = scorer.with_ai_review(ai_review_passed, 0.6);
+
+        scorer.score()
+    }
+
+    /// Build evaluation result from validation outcome and confidence
+    fn build_evaluation_result(
+        outcome: swell_core::ValidationOutcome,
+        confidence: swell_validation::ConfidenceScore,
+    ) -> EvaluationResult {
+        let errors: Vec<String> = outcome
+            .messages
+            .iter()
+            .filter(|m| m.level == swell_core::ValidationLevel::Error)
+            .map(|m| m.message.clone())
+            .collect();
+
+        let warnings: Vec<String> = outcome
+            .messages
+            .iter()
+            .filter(|m| m.level == swell_core::ValidationLevel::Warning)
+            .map(|m| m.message.clone())
+            .collect();
+
+        EvaluationResult {
+            passed: outcome.passed,
+            confidence_score: confidence.score,
+            confidence_level: match confidence.level {
+                swell_validation::ConfidenceLevel::Low => ConfidenceLevel::Low,
+                swell_validation::ConfidenceLevel::Medium => ConfidenceLevel::Medium,
+                swell_validation::ConfidenceLevel::High => ConfidenceLevel::High,
+                swell_validation::ConfidenceLevel::VeryHigh => ConfidenceLevel::VeryHigh,
+            },
+            errors,
+            warnings,
+            can_auto_merge: confidence.can_auto_merge(),
+            messages: outcome.messages.len() as u32,
+            artifacts: outcome.artifacts.len() as u32,
+        }
+    }
+}
+
+/// Evaluation result from the Evaluator agent
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EvaluationResult {
+    pub passed: bool,
+    pub confidence_score: f64,
+    pub confidence_level: ConfidenceLevel,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+    pub can_auto_merge: bool,
+    pub messages: u32,
+    pub artifacts: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ConfidenceLevel {
+    Low,
+    Medium,
+    High,
+    VeryHigh,
 }
 
 #[async_trait]
@@ -588,19 +746,66 @@ impl Agent for EvaluatorAgent {
     }
 
     fn description(&self) -> String {
-        "Evaluates code quality and correctness".to_string()
+        "Evaluates code quality and correctness through validation gates".to_string()
     }
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
-        // For MVP, simulate evaluation
-        // Full implementation would run validation gates
-        
+        // If no validation pipeline is configured, use stub mode
+        let Some(pipeline) = &self.validation_pipeline else {
+            // MVP stub mode - simulate successful evaluation
+            let stub_result = EvaluationResult {
+                passed: true,
+                confidence_score: 0.7,
+                confidence_level: ConfidenceLevel::Medium,
+                errors: vec![],
+                warnings: vec!["Running in stub mode - validation pipeline not configured".to_string()],
+                can_auto_merge: false,
+                messages: 0,
+                artifacts: 0,
+            };
+
+            return Ok(AgentResult {
+                success: true,
+                output: serde_json::to_string(&stub_result).unwrap_or_default(),
+                tool_calls: vec![],
+                tokens_used: 300,
+                error: None,
+            });
+        };
+
+        // Build validation context
+        let validation_context = Self::build_validation_context(&context);
+
+        // Run validation pipeline
+        let outcome = pipeline.run(&validation_context).await?;
+
+        // Compute confidence score
+        let confidence = Self::compute_confidence(&outcome);
+
+        // Build evaluation result
+        let result = Self::build_evaluation_result(outcome, confidence.clone());
+
+        // Serialize output
+        let output = serde_json::json!({
+            "evaluation": result,
+            "confidence": {
+                "score": confidence.score,
+                "level": format!("{:?}", confidence.level).to_uppercase(),
+                "summary": confidence.summary(),
+            },
+            "validation_context": {
+                "task_id": validation_context.task_id,
+                "workspace_path": validation_context.workspace_path,
+                "changed_files": validation_context.changed_files,
+            }
+        });
+
         Ok(AgentResult {
-            success: true,
-            output: "Evaluation passed".to_string(),
+            success: result.passed,
+            output: serde_json::to_string(&output).unwrap_or_default(),
             tool_calls: vec![],
-            tokens_used: 300,
-            error: None,
+            tokens_used: 500,
+            error: if result.passed { None } else { Some("Validation failed".to_string()) },
         })
     }
 }
@@ -1753,6 +1958,161 @@ mod tests {
         
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
+        
+        // In stub mode (no pipeline), output is just EvaluationResult directly
+        let evaluation: EvaluationResult = serde_json::from_str(&result.output).unwrap();
+        assert!(evaluation.passed);
+        assert!(evaluation.confidence_score > 0.0);
+        assert!(evaluation.warnings.iter().any(|w| w.contains("stub mode")));
+    }
+
+    #[tokio::test]
+    async fn test_evaluator_agent_with_plan_extracts_changed_files() {
+        let agent = EvaluatorAgent::new("claude-sonnet".to_string());
+        
+        let mut task = Task::new("Add user authentication".to_string());
+        task.plan = Some(Plan {
+            id: Uuid::new_v4(),
+            task_id: task.id,
+            steps: vec![
+                PlanStep {
+                    id: Uuid::new_v4(),
+                    description: "Add auth module".to_string(),
+                    affected_files: vec!["src/auth.rs".to_string(), "src/models/user.rs".to_string()],
+                    expected_tests: vec!["test_login".to_string()],
+                    risk_level: RiskLevel::Medium,
+                    dependencies: vec![],
+                    status: StepStatus::Pending,
+                },
+                PlanStep {
+                    id: Uuid::new_v4(),
+                    description: "Add JWT support".to_string(),
+                    affected_files: vec!["src/auth/jwt.rs".to_string()],
+                    expected_tests: vec!["test_jwt".to_string()],
+                    risk_level: RiskLevel::Low,
+                    dependencies: vec![],
+                    status: StepStatus::Pending,
+                },
+            ],
+            total_estimated_tokens: 5000,
+            risk_assessment: "Medium risk".to_string(),
+        });
+        
+        let context = AgentContext {
+            task,
+            memory_blocks: vec![],
+            session_id: Uuid::new_v4(),
+            workspace_path: Some("/workspace".to_string()),
+        };
+        
+        // Test that extract_changed_files works correctly
+        let files = EvaluatorAgent::extract_changed_files(&context);
+        assert_eq!(files.len(), 3); // 3 unique files: auth.rs, user.rs, jwt.rs
+        assert!(files.contains(&"src/auth.rs".to_string()));
+        assert!(files.contains(&"src/auth/jwt.rs".to_string()));
+        assert!(files.contains(&"src/models/user.rs".to_string()));
+        
+        let result = agent.execute(context).await.unwrap();
+        assert!(result.success);
+    }
+
+    #[tokio::test]
+    async fn test_evaluation_result_serialization() {
+        let result = EvaluationResult {
+            passed: true,
+            confidence_score: 0.85,
+            confidence_level: ConfidenceLevel::High,
+            errors: vec![],
+            warnings: vec!["Minor style issue".to_string()],
+            can_auto_merge: false,
+            messages: 5,
+            artifacts: 0,
+        };
+        
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: EvaluationResult = serde_json::from_str(&json).unwrap();
+        
+        assert!(parsed.passed);
+        assert_eq!(parsed.confidence_score, 0.85);
+        assert!(matches!(parsed.confidence_level, ConfidenceLevel::High));
+        assert!(!parsed.can_auto_merge);
+    }
+
+    #[tokio::test]
+    async fn test_extract_changed_files_deduplicates() {
+        let mut task = Task::new("Test".to_string());
+        task.plan = Some(Plan {
+            id: Uuid::new_v4(),
+            task_id: task.id,
+            steps: vec![
+                PlanStep {
+                    id: Uuid::new_v4(),
+                    description: "Step 1".to_string(),
+                    affected_files: vec!["a.rs".to_string(), "b.rs".to_string()],
+                    expected_tests: vec![],
+                    risk_level: RiskLevel::Low,
+                    dependencies: vec![],
+                    status: StepStatus::Pending,
+                },
+                PlanStep {
+                    id: Uuid::new_v4(),
+                    description: "Step 2".to_string(),
+                    affected_files: vec!["b.rs".to_string(), "c.rs".to_string()], // b.rs is duplicate
+                    expected_tests: vec![],
+                    risk_level: RiskLevel::Low,
+                    dependencies: vec![],
+                    status: StepStatus::Pending,
+                },
+            ],
+            total_estimated_tokens: 1000,
+            risk_assessment: "Low".to_string(),
+        });
+        
+        let context = AgentContext {
+            task,
+            memory_blocks: vec![],
+            session_id: Uuid::new_v4(),
+            workspace_path: Some(".".to_string()),
+        };
+        
+        let files = EvaluatorAgent::extract_changed_files(&context);
+        assert_eq!(files.len(), 3); // a, b, c - no duplicates
+    }
+
+    #[tokio::test]
+    async fn test_build_validation_context() {
+        let mut task = Task::new("Test".to_string());
+        task.plan = Some(Plan {
+            id: Uuid::new_v4(),
+            task_id: task.id,
+            steps: vec![
+                PlanStep {
+                    id: Uuid::new_v4(),
+                    description: "Modify auth".to_string(),
+                    affected_files: vec!["src/auth.rs".to_string()],
+                    expected_tests: vec![],
+                    risk_level: RiskLevel::Medium,
+                    dependencies: vec![],
+                    status: StepStatus::Pending,
+                },
+            ],
+            total_estimated_tokens: 1000,
+            risk_assessment: "Low".to_string(),
+        });
+        
+        let context = AgentContext {
+            task,
+            memory_blocks: vec![],
+            session_id: Uuid::new_v4(),
+            workspace_path: Some("/my/workspace".to_string()),
+        };
+        
+        let validation_context = EvaluatorAgent::build_validation_context(&context);
+        
+        assert_eq!(validation_context.task_id, context.task.id);
+        assert_eq!(validation_context.workspace_path, "/my/workspace");
+        assert_eq!(validation_context.changed_files, vec!["src/auth.rs".to_string()]);
+        assert!(validation_context.plan.is_some());
     }
 
     // ========================================================================

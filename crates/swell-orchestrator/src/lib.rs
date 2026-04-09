@@ -30,7 +30,7 @@ pub use agents::{
     ContextCondensation, ContextWindow, ContextItem, ContextItemType, CondensationLevel, CondensationResult,
     ReviewResult, CodeIssue, IssueSeverity, IssueCategory,
     RefactorPlan, RefactorOpportunity, DocChange, DocChangeType,
-    TestSpec,
+    TestSpec, EvaluationResult, ConfidenceLevel,
 };
 pub use execution::ExecutionController;
 pub use policy::{PolicyEngine, PolicyAction, PolicyDecision, PolicyEffect, PolicyFile, PolicyRule, PolicyCondition, action};
