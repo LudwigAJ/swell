@@ -1,0 +1,51 @@
+{
+  "featureId": "git-worktree-pool",
+  "reviewedAt": "2026-04-09T19:45:00Z",
+  "commitId": "ab4118c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation provides pool management, allocation, and cleanup but has a critical bug: after cleanup in release(), the worktree's ready flag is not reset to false, causing is_available() to return true for deleted worktrees. This could cause the pool to allocate non-existent worktrees.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/worktree_pool.rs",
+        "line": 269,
+        "severity": "blocking",
+        "description": "In release(), after cleanup_worktree() removes the physical worktree directory, the worktree's ready flag remains true. This causes is_available() to incorrectly return true for a deleted worktree, leading to potential allocation of non-existent worktrees on subsequent allocate() calls."
+      },
+      {
+        "file": "crates/swell-tools/src/worktree_pool.rs",
+        "line": 241,
+        "severity": "non_blocking",
+        "description": "release() silently succeeds when no allocation exists for the given task_id. While not a bug, it could hide logic errors in callers."
+      },
+      {
+        "file": "crates/swell-tools/src/worktree_pool.rs",
+        "line": 133,
+        "severity": "non_blocking",
+        "description": "create_worktree_internal always marks worktree as ready=true on 'already exists' case, even if the existing worktree is from a previous failed run. No validation that the directory actually contains a valid worktree."
+      },
+      {
+        "file": "crates/swell-tools/src/worktree_pool.rs",
+        "line": 536,
+        "severity": "non_blocking",
+        "description": "No test coverage for initialize() - the core async setup method. All 9 tests only test struct creation and synchronous methods."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker used tempfile::tempdir in tests but AGENTS.md/testing conventions aren't documented. The AGENTS.md in the repo has placeholder sections (Build/Test/Coding Style/Testing all say '(To be added...)'), so there's no canonical guidance on testing patterns like temp directories, mocks, etc.",
+      "evidence": "worktree_pool.rs:351 uses tempfile::tempdir - this is reasonable but not documented"
+    },
+    {
+      "area": "skills",
+      "observation": "Skill file .factory/skills/worker/SKILL.md references '../swell-core' for imports but the actual crate uses crate::swell_core or just swell_core:: since it's in the workspace. Worker correctly used swell_core:: directly, so the skill may be stale.",
+      "evidence": "SKILL.md says 'Import from ../swell-core using ../swell-core' but worker used 'use swell_core::AgentId' which is correct for workspace crate"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Implementation covers all three expected behaviors (pool of worktrees, allocation per agent, cleanup on completion) but contains a blocking bug: the ready flag is not reset after cleanup, causing released worktrees to still appear available. Tests pass but don't cover the initialize() method or the allocate→release lifecycle. The skill file guidance appears outdated."
+}

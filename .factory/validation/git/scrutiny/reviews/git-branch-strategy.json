@@ -1,0 +1,52 @@
+{
+  "featureId": "git-branch-strategy",
+  "reviewedAt": "2026-04-09T20:15:00Z",
+  "commitId": "bd2fcf8e9a1b4f6fbe032f59137b03018f941908",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The branch strategy implementation covers the three core requirements (deterministic naming, main protection, limit enforcement) but contains a significant bug in the protection logic. The validation incorrectly checks if the description contains 'main' rather than properly protecting against working on protected branches.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/branch_strategy.rs",
+        "line": 207,
+        "severity": "blocking",
+        "description": "Protection logic is flawed. The condition `request.description.to_lowercase().contains(\"main\")` means that creating a branch named 'fix-bug-on-main' from a non-protected base would incorrectly fail. The check should simply be: if base_branch is protected, reject unconditionally. The current logic also means that working directly on 'main' without mentioning 'main' in description would NOT be blocked."
+      },
+      {
+        "file": "crates/swell-tools/src/branch_strategy.rs",
+        "line": 450,
+        "severity": "non_blocking",
+        "description": "Test assertion is too weak. `assert!(name2.contains(\"auth-module-refactor\") || name2.contains(\"auth-module-----refactor\"))` passes for wrong behavior. The split/join logic should produce 'auth-module-refactor' (single hyphens), not 'auth-module-----refactor'. The second branch makes the test pass even if the sanitize logic is buggy."
+      },
+      {
+        "file": "crates/swell-tools/src/branch_strategy.rs",
+        "line": 163,
+        "severity": "suggestion",
+        "description": "Branch name uses only first UUID segment (`split('-').next()`). While this is space-efficient, the feature description says 'agent/<task-id>/<description>' implying the full task ID should be used for true determinism and collision avoidance."
+      },
+      {
+        "file": "crates/swell-tools/src/branch_strategy.rs",
+        "line": 279,
+        "severity": "suggestion",
+        "description": "The `create_branch` method uses `git checkout -b` which creates and switches branch. If the user is not in a git repository or the directory doesn't exist, the error from tokio::process::Command may not provide clear context. Consider adding a pre-check for git repository validity."
+      },
+      {
+        "file": "crates/swell-tools/src/branch_strategy.rs",
+        "line": 319,
+        "severity": "non_blocking",
+        "description": "If `propose_branch` succeeds but the caller never calls `create_branch` (e.g., crashes after proposing), the slot is consumed but branch is never created. This could lead to premature limit exhaustion in long-running sessions. Consider a TTL or cleanup mechanism for proposed-but-not-created branches."
+      },
+      {
+        "file": "crates/swell-tools/src/branch_strategy.rs",
+        "line": 1,
+        "severity": "suggestion",
+        "description": "Module documentation doesn't explain the intended usage workflow (propose_branch vs create_branch). A caller reading this code would not understand when to use each method."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The implementation covers all three stated requirements (deterministic naming, main protection, branch limit) but the main protection logic at line 207 has a critical bug that makes it unreliable. The condition incorrectly uses description content rather than base branch to determine protection. This would allow working directly on 'main' if the description doesn't contain 'main', while incorrectly blocking legitimate branch names that mention 'main'. The test suite has 11 tests covering core functionality, but the weak assertion at line 450 allows incorrect behavior to pass. The worker followed the Rust skill procedure correctly and the skill itself appears appropriate for this task."
+}

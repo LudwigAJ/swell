@@ -1,0 +1,63 @@
+{
+  "featureId": "git-conflict-resolution",
+  "reviewedAt": "2026-04-09T19:15:00Z",
+  "commitId": "96f6507",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The conflict resolution feature has several critical bugs that prevent it from working correctly. The owner-based resolution is not actually implemented - apply_owner_resolution ignores the owner_id parameter. The simple_resolve method has inverted logic that keeps the wrong side. The parse_conflicts method uses 'unknown' as file path keys, breaking per-file conflict tracking.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/conflict_resolution.rs",
+        "line": 432,
+        "severity": "blocking",
+        "description": "apply_owner_resolution() ignores the owner_id parameter entirely. The _owner_id is unused and the method just delegates to resolve_conflicts_properly() which uses config.prefer_ours instead. Owner-based resolution is not implemented."
+      },
+      {
+        "file": "crates/swell-tools/src/conflict_resolution.rs",
+        "line": 453,
+        "severity": "blocking",
+        "description": "simple_resolve() has inverted logic. When prefer_ours=true (default), it skips the 'ours' section (between <<<<<< and =======) and keeps the 'theirs' section - the opposite of what it should do. The skip_section flag starts as true after <<<<<<, so all lines until ======= are skipped (ours), then after ======= skip_section becomes false so those lines (theirs) are kept."
+      },
+      {
+        "file": "crates/swell-tools/src/conflict_resolution.rs",
+        "line": 298,
+        "severity": "blocking",
+        "description": "parse_conflicts() uses 'PathBuf::from(\"unknown\")' as the key when inserting ConflictHunks into conflict_details. This breaks per-file conflict tracking since all hunks are associated with 'unknown' instead of the actual file path. The method doesn't have access to file_path since it only receives content."
+      },
+      {
+        "file": "crates/swell-tools/src/conflict_resolution.rs",
+        "line": 512,
+        "severity": "non_blocking",
+        "description": "semantic_resolve() iterates over detection.conflict_details but since parse_conflicts uses 'unknown' as keys, file-specific conflict resolution doesn't work correctly. The iteration over (file_key, hunks) will always have 'unknown' as file_key."
+      },
+      {
+        "file": "crates/swell-tools/src/conflict_resolution.rs",
+        "line": 620,
+        "severity": "non_blocking",
+        "description": "replace_hunk() has potential off-by-one issues with line indices. When start_idx = hunk.start_line and end_idx = hunk.end_line, the replacement logic skips lines 2 through end_idx inclusive, but the merged content is only added once at start_idx position, potentially causing content misalignment."
+      },
+      {
+        "file": "crates/swell-tools/src/conflict_resolution.rs",
+        "line": 688,
+        "severity": "non_blocking",
+        "description": "resolve_conflicts_properly() correctly uses keep_section to choose between ours/theirs, but keep_section is only set when encountering <<<<<<. The comment says '0 = ours, 1 = theirs' but the comparison 'current_section == keep_section' only works correctly because current_section is reset to 0 at ======= and then immediately set to 1. The logic is fragile."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature description claims 'one-file-one-owner enforcement' but the implementation only provides an owner registry without actually using it for resolution decisions. The AGENTS.md doesn't document any specific patterns for owner-based conflict resolution.",
+      "evidence": "apply_owner_resolution() at line 432 has _owner_id parameter that is never used - resolution is based on prefer_ours config instead"
+    },
+    {
+      "area": "skills",
+      "observation": "The worker used Rust skill but the skill file wasn't found at .factory/skills/Rust/SKILL.md when checking during this review. This could indicate the skill wasn't properly available or was in a different location.",
+      "evidence": "cat .factory/skills/Rust/SKILL.md returned empty/no content"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The git-conflict-resolution feature has three blocking bugs that prevent correct operation: (1) apply_owner_resolution ignores the owner_id and doesn't implement owner-based resolution, (2) simple_resolve has inverted logic keeping 'theirs' when prefer_ours is true, (3) parse_conflicts uses 'unknown' as file path keys. Additionally, semantic_resolve and replace_hunk have non-blocking issues. The feature requires fixes before it can properly detect and resolve git conflicts."
+}

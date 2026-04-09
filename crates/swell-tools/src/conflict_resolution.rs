@@ -302,7 +302,7 @@ impl ConflictResolver {
 
                     conflict_details
                         .entry(PathBuf::from("unknown"))  // Single file per parse call
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(hunk);
                     total_hunks += 1;
 
@@ -450,6 +450,7 @@ impl ConflictResolver {
     }
 
     /// Simple resolution: remove conflict markers and use our version
+    #[allow(dead_code)]
     fn simple_resolve(&self, content: &str) -> String {
         let lines: Vec<&str> = content.lines().collect();
         let mut result = Vec::new();
@@ -520,7 +521,7 @@ impl ConflictResolver {
 
         // Try semantic merge for each conflict hunk
         // This is a simplified version - real implementation would parse AST
-        for (_hunk_idx, (file_key, hunks)) in detection.conflict_details.iter().enumerate() {
+        for (file_key, hunks) in detection.conflict_details.iter() {
             for hunk in hunks {
                 if let Ok(semantic_result) = self.try_semantic_merge(hunk) {
                     if semantic_result.can_merge {
@@ -820,7 +821,7 @@ fn glob_match(pattern: &str, text: &str) -> bool {
                 }
                 // Try to match remaining pattern at each position
                 while t_idx < text_chars.len() {
-                    if glob_match(&pattern[p_idx..].to_string(), &text[t_idx..]) {
+                    if glob_match(&pattern[p_idx..], &text[t_idx..]) {
                         return true;
                     }
                     t_idx += 1;

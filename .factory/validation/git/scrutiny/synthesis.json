@@ -1,0 +1,65 @@
+{
+  "milestone": "git",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0, "notes": "All tests pass (88 swell-tools tests, plus others). One test in swell-validation has long runtime." },
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0, "notes": "Fixed 4 clippy warnings during validation: or_insert_with->or_default, removed unused enumerate index, unnecessary to_string, added #[allow(dead_code)] for simple_resolve" }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 2,
+    "failed": 3,
+    "failedFeatures": ["git-worktree-pool", "git-branch-strategy", "git-conflict-resolution"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "git-worktree-pool",
+      "severity": "blocking",
+      "description": "Line 269: In release(), after cleanup_worktree() removes the physical worktree directory, the worktree's ready flag remains true. This causes is_available() to incorrectly return true for deleted worktrees, leading to potential allocation of non-existent worktrees on subsequent allocate() calls.",
+      "location": "crates/swell-tools/src/worktree_pool.rs:269"
+    },
+    {
+      "featureId": "git-branch-strategy",
+      "severity": "blocking",
+      "description": "Line 207: Protection logic is flawed. The condition `request.description.to_lowercase().contains(\"main\")` means that working directly on 'main' without mentioning 'main' in description would NOT be blocked. Also incorrectly blocks legitimate branch names like 'fix-bug-on-main' when created from a non-protected base.",
+      "location": "crates/swell-tools/src/branch_strategy.rs:207"
+    },
+    {
+      "featureId": "git-conflict-resolution",
+      "severity": "blocking",
+      "description": "Line 432: apply_owner_resolution() ignores the owner_id parameter entirely. Owner-based resolution is not implemented - the _owner_id is unused and the method just delegates to resolve_conflicts_properly() which uses config.prefer_ours instead.",
+      "location": "crates/swell-tools/src/conflict_resolution.rs:432"
+    },
+    {
+      "featureId": "git-conflict-resolution",
+      "severity": "blocking",
+      "description": "Line 453: simple_resolve() has inverted logic. When prefer_ours=true (default), it skips the 'ours' section and keeps the 'theirs' section - the opposite of what it should do.",
+      "location": "crates/swell-tools/src/conflict_resolution.rs:453"
+    },
+    {
+      "featureId": "git-conflict-resolution",
+      "severity": "blocking",
+      "description": "Line 298: parse_conflicts() uses 'PathBuf::from(\"unknown\")' as the key when inserting ConflictHunks into conflict_details. This breaks per-file conflict tracking since all hunks are associated with 'unknown' instead of the actual file path.",
+      "location": "crates/swell-tools/src/conflict_resolution.rs:298"
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document testing conventions including use of temp directories (tempfile::tempdir), mocks, and fixture patterns. Currently AGENTS.md has placeholder sections for Build/Test/Coding Style/Testing.",
+      "evidence": "Feature git-worktree-pool uses tempfile::tempdir but AGENTS.md doesn't document this pattern.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance on conflict resolution patterns and owner-based resolution expectations. Feature git-conflict-resolution claims 'one-file-one-owner enforcement' but implementation doesn't deliver this.",
+      "evidence": "apply_owner_resolution() at line 432 ignores owner_id parameter entirely.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
