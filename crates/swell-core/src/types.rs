@@ -302,15 +302,44 @@ pub enum CliCommand {
     TaskWatch { task_id: Uuid },
 }
 
+/// A correlation ID used to track related events across the system.
+/// Events that are part of the same operation (e.g., a task lifecycle)
+/// share the same correlation ID.
+pub type CorrelationId = Uuid;
+
+/// CLI <-> Daemon protocol messages
+/// Events include a correlation ID to track related events across operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum DaemonEvent {
-    TaskCreated(Uuid),
-    TaskStateChanged { id: Uuid, state: TaskState },
-    TaskProgress { id: Uuid, message: String },
-    TaskCompleted { id: Uuid, pr_url: Option<String> },
-    TaskFailed { id: Uuid, error: String },
-    Error { message: String },
+    TaskCreated {
+        id: Uuid,
+        correlation_id: CorrelationId,
+    },
+    TaskStateChanged {
+        id: Uuid,
+        state: TaskState,
+        correlation_id: CorrelationId,
+    },
+    TaskProgress {
+        id: Uuid,
+        message: String,
+        correlation_id: CorrelationId,
+    },
+    TaskCompleted {
+        id: Uuid,
+        pr_url: Option<String>,
+        correlation_id: CorrelationId,
+    },
+    TaskFailed {
+        id: Uuid,
+        error: String,
+        correlation_id: CorrelationId,
+    },
+    Error {
+        message: String,
+        correlation_id: CorrelationId,
+    },
 }
 
 #[cfg(test)]

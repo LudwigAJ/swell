@@ -85,13 +85,13 @@ async fn send_command(
             serde_json::from_str(&response_str).expect("Invalid response format");
 
         match response {
-            DaemonEvent::TaskCreated(id) => {
+            DaemonEvent::TaskCreated { id, correlation_id: _ } => {
                 println!("Task created: {}", id);
             }
-            DaemonEvent::TaskStateChanged { id, state } => {
+            DaemonEvent::TaskStateChanged { id, state, correlation_id: _ } => {
                 println!("Task {} is now: {}", id, state);
             }
-            DaemonEvent::TaskCompleted { id, pr_url } => {
+            DaemonEvent::TaskCompleted { id, pr_url, correlation_id: _ } => {
                 if id == Uuid::nil() {
                     // This is a list response
                     if let Some(json) = pr_url {
@@ -104,13 +104,13 @@ async fn send_command(
                     }
                 }
             }
-            DaemonEvent::TaskFailed { id, error } => {
+            DaemonEvent::TaskFailed { id, error, correlation_id: _ } => {
                 eprintln!("Task {} failed: {}", id, error);
             }
-            DaemonEvent::TaskProgress { id, message } => {
+            DaemonEvent::TaskProgress { id, message, correlation_id: _ } => {
                 println!("[{}] {}", id, message);
             }
-            DaemonEvent::Error { message } => {
+            DaemonEvent::Error { message, correlation_id: _ } => {
                 eprintln!("Error: {}", message);
             }
         }

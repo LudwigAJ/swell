@@ -9,6 +9,7 @@ use tokio::time::{timeout, Duration};
 use tracing::{error, info, warn};
 
 use crate::commands::handle_command;
+use crate::events::EventEmitter;
 
 /// Maximum time to wait for active connections to complete during shutdown
 const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
@@ -18,6 +19,7 @@ const SHUTDOWN_BROADCAST_INTERVAL_SECS: u64 = 1;
 
 pub struct Daemon {
     orchestrator: Arc<Mutex<Orchestrator>>,
+    event_emitter: Arc<EventEmitter>,
     socket_path: String,
     /// Flag indicating shutdown has been requested
     shutdown_flag: Arc<AtomicBool>,
@@ -34,6 +36,7 @@ impl Daemon {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             orchestrator: Arc::new(Mutex::new(Orchestrator::new())),
+            event_emitter: Arc::new(EventEmitter::new()),
             socket_path,
             shutdown_flag: Arc::new(AtomicBool::new(false)),
             active_connections: Arc::new(AtomicUsize::new(0)),
@@ -90,9 +93,10 @@ impl Daemon {
                     let active_connections = Arc::clone(&self.active_connections);
                     let shutdown_rx = self.shutdown_rx.clone();
                     let orchestrator = Arc::clone(&self.orchestrator);
+                    let event_emitter = Arc::clone(&self.event_emitter);
 
                     tokio::spawn(async move {
-                        let result = handle_connection_with_shutdown(stream, orchestrator, shutdown_rx).await;
+                        let result = handle_connection_with_shutdown(stream, orchestrator, event_emitter, shutdown_rx).await;
                         // Decrement active connections when done
                         active_connections.fetch_sub(1, Ordering::Relaxed);
                         if let Err(e) = result {
@@ -186,6 +190,7 @@ async fn handle_sigterm(
 async fn handle_connection_with_shutdown(
     stream: UnixStream,
     orchestrator: Arc<Mutex<Orchestrator>>,
+    event_emitter: Arc<EventEmitter>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Check if shutdown was already requested before we started
@@ -221,16 +226,19 @@ async fn handle_connection_with_shutdown(
     let command: CliCommand = match serde_json::from_str(&input) {
         Ok(cmd) => cmd,
         Err(e) => {
-            let response = serde_json::to_string(&DaemonEvent::Error {
+            let correlation_id = EventEmitter::new_correlation_id();
+            let response = DaemonEvent::Error {
                 message: format!("Invalid command: {}", e),
-            })?;
-            stream.write_all(response.as_bytes()).await?;
+                correlation_id,
+            };
+            let response_json = serde_json::to_string(&response)?;
+            stream.write_all(response_json.as_bytes()).await?;
             stream.flush().await?;
             return Ok(());
         }
     };
 
-    let response = handle_command(command, orchestrator).await;
+    let response = handle_command(command, orchestrator, event_emitter).await;
 
     let response_json = serde_json::to_string(&response)?;
     stream.write_all(response_json.as_bytes()).await?;
