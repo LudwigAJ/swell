@@ -1,12 +1,14 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use swell_core::{CliCommand, DaemonEvent, TaskState};
+use swell_core::{CliCommand, DaemonEvent};
 use swell_orchestrator::Orchestrator;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{watch, Mutex};
 use tokio::time::{timeout, Duration};
 use tracing::{error, info, warn};
+
+use crate::commands::handle_command;
 
 /// Maximum time to wait for active connections to complete during shutdown
 const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
@@ -235,68 +237,4 @@ async fn handle_connection_with_shutdown(
     stream.flush().await?;
 
     Ok(())
-}
-
-/// Handle a parsed command
-async fn handle_command(
-    command: CliCommand,
-    orchestrator: Arc<Mutex<Orchestrator>>,
-) -> DaemonEvent {
-    match command {
-        CliCommand::TaskCreate { description } => {
-            let orch = orchestrator.lock().await;
-            let task = orch.create_task(description.clone()).await;
-            info!(task_id = %task.id, "Task created via CLI");
-            DaemonEvent::TaskCreated(task.id)
-        }
-        CliCommand::TaskApprove { task_id } => {
-            let orch = orchestrator.lock().await;
-            match orch.start_task(task_id).await {
-                Ok(()) => DaemonEvent::TaskStateChanged {
-                    id: task_id,
-                    state: TaskState::Ready,
-                },
-                Err(e) => DaemonEvent::Error {
-                    message: e.to_string(),
-                },
-            }
-        }
-        CliCommand::TaskReject { task_id, reason } => {
-            warn!(task_id = %task_id, reason = %reason, "Task rejected");
-            DaemonEvent::TaskStateChanged {
-                id: task_id,
-                state: TaskState::Rejected,
-            }
-        }
-        CliCommand::TaskCancel { task_id } => {
-            info!(task_id = %task_id, "Task cancelled");
-            DaemonEvent::TaskStateChanged {
-                id: task_id,
-                state: TaskState::Failed,
-            }
-        }
-        CliCommand::TaskList => {
-            let orch = orchestrator.lock().await;
-            let tasks = orch.get_all_tasks().await;
-            let json = serde_json::to_string(&tasks).unwrap_or_else(|_| "[]".to_string());
-            // Send as a special event
-            DaemonEvent::TaskCompleted {
-                id: uuid::Uuid::nil(), // nil UUID indicates list response
-                pr_url: Some(json),
-            }
-        }
-        CliCommand::TaskWatch { task_id } => {
-            // For MVP, just return current state
-            let orch = orchestrator.lock().await;
-            match orch.get_task(task_id).await {
-                Ok(task) => DaemonEvent::TaskStateChanged {
-                    id: task_id,
-                    state: task.state,
-                },
-                Err(e) => DaemonEvent::Error {
-                    message: e.to_string(),
-                },
-            }
-        }
-    }
 }
