@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-git-conflict-owner",
+  "reviewedAt": "2026-04-09T20:35:00Z",
+  "commitId": "0a4e57fc477d47a56bdcbe674b2e62f258b5f6f5",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All three bugs properly fixed: (1) apply_owner_resolution() now uses owner_id parameter with correct mapping logic, (2) simple_resolve() now correctly keeps ours and skips theirs via proper state machine, (3) parse_conflicts() now accepts optional file_path parameter and uses actual path as key. All 21 conflict tests pass.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The Rust skill was followed correctly. Transcript shows the worker read the skill file, used proper Rust idioms (Option<FilePath> for backward compat, clone pattern), and followed test update procedure. skillFeedback confirms followedProcedure: true.",
+      "evidence": "Skill: mission-worker-base + Rust; skillFeedback.deviations: []"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature fix-git-conflict-owner correctly implements all three bug fixes. apply_owner_resolution() now uses owner_id to determine resolution strategy (ours for 'ours'/'current'/'main', theirs for 'theirs'/'incoming'/'branch', config fallback otherwise). simple_resolve() uses a proper state machine to keep ours section and skip theirs. parse_conflicts() accepts optional file_path parameter and uses it as key instead of hardcoded 'unknown'. All 21 conflict-related tests pass, workspace builds successfully, clippy reports no warnings."
+}

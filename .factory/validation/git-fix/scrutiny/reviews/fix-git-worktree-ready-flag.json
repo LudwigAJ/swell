@@ -1,0 +1,15 @@
+{
+  "featureId": "fix-git-worktree-ready-flag",
+  "reviewedAt": "2026-04-09T19:30:00Z",
+  "commitId": "e9c6aeca3c8c7d6831f4e5f67ce7745acdafaa09",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly addresses the bug by setting worktree.ready = false after cleanup_worktree() removes the physical worktree. This ensures is_available() returns false for deleted worktrees since it checks both agent_id.is_none() and ready.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The fix is correct and minimal. In the release() method, after cleanup_worktree() removes the physical worktree, the code now explicitly sets worktree.ready = false. This synchronizes the ready flag with the actual worktree existence, fixing is_available() to return false for deleted worktrees. Build succeeds and all 9 worktree tests pass. Worker followed the Rust skill procedure correctly."
+}
