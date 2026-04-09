@@ -255,15 +255,18 @@ impl ConflictResolver {
             .await
             .map_err(|e| ConflictResolutionError::IoError(e.to_string()))?;
 
-        self.parse_conflicts(&content)
+        self.parse_conflicts(&content, Some(file_path))
     }
 
     /// Parse conflicts from file content
-    fn parse_conflicts(&self, content: &str) -> Result<ConflictDetectionResult, ConflictResolutionError> {
+    fn parse_conflicts(&self, content: &str, file_path: Option<&Path>) -> Result<ConflictDetectionResult, ConflictResolutionError> {
         let mut conflicting_files = Vec::new();
         let mut conflict_details: HashMap<PathBuf, Vec<ConflictHunk>> = HashMap::new();
         let mut total_hunks = 0;
         let lines: Vec<&str> = content.lines().collect();
+
+        // Use provided file_path or default to "unknown"
+        let effective_file_path = file_path.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("unknown"));
 
         let mut in_conflict = false;
         let mut hunk_start = 0;
@@ -301,7 +304,7 @@ impl ConflictResolver {
                     };
 
                     conflict_details
-                        .entry(PathBuf::from("unknown"))  // Single file per parse call
+                        .entry(effective_file_path.clone())
                         .or_default()
                         .push(hunk);
                     total_hunks += 1;
@@ -381,7 +384,7 @@ impl ConflictResolver {
             .await
             .map_err(|e| ConflictResolutionError::IoError(e.to_string()))?;
 
-        let detection = self.parse_conflicts(&content)?;
+        let detection = self.parse_conflicts(&content, Some(file_path))?;
 
         if !detection.has_conflicts {
             return Ok(ResolutionResult {
@@ -432,19 +435,28 @@ impl ConflictResolver {
     fn apply_owner_resolution(
         &self,
         content: &str,
-        _owner_id: &str,
+        owner_id: &str,
     ) -> Result<(String, ResolutionStrategy), ConflictResolutionError> {
-        // Owner-based resolution: if owner is "ours" or matches current branch, prefer ours
-        // If owner is "theirs" or matches incoming branch, prefer theirs
-        // Otherwise, try semantic merge or use default preference
-        
-        // Simple approach: delegate to proper resolution with preference
-        let resolved = self.resolve_conflicts_properly(content);
-        let strategy = if self.config.prefer_ours {
+        // Owner-based resolution: determine preference based on owner_id
+        // If owner_id indicates preference (e.g., "ours" or "theirs"), use that
+        // Otherwise, fall back to config preference
+        let prefer_ours = match owner_id {
+            "ours" | "current" | "main" => true,
+            "theirs" | "incoming" | "branch" => false,
+            _ => self.config.prefer_ours,
+        };
+
+        let strategy = if prefer_ours {
             ResolutionStrategy::Ours
         } else {
             ResolutionStrategy::Theirs
         };
+
+        // Create a temporary config with the resolved preference and use it
+        let mut config = self.config.clone();
+        config.prefer_ours = prefer_ours;
+        let resolver = ConflictResolver::with_config(config);
+        let resolved = resolver.resolve_conflicts_properly(content);
 
         Ok((resolved, strategy))
     }
@@ -455,36 +467,37 @@ impl ConflictResolver {
         let lines: Vec<&str> = content.lines().collect();
         let mut result = Vec::new();
         let mut in_conflict = false;
-        let mut skip_section = false;
+        let mut in_theirs_section = false;
 
         for line in &lines {
             let trimmed = line.trim();
 
             if trimmed.starts_with(&self.config.marker_start) {
                 in_conflict = true;
-                skip_section = true;
+                in_theirs_section = false;
                 continue;
             }
 
             if trimmed.starts_with(&self.config.separator) {
-                skip_section = false; // Start of theirs section, but we prefer ours
+                // Switch from ours to theirs section
+                in_theirs_section = true;
                 continue;
             }
 
             if trimmed.starts_with(&self.config.marker_end) {
                 in_conflict = false;
-                skip_section = false;
+                in_theirs_section = false;
                 continue;
             }
 
-            if in_conflict && skip_section {
-                // Skip ours section too since we prefer ours but this approach removes both
-                // Actually, for prefer_ours, we skip the ours section and keep theirs
-                // For prefer_theirs, we skip theirs and keep ours
-                continue;
-            }
-
-            if !in_conflict {
+            if in_conflict {
+                // Skip theirs section, keep ours (lines between <<<<<< and =======)
+                if in_theirs_section {
+                    continue;
+                }
+                // Keep ours section
+            } else {
+                // Not in conflict, keep the line
                 result.push(*line);
             }
         }
@@ -501,7 +514,7 @@ impl ConflictResolver {
             .await
             .map_err(|e| ConflictResolutionError::IoError(e.to_string()))?;
 
-        let detection = self.parse_conflicts(&content)?;
+        let detection = self.parse_conflicts(&content, Some(file_path))?;
 
         if !detection.has_conflicts {
             return Ok(ResolutionResult {
@@ -905,7 +918,7 @@ fn shared_function() {
         let resolver = ConflictResolver::new();
         let content = create_conflicted_content();
 
-        let result = resolver.parse_conflicts(&content).unwrap();
+        let result = resolver.parse_conflicts(&content, None).unwrap();
         assert!(result.has_conflicts);
         assert_eq!(result.total_hunks, 1);
     }
@@ -915,7 +928,7 @@ fn shared_function() {
         let resolver = ConflictResolver::new();
         let content = "fn normal() {}\nfn other() {}\n";
 
-        let result = resolver.parse_conflicts(content).unwrap();
+        let result = resolver.parse_conflicts(content, None).unwrap();
         assert!(!result.has_conflicts);
         assert_eq!(result.total_hunks, 0);
     }
