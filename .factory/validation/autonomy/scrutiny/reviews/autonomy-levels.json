@@ -1,0 +1,45 @@
+{
+  "featureId": "autonomy-levels",
+  "reviewedAt": "2026-04-09T22:15:00Z",
+  "commitId": "fe09dc55c6b1de9afacc21ee987f25bf654114c9",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is correct and complete. The feature adds AutonomyLevel enum (L1-L4) to swell-core/types.rs and AutonomyController to swell-orchestrator/autonomy.rs. All four autonomy levels work as specified: L1 (Supervised) requires approval for every action, L2 (Guided) requires plan approval then auto-executes, L3 (Autonomous) only requires approval for high-risk actions, L4 (Full Auto) requires no approvals. 10 comprehensive tests verify the logic. No blocking issues found.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/autonomy.rs",
+        "line": 72,
+        "severity": "non_blocking",
+        "description": "Parameter `_task_id` is unused in `needs_approval`. The underscore prefix indicates awareness but suggests future usage isn't implemented. Consider either using the parameter or removing it from the signature."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/autonomy.rs",
+        "line": 18,
+        "severity": "non_blocking",
+        "description": "ApprovalRequest derives Clone but it's unnecessary since the type is always moved into the HashMap. Could remove Clone derive for cleaner API."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/autonomy.rs",
+        "line": 52,
+        "severity": "non_blocking",
+        "description": "No timeout or expiration mechanism for pending approval requests. Requests can remain in memory indefinitely. Consider adding expiration logic if long-running tasks are expected."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The feature's skillName in features.json is 'Rust' but there's no .factory/skills/Rust/SKILL.md file. The actual skill is at .factory/skills/worker/SKILL.md named 'Rust Worker Skill'. AGENTS.md doesn't document how skill names map to file paths.",
+      "evidence": "features.json shows skillName: 'Rust' but ls .factory/skills/ shows only 'worker/' directory. The worker/SKILL.md is titled 'Rust Worker Skill'."
+    },
+    {
+      "area": "skills",
+      "observation": "The transcript references 'mission-worker-base' skill but this skill doesn't exist on disk. The skillFeedback indicates followedProcedure: true, suggesting the worker found procedural guidance elsewhere or this was a skill invocation that resolved to an undocumented location.",
+      "evidence": "Transcript shows Skill { skill: 'mission-worker-base' } but .factory/skills/worker/ only contains SKILL.md (Rust Worker Skill)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Implementation passes review. The autonomy levels feature correctly implements L1-Supervised, L2-Guided (default), L3-Autonomous, and L4-FullAuto with per-task configuration. The code is well-structured with comprehensive test coverage (10 tests). No blocking issues. Minor observations about unused parameter, unnecessary Clone derive, and lack of request expiration - all non-blocking. Skill naming/documentation gaps noted for shared state."
+}

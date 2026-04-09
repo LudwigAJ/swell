@@ -24,23 +24,18 @@ pub enum TaskState {
 /// - L2 (Guided): Plan approval required, then auto-execute (default)
 /// - L3 (Autonomous): Minimal guidance, only high-risk actions need approval
 /// - L4 (Full Auto): Fully autonomous, no approvals needed
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AutonomyLevel {
     /// L1-Supervised: every action requires explicit approval
     Supervised,
     /// L2-Guided: plan approval required, then execute auto (default)
+    #[default]
     Guided,
     /// L3-Autonomous: minimal guidance, decreasing approval needs
     Autonomous,
     /// L4-Full Auto: fully autonomous operation
     FullAuto,
-}
-
-impl Default for AutonomyLevel {
-    fn default() -> Self {
-        AutonomyLevel::Guided
-    }
 }
 
 impl AutonomyLevel {

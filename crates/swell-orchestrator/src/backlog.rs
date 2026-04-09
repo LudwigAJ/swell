@@ -586,6 +586,7 @@ pub struct BacklogStats {
 }
 
 /// Calculate Levenshtein distance between two strings
+#[allow(clippy::needless_range_loop)]
 fn levenshtein_distance(s1: &str, s2: &str) -> usize {
     let s1_chars: Vec<char> = s1.chars().collect();
     let s2_chars: Vec<char> = s2.chars().collect();
