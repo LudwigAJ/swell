@@ -23,7 +23,6 @@ pub use traits::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use swell_core::CheckpointStore;
 
     #[tokio::test]
