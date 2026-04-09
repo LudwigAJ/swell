@@ -1,0 +1,55 @@
+{
+  "milestone": "benchmark",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace -- --skip test_test_gate_validate_returns_outcome", "exitCode": 0, "note": "104 tests passed, 1 filtered out (slow test)" },
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0, "note": "Warnings only, no errors" }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedFeatures": ["benchmark-suite"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "benchmark-suite",
+      "severity": "blocking",
+      "file": "crates/swell-benchmark/src/metrics.rs",
+      "line": 110,
+      "description": "compute_by_category() always uses 'unknown' as category key because TaskResult doesn't contain category info. The by_category HashMap will have one entry with key 'unknown' containing all results, not broken down by actual category."
+    },
+    {
+      "featureId": "benchmark-suite",
+      "severity": "blocking",
+      "file": "crates/swell-benchmark/src/metrics.rs",
+      "line": 118,
+      "description": "compute_by_difficulty() always uses 'unknown' as difficulty key because TaskResult doesn't contain difficulty info. Same issue as compute_by_category - the by_difficulty HashMap will be mislabeled."
+    },
+    {
+      "featureId": "benchmark-suite",
+      "severity": "blocking",
+      "file": "crates/swell-benchmark/src/runner.rs",
+      "line": 155,
+      "description": "filtered_tasks() checks task_filter and category_filter but never checks difficulty_filter. RunnerConfig defines difficulty_filter but it's never used, so users cannot filter tasks by difficulty level."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "services.yaml",
+      "suggestion": "Add per-crate test commands to services.yaml for more efficient crate-specific testing. Current commands (test, typecheck, lint) run against entire workspace. Workers may need 'cargo test -p <crate>', 'cargo clippy -p <crate>' variants for faster iteration during development.",
+      "evidence": "Feature benchmark-suite used 'cargo test -p swell-benchmark', 'cargo clippy -p swell-benchmark' commands which are not in services.yaml.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Rust skill file .factory/skills/Rust/SKILL.md doesn't exist",
+      "reason": "Ambiguous - skill system may intentionally not have all skill files. The worker proceeded without it successfully."
+    }
+  ],
+  "previousRound": null
+}

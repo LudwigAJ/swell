@@ -1,0 +1,57 @@
+{
+  "featureId": "benchmark-suite",
+  "reviewedAt": "2026-04-10T00:30:00Z",
+  "commitId": "1361729",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation creates swell-benchmark crate with 50 tasks and working runner, but has blocking bugs in metrics aggregation: compute_by_category and compute_by_difficulty always use 'unknown' keys because TaskResult lacks category/difficulty fields, and difficulty_filter in RunnerConfig is defined but never used in filtered_tasks().",
+    "issues": [
+      {
+        "file": "crates/swell-benchmark/src/metrics.rs",
+        "line": 110,
+        "severity": "blocking",
+        "description": "compute_by_category() always uses 'unknown' as category key because TaskResult doesn't contain category info. The by_category HashMap will have one entry with key 'unknown' containing all results, not broken down by actual category. TaskResult needs category and difficulty fields, or metrics computation needs access to task definitions."
+      },
+      {
+        "file": "crates/swell-benchmark/src/metrics.rs",
+        "line": 118,
+        "severity": "blocking",
+        "description": "compute_by_difficulty() always uses 'unknown' as difficulty key because TaskResult doesn't contain difficulty info. Same issue as compute_by_category - the by_difficulty HashMap will be mislabeled."
+      },
+      {
+        "file": "crates/swell-benchmark/src/runner.rs",
+        "line": 155,
+        "severity": "blocking",
+        "description": "filtered_tasks() checks task_filter and category_filter but never checks difficulty_filter. RunnerConfig defines difficulty_filter but it's never used, so users cannot filter tasks by difficulty level."
+      },
+      {
+        "file": "crates/swell-benchmark/src/task.rs",
+        "line": 99,
+        "severity": "non_blocking",
+        "description": "TaskResult struct lacks category and difficulty fields. While this is a design choice, it prevents proper metrics aggregation by category/difficulty without external lookups. Consider adding these fields to TaskResult."
+      },
+      {
+        "file": "crates/swell-benchmark/src/runner.rs",
+        "line": 235,
+        "severity": "non_blocking",
+        "description": "simulate_task() always returns Ok(TaskOutcome::Completed). This is documented in comments as intentional for 'simulation mode', but the simulation doesn't actually test failure scenarios or task-specific outcomes. Fine for current use but limits benchmark utility."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker referenced skill '.factory/skills/Rust/SKILL.md' which does not exist. Transcript shows Skill tool invocation for 'Rust' returned 'File not found'. Worker proceeded without Rust-specific guidance.",
+      "evidence": "Transcript skeleton shows: 'Tool: Skill' with skill 'Rust' returned 'File not found'. Worker continued using general Rust patterns."
+    },
+    {
+      "area": "services",
+      "observation": "Worker used cargo commands (check, test, clippy) without them being in services.yaml. Commands like 'cargo check -p swell-benchmark', 'cargo test -p swell-benchmark', 'cargo clippy -p swell-benchmark -- -D warnings' were run but services.yaml only has 'install', 'build', 'test', 'typecheck', 'lint' without crate-specific variants.",
+      "evidence": "Handoff verification.commandsRun shows these cargo commands. Services.yaml has generic commands but not per-crate test commands."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The benchmark-suite feature creates a swell-benchmark crate with 50 curated tasks and a functional BenchmarkRunner. However, the implementation has blocking bugs: metrics aggregation (by_category, by_difficulty) is broken because TaskResult lacks category/difficulty fields and the aggregation uses 'unknown' keys. Additionally, difficulty_filter is defined but never applied. Tests pass and clippy passes. The feature partially fulfills its description but the metrics tracking has fundamental gaps."
+}
