@@ -31,7 +31,7 @@ use swell_core::{
 };
 
 /// Task types that determine model selection
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TaskType {
     /// Complex code generation, refactoring, debugging
     Coding,
@@ -42,6 +42,7 @@ pub enum TaskType {
     /// Code review, feedback, critique
     Review,
     /// General purpose tasks
+    #[default]
     Default,
 }
 
@@ -59,17 +60,7 @@ impl TaskType {
 
     /// Returns true if this task type benefits from longer context
     pub fn needs_long_context(&self) -> bool {
-        match self {
-            TaskType::Planning => true,
-            TaskType::Coding => true,
-            _ => false,
-        }
-    }
-}
-
-impl Default for TaskType {
-    fn default() -> Self {
-        TaskType::Default
+        matches!(self, TaskType::Planning | TaskType::Coding)
     }
 }
 
