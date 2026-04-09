@@ -3753,9 +3753,11 @@ impl Agent for RefactorerAgent {
 pub struct DocWriterAgent {
     model: String,
     system_prompt_builder: SystemPromptBuilder,
+    llm: Option<Arc<dyn LlmBackend>>,
 }
 
 impl DocWriterAgent {
+    /// Create a new DocWriterAgent with just model name (for testing)
     pub fn new(model: String) -> Self {
         let config = SystemPromptConfig {
             project_name: "SWELL".to_string(),
@@ -3769,7 +3771,66 @@ impl DocWriterAgent {
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(config),
+            llm: None,
         }
+    }
+
+    /// Create a DocWriterAgent with LLM backend for actual documentation generation
+    pub fn with_llm(model: String, llm: Arc<dyn LlmBackend>) -> Self {
+        let config = SystemPromptConfig {
+            project_name: "SWELL".to_string(),
+            repo_path: ".".to_string(),
+            for_role: AgentRole::DocWriter,
+            include_memory: true,
+            include_conventions: true,
+            max_tokens: 8000,
+        };
+
+        Self {
+            model,
+            system_prompt_builder: SystemPromptBuilder::new(config),
+            llm: Some(llm),
+        }
+    }
+
+    /// Load the system prompt from prompts/doc_writer.md
+    fn load_system_prompt() -> String {
+        // Try to load from .swell/prompts/doc_writer.md
+        let prompt_path = ".swell/prompts/doc_writer.md";
+        std::fs::read_to_string(prompt_path).unwrap_or_else(|_| {
+            // Fallback inline prompt if file doesn't exist
+            r#"
+You are the Doc Writer Agent for SWELL, an autonomous coding engine built in Rust.
+
+## Your Capabilities
+- Generate and update documentation from code changes
+- Create README files, API documentation, and guides
+- Update existing docs to reflect code changes
+- Ensure documentation stays in sync with implementation
+
+## Output Format
+Respond with JSON containing the documentation changes:
+{
+  "changes": [
+    {
+      "file": "path/to/doc.md",
+      "change_type": "create|update|delete",
+      "content": "Full documentation content"
+    }
+  ]
+}
+
+## Guidelines
+1. Write clear, accurate documentation that matches the code
+2. Use proper Markdown formatting
+3. Include code examples where appropriate
+4. Reference specific files and functions accurately
+5. Keep documentation concise but complete
+6. Prioritize high-impact documentation (API docs, README, guides)
+7. Preserve existing documentation unless it conflicts with changes
+"#
+            .to_string()
+        })
     }
 }
 
@@ -3807,17 +3868,100 @@ impl Agent for DocWriterAgent {
             .system_prompt_builder
             .build(&task_context, &context.memory_blocks);
 
-        let changes = vec![DocChange {
-            file: "docs/api.md".to_string(),
-            change_type: DocChangeType::Update,
-            content: "# API Documentation\n\nUpdated based on code changes.".to_string(),
-        }];
+        // If no LLM backend is configured, return stub response
+        let Some(llm) = &self.llm else {
+            let changes = vec![DocChange {
+                file: "docs/api.md".to_string(),
+                change_type: DocChangeType::Update,
+                content: "# API Documentation\n\nUpdated based on code changes.".to_string(),
+            }];
+
+            return Ok(AgentResult {
+                success: true,
+                output: serde_json::to_string(&changes).unwrap_or_default(),
+                tool_calls: vec![],
+                tokens_used: 400,
+                error: None,
+            });
+        };
+
+        // Load system prompt from file or use fallback
+        let system_prompt = Self::load_system_prompt();
+
+        // Build user message with task context and memory blocks
+        let memory_context = context
+            .memory_blocks
+            .iter()
+            .map(|b| format!("- [{}] {}\n{}", format!("{:?}", b.block_type).to_lowercase(), b.label, b.content))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let user_message = format!(
+            "Task: {}\n\nMemory Context:\n{}\n\n\
+            Respond ONLY with JSON in this format:\n\
+            {{\"changes\": [{{\"file\": \"path\", \"change_type\": \"create|update|delete\", \"content\": \"...\"}}]}}",
+            context.task.description,
+            memory_context
+        );
+
+        // Call the LLM
+        let messages = vec![
+            LlmMessage {
+                role: LlmRole::System,
+                content: system_prompt,
+            },
+            LlmMessage {
+                role: LlmRole::User,
+                content: user_message,
+            },
+        ];
+
+        let config = LlmConfig {
+            temperature: 0.3,
+            max_tokens: 4096,
+            stop_sequences: None,
+        };
+
+        let response = llm.chat(messages, None, config).await?;
+
+        // Parse the response to extract documentation changes
+        let doc_response: serde_json::Value = serde_json::from_str(&response.content)
+            .map_err(|e| {
+                SwellError::LlmError(format!(
+                    "Failed to parse doc writer response: {}. Raw content: {}",
+                    e, &response.content
+                ))
+            })?;
+
+        // Extract changes from response
+        let changes_json = &doc_response["changes"];
+        let changes: Vec<DocChange> = changes_json
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|change| {
+                        let change_type_str = change["change_type"].as_str()?;
+                        let change_type = match change_type_str.to_lowercase().as_str() {
+                            "create" => DocChangeType::Create,
+                            "delete" => DocChangeType::Delete,
+                            _ => DocChangeType::Update,
+                        };
+
+                        Some(DocChange {
+                            file: change["file"].as_str()?.to_string(),
+                            change_type,
+                            content: change["content"].as_str()?.to_string(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
         Ok(AgentResult {
             success: true,
             output: serde_json::to_string(&changes).unwrap_or_default(),
             tool_calls: vec![],
-            tokens_used: 400,
+            tokens_used: response.usage.total_tokens,
             error: None,
         })
     }
