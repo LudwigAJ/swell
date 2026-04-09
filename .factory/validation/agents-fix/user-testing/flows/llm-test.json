@@ -1,0 +1,66 @@
+{
+  "groupId": "llm-test",
+  "testedAt": "2026-04-09T07:02:00Z",
+  "isolation": {
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell"
+  },
+  "toolsUsed": ["cargo"],
+  "assertions": [
+    {
+      "id": "VAL-LLM-001",
+      "title": "Anthropic backend creation (model name accessible)",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-llm -- test_anthropic_backend_creation", "expected": "Test passes", "observed": "Test passed" },
+        { "action": "cargo test -p swell-llm -- anthropic::tests::test_backend_model_name", "expected": "Test passes", "observed": "Test passed" }
+      ],
+      "evidence": {
+        "testOutput": "test tests::test_anthropic_backend_creation ... ok\ntest anthropic::tests::test_backend_model_name ... ok"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LLM-002",
+      "title": "OpenAI backend creation (model name accessible)",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-llm -- test_openai_backend_creation", "expected": "Test passes", "observed": "Test passed" },
+        { "action": "cargo test -p swell-llm -- openai::tests::test_backend_model_name", "expected": "Test passes", "observed": "Test passed" }
+      ],
+      "evidence": {
+        "testOutput": "test tests::test_openai_backend_creation ... ok\ntest openai::tests::test_backend_model_name ... ok"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LLM-003",
+      "title": "Mock backend for testing (predictable responses)",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-llm -- test_mock_backend", "expected": "Test passes", "observed": "Test passed" },
+        { "action": "cargo test -p swell-llm -- mock::tests::test_mock_response", "expected": "Test passes", "observed": "Test passed" },
+        { "action": "cargo test -p swell-llm -- mock::tests::test_mock_custom_response", "expected": "Test passes", "observed": "Test passed" },
+        { "action": "cargo test -p swell-llm -- mock::tests::test_mock_failure", "expected": "Test passes", "observed": "Test passed" }
+      ],
+      "evidence": {
+        "testOutput": "test tests::test_mock_backend ... ok\ntest mock::tests::test_mock_response ... ok\ntest mock::tests::test_mock_custom_response ... ok\ntest mock::tests::test_mock_failure ... ok"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-LLM-004",
+      "title": "Backend health_check returns bool",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-llm -- mock::tests::test_health_check", "expected": "Test passes", "observed": "Test passed" }
+      ],
+      "evidence": {
+        "testOutput": "test mock::tests::test_health_check ... ok"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions (VAL-LLM-001 through VAL-LLM-004) using cargo test -p swell-llm. All 11 tests passed including: test_anthropic_backend_creation, test_backend_model_name (anthropic), test_openai_backend_creation, test_backend_model_name (openai), test_mock_backend, test_mock_response, test_mock_custom_response, test_mock_failure, and test_health_check. All LLM backend assertions verified working correctly."
+}

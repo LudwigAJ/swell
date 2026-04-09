@@ -1,0 +1,92 @@
+{
+  "milestone": "agents-fix",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 41,
+    "passed": 33,
+    "failed": 8,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-DAEMON-002",
+    "VAL-ORCH-001",
+    "VAL-ORCH-002",
+    "VAL-ORCH-003",
+    "VAL-ORCH-004",
+    "VAL-ORCH-005",
+    "VAL-AGENTS-001",
+    "VAL-AGENTS-002",
+    "VAL-AGENTS-003",
+    "VAL-AGENTS-004",
+    "VAL-TOOLS-001",
+    "VAL-TOOLS-002",
+    "VAL-TOOLS-003",
+    "VAL-TOOLS-004",
+    "VAL-TOOLS-005",
+    "VAL-LLM-001",
+    "VAL-LLM-002",
+    "VAL-LLM-003",
+    "VAL-LLM-004",
+    "VAL-VALIDATION-001",
+    "VAL-VALIDATION-002",
+    "VAL-VALIDATION-003",
+    "VAL-VALIDATION-004",
+    "VAL-STATE-001",
+    "VAL-STATE-002",
+    "VAL-STATE-003",
+    "VAL-MEMORY-001",
+    "VAL-MEMORY-002",
+    "VAL-MEMORY-003",
+    "VAL-MEMORY-004",
+    "VAL-SAFETY-001",
+    "VAL-SAFETY-002",
+    "VAL-CROSS-002",
+    "VAL-CROSS-003"
+  ],
+  "failedAssertions": [
+    {
+      "id": "VAL-CLI-001",
+      "reason": "CLI task command fails due to daemon socket reading bug"
+    },
+    {
+      "id": "VAL-CLI-002",
+      "reason": "CLI list command fails due to daemon socket reading bug"
+    },
+    {
+      "id": "VAL-CLI-003",
+      "reason": "CLI watch command fails due to daemon socket reading bug"
+    },
+    {
+      "id": "VAL-CLI-004",
+      "reason": "CLI approve command fails due to daemon socket reading bug"
+    },
+    {
+      "id": "VAL-DAEMON-001",
+      "reason": "Unix socket communication fundamentally broken due to buffer initialization bug"
+    },
+    {
+      "id": "VAL-DAEMON-003",
+      "reason": "Error handling returns wrong message due to socket reading failure"
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "reason": "End-to-end task execution blocked by socket communication failure"
+    }
+  ],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Added daemon socket reading bug to known issues - vec![0u8; 4096] pre-initializes buffer causing tokio read_buf to read 0 bytes",
+      "source": "flow-report"
+    }
+  ],
+  "rootCause": {
+    "file": "crates/swell-daemon/src/server.rs",
+    "line": 54,
+    "description": "Buffer initialized with `vec![0u8; 4096]` creates a Vec with 4096 bytes already used. Tokio's read_buf() appends to buffer but cannot because length==capacity (buffer appears full). Daemon reads 0 bytes and fails to parse empty string as JSON.",
+    "fix": "Change `let mut buf = vec![0u8; 4096];` to `let mut buf = Vec::with_capacity(4096);` and then the first read_buf will properly append data."
+  },
+  "previousRound": null
+}

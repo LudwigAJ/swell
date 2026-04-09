@@ -1,0 +1,105 @@
+{
+  "groupId": "orchestrator-test",
+  "testedAt": "2026-04-09T07:18:00Z",
+  "isolation": {
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell",
+    "crate": "swell-orchestrator"
+  },
+  "toolsUsed": ["cargo"],
+  "assertions": [
+    {
+      "id": "VAL-ORCH-001",
+      "title": "Task lifecycle states (CREATED → ENRICHED → READY → ASSIGNED → EXECUTING → VALIDATING → ACCEPTED)",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- state_machine", "expected": "All 25 state machine tests pass", "observed": "All 25 tests passed" },
+        { "action": "Verify test_cannot_enrich_non_created_task", "expected": "Task cannot skip to ENRICHED from non-CREATED state", "observed": "test_cannot_enrich_non_created_task passed" },
+        { "action": "Verify test_created_to_enriched", "expected": "Task transitions CREATED → ENRICHED", "observed": "test_created_to_enriched passed" },
+        { "action": "Verify test_enriched_to_ready_with_plan", "expected": "Task transitions ENRICHED → READY when plan attached", "observed": "test_enriched_to_ready_with_plan passed" },
+        { "action": "Verify test_ready_to_assigned", "expected": "Task transitions READY → ASSIGNED", "observed": "test_ready_to_assigned passed" },
+        { "action": "Verify test_assigned_to_executing", "expected": "Task transitions ASSIGNED → EXECUTING", "observed": "test_assigned_to_executing passed" },
+        { "action": "Verify test_executing_to_validating", "expected": "Task transitions EXECUTING → VALIDATING", "observed": "test_executing_to_validating passed" },
+        { "action": "Verify test_validating_to_accepted", "expected": "Task transitions VALIDATING → ACCEPTED on success", "observed": "test_validating_to_accepted passed" }
+      ],
+      "evidence": {
+        "testOutput": "25 tests passed in state_machine module covering full task lifecycle"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ORCH-002",
+      "title": "Invalid state transitions rejected",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- state_machine", "expected": "All invalid transition tests pass", "observed": "All 25 tests passed including invalid transition tests" },
+        { "action": "Verify test_cannot_enrich_non_created_task", "expected": "REJECTED: ENRICHED from non-CREATED", "observed": "test_cannot_enrich_non_created_task passed" },
+        { "action": "Verify test_cannot_ready_non_enriched_task", "expected": "REJECTED: READY from non-ENRICHED", "observed": "test_cannot_ready_non_enriched_task passed" },
+        { "action": "Verify test_cannot_assign_non_ready_task", "expected": "REJECTED: ASSIGNED from non-READY", "observed": "test_cannot_assign_non_ready_task passed" },
+        { "action": "Verify test_cannot_start_execution_non_assigned_task", "expected": "REJECTED: EXECUTING from non-ASSIGNED", "observed": "test_cannot_start_execution_non_assigned_task passed" },
+        { "action": "Verify test_cannot_start_validation_non_executing_task", "expected": "REJECTED: VALIDATING from non-EXECUTING", "observed": "test_cannot_start_validation_non_executing_task passed" },
+        { "action": "Verify test_cannot_accept_non_validating_task", "expected": "REJECTED: ACCEPTED from non-VALIDATING", "observed": "test_cannot_accept_non_validating_task passed" },
+        { "action": "Verify test_cannot_reject_non_validating_task", "expected": "REJECTED: REJECTED from non-VALIDATING", "observed": "test_cannot_reject_non_validating_task passed" }
+      ],
+      "evidence": {
+        "testOutput": "8 tests for invalid transitions all passed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ORCH-003",
+      "title": "Task plan attachment",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- state_machine", "expected": "Plan attachment tests pass", "observed": "All 25 state machine tests passed" },
+        { "action": "Verify test_plan_attached_after_set_plan", "expected": "Plan is attached when set_plan() called", "observed": "test_plan_attached_after_set_plan passed" },
+        { "action": "Verify test_plan_preserved_through_state_transitions", "expected": "Plan is preserved during state transitions", "observed": "test_plan_preserved_through_state_transitions passed" },
+        { "action": "Verify test_cannot_ready_task_without_plan", "expected": "Cannot transition to READY without plan", "observed": "test_cannot_ready_task_without_plan passed" },
+        { "action": "Verify test_enriched_to_ready_with_plan", "expected": "Transitions to READY only when plan is set", "observed": "test_enriched_to_ready_with_plan passed" },
+        { "action": "Verify test_set_plan_only_sets_plan", "expected": "set_plan() only sets plan, no state change", "observed": "test_set_plan_only_sets_plan passed" }
+      ],
+      "evidence": {
+        "testOutput": "6 tests covering plan attachment behavior all passed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ORCH-004",
+      "title": "Agent pool management",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- scheduler", "expected": "Agent pool and scheduler tests pass", "observed": "28 scheduler tests passed" },
+        { "action": "Verify test_worker_pool_creation", "expected": "Worker pool can be created", "observed": "test_worker_pool_creation passed" },
+        { "action": "Verify test_worker_pool_max_limit", "expected": "Worker pool enforces max limit", "observed": "test_worker_pool_max_limit passed" },
+        { "action": "Verify test_worker_pool_assign_and_release", "expected": "Workers can be assigned and released", "observed": "test_worker_pool_assign_and_release passed" },
+        { "action": "Verify test_worker_pool_full_rejection", "expected": "Pool rejects when full", "observed": "test_worker_pool_full_rejection passed" },
+        { "action": "Verify test_worker_pool_resize", "expected": "Pool can be resized", "observed": "test_worker_pool_resize passed" },
+        { "action": "Verify test_scheduler_enqueue_all", "expected": "Scheduler enqueues tasks correctly", "observed": "test_scheduler_enqueue_all passed" },
+        { "action": "Verify test_scheduler_priority_based_scheduling", "expected": "Scheduler respects priority", "observed": "test_scheduler_priority_based_scheduling passed" }
+      ],
+      "evidence": {
+        "testOutput": "28 scheduler tests passed covering worker pool management and scheduling"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-ORCH-005",
+      "title": "Task completion with validation result",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- state_machine", "expected": "Completion and validation tests pass", "observed": "All 25 state machine tests passed" },
+        { "action": "Verify test_validating_to_accepted", "expected": "VALIDATING → ACCEPTED on successful validation", "observed": "test_validating_to_accepted passed" },
+        { "action": "Verify test_validating_to_rejected", "expected": "VALIDATING → REJECTED on failed validation", "observed": "test_validating_to_rejected passed" },
+        { "action": "Verify test_fail_task_transitions_to_failed", "expected": "Task transitions to FAILED on failure", "observed": "test_fail_task_transitions_to_failed passed" },
+        { "action": "Verify test_escalate_task_transitions_to_escalated", "expected": "Task escalates after repeated failures", "observed": "test_escalate_task_transitions_to_escalated passed" },
+        { "action": "Verify test_rejected_iteration_count_increments", "expected": "Iteration count increments on rejection", "observed": "test_rejected_iteration_count_increments passed" }
+      ],
+      "evidence": {
+        "testOutput": "6 tests for task completion and validation flow all passed"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 5 assertions (VAL-ORCH-001 through VAL-ORCH-005) covering the orchestrator state machine and scheduler. All tests passed: 25 state_machine tests and 28 scheduler tests. The assertions cover task lifecycle states, invalid transition rejection, task plan attachment, agent pool management, and task completion with validation results. No frictions or blockers encountered."
+}

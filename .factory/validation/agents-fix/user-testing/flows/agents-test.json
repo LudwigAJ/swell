@@ -1,0 +1,62 @@
+{
+  "groupId": "agents-test",
+  "testedAt": "2026-04-09T12:00:00Z",
+  "isolation": {
+    "tool": "cargo test",
+    "package": "swell-orchestrator"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-AGENTS-001",
+      "title": "Planner creates structured plan (JSON with steps, affected_files, risk_level)",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- planner", "expected": "Planner tests pass", "observed": "2 tests passed (test_planner_agent_with_memory_blocks, test_planner_agent_with_mock)" }
+      ],
+      "evidence": {
+        "testOutput": "test_planner_agent_with_memory_blocks ... ok\ntest_planner_agent_with_mock ... ok\ntest result: ok. 2 passed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AGENTS-002",
+      "title": "Generator produces output",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- generator", "expected": "Generator test passes", "observed": "1 test passed (test_generator_agent)" }
+      ],
+      "evidence": {
+        "testOutput": "test_generator_agent ... ok\ntest result: ok. 1 passed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AGENTS-003",
+      "title": "Evaluator produces result",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- evaluator", "expected": "Evaluator tests pass", "observed": "2 tests passed (test_evaluator_agent_with_plan_extracts_changed_files, test_evaluator_agent)" }
+      ],
+      "evidence": {
+        "testOutput": "test_evaluator_agent_with_plan_extracts_changed_files ... ok\ntest_evaluator_agent ... ok\ntest result: ok. 2 passed"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-AGENTS-004",
+      "title": "Agents use correct role",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-orchestrator -- agents", "expected": "Agent role tests pass", "observed": "51 tests passed including planner, generator, evaluator, and other agent role tests" }
+      ],
+      "evidence": {
+        "testOutput": "test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 137 filtered out"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": null,
+  "blockers": null,
+  "summary": "Tested 4 assertions (VAL-AGENTS-001 through VAL-AGENTS-004): All passed. Planner tests: 2 passed. Generator tests: 1 passed. Evaluator tests: 2 passed. All 51 agent-related tests passed successfully."
+}

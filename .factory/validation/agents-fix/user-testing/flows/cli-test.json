@@ -1,0 +1,73 @@
+{
+  "groupId": "cli-test",
+  "testedAt": "2026-04-09T05:59:00Z",
+  "isolation": {
+    "socketPath": "/tmp/swell-daemon.sock",
+    "daemonPid": 12962,
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell"
+  },
+  "toolsUsed": ["cargo", "python3"],
+  "assertions": [
+    {
+      "id": "VAL-CLI-001",
+      "title": "swell task \"test\" creates a task and returns task ID",
+      "status": "blocked",
+      "steps": [
+        { "action": "Start daemon with cargo run --bin swell-daemon", "expected": "Daemon listening on /tmp/swell-daemon.sock", "observed": "Daemon started successfully and is listening" },
+        { "action": "Run cargo run --bin swell -- task \"test\"", "expected": "Task created with UUID returned", "observed": "CLI panicked: Invalid response format: Error(\"expected value\", line: 1, column: 1)" }
+      ],
+      "evidence": {
+        "error": "CLI panicked at clients/swell-cli/src/main.rs:85 - Invalid response format from daemon"
+      },
+      "issues": "Daemon socket reading is fundamentally broken - see blocker details"
+    },
+    {
+      "id": "VAL-CLI-002",
+      "title": "swell list shows all tasks",
+      "status": "blocked",
+      "steps": [
+        { "action": "Run cargo run --bin swell -- list", "expected": "List of tasks returned", "observed": "CLI panicked: Invalid response format: Error(\"expected value\", line: 1, column: 1)" }
+      ],
+      "evidence": {
+        "error": "CLI panicked at clients/swell-cli/src/main.rs:85 - Invalid response format from daemon"
+      },
+      "issues": "Daemon socket reading is fundamentally broken - see blocker details"
+    },
+    {
+      "id": "VAL-CLI-003",
+      "title": "swell watch <task-id> streams task progress",
+      "status": "blocked",
+      "steps": [
+        { "action": "Cannot test - requires valid task-id from VAL-CLI-001", "expected": "N/A - blocked by VAL-CLI-001 failure", "observed": "N/A - blocked" }
+      ],
+      "evidence": {},
+      "issues": "Blocked by VAL-CLI-001 - cannot create task to watch"
+    },
+    {
+      "id": "VAL-CLI-004",
+      "title": "swell approve <task-id> approves task plan",
+      "status": "blocked",
+      "steps": [
+        { "action": "Cannot test - requires valid task-id from VAL-CLI-001", "expected": "N/A - blocked by VAL-CLI-001 failure", "observed": "N/A - blocked" }
+      ],
+      "evidence": {},
+      "issues": "Blocked by VAL-CLI-001 - cannot create task to approve"
+    }
+  ],
+  "frictions": [
+    {
+      "description": "CLI and daemon communicate via Unix socket but daemon fails to read commands",
+      "resolved": false,
+      "resolution": "Root cause identified in server.rs: handle_connection() uses `vec![0u8; 4096]` which pre-initializes buffer with 4096 zeros. Tokio's read_buf() appends to buffer but length==capacity so no data is actually read. The daemon receives empty input and fails to parse as JSON.",
+      "affectedAssertions": ["VAL-CLI-001", "VAL-CLI-002", "VAL-CLI-003", "VAL-CLI-004"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "Daemon socket reading bug: server.rs line 54 initializes buffer with `vec![0u8; 4096]` creating a Vec with 4096 bytes already used. Tokio's read_buf() appends to this buffer but cannot because length==capacity. Result: daemon reads 0 bytes and tries to parse empty string as JSON, getting 'expected value at line 1 column 1' error.",
+      "affectedAssertions": ["VAL-CLI-001", "VAL-CLI-002", "VAL-CLI-003", "VAL-CLI-004"],
+      "quickFixAttempted": "Tested with Python socket client - even sending valid JSON like '[]' or '{}' returns the same error. This confirms the issue is in the daemon's read implementation, not the CLI's JSON serialization."
+    }
+  ],
+  "summary": "All 4 CLI assertions (VAL-CLI-001 through VAL-CLI-004) are blocked due to a fundamental socket reading bug in the daemon. The issue is in crates/swell-daemon/src/server.rs at line 54: the buffer is initialized with `vec![0u8; 4096]` which pre-fills it with 4096 zero bytes. When tokio's read_buf() tries to append socket data to this buffer, it cannot because the buffer appears full (length == capacity == 4096). The daemon effectively reads 0 bytes and then fails to parse an empty string as JSON. This affects all CLI commands since they all depend on the socket communication working correctly."
+}

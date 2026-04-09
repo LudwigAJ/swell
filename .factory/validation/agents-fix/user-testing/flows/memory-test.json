@@ -1,0 +1,62 @@
+{
+  "groupId": "memory-test",
+  "testedAt": "2026-04-09T07:00:00Z",
+  "isolation": {
+    "crate": "swell-memory",
+    "testCommand": "cargo test -p swell-memory"
+  },
+  "toolsUsed": ["cargo"],
+  "assertions": [
+    {
+      "id": "VAL-MEMORY-001",
+      "title": "SqliteMemoryStore CRUD operations work",
+      "status": "pass",
+      "steps": [
+        { "action": "Run cargo test -p swell-memory", "expected": "All tests pass", "observed": "All 5 tests passed" }
+      ],
+      "evidence": {
+        "testOutput": "5 tests passed: test_store_and_get, test_update_and_delete, test_search, test_get_by_label, test_get_by_type"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MEMORY-002",
+      "title": "MemoryEntry can be stored and retrieved",
+      "status": "pass",
+      "steps": [
+        { "action": "Run cargo test -p swell-memory", "expected": "test_store_and_get passes", "observed": "test_store_and_get ... ok" }
+      ],
+      "evidence": {
+        "testOutput": "test_store_and_get ... ok"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MEMORY-003",
+      "title": "MemoryQuery returns matching entries",
+      "status": "pass",
+      "steps": [
+        { "action": "Run cargo test -p swell-memory", "expected": "test_search passes", "observed": "test_search ... ok" }
+      ],
+      "evidence": {
+        "testOutput": "test_search ... ok"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-MEMORY-004",
+      "title": "get_by_type and get_by_label return filtered entries",
+      "status": "pass",
+      "steps": [
+        { "action": "Run cargo test -p swell-memory", "expected": "test_get_by_label and test_get_by_type pass", "observed": "test_get_by_label ... ok, test_get_by_type ... ok" }
+      ],
+      "evidence": {
+        "testOutput": "test_get_by_label ... ok, test_get_by_type ... ok"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions (VAL-MEMORY-001 through VAL-MEMORY-004): All passed. The swell-memory crate has 5 passing tests covering CRUD operations, entry storage/retrieval, query matching, and filtered retrieval by type/label."
+}
