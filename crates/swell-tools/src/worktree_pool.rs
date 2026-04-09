@@ -309,8 +309,13 @@ impl WorktreePool {
                 worktree.release();
             }
 
-            // Optionally cleanup the worktree (remove the branch and worktree)
+            // Cleanup the worktree (remove the branch and worktree)
             self.cleanup_worktree(&allocation).await?;
+
+            // Mark worktree as not ready after cleanup since it no longer exists
+            if let Some(worktree) = worktrees.iter_mut().find(|w| w.id == allocation.worktree_id) {
+                worktree.ready = false;
+            }
 
             info!(
                 worktree_id = %allocation.worktree_id,
