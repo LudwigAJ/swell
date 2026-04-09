@@ -1,4 +1,4 @@
-use swell_core::{CliCommand, DaemonEvent};
+use swell_core::{CliCommand, DaemonEvent, Task};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use uuid::Uuid;
@@ -28,8 +28,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             send_command(&socket_path, cmd).await?;
         }
         "list" => {
-            let cmd = CliCommand::TaskList;
-            send_command(&socket_path, cmd).await?;
+            let json_output = args.contains(&"--json".to_string());
+            list_tasks(&socket_path, json_output).await?;
         }
         "watch" => {
             if args.len() < 3 {
@@ -117,6 +117,70 @@ async fn send_command(
     }
 
     Ok(())
+}
+
+async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let mut stream = UnixStream::connect(socket_path).await?;
+
+    let cmd = CliCommand::TaskList;
+    let cmd_json = serde_json::to_string(&cmd)?;
+    stream.write_all(cmd_json.as_bytes()).await?;
+    stream.flush().await?;
+
+    let mut response_buf = Vec::with_capacity(65536);
+    let n = stream.read_buf(&mut response_buf).await?;
+
+    if n > 0 {
+        let response_str = String::from_utf8_lossy(&response_buf[..n]);
+        let response: DaemonEvent =
+            serde_json::from_str(&response_str).expect("Invalid response format");
+
+        match response {
+            DaemonEvent::TaskCompleted { id, pr_url, .. } => {
+                if id == Uuid::nil() {
+                    if let Some(json) = pr_url {
+                        if json_output {
+                            // Raw JSON output
+                            println!("{}", json);
+                        } else {
+                            // Formatted table output
+                            let tasks: Vec<Task> = serde_json::from_str(&json)
+                                .expect("Invalid task list JSON");
+                            print_task_table(&tasks);
+                        }
+                    }
+                }
+            }
+            DaemonEvent::Error { message, .. } => {
+                eprintln!("Error: {}", message);
+            }
+            other => {
+                eprintln!("Unexpected response: {:?}", other);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn print_task_table(tasks: &[Task]) {
+    if tasks.is_empty() {
+        println!("No tasks found.");
+        return;
+    }
+
+    // Table header
+    println!("{:36} | {:12} | {:40}", "ID", "STATE", "DESCRIPTION");
+    println!("{} | {:12} | {}", "-".repeat(36), "-".repeat(12), "-".repeat(40));
+
+    for task in tasks {
+        let description = if task.description.len() > 40 {
+            format!("{}...", &task.description[..37])
+        } else {
+            task.description.clone()
+        };
+        println!("{:36} | {:12} | {}", task.id, task.state, description);
+    }
 }
 
 fn usage() {
