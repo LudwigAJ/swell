@@ -778,7 +778,7 @@ impl PatternLearningService {
             return Ok(0);
         }
 
-        let mut updated_count = 0;
+        let mut _updated_count = 0;
 
         // Build convention content for the memory block
         let mut content = String::from("# Project Conventions\n\n");
@@ -823,7 +823,7 @@ impl PatternLearningService {
                 "conventions_count": conventions.len(),
             });
             self.store.update(entry).await?;
-            updated_count = 1;
+            _updated_count = 1;
         } else {
             // Create new entry
             let entry = crate::MemoryEntry {
@@ -840,10 +840,10 @@ impl PatternLearningService {
                 }),
             };
             self.store.store(entry).await?;
-            updated_count = 1;
+            _updated_count = 1;
         }
 
-        Ok(updated_count)
+        Ok(_updated_count)
     }
 
     /// Get all conventions from memory blocks

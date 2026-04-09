@@ -1,0 +1,56 @@
+{
+  "featureId": "safety-circuit-breaker",
+  "reviewedAt": "2026-04-09T18:30:00.000Z",
+  "commitId": "73a7cf6",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The circuit breaker implementation has two blocking bugs: (1) the automatic Open→HalfOpen transition never occurs because `check()` returns Ok without calling `transition_to()`, and (2) `record_success()` in Open state has inconsistent statistics handling. Additionally, the public API types are not exported from lib.rs, limiting usability.",
+    "issues": [
+      {
+        "file": "crates/swell-core/src/circuit_breaker.rs",
+        "line": 192,
+        "severity": "blocking",
+        "description": "BUG: When in Open state and recovery timeout has elapsed, `check()` returns `Ok(())` but does NOT call `transition_to(CircuitState::HalfOpen)`. The state remains `Open`, so subsequent `record_failure()` or `record_success()` calls will be handled as Open state instead of HalfOpen state. This breaks automatic recovery - the circuit never actually transitions to HalfOpen. Fix: Add `self.transition_to(CircuitState::HalfOpen);` before `return Ok(());` in the Open branch."
+      },
+      {
+        "file": "crates/swell-core/src/circuit_breaker.rs",
+        "line": 226,
+        "severity": "blocking",
+        "description": "BUG: In `record_success()` when in Open state (lines 224-227), the code decrements `total_requests` and `total_successes` to undo the earlier increment, but does NOT decrement `total_failures`. This causes inconsistent statistics. The fix should also decrement `total_failures`."
+      },
+      {
+        "file": "crates/swell-core/src/lib.rs",
+        "line": 6,
+        "severity": "non_blocking",
+        "description": "Missing public exports: The circuit breaker types (CircuitBreaker, CircuitState, CircuitBreakerConfig, CircuitBreakerError, CircuitBreakerSnapshot) are not re-exported from lib.rs, so external crates cannot easily import them. Other modules like kill_switch have `pub use kill_switch::{...}` but circuit_breaker only has `pub mod circuit_breaker;`. Should add `pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError, CircuitBreakerSnapshot, CircuitState};`"
+      },
+      {
+        "file": "crates/swell-core/src/circuit_breaker.rs",
+        "line": 241,
+        "severity": "non_blocking",
+        "description": "Comment inconsistency: The comment says 'Already open, just reset the timeout' but the code doesn't actually reset any timeout. The `last_state_change_at` is not updated in the Open→Open case. Either update the comment or update the code."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The Rust skill file was not found at .factory/skills/Rust/SKILL.md. Transcript shows worker read mission.md, validation-contract.md, and existing source files, then created circuit_breaker.rs. The skill guidance was not consulted or may be missing.",
+      "evidence": "Transcript shows: cat .factory/skills/Rust/SKILL.md returned 'File not found'. Worker proceeded based on mission.md and AGENTS.md guidance."
+    },
+    {
+      "area": "conventions",
+      "observation": "The verification step in features.json says `cargo test -p swell-orchestrator -- circuit_breaker` but the circuit breaker tests are actually in `swell-core`. The verification technically passes because cargo test doesn't fail when no tests match, but this is misleading. Should be `cargo test -p swell-core -- circuit_breaker`.",
+      "evidence": "features.json shows verificationSteps: [\"cargo build --workspace\", \"cargo test -p swell-orchestrator -- circuit_breaker\"] but tests are in crates/swell-core/src/circuit_breaker.rs"
+    },
+    {
+      "area": "services",
+      "observation": "Worker used only standard cargo commands (cargo build, cargo test) which are already in AGENTS.md. No additional services were started.",
+      "evidence": "Verification commands in handoff show only cargo build --workspace and cargo test commands"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The circuit breaker feature has TWO BLOCKING bugs that prevent automatic recovery from working correctly. First, the `check()` method returns Ok after the recovery timeout but does not actually transition the state to HalfOpen, leaving the circuit stuck in Open state. Second, `record_success()` has inconsistent statistics handling when called in Open state. These bugs cause the automatic recovery mechanism to be non-functional. The feature needs fixing before it can be considered complete."
+}

@@ -267,6 +267,7 @@ impl CircuitBreaker {
                 // But handle gracefully
                 self.total_requests -= 1;
                 self.total_successes -= 1;
+                self.total_failures -= 1;
             }
         }
 
