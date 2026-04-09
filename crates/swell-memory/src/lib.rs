@@ -22,6 +22,9 @@ pub mod blocks;
 // Recall module - BM25 keyword search and temporal queries for conversation logs
 pub mod recall;
 
+// Skill extraction module - Extracts reusable procedures from successful task trajectories
+pub mod skill_extraction;
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
