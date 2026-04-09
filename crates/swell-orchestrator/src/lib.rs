@@ -11,6 +11,7 @@
 //! - [`PolicyEngine`] - evaluates YAML-defined policies against agent actions
 
 pub mod agents;
+pub mod autonomy;
 pub mod drift_detector;
 pub mod execution;
 pub mod policy;
@@ -28,6 +29,7 @@ pub use agents::{
     SystemPromptBuilder, SystemPromptConfig, TestPattern, TestSpec, TestWriterAgent,
     DEFAULT_REACT_MAX_ITERATIONS,
 };
+pub use autonomy::{ApprovalDecision, ApprovalRequest, AutonomyController};
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use execution::ExecutionController;
 pub use policy::{

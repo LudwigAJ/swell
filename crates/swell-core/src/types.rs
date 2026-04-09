@@ -18,6 +18,60 @@ pub enum TaskState {
     Escalated,
 }
 
+/// Autonomy level for task execution, controlling approval requirements
+///
+/// - L1 (Supervised): Every action requires approval before execution
+/// - L2 (Guided): Plan approval required, then auto-execute (default)
+/// - L3 (Autonomous): Minimal guidance, only high-risk actions need approval
+/// - L4 (Full Auto): Fully autonomous, no approvals needed
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AutonomyLevel {
+    /// L1-Supervised: every action requires explicit approval
+    Supervised,
+    /// L2-Guided: plan approval required, then execute auto (default)
+    Guided,
+    /// L3-Autonomous: minimal guidance, decreasing approval needs
+    Autonomous,
+    /// L4-Full Auto: fully autonomous operation
+    FullAuto,
+}
+
+impl Default for AutonomyLevel {
+    fn default() -> Self {
+        AutonomyLevel::Guided
+    }
+}
+
+impl AutonomyLevel {
+    /// Returns true if the plan needs approval before execution
+    pub fn needs_plan_approval(&self) -> bool {
+        match self {
+            AutonomyLevel::Supervised | AutonomyLevel::Guided => true,
+            AutonomyLevel::Autonomous | AutonomyLevel::FullAuto => false,
+        }
+    }
+
+    /// Returns true if a step with the given risk level needs approval
+    pub fn needs_step_approval(&self, risk_level: RiskLevel) -> bool {
+        match self {
+            AutonomyLevel::Supervised => true, // Every action needs approval
+            AutonomyLevel::Guided => false,    // Only plan approval needed, steps auto-execute
+            AutonomyLevel::Autonomous => risk_level == RiskLevel::High, // Only high-risk needs approval
+            AutonomyLevel::FullAuto => false, // No approvals needed
+        }
+    }
+
+    /// Returns true if validation results need approval
+    pub fn needs_validation_approval(&self) -> bool {
+        match self {
+            AutonomyLevel::Supervised => true,
+            AutonomyLevel::Guided | AutonomyLevel::Autonomous => false,
+            AutonomyLevel::FullAuto => false,
+        }
+    }
+}
+
 impl std::fmt::Display for TaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -52,6 +106,9 @@ pub struct Task {
     pub token_budget: u64,
     pub tokens_used: u64,
     pub validation_result: Option<ValidationResult>,
+    /// Autonomy level controlling approval requirements
+    #[serde(default)]
+    pub autonomy_level: AutonomyLevel,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +142,29 @@ impl Task {
             token_budget: 1_000_000, // 1M tokens default
             tokens_used: 0,
             validation_result: None,
+            autonomy_level: AutonomyLevel::default(),
+        }
+    }
+
+    /// Create a new task with a specific autonomy level
+    pub fn with_autonomy_level(description: String, autonomy_level: AutonomyLevel) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            description,
+            state: TaskState::Created,
+            source: TaskSource::UserRequest,
+            created_at: now,
+            updated_at: now,
+            assigned_agent: None,
+            plan: None,
+            dependencies: Vec::new(),
+            dependents: Vec::new(),
+            iteration_count: 0,
+            token_budget: 1_000_000,
+            tokens_used: 0,
+            validation_result: None,
+            autonomy_level,
         }
     }
 
