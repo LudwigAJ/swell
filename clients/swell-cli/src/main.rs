@@ -1,117 +1,269 @@
 use swell_core::{CliCommand, DaemonEvent, Task};
 use std::io::{self, Write};
+use std::time::Duration;
+use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::time::timeout;
 use uuid::Uuid;
+
+/// CLI-specific errors with user-friendly messages
+#[derive(Error, Debug)]
+pub enum CliError {
+    #[error("Connection failed: {0}")]
+    ConnectionFailed(String),
+
+    #[error("Daemon not running. Start with: swell-daemon")]
+    DaemonNotRunning,
+
+    #[error("Socket not found at {0}")]
+    SocketNotFound(String),
+
+    #[error("Connection timeout after {0:?}")]
+    ConnectionTimeout(Duration),
+
+    #[error("Request timeout after {0:?}")]
+    RequestTimeout(Duration),
+
+    #[error("Invalid UUID format: {0}")]
+    InvalidUuid(String),
+
+    #[error("Invalid command: {0}")]
+    InvalidCommand(String),
+
+    #[error("Missing required argument: {0}")]
+    MissingArgument(String),
+
+    #[error("Server error: {0}")]
+    ServerError(String),
+
+    #[error("Unexpected response format")]
+    UnexpectedResponse,
+
+    #[error("JSON parse error: {0}")]
+    JsonParseError(String),
+}
+
+impl CliError {
+    /// Returns the appropriate exit code for this error type
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            CliError::ConnectionFailed(_) => 10,
+            CliError::DaemonNotRunning => 10,
+            CliError::SocketNotFound(_) => 10,
+            CliError::ConnectionTimeout(_) => 11,
+            CliError::RequestTimeout(_) => 11,
+            CliError::InvalidUuid(_) => 2,
+            CliError::InvalidCommand(_) => 2,
+            CliError::MissingArgument(_) => 2,
+            CliError::ServerError(_) => 1,
+            CliError::UnexpectedResponse => 1,
+            CliError::JsonParseError(_) => 1,
+        }
+    }
+
+    /// Returns a short error code for scripts
+    pub fn error_code(&self) -> &'static str {
+        match self {
+            CliError::ConnectionFailed(_) => "CONNECTION_FAILED",
+            CliError::DaemonNotRunning => "DAEMON_NOT_RUNNING",
+            CliError::SocketNotFound(_) => "SOCKET_NOT_FOUND",
+            CliError::ConnectionTimeout(_) => "CONNECTION_TIMEOUT",
+            CliError::RequestTimeout(_) => "REQUEST_TIMEOUT",
+            CliError::InvalidUuid(_) => "INVALID_UUID",
+            CliError::InvalidCommand(_) => "INVALID_COMMAND",
+            CliError::MissingArgument(_) => "MISSING_ARGUMENT",
+            CliError::ServerError(_) => "SERVER_ERROR",
+            CliError::UnexpectedResponse => "UNEXPECTED_RESPONSE",
+            CliError::JsonParseError(_) => "JSON_PARSE_ERROR",
+        }
+    }
+}
+
+/// Print a structured error to stderr
+fn print_error(error: &CliError) {
+    eprintln!("error: {}", error);
+    eprintln!("  Code: {}", error.error_code());
+}
+
+/// Default connection timeout
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Default request timeout
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Prompt user for confirmation and return true if they confirm with 'y' or 'yes' (case-insensitive)
 fn confirm(prompt: &str) -> bool {
     print!("{} [y/N] ", prompt);
-    io::stdout().flush().unwrap();
+    if let Err(e) = io::stdout().flush() {
+        eprintln!("Warning: flush failed: {}", e);
+        return false;
+    }
     
     let mut input = String::new();
-    if io::stdin().read_line(&mut input).is_ok() {
-        let trimmed = input.trim().to_lowercase();
-        trimmed == "y" || trimmed == "yes"
-    } else {
-        false
+    match io::stdin().read_line(&mut input) {
+        Ok(_) => {
+            let trimmed = input.trim().to_lowercase();
+            trimmed == "y" || trimmed == "yes"
+        }
+        Err(e) => {
+            eprintln!("Warning: read_line failed: {}", e);
+            false
+        }
     }
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     // Simple CLI parsing for MVP
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
         usage();
-        return Ok(());
+        std::process::exit(0);
     }
 
     let socket_path =
         std::env::var("SWELL_SOCKET").unwrap_or_else(|_| "/tmp/swell-daemon.sock".to_string());
 
-    match args[1].as_str() {
+    let result = match args[1].as_str() {
         "task" => {
             if args.len() < 3 {
-                eprintln!("Error: 'task' command requires a description");
-                usage();
-                return Ok(());
+                Err(CliError::MissingArgument("description".to_string()))
+            } else {
+                let description = args[2..].join(" ");
+                let cmd = CliCommand::TaskCreate { description };
+                send_command(&socket_path, cmd).await
             }
-            let description = args[2..].join(" ");
-            let cmd = CliCommand::TaskCreate { description };
-            send_command(&socket_path, cmd).await?;
         }
         "list" => {
             let json_output = args.contains(&"--json".to_string());
-            list_tasks(&socket_path, json_output).await?;
+            list_tasks(&socket_path, json_output).await
         }
         "watch" => {
             if args.len() < 3 {
-                eprintln!("Error: 'watch' command requires a task ID");
-                return Ok(());
+                Err(CliError::MissingArgument("task-id".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(task_id) => watch_task(&socket_path, task_id).await,
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
             }
-            let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
-            watch_task(&socket_path, task_id).await?;
         }
         "approve" => {
             if args.len() < 3 {
-                eprintln!("Error: 'approve' command requires a task ID");
-                return Ok(());
+                Err(CliError::MissingArgument("task-id".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(task_id) => {
+                        // Confirmation prompt before approving
+                        if !confirm(&format!("Are you sure you want to approve task {}?", task_id)) {
+                            println!("Approval cancelled.");
+                            return;
+                        }
+                        let cmd = CliCommand::TaskApprove { task_id };
+                        send_command(&socket_path, cmd).await
+                    }
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
             }
-            let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
-            
-            // Confirmation prompt before approving
-            if !confirm(&format!("Are you sure you want to approve task {}?", task_id)) {
-                println!("Approval cancelled.");
-                return Ok(());
-            }
-            
-            let cmd = CliCommand::TaskApprove { task_id };
-            send_command(&socket_path, cmd).await?;
         }
         "cancel" => {
             if args.len() < 3 {
-                eprintln!("Error: 'cancel' command requires a task ID");
-                return Ok(());
+                Err(CliError::MissingArgument("task-id".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(task_id) => {
+                        // Confirmation prompt before cancelling
+                        if !confirm(&format!("Are you sure you want to cancel task {}?", task_id)) {
+                            println!("Cancellation aborted.");
+                            return;
+                        }
+                        let cmd = CliCommand::TaskCancel { task_id };
+                        send_command(&socket_path, cmd).await
+                    }
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
             }
-            let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
-            
-            // Confirmation prompt before cancelling
-            if !confirm(&format!("Are you sure you want to cancel task {}?", task_id)) {
-                println!("Cancellation aborted.");
-                return Ok(());
-            }
-            
-            let cmd = CliCommand::TaskCancel { task_id };
-            send_command(&socket_path, cmd).await?;
         }
-        _ => {
-            usage();
-        }
-    }
+        unknown => Err(CliError::InvalidCommand(unknown.to_string())),
+    };
 
-    Ok(())
+    if let Err(e) = result {
+        print_error(&e);
+        std::process::exit(e.exit_code());
+    }
 }
 
 async fn send_command(
     socket_path: &str,
     cmd: CliCommand,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut stream = UnixStream::connect(socket_path).await?;
+) -> Result<(), CliError> {
+    // Check if socket file exists before trying to connect
+    if !std::path::Path::new(socket_path).exists() {
+        return Err(CliError::SocketNotFound(socket_path.to_string()));
+    }
 
-    let cmd_json = serde_json::to_string(&cmd)?;
-    stream.write_all(cmd_json.as_bytes()).await?;
-    stream.flush().await?;
+    // Connect with timeout
+    let connect_result = timeout(
+        DEFAULT_CONNECT_TIMEOUT,
+        UnixStream::connect(socket_path)
+    ).await;
 
+    let mut stream = match connect_result {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(e)) => {
+            return Err(CliError::ConnectionFailed(format!(
+                "Failed to connect to {}: {}",
+                socket_path, e
+            )));
+        }
+        Err(_) => {
+            return Err(CliError::ConnectionTimeout(DEFAULT_CONNECT_TIMEOUT));
+        }
+    };
+
+    // Serialize command
+    let cmd_json = serde_json::to_string(&cmd)
+        .map_err(|e| CliError::JsonParseError(e.to_string()))?;
+
+    // Write with timeout
+    let write_result = timeout(
+        DEFAULT_REQUEST_TIMEOUT,
+        async {
+            stream.write_all(cmd_json.as_bytes()).await?;
+            stream.flush().await
+        }
+    ).await;
+
+    if write_result.is_err() {
+        return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
+    }
+
+    // Read response with timeout
     let mut response_buf = Vec::with_capacity(65536);
-    let n = stream.read_buf(&mut response_buf).await?;
+    let read_result = timeout(
+        DEFAULT_REQUEST_TIMEOUT,
+        stream.read_buf(&mut response_buf)
+    ).await;
+
+    let n = match read_result {
+        Ok(Ok(n)) => n,
+        Ok(Err(e)) => {
+            return Err(CliError::ConnectionFailed(format!(
+                "Failed to read response: {}", e
+            )));
+        }
+        Err(_) => {
+            return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
+        }
+    };
 
     if n > 0 {
         let response_str = String::from_utf8_lossy(&response_buf[..n]);
-        let response: DaemonEvent =
-            serde_json::from_str(&response_str).expect("Invalid response format");
+        let response: DaemonEvent = serde_json::from_str(&response_str)
+            .map_err(|e| CliError::JsonParseError(format!("Response: {}", e)))?;
 
         handle_event(&response);
     }
@@ -120,16 +272,57 @@ async fn send_command(
 }
 
 /// Watch a task and stream events until Ctrl+C or terminal state
-async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), Box<dyn std::error::Error>> {
-    let mut stream = UnixStream::connect(socket_path).await?;
+async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), CliError> {
+    // Check if socket file exists before trying to connect
+    if !std::path::Path::new(socket_path).exists() {
+        return Err(CliError::SocketNotFound(socket_path.to_string()));
+    }
+
+    // Connect with timeout
+    let connect_result = timeout(
+        DEFAULT_CONNECT_TIMEOUT,
+        UnixStream::connect(socket_path)
+    ).await;
+
+    let mut stream = match connect_result {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(e)) => {
+            return Err(CliError::ConnectionFailed(format!(
+                "Failed to connect to {}: {}",
+                socket_path, e
+            )));
+        }
+        Err(_) => {
+            return Err(CliError::ConnectionTimeout(DEFAULT_CONNECT_TIMEOUT));
+        }
+    };
 
     let cmd = CliCommand::TaskWatch { task_id };
-    let cmd_json = serde_json::to_string(&cmd)?;
-    stream.write_all(cmd_json.as_bytes()).await?;
-    stream.flush().await?;
+    let cmd_json = serde_json::to_string(&cmd)
+        .map_err(|e| CliError::JsonParseError(e.to_string()))?;
+
+    // Write with timeout
+    let write_result = timeout(
+        DEFAULT_REQUEST_TIMEOUT,
+        async {
+            stream.write_all(cmd_json.as_bytes()).await?;
+            stream.flush().await
+        }
+    ).await;
+
+    if write_result.is_err() {
+        return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
+    }
 
     // Set up Ctrl+C handler
-    let mut sigint = signal(SignalKind::interrupt())?;
+    let mut sigint = match signal(SignalKind::interrupt()) {
+        Ok(sig) => sig,
+        Err(e) => {
+            return Err(CliError::ConnectionFailed(format!(
+                "Failed to setup signal handler: {}", e
+            )));
+        }
+    };
 
     println!("Watching task {}... (Press Ctrl+C to stop)", task_id);
     println!("{}", "-".repeat(60));
@@ -141,7 +334,13 @@ async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), Box<dyn std:
     loop {
         tokio::select! {
             result = reader.read_line(&mut line) => {
-                let n = result?;
+                let n = match result {
+                    Ok(n) => n,
+                    Err(e) => {
+                        eprintln!("\nRead error: {}", e);
+                        break;
+                    }
+                };
                 if n == 0 {
                     // EOF - connection closed
                     println!("\nConnection closed by server.");
@@ -224,21 +423,71 @@ fn handle_event(event: &DaemonEvent) {
     }
 }
 
-async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), Box<dyn std::error::Error>> {
-    let mut stream = UnixStream::connect(socket_path).await?;
+async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError> {
+    // Check if socket file exists before trying to connect
+    if !std::path::Path::new(socket_path).exists() {
+        return Err(CliError::SocketNotFound(socket_path.to_string()));
+    }
+
+    // Connect with timeout
+    let connect_result = timeout(
+        DEFAULT_CONNECT_TIMEOUT,
+        UnixStream::connect(socket_path)
+    ).await;
+
+    let mut stream = match connect_result {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(e)) => {
+            return Err(CliError::ConnectionFailed(format!(
+                "Failed to connect to {}: {}",
+                socket_path, e
+            )));
+        }
+        Err(_) => {
+            return Err(CliError::ConnectionTimeout(DEFAULT_CONNECT_TIMEOUT));
+        }
+    };
 
     let cmd = CliCommand::TaskList;
-    let cmd_json = serde_json::to_string(&cmd)?;
-    stream.write_all(cmd_json.as_bytes()).await?;
-    stream.flush().await?;
+    let cmd_json = serde_json::to_string(&cmd)
+        .map_err(|e| CliError::JsonParseError(e.to_string()))?;
 
+    // Write with timeout
+    let write_result = timeout(
+        DEFAULT_REQUEST_TIMEOUT,
+        async {
+            stream.write_all(cmd_json.as_bytes()).await?;
+            stream.flush().await
+        }
+    ).await;
+
+    if write_result.is_err() {
+        return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
+    }
+
+    // Read response with timeout
     let mut response_buf = Vec::with_capacity(65536);
-    let n = stream.read_buf(&mut response_buf).await?;
+    let read_result = timeout(
+        DEFAULT_REQUEST_TIMEOUT,
+        stream.read_buf(&mut response_buf)
+    ).await;
+
+    let n = match read_result {
+        Ok(Ok(n)) => n,
+        Ok(Err(e)) => {
+            return Err(CliError::ConnectionFailed(format!(
+                "Failed to read response: {}", e
+            )));
+        }
+        Err(_) => {
+            return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
+        }
+    };
 
     if n > 0 {
         let response_str = String::from_utf8_lossy(&response_buf[..n]);
-        let response: DaemonEvent =
-            serde_json::from_str(&response_str).expect("Invalid response format");
+        let response: DaemonEvent = serde_json::from_str(&response_str)
+            .map_err(|e| CliError::JsonParseError(format!("Response: {}", e)))?;
 
         match response {
             DaemonEvent::TaskCompleted { id, pr_url, .. } => {
@@ -250,14 +499,16 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), Box<dyn 
                         } else {
                             // Formatted table output
                             let tasks: Vec<Task> = serde_json::from_str(&json)
-                                .expect("Invalid task list JSON");
+                                .map_err(|e| CliError::JsonParseError(format!(
+                                    "Task list: {}", e
+                                )))?;
                             print_task_table(&tasks);
                         }
                     }
                 }
             }
             DaemonEvent::Error { message, .. } => {
-                eprintln!("Error: {}", message);
+                return Err(CliError::ServerError(message));
             }
             other => {
                 eprintln!("Unexpected response: {:?}", other);
@@ -291,15 +542,23 @@ fn print_task_table(tasks: &[Task]) {
 fn usage() {
     eprintln!(
         "swell - Autonomous Coding Engine CLI
-    "
-    );
-    eprintln!(
-        "Usage:
-    swell task <description>     Create a new task
-    swell list                     List all tasks
-    swell watch <task-id>         Watch task status
-    swell approve <task-id>       Approve task plan
-    swell cancel <task-id>         Cancel a task
-    "
+
+Usage:
+    swell task <description>      Create a new task
+    swell list [--json]           List all tasks (--json for raw JSON)
+    swell watch <task-id>        Watch task status
+    swell approve <task-id>      Approve task plan
+    swell cancel <task-id>        Cancel a task
+
+Environment:
+    SWELL_SOCKET                  Socket path (default: /tmp/swell-daemon.sock)
+
+Exit codes:
+    0   Success
+    1   Server error or internal error
+    2   Invalid command or arguments
+    10  Connection failed (daemon not running)
+    11  Timeout
+"
     );
 }
