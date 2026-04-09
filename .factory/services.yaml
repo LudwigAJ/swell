@@ -1,0 +1,16 @@
+commands:
+  install: cargo build --workspace
+  typecheck: cargo clippy --workspace -- -D warnings
+  build: cargo build --workspace
+  test: cargo test --workspace
+  lint: cargo clippy --workspace
+  run-daemon: cargo run --bin swell-daemon
+  run-cli: cargo run --bin swell
+
+services:
+  swell-daemon:
+    start: cargo run --bin swell-daemon
+    stop: pkill -f swell-daemon || true
+    healthcheck: echo "daemon started"
+    port: 3100
+    depends_on: []

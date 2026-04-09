@@ -6,6 +6,18 @@ This is an autonomous coding engine project. The system is designed to autonomou
 
 For the full project specification, see `plan/Autonomous Coding Engine.md`.
 
+## Configuration
+
+All configurable values are in `.swell/` folder:
+- `.swell/settings.json` - Runtime settings (timeouts, limits, thresholds)
+- `.swell/policies/default.yaml` - Policy rules with deny-first semantics
+- `.swell/models.json` - LLM model routing and configuration
+- `.swell/crates.json` - Workspace crate dependencies
+- `.swell/milestones.json` - Milestone definitions and blocking rules
+- `.swell/prompts/` - Agent system prompts
+
+**Never hardcode magic numbers** - always load from `.swell/settings.json` or environment variables.
+
 ## Project Structure
 
 ```

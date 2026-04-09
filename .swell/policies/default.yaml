@@ -1,0 +1,70 @@
+# SWELL Policy Configuration
+# Policies evaluated with deny-first semantics
+
+version: "1.0"
+default_effect: "deny"
+
+rules:
+  # High-risk commands - always deny
+  - id: deny-rm-rf-root
+    effect: "deny"
+    priority: 100
+    conditions:
+      - type: command_match
+        pattern: "rm\\s+-rf\\s+/?\\*"
+
+  - id: deny-destructive-git
+    effect: "deny"
+    priority: 90
+    conditions:
+      - type: command_match
+        pattern: "(git\\s+reset\\s+--hard|git\\s+push\\s+--force)"
+
+  - id: deny-sql-drop
+    effect: "deny"
+    priority: 90
+    conditions:
+      - type: command_match
+        pattern: "(DROP|DROP\\s+DATABASE|DROP\\s+TABLE)"
+
+  # Medium-risk - require confirmation
+  - id: ask-network-access
+    effect: "ask"
+    priority: 50
+    conditions:
+      - type: tool_category
+        value: "network"
+
+  - id: ask-system-modification
+    effect: "ask"
+    priority: 50
+    conditions:
+      - type: tool_category
+        value: "system"
+
+  # Safe operations - allow by default
+  - id: allow-read-only
+    effect: "allow"
+    priority: 10
+    conditions:
+      - type: tool_category
+        value: "read"
+
+  - id: allow-workspace-files
+    effect: "allow"
+    priority: 20
+    conditions:
+      - type: path_prefix
+        value: "crates/"
+      - type: path_prefix
+        value: "src/"
+      - type: path_prefix
+        value: "tests/"
+
+  # LLM operations - always allow (cost controlled elsewhere)
+  - id: allow-llm-calls
+    effect: "allow"
+    priority: 5
+    conditions:
+      - type: tool_category
+        value: "llm"

@@ -1,0 +1,49 @@
+{
+  "crates": {
+    "swell-core": {
+      "path": "crates/swell-core",
+      "description": "Core types and traits",
+      "depends_on": []
+    },
+    "swell-orchestrator": {
+      "path": "crates/swell-orchestrator",
+      "description": "Orchestration and agent coordination",
+      "depends_on": ["swell-core", "swell-llm"]
+    },
+    "swell-tools": {
+      "path": "crates/swell-tools",
+      "description": "File, shell, git tools",
+      "depends_on": ["swell-core"]
+    },
+    "swell-llm": {
+      "path": "crates/swell-llm",
+      "description": "LLM backends (Anthropic, OpenAI)",
+      "depends_on": ["swell-core"]
+    },
+    "swell-memory": {
+      "path": "crates/swell-memory",
+      "description": "Memory and learning system",
+      "depends_on": ["swell-core"]
+    },
+    "swell-validation": {
+      "path": "crates/swell-validation",
+      "description": "Validation gates and pipelines",
+      "depends_on": ["swell-core", "swell-tools"]
+    },
+    "swell-state": {
+      "path": "crates/swell-state",
+      "description": "State management and checkpoints",
+      "depends_on": ["swell-core"]
+    },
+    "swell-daemon": {
+      "path": "crates/swell-daemon",
+      "description": "Daemon server with Unix socket",
+      "depends_on": ["swell-orchestrator", "swell-state"]
+    },
+    "swell-cli": {
+      "path": "crates/swell-cli",
+      "description": "CLI client",
+      "depends_on": ["swell-daemon"]
+    }
+  }
+}

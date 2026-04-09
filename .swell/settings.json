@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "workspace": {
+    "path": ".",
+    "max_concurrent_agents": 6,
+    "max_workers": 7
+  },
+  "execution": {
+    "max_task_timeout_seconds": 300,
+    "max_retry_iterations": 3,
+    "max_tool_call_iterations": 15,
+    "no_progress_iterations": 5
+  },
+  "autonomy": {
+    "default_level": "L2-Guided",
+    "levels": {
+      "L1-Supervised": { "plan_approval_required": true, "execute_approval_required": true },
+      "L2-Guided": { "plan_approval_required": true, "execute_approval_required": false },
+      "L3-Autonomous": { "plan_approval_required": false, "notify_on_progress": true },
+      "L4-FullAuto": { "plan_approval_required": false, "auto_approve_plan": true }
+    }
+  },
+  "drift": {
+    "threshold_percent": 30
+  },
+  "cost": {
+    "warning_threshold_percent": 75,
+    "hard_stop_threshold_percent": 100,
+    "budget_usd": 100.0
+  },
+  "session": {
+    "checkpoint_interval_minutes": 60,
+    "max_session_hours": 8,
+    "max_tasks_per_run": 100,
+    "max_failures_before_stop": 10
+  },
+  "memory": {
+    "confidence_promotion_threshold": 0.6,
+    "pattern_promotion_confirmations": 5,
+    "rule_promotion_confirmations": 10,
+    "rule_promotion_confidence": 0.8,
+    "deprecation_confidence": 0.3,
+    "similarity_distance_threshold": 0.15,
+    "decay": {
+      "procedural_slow": true,
+      "environmental_medium": true,
+      "buffer_fast": true
+    }
+  },
+  "validation": {
+    "flakiness_retries": 3,
+    "quarantine_threshold": 0.1,
+    "confidence_thresholds": {
+      "auto_merge": 0.9,
+      "human_review": 0.6,
+      "block": 0.0
+    }
+  },
+  "git": {
+    "branch_prefix": "agent",
+    "max_active_branches": 20,
+    "worktree_retain_days": 7,
+    "commit_metadata": true
+  },
+  "safety": {
+    "denied_commands": [
+      "rm -rf /",
+      "rm -rf /*",
+      "DROP DATABASE",
+      "--force",
+      "reset --hard"
+    ],
+    "blocked_network": [
+      "169.254.169.254",
+      "metadata.google.internal"
+    ]
+  }
+}

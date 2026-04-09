@@ -1,0 +1,215 @@
+{
+  "milestones": {
+    "foundation": {
+      "order": 1,
+      "description": "Core types, traits, and state machine",
+      "features": ["orch-state-machine", "orch-agent-pool", "state-sqlite-checkpoint", "state-inmemory"],
+      "validation_required": true,
+      "blocking": true
+    },
+    "orchestration": {
+      "order": 2,
+      "description": "Orchestrator, scheduler, policy engine",
+      "features": [
+        "orch-orchestrator-api", "orch-task-graph", "orch-policy-engine",
+        "orch-scheduler-queue", "orch-drift-detector", "orch-execution-controller"
+      ],
+      "validation_required": true,
+      "blocking": true
+    },
+    "llm": {
+      "order": 3,
+      "description": "LLM backends and model routing",
+      "features": [
+        "llm-anthropic-backend", "llm-openai-backend", "llm-mock-backend",
+        "llm-model-router", "llm-health-check"
+      ],
+      "validation_required": true,
+      "blocking": true
+    },
+    "tools": {
+      "order": 4,
+      "description": "File, shell, git, search tools",
+      "features": [
+        "tools-file-read", "tools-file-write", "tools-file-edit",
+        "tools-shell-exec", "tools-git-ops", "tools-search",
+        "tools-registry", "tools-mcp-client", "tools-permission-tiers"
+      ],
+      "validation_required": true,
+      "blocking": false
+    },
+    "agents": {
+      "order": 5,
+      "description": "Planner, Generator, Evaluator agents",
+      "features": [
+        "agents-planner-agent", "agents-generator-agent", "agents-evaluator-agent",
+        "agents-coder-agent", "agents-test-writer-agent", "agents-reviewer-agent",
+        "agents-refactorer-agent", "agents-doc-writer-agent", "agents-system-prompt-builder",
+        "agents-react-loop", "agents-context-condensation"
+      ],
+      "validation_required": true,
+      "blocking": false
+    },
+    "validation": {
+      "order": 6,
+      "description": "Validation gates and pipelines",
+      "features": [
+        "validation-lint-gate", "validation-test-gate", "validation-security-gate",
+        "validation-ai-review-gate", "validation-pipeline", "validation-confidence-scorer",
+        "validation-flakiness-detector", "validation-evidence-pack"
+      ],
+      "validation_required": true,
+      "blocking": false
+    },
+    "memory": {
+      "order": 7,
+      "description": "Memory system with SQLite store",
+      "features": [
+        "memory-sqlite-store", "memory-memory-blocks", "memory-recall",
+        "memory-skill-extraction", "memory-pattern-learning"
+      ],
+      "validation_required": true,
+      "blocking": false
+    },
+    "state": {
+      "order": 8,
+      "description": "State management and checkpoints",
+      "features": [
+        "state-postgres-checkpoint", "state-checkpoint-manager"
+      ],
+      "validation_required": true,
+      "blocking": false
+    },
+    "daemon": {
+      "order": 9,
+      "description": "Daemon server and CLI",
+      "features": [
+        "daemon-unix-socket", "daemon-graceful-shutdown",
+        "daemon-command-handler", "daemon-event-emitter",
+        "cli-task-create", "cli-task-list", "cli-task-watch",
+        "cli-task-approve-cancel", "cli-error-handling"
+      ],
+      "validation_required": true,
+      "blocking": false
+    },
+    "safety": {
+      "order": 10,
+      "description": "Safety systems and cost guard",
+      "features": [
+        "safety-cost-guard", "safety-doom-loop",
+        "safety-kill-switch", "safety-circuit-breaker"
+      ],
+      "validation_required": true,
+      "blocking": false
+    },
+    "git": {
+      "order": 11,
+      "description": "Git worktree and branch management",
+      "features": [
+        "git-worktree-pool", "git-branch-strategy",
+        "git-commit-strategy", "git-conflict-resolution", "git-pr-creation"
+      ],
+      "validation_required": false,
+      "blocking": false
+    },
+    "autonomy": {
+      "order": 12,
+      "description": "Autonomy levels and work backlog",
+      "features": [
+        "autonomy-levels", "work-backlog"
+      ],
+      "validation_required": true,
+      "blocking": false
+    },
+    "observability": {
+      "order": 13,
+      "description": "Dashboard, metrics, alerts, tracing",
+      "features": [
+        "observability-dashboard-api", "observability-metrics",
+        "observability-alerts", "observability-structured-json",
+        "observability-opentelemetry", "observability-event-schema",
+        "observability-audit-trail", "observability-langfuse-export",
+        "observability-trace-waterfall", "observability-correlation-ids",
+        "observability-cost-tracking", "observability-operator-intervention"
+      ],
+      "validation_required": false,
+      "blocking": false
+    },
+    "memory-advanced": {
+      "order": 14,
+      "description": "Advanced memory features from research",
+      "features": [
+        "mem-event-log-jsonl", "mem-episodic-memory", "mem-semantic-memory",
+        "mem-procedural-memory", "mem-operator-feedback", "mem-meta-cognitive",
+        "mem-confidence-bayesian", "mem-decay-function", "mem-promotion-threshold",
+        "mem-deprecation", "mem-scoping", "mem-similarity-check",
+        "mem-staleness-detection", "mem-golden-sample-testing",
+        "mem-contrastive-learning", "mem-version-rollback",
+        "mem-triple-stream-retrieval", "mem-cross-encoder-rerank",
+        "mem-conflict-resolution", "mem-provenance-tracking"
+      ],
+      "validation_required": false,
+      "blocking": false
+    },
+    "tools-advanced": {
+      "order": 15,
+      "description": "Advanced tool features from research",
+      "features": [
+        "tools-hybrid-execution", "tools-firecracker-sandbox",
+        "tools-gvisor-support", "tools-os-sandbox",
+        "tools-worktree-isolation", "tools-credential-proxy",
+        "tools-vault-integration", "tools-network-egress",
+        "tools-secret-scanning", "tools-auto-masking",
+        "tools-mcp-deferred-loading", "tools-tool-annotations",
+        "tools-cedar-policy", "tools-opa-policy",
+        "tools-external-killswitch", "tools-resource-limits",
+        "tools-loop-detection", "tools-posttooluse-hooks",
+        "tools-multi-signal-validation", "tools-self-healing-ci"
+      ],
+      "validation_required": false,
+      "blocking": false
+    },
+    "validation-advanced": {
+      "order": 16,
+      "description": "Advanced validation features from research",
+      "features": [
+        "val-test-planning-engine", "val-test-generator",
+        "val-test-executor-staged", "val-flakiness-retry",
+        "val-result-interpreter", "val-traceability-store",
+        "val-predictive-selection", "val-autonomous-coverage",
+        "val-self-improving-tests", "val-calibrated-confidence",
+        "val-multi-agent-test-roles"
+      ],
+      "validation_required": false,
+      "blocking": false
+    },
+    "orchestration-advanced": {
+      "order": 17,
+      "description": "Advanced orchestration from research",
+      "features": [
+        "orch-autonomy-levels-full", "orch-policy-gates-yaml",
+        "orch-retry-policy", "orch-feature-leads",
+        "orch-task-board", "orch-follow-up-generator",
+        "orch-gap-analyzer", "orch-novelty-check",
+        "orch-value-scorer", "orch-decay-function",
+        "orch-hard-limits", "orch-soft-limits",
+        "orch-session-hygiene", "orch-frozen-spec",
+        "orch-stopping-conditions", "orch-worker-pool",
+        "orch-file-locks", "orch-subagent-spawn",
+        "orch-model-fallback", "orch-idempotent-actions",
+        "orch-backlog-aggregation", "orch-feature-flag-rollback",
+        "orch-stacked-prs", "orch-risk-tiered-merge",
+        "orch-merge-queue"
+      ],
+      "validation_required": false,
+      "blocking": false
+    },
+    "benchmark": {
+      "order": 18,
+      "description": "Benchmark suite and evaluation",
+      "features": ["benchmark-suite"],
+      "validation_required": true,
+      "blocking": false
+    }
+  }
+}
