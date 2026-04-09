@@ -43,9 +43,11 @@ pub use confidence::{
 pub mod evidence;
 pub use evidence::{
     AiReviewEvidence, ConfidenceEvidence, CoverageEvidence, EvidenceOutcome, EvidencePack,
-    EvidencePackBuilder, EvidencePackError, FlakinessEvidence, GateEvidence, MessageCounts,
-    ReviewComment, SecurityEvidence, SecurityFinding, SignalScore, TestEvidence, TestResult,
+    EvidencePackBuilder, EvidencePackError, EvidenceStore, EvidenceStoreError, FlakinessEvidence,
+    GateEvidence, InMemoryEvidenceStore, MessageCounts, ReviewComment, SecurityEvidence,
+    SecurityFinding, SignalScore, TestEvidence, TestResult,
 };
+pub use evidence::sqlite_store::SqliteEvidenceStore;
 
 // Re-export flakiness detection for use by other crates
 pub mod flakiness;

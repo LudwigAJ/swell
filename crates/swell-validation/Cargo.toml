@@ -18,3 +18,4 @@ async-trait.workspace = true
 futures.workspace = true
 which = "6"
 itertools = "0.13"
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "sqlite", "uuid", "chrono"] }

@@ -2,10 +2,18 @@
 //!
 //! Bundles all validation signals, test results, and artifacts into
 //! an immutable evidence pack suitable for PR review and audit trails.
+//!
+//! # Evidence Store
+//!
+//! Use [`EvidenceStore`] trait for immutable storage and retrieval:
+//! - [`InMemoryEvidenceStore`] - In-memory store for testing
+//! - [`SqliteEvidenceStore`] - SQLite-based store for production
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use uuid::Uuid;
 
 /// An evidence pack containing all validation data for a task
@@ -512,6 +520,417 @@ impl EvidencePack {
     }
 }
 
+// ============================================================================
+// Evidence Store - Immutable Storage for Audit
+// ============================================================================
+
+/// Trait for storing and retrieving evidence packs immutably.
+/// 
+/// Evidence packs, once stored, cannot be modified - they represent
+/// a point-in-time snapshot of validation results for audit purposes.
+#[async_trait]
+pub trait EvidenceStore: Send + Sync {
+    /// Store an evidence pack immutably.
+    /// Returns the ID of the stored evidence.
+    async fn store(&self, evidence: EvidencePack) -> Result<Uuid, EvidenceStoreError>;
+
+    /// Retrieve an evidence pack by its ID.
+    async fn get(&self, id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError>;
+
+    /// Retrieve all evidence packs for a specific task, newest first.
+    async fn get_by_task_id(&self, task_id: Uuid) -> Result<Vec<EvidencePack>, EvidenceStoreError>;
+
+    /// Get the latest evidence pack for a task.
+    async fn get_latest(&self, task_id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError>;
+
+    /// List all evidence pack IDs for a task (without loading full data).
+    async fn list_ids(&self, task_id: Uuid) -> Result<Vec<Uuid>, EvidenceStoreError>;
+
+    /// Get total count of evidence packs for a task.
+    async fn count(&self, task_id: Uuid) -> Result<usize, EvidenceStoreError>;
+
+    /// Check if an evidence pack exists.
+    async fn exists(&self, id: Uuid) -> Result<bool, EvidenceStoreError>;
+}
+
+/// Errors from evidence store operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum EvidenceStoreError {
+    /// Evidence pack not found
+    NotFound(Uuid),
+    /// Storage error (IO, database, etc.)
+    StorageError(String),
+    /// Serialization error
+    SerializationError(String),
+}
+
+impl std::fmt::Display for EvidenceStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EvidenceStoreError::NotFound(id) => write!(f, "Evidence pack not found: {}", id),
+            EvidenceStoreError::StorageError(msg) => write!(f, "Storage error: {}", msg),
+            EvidenceStoreError::SerializationError(msg) => {
+                write!(f, "Serialization error: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for EvidenceStoreError {}
+
+impl From<EvidenceStoreError> for crate::SwellError {
+    fn from(err: EvidenceStoreError) -> Self {
+        match err {
+            EvidenceStoreError::NotFound(_) => {
+                crate::SwellError::TaskNotFound(uuid::Uuid::nil())
+            }
+            EvidenceStoreError::StorageError(_) => {
+                crate::SwellError::DatabaseError(err.to_string())
+            }
+            EvidenceStoreError::SerializationError(_) => {
+                crate::SwellError::ConfigError(err.to_string())
+            }
+        }
+    }
+}
+
+// In-memory store implementation for testing
+mod mem_store {
+    use super::*;
+
+    /// In-memory evidence store for testing.
+    /// 
+    /// Note: This store is NOT truly immutable - it allows deletion
+    /// for test cleanup purposes. In production, use SqliteEvidenceStore.
+    #[derive(Debug, Default)]
+    pub struct InMemoryEvidenceStore {
+        evidence: std::sync::RwLock<HashMap<Uuid, EvidencePack>>,
+        by_task: std::sync::RwLock<HashMap<Uuid, Vec<Uuid>>>,
+    }
+
+    impl InMemoryEvidenceStore {
+        /// Create a new in-memory evidence store
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Create with initial capacity
+        pub fn with_capacity(_capacity: usize) -> Self {
+            Self::default()
+        }
+    }
+
+    #[async_trait]
+    impl EvidenceStore for InMemoryEvidenceStore {
+        async fn store(&self, evidence: EvidencePack) -> Result<Uuid, EvidenceStoreError> {
+            let id = evidence.id;
+            let task_id = evidence.task_id;
+
+            // Store the evidence
+            {
+                let mut evidence_map = self.evidence.write().unwrap();
+                evidence_map.insert(id, evidence);
+            }
+
+            // Update task index
+            {
+                let mut by_task = self.by_task.write().unwrap();
+                by_task
+                    .entry(task_id)
+                    .or_default()
+                    .push(id);
+            }
+
+            Ok(id)
+        }
+
+        async fn get(&self, id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError> {
+            let evidence_map = self.evidence.read().unwrap();
+            Ok(evidence_map.get(&id).cloned())
+        }
+
+        async fn get_by_task_id(
+            &self,
+            task_id: Uuid,
+        ) -> Result<Vec<EvidencePack>, EvidenceStoreError> {
+            let evidence_map = self.evidence.read().unwrap();
+            let by_task = self.by_task.read().unwrap();
+
+            let ids = by_task.get(&task_id).cloned().unwrap_or_default();
+
+            let mut packs: Vec<EvidencePack> = ids
+                .iter()
+                .filter_map(|id| evidence_map.get(id).cloned())
+                .collect();
+
+            // Sort by created_at descending (newest first)
+            packs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+            Ok(packs)
+        }
+
+        async fn get_latest(&self, task_id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError> {
+            let packs = self.get_by_task_id(task_id).await?;
+            Ok(packs.into_iter().next())
+        }
+
+        async fn list_ids(&self, task_id: Uuid) -> Result<Vec<Uuid>, EvidenceStoreError> {
+            let by_task = self.by_task.read().unwrap();
+            Ok(by_task.get(&task_id).cloned().unwrap_or_default())
+        }
+
+        async fn count(&self, task_id: Uuid) -> Result<usize, EvidenceStoreError> {
+            let by_task = self.by_task.read().unwrap();
+            Ok(by_task.get(&task_id).map(|v| v.len()).unwrap_or(0))
+        }
+
+        async fn exists(&self, id: Uuid) -> Result<bool, EvidenceStoreError> {
+            let evidence_map = self.evidence.read().unwrap();
+            Ok(evidence_map.contains_key(&id))
+        }
+    }
+}
+
+// Re-export the in-memory store
+pub use mem_store::InMemoryEvidenceStore;
+
+// SQLite store implementation
+pub mod sqlite_store {
+    use super::*;
+
+    /// SQLite-based evidence store for production use.
+    /// 
+    /// Stores evidence packs immutably - once stored, evidence cannot be
+    /// modified or deleted through this interface.
+    #[derive(Debug, Clone)]
+    pub struct SqliteEvidenceStore {
+        pool: sqlx::SqlitePool,
+    }
+
+    impl SqliteEvidenceStore {
+        /// Create a new SQLite evidence store with the given database path
+        pub async fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, EvidenceStoreError> {
+            let database_url = format!(
+                "sqlite:{}?mode=rwc",
+                db_path.as_ref().display()
+            );
+
+            let pool = sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect(&database_url)
+                .await
+                .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            let store = Self { pool };
+            store.init_schema().await?;
+
+            Ok(store)
+        }
+
+        /// Create using an existing connection pool
+        pub async fn from_pool(pool: sqlx::sqlite::SqlitePool) -> Result<Self, EvidenceStoreError> {
+            let store = Self { pool };
+            store.init_schema().await?;
+            Ok(store)
+        }
+
+        /// Create using a connection string (e.g., "sqlite::memory:")
+        pub async fn from_connection_string(
+            conn_str: &str,
+        ) -> Result<Self, EvidenceStoreError> {
+            let pool = sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect(conn_str)
+                .await
+                .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            let store = Self { pool };
+            store.init_schema().await?;
+            Ok(store)
+        }
+
+        /// Initialize the database schema
+        async fn init_schema(&self) -> Result<(), EvidenceStoreError> {
+            sqlx::query(
+                r#"
+                CREATE TABLE IF NOT EXISTS evidence_packs (
+                    id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    data TEXT NOT NULL
+                )
+                "#,
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            // Create index on task_id for efficient lookups
+            sqlx::query(
+                r#"
+                CREATE INDEX IF NOT EXISTS idx_evidence_task_id 
+                ON evidence_packs(task_id, created_at DESC)
+                "#,
+            )
+            .execute(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl EvidenceStore for SqliteEvidenceStore {
+        async fn store(&self, evidence: EvidencePack) -> Result<Uuid, EvidenceStoreError> {
+            let id = evidence.id.to_string();
+            let task_id = evidence.task_id.to_string();
+            let created_at = evidence.created_at.to_rfc3339();
+
+            let data = serde_json::to_string(&evidence)
+                .map_err(|e| EvidenceStoreError::SerializationError(e.to_string()))?;
+
+            sqlx::query(
+                r#"
+                INSERT INTO evidence_packs (id, task_id, created_at, data)
+                VALUES (?, ?, ?, ?)
+                "#,
+            )
+            .bind(&id)
+            .bind(&task_id)
+            .bind(&created_at)
+            .bind(&data)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            Ok(evidence.id)
+        }
+
+        async fn get(&self, id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError> {
+            let id_str = id.to_string();
+
+            let row: Option<(String,)> = sqlx::query_as(
+                r#"SELECT data FROM evidence_packs WHERE id = ?"#,
+            )
+            .bind(&id_str)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            match row {
+                Some((data,)) => {
+                    let evidence: EvidencePack = serde_json::from_str(&data)
+                        .map_err(|e| EvidenceStoreError::SerializationError(e.to_string()))?;
+                    Ok(Some(evidence))
+                }
+                None => Ok(None),
+            }
+        }
+
+        async fn get_by_task_id(
+            &self,
+            task_id: Uuid,
+        ) -> Result<Vec<EvidencePack>, EvidenceStoreError> {
+            let task_id_str = task_id.to_string();
+
+            let rows: Vec<(String,)> = sqlx::query_as(
+                r#"
+                SELECT data FROM evidence_packs 
+                WHERE task_id = ?
+                ORDER BY created_at DESC
+                "#,
+            )
+            .bind(&task_id_str)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            let mut packs = Vec::with_capacity(rows.len());
+            for (data,) in rows {
+                let evidence: EvidencePack = serde_json::from_str(&data)
+                    .map_err(|e| EvidenceStoreError::SerializationError(e.to_string()))?;
+                packs.push(evidence);
+            }
+
+            Ok(packs)
+        }
+
+        async fn get_latest(&self, task_id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError> {
+            let task_id_str = task_id.to_string();
+
+            let row: Option<(String,)> = sqlx::query_as(
+                r#"
+                SELECT data FROM evidence_packs 
+                WHERE task_id = ?
+                ORDER BY created_at DESC
+                LIMIT 1
+                "#,
+            )
+            .bind(&task_id_str)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            match row {
+                Some((data,)) => {
+                    let evidence: EvidencePack = serde_json::from_str(&data)
+                        .map_err(|e| EvidenceStoreError::SerializationError(e.to_string()))?;
+                    Ok(Some(evidence))
+                }
+                None => Ok(None),
+            }
+        }
+
+        async fn list_ids(&self, task_id: Uuid) -> Result<Vec<Uuid>, EvidenceStoreError> {
+            let task_id_str = task_id.to_string();
+
+            let rows: Vec<(String,)> = sqlx::query_as(
+                r#"SELECT id FROM evidence_packs WHERE task_id = ? ORDER BY created_at DESC"#,
+            )
+            .bind(&task_id_str)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            let ids: Vec<Uuid> = rows
+                .into_iter()
+                .filter_map(|(id_str,)| Uuid::parse_str(&id_str).ok())
+                .collect();
+
+            Ok(ids)
+        }
+
+        async fn count(&self, task_id: Uuid) -> Result<usize, EvidenceStoreError> {
+            let task_id_str = task_id.to_string();
+
+            let row: (i64,) = sqlx::query_as(
+                r#"SELECT COUNT(*) FROM evidence_packs WHERE task_id = ?"#,
+            )
+            .bind(&task_id_str)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            Ok(row.0 as usize)
+        }
+
+        async fn exists(&self, id: Uuid) -> Result<bool, EvidenceStoreError> {
+            let id_str = id.to_string();
+
+            let row: (i64,) = sqlx::query_as(
+                r#"SELECT COUNT(*) FROM evidence_packs WHERE id = ?"#,
+            )
+            .bind(&id_str)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+
+            Ok(row.0 > 0)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -629,5 +1048,308 @@ mod tests {
     fn test_builder_error_no_task_id() {
         let result = EvidencePackBuilder::new().build();
         assert!(result.is_err());
+    }
+}
+
+// Tests for EvidenceStore implementations
+#[cfg(test)]
+mod evidence_store_tests {
+    use super::*;
+    use crate::evidence::sqlite_store::SqliteEvidenceStore;
+
+    /// Helper to create a test evidence pack
+    fn create_test_evidence(task_id: Uuid, passed: bool) -> EvidencePack {
+        EvidencePackBuilder::new()
+            .task_id(task_id)
+            .test_summary(TestEvidence {
+                total: 10,
+                passed: if passed { 10 } else { 8 },
+                failed: if passed { 0 } else { 2 },
+                skipped: 0,
+                duration_ms: 500,
+                tests: vec![],
+            })
+            .security(SecurityEvidence {
+                passed: true,
+                critical: 0,
+                high: 0,
+                medium: 0,
+                low: 0,
+                findings: vec![],
+            })
+            .confidence_score(ConfidenceEvidence {
+                score: if passed { 0.95 } else { 0.7 },
+                auto_merge: passed,
+                signals: vec![],
+            })
+            .build()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_store_basic_operations() {
+        let store = InMemoryEvidenceStore::new();
+        let task_id = Uuid::new_v4();
+
+        // Store evidence
+        let evidence = create_test_evidence(task_id, true);
+        let id = evidence.id;
+        let stored_id = store.store(evidence).await.unwrap();
+        assert_eq!(stored_id, id);
+
+        // Retrieve by ID
+        let retrieved = store.get(id).await.unwrap();
+        assert!(retrieved.is_some());
+        let retrieved = retrieved.unwrap();
+        assert_eq!(retrieved.task_id, task_id);
+        assert_eq!(retrieved.outcome, EvidenceOutcome::Passed);
+
+        // Get by task ID
+        let task_evidence = store.get_by_task_id(task_id).await.unwrap();
+        assert_eq!(task_evidence.len(), 1);
+        assert_eq!(task_evidence[0].id, id);
+
+        // Get latest
+        let latest = store.get_latest(task_id).await.unwrap();
+        assert!(latest.is_some());
+        assert_eq!(latest.unwrap().id, id);
+
+        // Count
+        let count = store.count(task_id).await.unwrap();
+        assert_eq!(count, 1);
+
+        // Exists
+        let exists = store.exists(id).await.unwrap();
+        assert!(exists);
+
+        // Not exists
+        let not_exists = store.exists(Uuid::new_v4()).await.unwrap();
+        assert!(!not_exists);
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_store_multiple_evidences_per_task() {
+        let store = InMemoryEvidenceStore::new();
+        let task_id = Uuid::new_v4();
+
+        // Store multiple evidence packs
+        let evidence1 = create_test_evidence(task_id, true);
+        let evidence2 = create_test_evidence(task_id, false);
+        let evidence3 = create_test_evidence(task_id, true);
+
+        let id1 = evidence1.id;
+        let id2 = evidence2.id;
+        let id3 = evidence3.id;
+
+        store.store(evidence1).await.unwrap();
+        // Small delay to ensure different timestamps
+        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        store.store(evidence2).await.unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        store.store(evidence3).await.unwrap();
+
+        // Get all for task - should be newest first
+        let all_evidence = store.get_by_task_id(task_id).await.unwrap();
+        assert_eq!(all_evidence.len(), 3);
+        // Should be sorted by created_at DESC (newest first)
+        assert_eq!(all_evidence[0].id, id3);
+        assert_eq!(all_evidence[1].id, id2);
+        assert_eq!(all_evidence[2].id, id1);
+
+        // List IDs
+        let ids = store.list_ids(task_id).await.unwrap();
+        assert_eq!(ids.len(), 3);
+
+        // Count
+        let count = store.count(task_id).await.unwrap();
+        assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_store_multiple_tasks() {
+        let store = InMemoryEvidenceStore::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        let evidence1 = create_test_evidence(task1, true);
+        let evidence2 = create_test_evidence(task2, false);
+
+        store.store(evidence1).await.unwrap();
+        store.store(evidence2).await.unwrap();
+
+        // Get evidence for task1
+        let task1_evidence = store.get_by_task_id(task1).await.unwrap();
+        assert_eq!(task1_evidence.len(), 1);
+        assert_eq!(task1_evidence[0].task_id, task1);
+
+        // Get evidence for task2
+        let task2_evidence = store.get_by_task_id(task2).await.unwrap();
+        assert_eq!(task2_evidence.len(), 1);
+        assert_eq!(task2_evidence[0].task_id, task2);
+
+        // task3 should have no evidence
+        let task3_evidence = store.get_by_task_id(Uuid::new_v4()).await.unwrap();
+        assert!(task3_evidence.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_store_get_nonexistent() {
+        let store = InMemoryEvidenceStore::new();
+        let result = store.get(Uuid::new_v4()).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_evidence_pack_immutability_concept() {
+        // This test demonstrates the concept: evidence packs are immutable
+        // Once created and stored, they cannot be modified
+        let store = InMemoryEvidenceStore::new();
+        let task_id = Uuid::new_v4();
+
+        let evidence = create_test_evidence(task_id, true);
+        let original_id = evidence.id;
+        store.store(evidence).await.unwrap();
+
+        // Retrieve the stored evidence
+        let retrieved = store.get(original_id).await.unwrap().unwrap();
+
+        // The retrieved evidence is a clone - original is unchanged
+        // (EvidencePack is Clone, so this is fine)
+        // Note: In a true immutable store, we couldn't do modifications
+        // but for testing purposes, we demonstrate the retrieval works
+        assert_eq!(retrieved.outcome, EvidenceOutcome::Passed);
+        
+        // In a real immutable store, we would NOT be able to update
+        // For now, the InMemory store allows this, but SqliteEvidenceStore
+        // would prevent modifications (no UPDATE query exists)
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_evidence_store_basic_operations() {
+        // Create a temporary in-memory database for testing
+        let store = SqliteEvidenceStore::from_connection_string("sqlite::memory:")
+            .await
+            .unwrap();
+        
+        let task_id = Uuid::new_v4();
+        let evidence = create_test_evidence(task_id, true);
+        let id = evidence.id;
+
+        // Store
+        let stored_id = store.store(evidence).await.unwrap();
+        assert_eq!(stored_id, id);
+
+        // Get
+        let retrieved = store.get(id).await.unwrap();
+        assert!(retrieved.is_some());
+        assert_eq!(retrieved.unwrap().task_id, task_id);
+
+        // Get by task ID
+        let task_evidence = store.get_by_task_id(task_id).await.unwrap();
+        assert_eq!(task_evidence.len(), 1);
+
+        // Get latest
+        let latest = store.get_latest(task_id).await.unwrap();
+        assert!(latest.is_some());
+
+        // Count
+        let count = store.count(task_id).await.unwrap();
+        assert_eq!(count, 1);
+
+        // Exists
+        let exists = store.exists(id).await.unwrap();
+        assert!(exists);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_evidence_store_multiple_evidences() {
+        let store = SqliteEvidenceStore::from_connection_string("sqlite::memory:")
+            .await
+            .unwrap();
+        
+        let task_id = Uuid::new_v4();
+
+        // Store multiple evidences
+        let evidence1 = create_test_evidence(task_id, true);
+        let evidence2 = create_test_evidence(task_id, false);
+        
+        let id1 = evidence1.id;
+        let id2 = evidence2.id;
+
+        store.store(evidence1).await.unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+        store.store(evidence2).await.unwrap();
+
+        // Verify ordering (newest first)
+        let all = store.get_by_task_id(task_id).await.unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[0].id, id2); // newest first
+        assert_eq!(all[1].id, id1);
+
+        // Count
+        let count = store.count(task_id).await.unwrap();
+        assert_eq!(count, 2);
+
+        // List IDs
+        let ids = store.list_ids(task_id).await.unwrap();
+        assert_eq!(ids.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_evidence_store_get_nonexistent() {
+        let store = SqliteEvidenceStore::from_connection_string("sqlite::memory:")
+            .await
+            .unwrap();
+        
+        let result = store.get(Uuid::new_v4()).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_evidence_store_persistence() {
+        // Test that data persists in the same connection
+        let store = SqliteEvidenceStore::from_connection_string("sqlite::memory:")
+            .await
+            .unwrap();
+        
+        let task_id = Uuid::new_v4();
+        let evidence = create_test_evidence(task_id, true);
+        let id = evidence.id;
+
+        // Store and verify
+        store.store(evidence).await.unwrap();
+        let retrieved = store.get(id).await.unwrap();
+        assert!(retrieved.is_some());
+
+        // Verify it still exists
+        let exists = store.exists(id).await.unwrap();
+        assert!(exists);
+    }
+
+    #[tokio::test]
+    async fn test_evidence_store_trait_object() {
+        // Test that we can use the store through the trait
+        let mem_store: Box<dyn EvidenceStore> = Box::new(InMemoryEvidenceStore::new());
+        let sqlite_store: Box<dyn EvidenceStore> = Box::new(
+            SqliteEvidenceStore::from_connection_string("sqlite::memory:")
+                .await
+                .unwrap(),
+        );
+
+        let task_id = Uuid::new_v4();
+
+        // Test in-memory store through trait
+        let evidence = create_test_evidence(task_id, true);
+        let id = evidence.id;
+        mem_store.store(evidence).await.unwrap();
+        let retrieved = mem_store.get(id).await.unwrap();
+        assert!(retrieved.is_some());
+
+        // Test SQLite store through trait
+        let evidence2 = create_test_evidence(task_id, false);
+        let id2 = evidence2.id;
+        sqlite_store.store(evidence2).await.unwrap();
+        let retrieved2 = sqlite_store.get(id2).await.unwrap();
+        assert!(retrieved2.is_some());
     }
 }
