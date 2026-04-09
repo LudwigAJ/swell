@@ -10,6 +10,7 @@
 
 pub mod branch_strategy;
 pub mod commit_strategy;
+pub mod conflict_resolution;
 pub mod executor;
 pub mod mcp;
 pub mod registry;
@@ -21,6 +22,10 @@ pub use branch_strategy::{
 };
 pub use commit_strategy::{
     CommitMetadata, CommitRequest, CommitResult, CommitStrategy, CommitStrategyError,
+};
+pub use conflict_resolution::{
+    ConflictDetectionResult, ConflictHunk, ConflictInfo, ConflictResolver,
+    ConflictResolverConfig, ConflictResolutionError, FileOwner, ResolutionResult, ResolutionStrategy,
 };
 pub use executor::ToolExecutor;
 pub use registry::{ToolRegistration, ToolRegistry};
