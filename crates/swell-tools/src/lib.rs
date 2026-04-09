@@ -26,7 +26,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_registry_registration() {
-        let mut registry = ToolRegistry::new();
+        let registry = ToolRegistry::new();
         registry.register(tools::ReadFileTool::new()).await;
         assert_eq!(registry.list().await.len(), 1);
     }
