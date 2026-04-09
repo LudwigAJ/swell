@@ -25,6 +25,9 @@ pub mod recall;
 // Skill extraction module - Extracts reusable procedures from successful task trajectories
 pub mod skill_extraction;
 
+// Pattern learning module - Learns anti-patterns from rejection feedback and extracts conventions
+pub mod pattern_learning;
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
