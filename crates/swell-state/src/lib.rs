@@ -11,11 +11,13 @@
 //! - [`SqliteStore`] - SQLite implementation for MVP
 //! - [`PostgresStore`] - PostgreSQL implementation for production
 
+pub mod checkpoint_manager;
 pub mod manager;
 pub mod postgres;
 pub mod sqlite;
 pub mod traits;
 
+pub use checkpoint_manager::{CheckpointManager, CheckpointManagerConfig, CheckpointMetadata};
 pub use manager::StateManager;
 pub use postgres::PostgresCheckpointStore;
 pub use sqlite::SqliteCheckpointStore;
