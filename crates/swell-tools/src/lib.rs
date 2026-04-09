@@ -5,14 +5,17 @@
 //! - [`ToolExecutor`] - executes tools with permission enforcement
 //! - Built-in tools: file I/O, git, shell execution
 //! - MCP client for external tool servers
+//! - [`WorktreePool`] - git worktree pool for agent isolation
 
 pub mod executor;
 pub mod mcp;
 pub mod registry;
 pub mod tools;
+pub mod worktree_pool;
 
 pub use executor::ToolExecutor;
 pub use registry::{ToolRegistration, ToolRegistry};
+pub use worktree_pool::{WorktreeAllocation, WorktreePool, WorktreePoolConfig};
 
 #[cfg(test)]
 mod tests {
