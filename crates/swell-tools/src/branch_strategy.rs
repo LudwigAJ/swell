@@ -255,8 +255,7 @@ impl BranchStrategy {
 
         // Check if base branch is protected
         let base_branch = request.base_branch.as_deref().unwrap_or("main");
-        if self.is_protected_branch(base_branch) && request.description.to_lowercase().contains("main") {
-            // Only error if they're trying to create a branch ON main, not just mention it
+        if self.is_protected_branch(base_branch) {
             warn!(branch = %base_branch, "Attempted to work on protected branch");
             return Err(BranchStrategyError::ProtectedBranch(base_branch.to_string()));
         }
@@ -533,9 +532,9 @@ mod tests {
         let task2 = Uuid::new_v4();
         let task3 = Uuid::new_v4();
         
-        let req1 = BranchRequest::new(task1, "task 1".to_string());
-        let req2 = BranchRequest::new(task2, "task 2".to_string());
-        let req3 = BranchRequest::new(task3, "task 3".to_string());
+        let req1 = BranchRequest::new(task1, "task 1".to_string()).with_base_branch("develop".to_string());
+        let req2 = BranchRequest::new(task2, "task 2".to_string()).with_base_branch("develop".to_string());
+        let req3 = BranchRequest::new(task3, "task 3".to_string()).with_base_branch("develop".to_string());
         
         // First two should succeed
         strategy.propose_branch(&req1).await.unwrap();
@@ -564,7 +563,7 @@ mod tests {
         let strategy = BranchStrategy::with_config(config);
         
         let task_id = Uuid::new_v4();
-        let req = BranchRequest::new(task_id, "first task".to_string());
+        let req = BranchRequest::new(task_id, "first task".to_string()).with_base_branch("develop".to_string());
         
         // Should succeed
         let branch = strategy.propose_branch(&req).await.unwrap();
@@ -572,7 +571,7 @@ mod tests {
         
         // Second should fail limit check
         let task2 = Uuid::new_v4();
-        let req2 = BranchRequest::new(task2, "second task".to_string());
+        let req2 = BranchRequest::new(task2, "second task".to_string()).with_base_branch("develop".to_string());
         let result = strategy.propose_branch(&req2).await;
         assert!(matches!(result, Err(BranchStrategyError::BranchLimitExceeded(1, 1))));
     }
