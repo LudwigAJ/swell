@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
-use tracing::{info, warn, debug};
+use tracing::{debug, info, warn};
 
 /// Errors that can occur in policy evaluation
 #[derive(Error, Debug, Clone)]
@@ -83,37 +83,21 @@ impl PolicyDecision {
 #[serde(rename_all = "snake_case")]
 pub enum PolicyCondition {
     /// Match by command pattern (regex)
-    CommandMatch {
-        pattern: String,
-    },
+    CommandMatch { pattern: String },
     /// Match by tool name
-    ToolName {
-        name: String,
-    },
+    ToolName { name: String },
     /// Match by tool category (read, write, destructive)
-    ToolCategory {
-        category: ToolCategory,
-    },
+    ToolCategory { category: ToolCategory },
     /// Match by file path prefix
-    PathPrefix {
-        paths: Vec<String>,
-    },
+    PathPrefix { paths: Vec<String> },
     /// Match by file path suffix (extension)
-    PathSuffix {
-        suffixes: Vec<String>,
-    },
+    PathSuffix { suffixes: Vec<String> },
     /// Match by exact path
-    PathExact {
-        path: String,
-    },
+    PathExact { path: String },
     /// Match by risk level
-    RiskLevel {
-        level: RiskLevelMatch,
-    },
+    RiskLevel { level: RiskLevelMatch },
     /// Match by agent role
-    AgentRole {
-        role: String,
-    },
+    AgentRole { role: String },
     /// Always match (for default rules)
     Always,
 }
@@ -334,15 +318,15 @@ impl PolicyEngine {
 
     /// Load policy from a YAML string
     pub fn load_from_yaml(&mut self, yaml: &str) -> Result<(), PolicyError> {
-        let policy: PolicyFile = serde_yaml::from_str(yaml)
-            .map_err(|e| PolicyError::ParseError(e.to_string()))?;
+        let policy: PolicyFile =
+            serde_yaml::from_str(yaml).map_err(|e| PolicyError::ParseError(e.to_string()))?;
         self.load_policy(policy)
     }
 
     /// Load policy from a YAML file
     pub fn load_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), PolicyError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| PolicyError::LoadError(e.to_string()))?;
+        let content =
+            std::fs::read_to_string(path).map_err(|e| PolicyError::LoadError(e.to_string()))?;
         self.load_from_yaml(&content)
     }
 
@@ -482,37 +466,38 @@ impl PolicyEngine {
                 }
             }
 
-            PolicyCondition::ToolName { name } => {
-                action.tool_name.as_ref().map(|n| n == name).unwrap_or(false)
-            }
+            PolicyCondition::ToolName { name } => action
+                .tool_name
+                .as_ref()
+                .map(|n| n == name)
+                .unwrap_or(false),
 
-            PolicyCondition::ToolCategory { category } => {
-                action.tool_category.map(|c| c == *category).unwrap_or(false)
-            }
+            PolicyCondition::ToolCategory { category } => action
+                .tool_category
+                .map(|c| c == *category)
+                .unwrap_or(false),
 
-            PolicyCondition::PathPrefix { paths } => {
-                action.paths.iter().any(|p| {
-                    paths.iter().any(|prefix| p.starts_with(prefix))
-                })
-            }
+            PolicyCondition::PathPrefix { paths } => action
+                .paths
+                .iter()
+                .any(|p| paths.iter().any(|prefix| p.starts_with(prefix))),
 
-            PolicyCondition::PathSuffix { suffixes } => {
-                action.paths.iter().any(|p| {
-                    suffixes.iter().any(|suffix| p.ends_with(suffix))
-                })
-            }
+            PolicyCondition::PathSuffix { suffixes } => action
+                .paths
+                .iter()
+                .any(|p| suffixes.iter().any(|suffix| p.ends_with(suffix))),
 
-            PolicyCondition::PathExact { path } => {
-                action.paths.iter().any(|p| p == path)
-            }
+            PolicyCondition::PathExact { path } => action.paths.iter().any(|p| p == path),
 
             PolicyCondition::RiskLevel { level } => {
                 action.risk_level.map(|r| r == *level).unwrap_or(false)
             }
 
-            PolicyCondition::AgentRole { role } => {
-                action.agent_role.as_ref().map(|r| r == role).unwrap_or(false)
-            }
+            PolicyCondition::AgentRole { role } => action
+                .agent_role
+                .as_ref()
+                .map(|r| r == role)
+                .unwrap_or(false),
         }
     }
 
@@ -818,8 +803,8 @@ rules:
         let mut engine = PolicyEngine::new();
         engine.load_from_yaml(yaml).unwrap();
 
-        let action = PolicyAction::command("plan task".to_string())
-            .with_agent_role("planner".to_string());
+        let action =
+            PolicyAction::command("plan task".to_string()).with_agent_role("planner".to_string());
         let (decision, _) = engine.evaluate(&action);
         assert_eq!(decision, PolicyDecision::Allow);
 
@@ -876,7 +861,8 @@ rules:
         assert!(engine.is_allowed(&read_action));
         assert!(!engine.is_denied(&read_action));
 
-        let write_action = PolicyAction::tool("file_write".to_string(), ToolCategory::Write, vec![]);
+        let write_action =
+            PolicyAction::tool("file_write".to_string(), ToolCategory::Write, vec![]);
         assert!(!engine.is_allowed(&write_action));
         assert!(engine.is_denied(&write_action));
     }

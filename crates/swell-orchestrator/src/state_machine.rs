@@ -1,5 +1,5 @@
-use swell_core::{Task, TaskState, SwellError, Plan};
 use std::collections::HashMap;
+use swell_core::{Plan, SwellError, Task, TaskState};
 use tracing::{info, warn};
 
 /// Task state machine implementing the 8-state lifecycle from the spec
@@ -23,14 +23,14 @@ impl TaskStateMachine {
     }
 
     pub fn get_task(&self, id: uuid::Uuid) -> Result<Task, SwellError> {
-        self.tasks.get(&id)
+        self.tasks
+            .get(&id)
             .cloned()
             .ok_or(SwellError::TaskNotFound(id))
     }
 
     pub fn get_task_mut(&mut self, id: uuid::Uuid) -> Result<&mut Task, SwellError> {
-        self.tasks.get_mut(&id)
-            .ok_or(SwellError::TaskNotFound(id))
+        self.tasks.get_mut(&id).ok_or(SwellError::TaskNotFound(id))
     }
 
     /// Transition task to ENRICHED state
@@ -42,7 +42,8 @@ impl TaskStateMachine {
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
-                "Cannot enrich task in state {}", task.state
+                "Cannot enrich task in state {}",
+                task.state
             ))),
         }
     }
@@ -54,14 +55,15 @@ impl TaskStateMachine {
             TaskState::Enriched => {
                 if task.plan.is_none() {
                     return Err(SwellError::InvalidStateTransition(
-                        "Cannot ready task without a plan".to_string()
+                        "Cannot ready task without a plan".to_string(),
                     ));
                 }
                 task.transition_to(TaskState::Ready);
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
-                "Cannot ready task in state {}", task.state
+                "Cannot ready task in state {}",
+                task.state
             ))),
         }
     }
@@ -76,7 +78,8 @@ impl TaskStateMachine {
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
-                "Cannot assign task in state {}", task.state
+                "Cannot assign task in state {}",
+                task.state
             ))),
         }
     }
@@ -90,7 +93,8 @@ impl TaskStateMachine {
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
-                "Cannot start executing task in state {}", task.state
+                "Cannot start executing task in state {}",
+                task.state
             ))),
         }
     }
@@ -104,7 +108,8 @@ impl TaskStateMachine {
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
-                "Cannot validate task in state {}", task.state
+                "Cannot validate task in state {}",
+                task.state
             ))),
         }
     }
@@ -118,7 +123,8 @@ impl TaskStateMachine {
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
-                "Cannot accept task in state {}", task.state
+                "Cannot accept task in state {}",
+                task.state
             ))),
         }
     }
@@ -133,7 +139,8 @@ impl TaskStateMachine {
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
-                "Cannot reject task in state {}", task.state
+                "Cannot reject task in state {}",
+                task.state
             ))),
         }
     }
@@ -148,7 +155,8 @@ impl TaskStateMachine {
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
-                "Cannot retry task in state {}", task.state
+                "Cannot retry task in state {}",
+                task.state
             ))),
         }
     }
@@ -189,7 +197,8 @@ impl TaskStateMachine {
 
     /// Get all tasks in a specific state
     pub fn get_tasks_by_state(&self, state: TaskState) -> Vec<Task> {
-        self.tasks.values()
+        self.tasks
+            .values()
             .filter(|t| t.state == state)
             .cloned()
             .collect()
@@ -220,17 +229,15 @@ mod tests {
         Plan {
             id: uuid::Uuid::new_v4(),
             task_id,
-            steps: vec![
-                PlanStep {
-                    id: uuid::Uuid::new_v4(),
-                    description: "Test step".to_string(),
-                    affected_files: vec!["test.rs".to_string()],
-                    expected_tests: vec!["test_foo".to_string()],
-                    risk_level: RiskLevel::Low,
-                    dependencies: vec![],
-                    status: StepStatus::Pending,
-                }
-            ],
+            steps: vec![PlanStep {
+                id: uuid::Uuid::new_v4(),
+                description: "Test step".to_string(),
+                affected_files: vec!["test.rs".to_string()],
+                expected_tests: vec!["test_foo".to_string()],
+                risk_level: RiskLevel::Low,
+                dependencies: vec![],
+                status: StepStatus::Pending,
+            }],
             total_estimated_tokens: 1000,
             risk_assessment: "Low risk".to_string(),
         }
@@ -249,11 +256,11 @@ mod tests {
     fn test_created_to_enriched() {
         let mut sm = TaskStateMachine::new();
         let task = sm.create_task("Test".to_string());
-        
+
         assert_eq!(task.state, TaskState::Created);
-        
+
         sm.enrich_task(task.id).unwrap();
-        
+
         let task = sm.get_task(task.id).unwrap();
         assert_eq!(task.state, TaskState::Enriched);
     }
@@ -262,10 +269,10 @@ mod tests {
     fn test_enriched_to_ready_with_plan() {
         let mut sm = TaskStateMachine::new();
         let (task_id, plan) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Ready);
         assert!(task.plan.is_some());
@@ -276,13 +283,13 @@ mod tests {
     fn test_ready_to_assigned() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        
+
         let agent_id = uuid::Uuid::new_v4();
         sm.assign_task(task_id, agent_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Assigned);
         assert_eq!(task.assigned_agent, Some(agent_id));
@@ -292,12 +299,12 @@ mod tests {
     fn test_assigned_to_executing() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Executing);
     }
@@ -306,13 +313,13 @@ mod tests {
     fn test_executing_to_validating() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Validating);
     }
@@ -321,14 +328,14 @@ mod tests {
     fn test_validating_to_accepted() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.accept_task(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Accepted);
     }
@@ -337,14 +344,14 @@ mod tests {
     fn test_validating_to_rejected() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Rejected);
         assert_eq!(task.iteration_count, 1);
@@ -354,18 +361,18 @@ mod tests {
     fn test_rejected_iteration_count_increments() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Rejected);
         assert_eq!(task.iteration_count, 1);
-        
+
         // After rejection, task is in Rejected state
         // Further validation transitions are not allowed
         let result = sm.start_validation(task_id);
@@ -379,7 +386,7 @@ mod tests {
         let plan = create_test_plan(task.id);
         sm.set_plan(task.id, plan).unwrap();
         let task_id = task.id;
-        
+
         // First cycle: Created → Enriched → Ready → Assigned → Executing → Validating → Rejected
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
@@ -388,7 +395,7 @@ mod tests {
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id).unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().iteration_count, 1);
-        
+
         // Retry: Rejected → Ready → Assigned → Executing → Validating → Rejected
         sm.retry_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
@@ -396,7 +403,7 @@ mod tests {
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id).unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().iteration_count, 2);
-        
+
         // Second retry
         sm.retry_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
@@ -404,7 +411,7 @@ mod tests {
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id).unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().iteration_count, 3);
-        
+
         // After 3 rejections, escalate instead of retrying
         sm.escalate_task(task_id).unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Escalated);
@@ -416,9 +423,9 @@ mod tests {
     fn test_cannot_enrich_non_created_task() {
         let mut sm = TaskStateMachine::new();
         let task_id = sm.create_task("Test".to_string()).id;
-        
+
         sm.enrich_task(task_id).unwrap(); // Now in Enriched
-        
+
         let result = sm.enrich_task(task_id);
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -433,9 +440,9 @@ mod tests {
     fn test_cannot_ready_task_without_plan() {
         let mut sm = TaskStateMachine::new();
         let task_id = sm.create_task("Test".to_string()).id;
-        
+
         sm.enrich_task(task_id).unwrap();
-        
+
         let result = sm.ready_task(task_id);
         assert!(result.is_err());
         match result.unwrap_err() {
@@ -450,7 +457,7 @@ mod tests {
     fn test_cannot_ready_non_enriched_task() {
         let mut sm = TaskStateMachine::new();
         let task_id = sm.create_task("Test".to_string()).id;
-        
+
         // Skip enrich, go directly to ready
         let result = sm.ready_task(task_id);
         assert!(result.is_err());
@@ -460,7 +467,7 @@ mod tests {
     fn test_cannot_assign_non_ready_task() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         // Try to assign without going through Ready
         let result = sm.assign_task(task_id, uuid::Uuid::new_v4());
         assert!(result.is_err());
@@ -470,10 +477,10 @@ mod tests {
     fn test_cannot_start_execution_non_assigned_task() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        
+
         // Skip assign, try to start execution
         let result = sm.start_execution(task_id);
         assert!(result.is_err());
@@ -483,11 +490,11 @@ mod tests {
     fn test_cannot_start_validation_non_executing_task() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
-        
+
         // Skip execution, try to start validation
         let result = sm.start_validation(task_id);
         assert!(result.is_err());
@@ -497,12 +504,12 @@ mod tests {
     fn test_cannot_accept_non_validating_task() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
-        
+
         // Try to accept without validating
         let result = sm.accept_task(task_id);
         assert!(result.is_err());
@@ -512,11 +519,11 @@ mod tests {
     fn test_cannot_reject_non_validating_task() {
         let mut sm = TaskStateMachine::new();
         let (task_id, _) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
-        
+
         let result = sm.reject_task(task_id);
         assert!(result.is_err());
     }
@@ -527,12 +534,12 @@ mod tests {
     fn test_plan_attached_after_set_plan() {
         let mut sm = TaskStateMachine::new();
         let task = sm.create_task("Test".to_string());
-        
+
         assert!(sm.get_task(task.id).unwrap().plan.is_none());
-        
+
         let plan = create_test_plan(task.id);
         sm.set_plan(task.id, plan.clone()).unwrap();
-        
+
         let retrieved_task = sm.get_task(task.id).unwrap();
         assert!(retrieved_task.plan.is_some());
         assert_eq!(retrieved_task.plan.unwrap().id, plan.id);
@@ -542,10 +549,10 @@ mod tests {
     fn test_plan_preserved_through_state_transitions() {
         let mut sm = TaskStateMachine::new();
         let (task_id, plan) = create_test_task_and_plan(&mut sm);
-        
+
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert!(task.plan.is_some());
         assert_eq!(task.plan.unwrap().id, plan.id);
@@ -556,15 +563,15 @@ mod tests {
     #[test]
     fn test_get_tasks_by_state() {
         let mut sm = TaskStateMachine::new();
-        
+
         let task1 = sm.create_task("Task 1".to_string());
         let task2 = sm.create_task("Task 2".to_string());
-        
+
         sm.enrich_task(task1.id).unwrap();
-        
+
         let created_tasks = sm.get_tasks_by_state(TaskState::Created);
         let enriched_tasks = sm.get_tasks_by_state(TaskState::Enriched);
-        
+
         assert_eq!(created_tasks.len(), 1);
         assert_eq!(created_tasks[0].id, task2.id);
         assert_eq!(enriched_tasks.len(), 1);
@@ -574,13 +581,13 @@ mod tests {
     #[test]
     fn test_get_all_tasks() {
         let mut sm = TaskStateMachine::new();
-        
+
         let task1 = sm.create_task("Task 1".to_string());
         let task2 = sm.create_task("Task 2".to_string());
-        
+
         let all = sm.get_all_tasks();
         assert_eq!(all.len(), 2);
-        
+
         let ids: Vec<_> = all.iter().map(|t| t.id).collect();
         assert!(ids.contains(&task1.id));
         assert!(ids.contains(&task2.id));
@@ -590,10 +597,10 @@ mod tests {
     fn test_task_not_found_error() {
         let sm = TaskStateMachine::new();
         let fake_id = uuid::Uuid::new_v4();
-        
+
         let result = sm.get_task(fake_id);
         assert!(result.is_err());
-        
+
         match result.unwrap_err() {
             SwellError::TaskNotFound(id) => assert_eq!(id, fake_id),
             _ => panic!("Expected TaskNotFound"),
@@ -606,9 +613,9 @@ mod tests {
     fn test_fail_task_transitions_to_failed() {
         let mut sm = TaskStateMachine::new();
         let task_id = sm.create_task("Test".to_string()).id;
-        
+
         sm.fail_task(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Failed);
     }
@@ -617,9 +624,9 @@ mod tests {
     fn test_escalate_task_transitions_to_escalated() {
         let mut sm = TaskStateMachine::new();
         let task_id = sm.create_task("Test".to_string()).id;
-        
+
         sm.escalate_task(task_id).unwrap();
-        
+
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Escalated);
     }
@@ -628,12 +635,12 @@ mod tests {
     fn test_set_plan_only_sets_plan() {
         let mut sm = TaskStateMachine::new();
         let task = sm.create_task("Test".to_string());
-        
+
         assert_eq!(sm.get_task(task.id).unwrap().state, TaskState::Created);
-        
+
         let plan = create_test_plan(task.id);
         sm.set_plan(task.id, plan.clone()).unwrap();
-        
+
         // State should still be Created
         assert_eq!(sm.get_task(task.id).unwrap().state, TaskState::Created);
         // But plan should be set

@@ -1,9 +1,9 @@
 //! Tool registry for managing available tools.
 
-use swell_core::{ToolRiskLevel, PermissionTier};
-use swell_core::traits::Tool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use swell_core::traits::Tool;
+use swell_core::{PermissionTier, ToolRiskLevel};
 use tokio::sync::RwLock;
 
 /// A registered tool with metadata
@@ -37,7 +37,7 @@ impl ToolRegistry {
             permission_tier: tool.permission_tier(),
             tool: Arc::new(tool),
         };
-        
+
         let mut tools = self.tools.write().await;
         tools.insert(registration.name.clone(), registration);
     }
@@ -75,7 +75,8 @@ impl ToolRegistry {
     /// Get tools filtered by risk level
     pub async fn by_risk_level(&self, level: ToolRiskLevel) -> Vec<ToolRegistration> {
         let tools = self.tools.read().await;
-        tools.values()
+        tools
+            .values()
             .filter(|r| r.risk_level == level)
             .cloned()
             .collect()

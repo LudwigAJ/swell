@@ -1,10 +1,10 @@
 //! In-memory checkpoint store for testing.
 
-use swell_core::{Checkpoint, CheckpointStore, SwellError};
 use async_trait::async_trait;
-use uuid::Uuid;
 use std::collections::HashMap;
+use swell_core::{Checkpoint, CheckpointStore, SwellError};
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct InMemoryCheckpointStore {
@@ -32,8 +32,13 @@ impl CheckpointStore for InMemoryCheckpointStore {
         let id = checkpoint.id;
         let task_id = checkpoint.task_id;
 
-        self.checkpoints.write().await.insert(id, checkpoint.clone());
-        self.by_task.write().await
+        self.checkpoints
+            .write()
+            .await
+            .insert(id, checkpoint.clone());
+        self.by_task
+            .write()
+            .await
             .entry(task_id)
             .or_insert_with(Vec::new)
             .push(id);
@@ -43,7 +48,7 @@ impl CheckpointStore for InMemoryCheckpointStore {
 
     async fn load_latest(&self, task_id: Uuid) -> Result<Option<Checkpoint>, SwellError> {
         let ids = self.by_task.read().await.get(&task_id).cloned();
-        
+
         match ids {
             Some(ids) if !ids.is_empty() => {
                 let latest_id = ids.last().copied().unwrap();
@@ -59,7 +64,7 @@ impl CheckpointStore for InMemoryCheckpointStore {
 
     async fn list(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
         let ids = self.by_task.read().await.get(&task_id).cloned();
-        
+
         match ids {
             Some(ids) => {
                 let checkpoints = self.checkpoints.read().await;
@@ -105,7 +110,7 @@ mod tests {
     #[tokio::test]
     async fn test_save_and_load() {
         let store = InMemoryCheckpointStore::new();
-        
+
         let checkpoint = Checkpoint {
             id: Uuid::new_v4(),
             task_id: Uuid::new_v4(),
@@ -114,10 +119,10 @@ mod tests {
             created_at: Utc::now(),
             metadata: serde_json::json!({}),
         };
-        
+
         let id = store.save(checkpoint.clone()).await.unwrap();
         let loaded = store.load(id).await.unwrap().unwrap();
-        
+
         assert_eq!(loaded.task_id, checkpoint.task_id);
         assert_eq!(loaded.state, TaskState::Created);
     }
@@ -126,7 +131,7 @@ mod tests {
     async fn test_load_latest() {
         let store = InMemoryCheckpointStore::new();
         let task_id = Uuid::new_v4();
-        
+
         for i in 0..3 {
             let checkpoint = Checkpoint {
                 id: Uuid::new_v4(),
@@ -138,7 +143,7 @@ mod tests {
             };
             store.save(checkpoint).await.unwrap();
         }
-        
+
         let latest = store.load_latest(task_id).await.unwrap().unwrap();
         assert_eq!(latest.snapshot["index"], 2);
     }
@@ -147,7 +152,7 @@ mod tests {
     async fn test_prune() {
         let store = InMemoryCheckpointStore::new();
         let task_id = Uuid::new_v4();
-        
+
         for i in 0..5 {
             let checkpoint = Checkpoint {
                 id: Uuid::new_v4(),
@@ -159,9 +164,9 @@ mod tests {
             };
             store.save(checkpoint).await.unwrap();
         }
-        
+
         store.prune(task_id, 2).await.unwrap();
-        
+
         let remaining = store.list(task_id).await.unwrap();
         assert_eq!(remaining.len(), 2);
     }

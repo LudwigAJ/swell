@@ -1,11 +1,11 @@
 //! MCP (Model Context Protocol) client for external tool servers.
 
-use swell_core::{ToolOutput, SwellError, ToolRiskLevel, PermissionTier};
-use swell_core::traits::Tool;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use swell_core::traits::Tool;
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
 use tokio::sync::RwLock;
 use tracing::warn;
 
@@ -83,7 +83,8 @@ impl McpClient {
     ) -> Result<ToolOutput, SwellError> {
         // Placeholder - full implementation would send JSON-RPC request
         Err(SwellError::ToolExecutionFailed(format!(
-            "MCP tool call not implemented for {}", name
+            "MCP tool call not implemented for {}",
+            name
         )))
     }
 }
@@ -107,11 +108,21 @@ struct McpToolWrapper {
 
 #[async_trait]
 impl Tool for McpToolWrapper {
-    fn name(&self) -> &str { &self.name }
-    fn description(&self) -> String { self.description.clone() }
-    fn risk_level(&self) -> ToolRiskLevel { ToolRiskLevel::Read } // MCP tools default to Read
-    fn permission_tier(&self) -> PermissionTier { PermissionTier::Ask }
-    fn input_schema(&self) -> serde_json::Value { self.input_schema.clone() }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn description(&self) -> String {
+        self.description.clone()
+    }
+    fn risk_level(&self) -> ToolRiskLevel {
+        ToolRiskLevel::Read
+    } // MCP tools default to Read
+    fn permission_tier(&self) -> PermissionTier {
+        PermissionTier::Ask
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        self.input_schema.clone()
+    }
 
     async fn execute(&self, arguments: serde_json::Value) -> Result<ToolOutput, SwellError> {
         self.client.call_tool(&self.name, arguments).await
@@ -135,10 +146,10 @@ impl McpManager {
     pub async fn add_server(&self, name: String, url: String) -> Result<(), SwellError> {
         let client = McpClient::new(url);
         client.connect().await?;
-        
+
         let mut clients = self.clients.write().await;
         clients.insert(name, client);
-        
+
         Ok(())
     }
 

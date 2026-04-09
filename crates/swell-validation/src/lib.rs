@@ -23,11 +23,11 @@
 //! Use [`EvidencePackBuilder`] to create comprehensive evidence packs for PR review.
 
 use async_trait::async_trait;
-use swell_core::{
-    ValidationGate, ValidationContext, ValidationOutcome, ValidationMessage,
-    ValidationLevel, SwellError,
-};
 use std::process::Command;
+use swell_core::{
+    SwellError, ValidationContext, ValidationGate, ValidationLevel, ValidationMessage,
+    ValidationOutcome,
+};
 use tokio::task;
 
 // Re-export confidence scoring for use by other crates
@@ -40,10 +40,9 @@ pub use confidence::{
 // Re-export evidence pack for use by other crates
 pub mod evidence;
 pub use evidence::{
-    AiReviewEvidence, ConfidenceEvidence, CoverageEvidence,
-    EvidenceOutcome, EvidencePack, EvidencePackBuilder, EvidencePackError, FlakinessEvidence,
-    GateEvidence, MessageCounts, ReviewComment, SecurityEvidence, SecurityFinding,
-    SignalScore, TestEvidence, TestResult,
+    AiReviewEvidence, ConfidenceEvidence, CoverageEvidence, EvidenceOutcome, EvidencePack,
+    EvidencePackBuilder, EvidencePackError, FlakinessEvidence, GateEvidence, MessageCounts,
+    ReviewComment, SecurityEvidence, SecurityFinding, SignalScore, TestEvidence, TestResult,
 };
 
 // ============================================================================
@@ -77,7 +76,7 @@ impl ValidationGate for LintGate {
 
     async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
         let workspace_path = context.workspace_path.clone();
-        
+
         let output = task::spawn_blocking(move || {
             // Run clippy in check mode
             Command::new("cargo")
@@ -86,9 +85,7 @@ impl ValidationGate for LintGate {
                 .output()
         })
         .await
-        .map_err(|e| SwellError::IoError(std::io::Error::other(
-            format!("Task join error: {}", e),
-        )))?
+        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
         .map_err(SwellError::IoError)?;
 
         let passed = output.status.success();
@@ -96,7 +93,7 @@ impl ValidationGate for LintGate {
         let stderr = String::from_utf8_lossy(&output.stderr);
 
         let mut messages = Vec::new();
-        
+
         if !passed {
             // Parse clippy output for errors
             for line in stdout.lines().chain(stderr.lines()) {
@@ -107,10 +104,14 @@ impl ValidationGate for LintGate {
                         } else {
                             ValidationLevel::Warning
                         };
-                        
+
                         messages.push(ValidationMessage {
                             level,
-                            code: json.get("code").and_then(|c| c.get("code")).and_then(|c| c.as_str()).map(String::from),
+                            code: json
+                                .get("code")
+                                .and_then(|c| c.get("code"))
+                                .and_then(|c| c.as_str())
+                                .map(String::from),
                             message: msg.to_string(),
                             file: json.get("file").and_then(|f| f.as_str()).map(String::from),
                             line: json.get("line").and_then(|l| l.as_u64()).map(|l| l as u32),
@@ -159,7 +160,7 @@ impl ValidationGate for TestGate {
 
     async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
         let workspace_path = context.workspace_path.clone();
-        
+
         let output = task::spawn_blocking(move || {
             Command::new("cargo")
                 .args(["test", "--", "--format", "pretty"])
@@ -167,9 +168,7 @@ impl ValidationGate for TestGate {
                 .output()
         })
         .await
-        .map_err(|e| SwellError::IoError(std::io::Error::other(
-            format!("Task join error: {}", e),
-        )))?
+        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
         .map_err(SwellError::IoError)?;
 
         let passed = output.status.success();
@@ -190,7 +189,10 @@ impl ValidationGate for TestGate {
             messages.push(ValidationMessage {
                 level: ValidationLevel::Info,
                 code: None,
-                message: format!("All tests passed:\n{}", stdout.lines().last().unwrap_or("Tests passed")),
+                message: format!(
+                    "All tests passed:\n{}",
+                    stdout.lines().last().unwrap_or("Tests passed")
+                ),
                 file: None,
                 line: None,
             });
@@ -237,15 +239,14 @@ impl ValidationGate for SecurityGate {
         // Stub implementation - security scanning not yet implemented
         Ok(ValidationOutcome {
             passed: true,
-            messages: vec![
-                ValidationMessage {
-                    level: ValidationLevel::Info,
-                    code: None,
-                    message: "Security gate stub: full security scanning not yet implemented".to_string(),
-                    file: None,
-                    line: None,
-                },
-            ],
+            messages: vec![ValidationMessage {
+                level: ValidationLevel::Info,
+                code: None,
+                message: "Security gate stub: full security scanning not yet implemented"
+                    .to_string(),
+                file: None,
+                line: None,
+            }],
             artifacts: vec![],
         })
     }
@@ -284,15 +285,13 @@ impl ValidationGate for AiReviewGate {
         // Stub implementation - AI review not yet implemented
         Ok(ValidationOutcome {
             passed: true,
-            messages: vec![
-                ValidationMessage {
-                    level: ValidationLevel::Info,
-                    code: None,
-                    message: "AI review gate stub: full AI review not yet implemented".to_string(),
-                    file: None,
-                    line: None,
-                },
-            ],
+            messages: vec![ValidationMessage {
+                level: ValidationLevel::Info,
+                code: None,
+                message: "AI review gate stub: full AI review not yet implemented".to_string(),
+                file: None,
+                line: None,
+            }],
             artifacts: vec![],
         })
     }
@@ -347,5 +346,3 @@ impl Default for ValidationPipeline {
         Self::new()
     }
 }
-
-

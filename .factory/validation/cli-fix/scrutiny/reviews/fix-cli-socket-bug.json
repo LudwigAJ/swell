@@ -1,0 +1,26 @@
+{
+  "featureId": "fix-cli-socket-bug",
+  "reviewedAt": "2026-04-09T11:15:00Z",
+  "commitId": "84eafda",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly addresses the CLI socket buffer bug. The change from `vec![0u8; 65536]` to `Vec::with_capacity(65536)` in clients/swell-cli/src/main.rs resolves the issue where pre-initialized buffers cause read_buf() to return 0 bytes. The fix is consistent with the daemon fix (commit 5a12ec2).",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker attempted to invoke 'rust-worker' skill which does not exist, then successfully used 'Rust' skill instead. The skillFeedback.deviations field was not present in the handoff, indicating this mismatch may not have been reported. The AGENTS.md defines a 'Rust' skill but no 'rust-worker' skill exists.",
+      "evidence": "Transcript shows: Tool: Skill { \"skill\": \"rust-worker\" } followed by 'The `rust-worker` skill doesn't exist, but I see there's a `Rust` skill available'. Worker then invoked 'Rust' skill successfully."
+    },
+    {
+      "area": "testing",
+      "observation": "Worker noted there are no tests in swell-cli crate to verify socket read behavior. This is an acknowledged gap - the bug existed without test coverage and a fix was committed without adding regression tests.",
+      "evidence": "Handoff tests.coverage states: 'No tests in swell-cli crate to verify the socket read behavior'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Fix passes scrutiny. The targeted change from vec![0u8; 65536] to Vec::with_capacity(65536) correctly addresses the socket buffer initialization bug. Build and tests pass. Minor observations: skill naming mismatch (rust-worker vs Rust) and lack of test coverage for socket behavior."
+}

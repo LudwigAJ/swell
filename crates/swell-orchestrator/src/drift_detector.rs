@@ -165,7 +165,10 @@ impl DriftDetector {
         plan_steps: &[(Uuid, Vec<String>)], // (step_id, affected_files)
         actual_files: &[String],
     ) -> DriftReport {
-        let all_estimated: Vec<String> = plan_steps.iter().flat_map(|(_, files)| files.clone()).collect();
+        let all_estimated: Vec<String> = plan_steps
+            .iter()
+            .flat_map(|(_, files)| files.clone())
+            .collect();
         let mut base_report = self.detect_drift(task_id, &all_estimated, actual_files);
 
         // Calculate per-step drift
@@ -286,7 +289,10 @@ mod tests {
         assert_eq!(report.actual_files, 4);
         assert_eq!(report.drift_percentage, 100.0); // (4-2)/2 * 100 = 100%
         assert!(report.exceeds_threshold);
-        assert_eq!(report.extra_files, vec!["src/c.rs".to_string(), "src/d.rs".to_string()]);
+        assert_eq!(
+            report.extra_files,
+            vec!["src/c.rs".to_string(), "src/d.rs".to_string()]
+        );
     }
 
     #[test]
@@ -429,7 +435,10 @@ mod tests {
         let step2_id = Uuid::new_v4();
 
         let plan_steps = vec![
-            (step1_id, vec!["src/a.rs".to_string(), "src/b.rs".to_string()]),
+            (
+                step1_id,
+                vec!["src/a.rs".to_string(), "src/b.rs".to_string()],
+            ),
             (step2_id, vec!["src/c.rs".to_string()]),
         ];
 
@@ -546,7 +555,11 @@ mod tests {
         let task_id = test_task_id();
 
         let estimated = vec!["src/a.rs".to_string()];
-        let actual = vec!["src/a.rs".to_string(), "src/b.rs".to_string(), "src/c.rs".to_string()];
+        let actual = vec![
+            "src/a.rs".to_string(),
+            "src/b.rs".to_string(),
+            "src/c.rs".to_string(),
+        ];
 
         let report = detector.detect_drift(task_id, &estimated, &actual);
 

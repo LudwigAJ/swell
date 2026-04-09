@@ -1,10 +1,10 @@
 //! SQLite-based checkpoint store for MVP.
 
-use swell_core::{Checkpoint, CheckpointStore, SwellError};
 use async_trait::async_trait;
-use uuid::Uuid;
-use sqlx::{SqlitePool, Row};
 use chrono::{DateTime, Utc};
+use sqlx::{Row, SqlitePool};
+use swell_core::{Checkpoint, CheckpointStore, SwellError};
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct SqliteCheckpointStore {
@@ -94,7 +94,7 @@ impl CheckpointStore for SqliteCheckpointStore {
 
     async fn load_latest(&self, task_id: Uuid) -> Result<Option<Checkpoint>, SwellError> {
         let row = sqlx::query(
-            "SELECT * FROM checkpoints WHERE task_id = ? ORDER BY created_at DESC LIMIT 1"
+            "SELECT * FROM checkpoints WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
         )
         .bind(task_id.to_string())
         .fetch_optional(&self.pool)
@@ -105,13 +105,12 @@ impl CheckpointStore for SqliteCheckpointStore {
     }
 
     async fn list(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
-        let rows = sqlx::query(
-            "SELECT * FROM checkpoints WHERE task_id = ? ORDER BY created_at ASC"
-        )
-        .bind(task_id.to_string())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let rows =
+            sqlx::query("SELECT * FROM checkpoints WHERE task_id = ? ORDER BY created_at ASC")
+                .bind(task_id.to_string())
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         let checkpoints: Vec<Checkpoint> = rows
             .into_iter()
@@ -156,8 +155,7 @@ impl SqliteCheckpointStore {
         let metadata_str: String = row.get("metadata");
 
         Ok(Checkpoint {
-            id: Uuid::parse_str(&id_str)
-                .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
+            id: Uuid::parse_str(&id_str).map_err(|e| SwellError::DatabaseError(e.to_string()))?,
             task_id: Uuid::parse_str(&task_id_str)
                 .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
             state: serde_json::from_str(&state_str)
@@ -176,17 +174,17 @@ impl SqliteCheckpointStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use swell_core::TaskState;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_sqlite_store() {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         let url = format!("sqlite:{}?mode=rwc", db_path.display());
-        
+
         let store = SqliteCheckpointStore::new(&url).await.unwrap();
-        
+
         let checkpoint = Checkpoint {
             id: Uuid::new_v4(),
             task_id: Uuid::new_v4(),
@@ -195,10 +193,10 @@ mod tests {
             created_at: Utc::now(),
             metadata: serde_json::json!({}),
         };
-        
+
         let id = store.save(checkpoint.clone()).await.unwrap();
         let loaded = store.load(id).await.unwrap().unwrap();
-        
+
         assert_eq!(loaded.task_id, checkpoint.task_id);
     }
 
@@ -207,10 +205,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test.db");
         let url = format!("sqlite:{}?mode=rwc", db_path.display());
-        
+
         let store = SqliteCheckpointStore::new(&url).await.unwrap();
         let task_id = Uuid::new_v4();
-        
+
         for i in 0..3 {
             let checkpoint = Checkpoint {
                 id: Uuid::new_v4(),
@@ -222,7 +220,7 @@ mod tests {
             };
             store.save(checkpoint).await.unwrap();
         }
-        
+
         let latest = store.load_latest(task_id).await.unwrap().unwrap();
         assert_eq!(latest.snapshot["index"], 2);
     }

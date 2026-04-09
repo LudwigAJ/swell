@@ -1,9 +1,9 @@
 //! High-level state management.
 
-use swell_core::{Checkpoint, CheckpointStore, Task, SwellError};
-use std::sync::Arc;
-use uuid::Uuid;
 use chrono::Utc;
+use std::sync::Arc;
+use swell_core::{Checkpoint, CheckpointStore, SwellError, Task};
+use uuid::Uuid;
 
 /// High-level state manager for orchestrating task state
 pub struct StateManager {
@@ -21,7 +21,8 @@ impl StateManager {
             id: Uuid::new_v4(),
             task_id: task.id,
             state: task.state,
-            snapshot: serde_json::to_value(task).map_err(|e| SwellError::ConfigError(e.to_string()))?,
+            snapshot: serde_json::to_value(task)
+                .map_err(|e| SwellError::ConfigError(e.to_string()))?,
             created_at: Utc::now(),
             metadata: serde_json::json!({}),
         };
@@ -32,7 +33,7 @@ impl StateManager {
     /// Restore a task from the latest checkpoint
     pub async fn restore_task(&self, task_id: Uuid) -> Result<Option<Task>, SwellError> {
         let checkpoint = self.checkpoint_store.load_latest(task_id).await?;
-        
+
         match checkpoint {
             Some(cp) => {
                 let task: Task = serde_json::from_value(cp.snapshot)

@@ -11,15 +11,15 @@
 //! - [`SqliteStore`] - SQLite implementation for MVP
 //! - [`PostgresStore`] - PostgreSQL implementation for production
 
-pub mod traits;
 pub mod manager;
-pub mod sqlite;
 pub mod postgres;
+pub mod sqlite;
+pub mod traits;
 
-pub use traits::*;
 pub use manager::StateManager;
-pub use sqlite::SqliteCheckpointStore;
 pub use postgres::PostgresCheckpointStore;
+pub use sqlite::SqliteCheckpointStore;
+pub use traits::*;
 
 #[cfg(test)]
 mod tests {
@@ -30,7 +30,7 @@ mod tests {
     async fn test_in_memory_store() {
         use crate::traits::in_memory::InMemoryCheckpointStore;
         let store = InMemoryCheckpointStore::new();
-        
+
         let checkpoint = swell_core::Checkpoint {
             id: uuid::Uuid::new_v4(),
             task_id: uuid::Uuid::new_v4(),
@@ -39,10 +39,10 @@ mod tests {
             created_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
         };
-        
+
         let id = store.save(checkpoint.clone()).await.unwrap();
         let loaded = store.load(id).await.unwrap().unwrap();
-        
+
         assert_eq!(loaded.task_id, checkpoint.task_id);
     }
 }

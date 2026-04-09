@@ -15,8 +15,8 @@
 
 use crate::SwellError;
 use std::collections::{BinaryHeap, HashSet};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
-use tracing::{info, warn, debug};
 
 /// Default max concurrent workers
 pub const DEFAULT_MAX_WORKERS: usize = 6;
@@ -40,15 +40,24 @@ impl TaskPriority {
     }
 
     pub fn default_priority(enqueue_ts: u64) -> Self {
-        Self { base: 100, enqueue_ts }
+        Self {
+            base: 100,
+            enqueue_ts,
+        }
     }
 
     pub fn low_priority(enqueue_ts: u64) -> Self {
-        Self { base: 50, enqueue_ts }
+        Self {
+            base: 50,
+            enqueue_ts,
+        }
     }
 
     pub fn high_priority(enqueue_ts: u64) -> Self {
-        Self { base: 200, enqueue_ts }
+        Self {
+            base: 200,
+            enqueue_ts,
+        }
     }
 }
 
@@ -78,7 +87,9 @@ impl Ord for QueueEntry {
         // BinaryHeap is a max-heap, so "larger" elements come first
         // For higher priority first: higher base should be "larger" -> a.base.cmp(&b.base)
         // For FIFO: smaller enqueue_ts should be "larger" -> b.enqueue_ts.cmp(&a.enqueue_ts)
-        self.priority.base.cmp(&other.priority.base)
+        self.priority
+            .base
+            .cmp(&other.priority.base)
             .then_with(|| other.priority.enqueue_ts.cmp(&self.priority.enqueue_ts))
     }
 }
@@ -133,7 +144,7 @@ impl TaskQueue {
         let entries: Vec<_> = self.heap.drain().collect();
         let mut found = false;
         let mut filtered: Vec<_> = Vec::new();
-        
+
         for entry in entries {
             if entry.task_id == *task_id {
                 found = true;
@@ -141,11 +152,11 @@ impl TaskQueue {
                 filtered.push(entry);
             }
         }
-        
+
         for entry in filtered {
             self.heap.push(entry);
         }
-        
+
         found
     }
 }
@@ -279,25 +290,26 @@ impl WorkerPool {
     /// Resize the pool (for dynamic adjustment)
     pub fn resize(&mut self, new_max: usize) -> Result<(), SwellError> {
         let new_size = new_max.min(MAX_MAX_WORKERS);
-        
+
         // Can't resize down while workers are busy
         if new_size < self.max_workers {
             let busy = self.busy_count();
             if busy > new_size {
-                return Err(SwellError::InvalidStateTransition(
-                    format!("Cannot resize to {} workers: {} are still busy", new_size, busy)
-                ));
+                return Err(SwellError::InvalidStateTransition(format!(
+                    "Cannot resize to {} workers: {} are still busy",
+                    new_size, busy
+                )));
             }
         }
-        
+
         // Adjust slots
         while self.slots.len() < new_size {
             self.slots.push(WorkerSlot::new(Uuid::new_v4()));
         }
-        
+
         // Note: We don't remove excess slots since they might still be busy
         // They will effectively be decommissioned when they become idle
-        
+
         self.max_workers = new_size;
         Ok(())
     }
@@ -377,7 +389,10 @@ impl Scheduler {
 
     /// Enqueue a task for scheduling with default priority
     pub fn enqueue(&mut self, task_id: Uuid) {
-        self.enqueue_with_priority(task_id, TaskPriority::default_priority(self.enqueue_counter));
+        self.enqueue_with_priority(
+            task_id,
+            TaskPriority::default_priority(self.enqueue_counter),
+        );
         self.enqueue_counter += 1;
     }
 
@@ -388,7 +403,7 @@ impl Scheduler {
             warn!(task_id = %task_id, "Task already active, not enqueuing");
             return;
         }
-        
+
         self.queue.push(task_id, priority);
         info!(task_id = %task_id, priority = priority.base, "Task enqueued with priority");
     }
@@ -409,7 +424,7 @@ impl Scheduler {
         }
 
         let task_id = self.queue.pop()?;
-        
+
         // Double-check not already assigned
         if self.assigned_tasks.contains(&task_id) {
             debug!(task_id = %task_id, "Task already assigned, skipping");
@@ -433,7 +448,7 @@ impl Scheduler {
     /// Mark a task as completed (worker finished)
     pub fn complete_task(&mut self, task_id: &Uuid) {
         self.assigned_tasks.remove(task_id);
-        
+
         // Find and release the worker handling this task
         for slot in &mut self.worker_pool.slots {
             if slot.task_id == Some(*task_id) {
@@ -474,7 +489,11 @@ impl Scheduler {
 
     /// Get all tasks waiting in queue
     pub fn queued_tasks(&self) -> Vec<Uuid> {
-        self.worker_pool.slots.iter().filter_map(|s| s.task_id).collect()
+        self.worker_pool
+            .slots
+            .iter()
+            .filter_map(|s| s.task_id)
+            .collect()
     }
 
     /// Resize worker pool
@@ -562,9 +581,27 @@ mod tests {
         let task3 = Uuid::new_v4();
 
         // Same base priority, different enqueue_ts
-        queue.push(task1, TaskPriority { base: 100, enqueue_ts: 1 });
-        queue.push(task2, TaskPriority { base: 100, enqueue_ts: 2 });
-        queue.push(task3, TaskPriority { base: 100, enqueue_ts: 3 });
+        queue.push(
+            task1,
+            TaskPriority {
+                base: 100,
+                enqueue_ts: 1,
+            },
+        );
+        queue.push(
+            task2,
+            TaskPriority {
+                base: 100,
+                enqueue_ts: 2,
+            },
+        );
+        queue.push(
+            task3,
+            TaskPriority {
+                base: 100,
+                enqueue_ts: 3,
+            },
+        );
 
         // FIFO order for same priority
         assert_eq!(queue.pop().unwrap(), task1);
@@ -579,17 +616,35 @@ mod tests {
         let task_high = Uuid::new_v4();
         let task_medium = Uuid::new_v4();
 
-        queue.push(task_low, TaskPriority { base: 50, enqueue_ts: 1 });
-        queue.push(task_high, TaskPriority { base: 200, enqueue_ts: 1 });
-        queue.push(task_medium, TaskPriority { base: 100, enqueue_ts: 1 });
+        queue.push(
+            task_low,
+            TaskPriority {
+                base: 50,
+                enqueue_ts: 1,
+            },
+        );
+        queue.push(
+            task_high,
+            TaskPriority {
+                base: 200,
+                enqueue_ts: 1,
+            },
+        );
+        queue.push(
+            task_medium,
+            TaskPriority {
+                base: 100,
+                enqueue_ts: 1,
+            },
+        );
 
         // Highest priority first
         let first = queue.pop().unwrap();
         assert_eq!(first, task_high);
-        
+
         let second = queue.pop().unwrap();
         assert_eq!(second, task_medium);
-        
+
         let third = queue.pop().unwrap();
         assert_eq!(third, task_low);
     }
@@ -598,9 +653,9 @@ mod tests {
     fn test_task_queue_contains() {
         let mut queue = TaskQueue::new();
         let task = Uuid::new_v4();
-        
+
         assert!(!queue.contains(&task));
-        
+
         queue.push(task, TaskPriority::default_priority(1));
         assert!(queue.contains(&task));
     }
@@ -676,7 +731,7 @@ mod tests {
     #[test]
     fn test_worker_pool_resize() {
         let mut pool = WorkerPool::new(4);
-        
+
         // Resize to 2
         pool.resize(2).unwrap();
         assert_eq!(pool.max_workers(), 2);
@@ -727,7 +782,7 @@ mod tests {
     #[test]
     fn test_scheduler_no_idle_worker() {
         let mut scheduler = Scheduler::new();
-        
+
         // Fill all workers
         for _ in 0..scheduler.max_workers() {
             scheduler.enqueue(Uuid::new_v4());
@@ -735,7 +790,7 @@ mod tests {
         }
 
         assert!(!scheduler.can_schedule());
-        
+
         // Now no workers available
         let result = scheduler.try_schedule(100);
         assert!(result.is_none());
@@ -752,7 +807,7 @@ mod tests {
 
         // Complete the task
         scheduler.complete_task(&task);
-        
+
         assert_eq!(scheduler.active_workers(), 0);
         assert!(scheduler.idle_workers() > 0);
     }
@@ -778,7 +833,7 @@ mod tests {
 
         scheduler.enqueue(task);
         scheduler.try_schedule(100).unwrap();
-        
+
         assert_eq!(scheduler.active_workers(), 1);
 
         // Cancel in-progress task
@@ -790,7 +845,7 @@ mod tests {
     #[test]
     fn test_scheduler_resize_workers() {
         let mut scheduler = Scheduler::new();
-        
+
         // Resize to 3 workers (max is 7)
         scheduler.resize_workers(3).unwrap();
         assert_eq!(scheduler.max_workers(), 3);
@@ -799,7 +854,7 @@ mod tests {
     #[test]
     fn test_scheduler_resize_above_max() {
         let mut scheduler = Scheduler::new();
-        
+
         // Try to set 10 workers (should be capped at 7)
         scheduler.resize_workers(10).unwrap();
         assert_eq!(scheduler.max_workers(), MAX_MAX_WORKERS);
@@ -809,7 +864,7 @@ mod tests {
     fn test_scheduler_stats() {
         let scheduler = Scheduler::new();
         let stats = scheduler.stats();
-        
+
         assert_eq!(stats.max_workers, DEFAULT_MAX_WORKERS);
         assert_eq!(stats.active_workers, 0);
         assert_eq!(stats.idle_workers, DEFAULT_MAX_WORKERS);
@@ -833,12 +888,12 @@ mod tests {
     #[test]
     fn test_scheduler_fair_round_robin() {
         let mut scheduler = Scheduler::new();
-        
+
         // Enqueue many tasks
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
         let task3 = Uuid::new_v4();
-        
+
         scheduler.enqueue(task1);
         scheduler.enqueue(task2);
         scheduler.enqueue(task3);
@@ -846,10 +901,10 @@ mod tests {
         // Complete first task, then schedule more
         let (worker1, scheduled1) = scheduler.try_schedule(100).unwrap();
         assert_eq!(scheduled1, task1);
-        
+
         // Complete it
         scheduler.complete_task(&scheduled1);
-        
+
         // Schedule next
         let (worker2, scheduled2) = scheduler.try_schedule(101).unwrap();
         assert_eq!(scheduled2, task2);
@@ -861,7 +916,7 @@ mod tests {
         let task = Uuid::new_v4();
 
         scheduler.enqueue(task);
-        
+
         // Schedule once
         let result1 = scheduler.try_schedule(100);
         assert!(result1.is_some());
@@ -877,23 +932,26 @@ mod tests {
     #[test]
     fn test_scheduler_has_pending_work() {
         let mut scheduler = Scheduler::new();
-        
+
         assert!(!scheduler.has_pending_work());
-        
+
         scheduler.enqueue(Uuid::new_v4());
         assert!(scheduler.has_pending_work());
-        
+
         scheduler.try_schedule(100).unwrap();
         assert!(scheduler.has_pending_work());
-        
+
         // Complete the task
-        let tasks: Vec<_> = scheduler.worker_pool.slots.iter()
+        let tasks: Vec<_> = scheduler
+            .worker_pool
+            .slots
+            .iter()
             .filter_map(|s| s.task_id)
             .collect();
         for task_id in tasks {
             scheduler.complete_task(&task_id);
         }
-        
+
         // Now should have no pending work (queue empty, no active workers)
         assert!(!scheduler.has_pending_work());
     }
@@ -905,17 +963,17 @@ mod tests {
             fair_scheduling: true,
         };
         let scheduler = Scheduler::with_config(config);
-        
+
         assert_eq!(scheduler.max_workers(), 4);
     }
 
     #[test]
     fn test_scheduler_enqueue_all() {
         let mut scheduler = Scheduler::new();
-        
+
         let tasks: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
         scheduler.enqueue_all(tasks.clone());
-        
+
         assert_eq!(scheduler.queue_len(), 5);
     }
 
@@ -923,14 +981,14 @@ mod tests {
     fn test_scheduler_is_task_active() {
         let mut scheduler = Scheduler::new();
         let task = Uuid::new_v4();
-        
+
         assert!(!scheduler.is_task_active(&task));
-        
+
         scheduler.enqueue(task);
         scheduler.try_schedule(100).unwrap();
-        
+
         assert!(scheduler.is_task_active(&task));
-        
+
         scheduler.complete_task(&task);
         assert!(!scheduler.is_task_active(&task));
     }
@@ -939,12 +997,12 @@ mod tests {
     fn test_scheduler_peek_next() {
         let mut scheduler = Scheduler::new();
         let task = Uuid::new_v4();
-        
+
         scheduler.enqueue(task);
-        
+
         let peeked = scheduler.peek_next();
         assert_eq!(peeked, Some(task));
-        
+
         // Peek should not remove
         assert_eq!(scheduler.queue_len(), 1);
     }

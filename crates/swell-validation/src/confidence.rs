@@ -125,7 +125,8 @@ impl ConfidenceScore {
 
     /// Check if this score qualifies for auto-merge
     pub fn can_auto_merge(&self) -> bool {
-        self.score >= self.thresholds.auto_merge_threshold && self.level == ConfidenceLevel::VeryHigh
+        self.score >= self.thresholds.auto_merge_threshold
+            && self.level == ConfidenceLevel::VeryHigh
     }
 
     /// Get a human-readable summary
@@ -141,7 +142,11 @@ impl ConfidenceScore {
             "Confidence: {} ({:.1}%) - {}",
             level_str,
             self.score * 100.0,
-            if self.can_auto_merge() { "Eligible for auto-merge" } else { "Requires human review" }
+            if self.can_auto_merge() {
+                "Eligible for auto-merge"
+            } else {
+                "Requires human review"
+            }
         )
     }
 }
@@ -183,11 +188,7 @@ impl ConfidenceScorer {
 
     /// Add a security signal
     pub fn with_security(mut self, passed: bool, critical_findings: i32) -> Self {
-        let value = if critical_findings > 0 {
-            0.0
-        } else {
-            1.0
-        };
+        let value = if critical_findings > 0 { 0.0 } else { 1.0 };
         self.signals.push(ConfidenceSignal {
             source: "security".to_string(),
             weight: 0.25,
@@ -261,7 +262,11 @@ impl FlakinessHistory {
 
     /// Check if a test shows flakiness patterns
     pub fn is_flaky(&self, test_name: &str, min_runs: usize) -> bool {
-        let runs = self.runs.get(test_name).map(|r| r.as_slice()).unwrap_or(&[]);
+        let runs = self
+            .runs
+            .get(test_name)
+            .map(|r| r.as_slice())
+            .unwrap_or(&[]);
         if runs.len() < min_runs {
             return false;
         }
@@ -285,7 +290,11 @@ impl FlakinessHistory {
 
     /// Get flakiness score for a test (0.0 = always passes, 1.0 = always fails or chaotic)
     pub fn flakiness_score(&self, test_name: &str) -> f64 {
-        let runs = self.runs.get(test_name).map(|r| r.as_slice()).unwrap_or(&[]);
+        let runs = self
+            .runs
+            .get(test_name)
+            .map(|r| r.as_slice())
+            .unwrap_or(&[]);
         if runs.len() < 2 {
             return 0.0;
         }
@@ -297,7 +306,6 @@ impl FlakinessHistory {
         // Score based on inconsistency
         // More balanced pass/fail ratio = higher flakiness
         let balance = (failures as f64 / total as f64).abs() - 0.5;
-        
 
         1.0 - (balance * 2.0).abs()
     }
@@ -332,14 +340,12 @@ mod tests {
 
     #[test]
     fn test_confidence_score_all_pass() {
-        let signals = vec![
-            ConfidenceSignal {
-                source: "lint".to_string(),
-                weight: 1.0,
-                value: 1.0,
-                passed: true,
-            },
-        ];
+        let signals = vec![ConfidenceSignal {
+            source: "lint".to_string(),
+            weight: 1.0,
+            value: 1.0,
+            passed: true,
+        }];
         let score = ConfidenceScore::from_signals(signals, ConfidenceThresholds::default());
         assert_eq!(score.score, 1.0);
     }

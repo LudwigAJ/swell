@@ -6,13 +6,13 @@
 //! - Built-in tools: file I/O, git, shell execution
 //! - MCP client for external tool servers
 
-pub mod registry;
 pub mod executor;
-pub mod tools;
 pub mod mcp;
+pub mod registry;
+pub mod tools;
 
-pub use registry::{ToolRegistry, ToolRegistration};
 pub use executor::ToolExecutor;
+pub use registry::{ToolRegistration, ToolRegistry};
 
 #[cfg(test)]
 mod tests {

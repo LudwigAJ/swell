@@ -1,9 +1,9 @@
 //! Tool executor with permission enforcement.
 
-use swell_core::{ToolOutput, SwellError, PermissionTier};
 use crate::registry::ToolRegistry;
-use tracing::{info, warn};
 use std::time::Instant;
+use swell_core::{PermissionTier, SwellError, ToolOutput};
+use tracing::{info, warn};
 
 /// Permission checker for tools
 #[derive(Debug, Clone)]
@@ -73,21 +73,25 @@ impl ToolExecutor {
         arguments: serde_json::Value,
     ) -> Result<ToolOutput, SwellError> {
         let start = Instant::now();
-        
-        let tool = self.registry.get(name).await
-            .ok_or_else(|| SwellError::ToolExecutionFailed(format!("Tool not found: {}", name)))?;
-        
+
+        let tool =
+            self.registry.get(name).await.ok_or_else(|| {
+                SwellError::ToolExecutionFailed(format!("Tool not found: {}", name))
+            })?;
+
         // Check permissions
         if !self.permissions.is_allowed(name, tool.permission_tier()) {
             warn!(tool = %name, "Tool execution denied");
             return Err(SwellError::PermissionDenied(format!(
-                "Tool '{}' requires {:?} permission", name, tool.permission_tier()
+                "Tool '{}' requires {:?} permission",
+                name,
+                tool.permission_tier()
             )));
         }
 
         info!(tool = %name, "Executing tool");
         let result = tool.execute(arguments).await;
-        
+
         let duration = start.elapsed();
         info!(tool = %name, duration_ms = %duration.as_millis(), "Tool execution completed");
 
@@ -127,11 +131,13 @@ mod tests {
     async fn test_executor_permission_denied() {
         let registry = ToolRegistry::new();
         registry.register(ReadFileTool::new()).await;
-        
+
         let executor = ToolExecutor::new(registry);
-        
+
         // Default permission tier is Auto, so it should work
-        let result = executor.execute("read_file", serde_json::json!({"path": "/tmp/test"})).await;
+        let result = executor
+            .execute("read_file", serde_json::json!({"path": "/tmp/test"}))
+            .await;
         // May fail due to file not existing, but permission should pass
         assert!(result.is_ok() || matches!(result, Err(SwellError::ToolExecutionFailed(_))));
     }
@@ -140,7 +146,7 @@ mod tests {
     async fn test_executor_tool_not_found() {
         let registry = ToolRegistry::new();
         let executor = ToolExecutor::new(registry);
-        
+
         let result = executor.execute("nonexistent", serde_json::json!({})).await;
         assert!(matches!(result, Err(SwellError::ToolExecutionFailed(_))));
     }

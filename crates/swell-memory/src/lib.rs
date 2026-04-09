@@ -71,12 +71,10 @@ impl SqliteMemoryStore {
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_memory_label ON memory_entries(label)",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_label ON memory_entries(label)")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(())
     }
@@ -159,9 +157,12 @@ impl MemoryStore for SqliteMemoryStore {
     /// Store a new memory entry
     async fn store(&self, entry: MemoryEntry) -> Result<Uuid, SwellError> {
         let block_type_str = Self::block_type_to_string(entry.block_type);
-        let embedding_bytes = entry.embedding.as_ref().map(|e| Self::embedding_to_bytes(e));
-        let metadata_str =
-            serde_json::to_string(&entry.metadata).map_err(|e| SwellError::DatabaseError(e.to_string()))?;
+        let embedding_bytes = entry
+            .embedding
+            .as_ref()
+            .map(|e| Self::embedding_to_bytes(e));
+        let metadata_str = serde_json::to_string(&entry.metadata)
+            .map_err(|e| SwellError::DatabaseError(e.to_string()))?;
         let created_at_str = entry.created_at.to_rfc3339();
         let updated_at_str = entry.updated_at.to_rfc3339();
 
@@ -203,9 +204,12 @@ impl MemoryStore for SqliteMemoryStore {
     /// Update an existing memory entry
     async fn update(&self, entry: MemoryEntry) -> Result<(), SwellError> {
         let block_type_str = Self::block_type_to_string(entry.block_type);
-        let embedding_bytes = entry.embedding.as_ref().map(|e| Self::embedding_to_bytes(e));
-        let metadata_str =
-            serde_json::to_string(&entry.metadata).map_err(|e| SwellError::DatabaseError(e.to_string()))?;
+        let embedding_bytes = entry
+            .embedding
+            .as_ref()
+            .map(|e| Self::embedding_to_bytes(e));
+        let metadata_str = serde_json::to_string(&entry.metadata)
+            .map_err(|e| SwellError::DatabaseError(e.to_string()))?;
         let updated_at_str = chrono::Utc::now().to_rfc3339();
 
         let result = sqlx::query(
@@ -268,14 +272,9 @@ impl MemoryStore for SqliteMemoryStore {
 
         if let Some(ref block_types) = query.block_types {
             if !block_types.is_empty() {
-                let placeholders: Vec<String> = block_types
-                    .iter()
-                    .map(|_| "?".to_string())
-                    .collect();
-                sql.push_str(&format!(
-                    " AND block_type IN ({})",
-                    placeholders.join(", ")
-                ));
+                let placeholders: Vec<String> =
+                    block_types.iter().map(|_| "?".to_string()).collect();
+                sql.push_str(&format!(" AND block_type IN ({})", placeholders.join(", ")));
                 for bt in block_types {
                     params.push(Self::block_type_to_string(*bt));
                 }
@@ -290,10 +289,7 @@ impl MemoryStore for SqliteMemoryStore {
             }
         }
 
-        sql.push_str(&format!(
-            " LIMIT {} OFFSET {}",
-            query.limit, query.offset
-        ));
+        sql.push_str(&format!(" LIMIT {} OFFSET {}", query.limit, query.offset));
 
         let mut q = sqlx::query(&sql);
         for param in &params {
@@ -310,9 +306,17 @@ impl MemoryStore for SqliteMemoryStore {
             let entry = Self::row_to_entry(&row)?;
             // For MVP, use a simple relevance score based on label match
             let score = if let Some(ref query_text) = query.query_text {
-                if entry.label.to_lowercase().contains(&query_text.to_lowercase()) {
+                if entry
+                    .label
+                    .to_lowercase()
+                    .contains(&query_text.to_lowercase())
+                {
                     0.9
-                } else if entry.content.to_lowercase().contains(&query_text.to_lowercase()) {
+                } else if entry
+                    .content
+                    .to_lowercase()
+                    .contains(&query_text.to_lowercase())
+                {
                     0.7
                 } else {
                     0.5
@@ -369,9 +373,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_store_and_get() {
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         let entry = MemoryEntry {
             id: Uuid::new_v4(),
@@ -396,9 +398,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_and_delete() {
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         let entry = MemoryEntry {
             id: Uuid::new_v4(),
@@ -427,9 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search() {
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         let entry1 = MemoryEntry {
             id: Uuid::new_v4(),
@@ -473,9 +471,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_type() {
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         let entry1 = MemoryEntry {
             id: Uuid::new_v4(),
@@ -513,9 +509,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_label() {
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         let entry1 = MemoryEntry {
             id: Uuid::new_v4(),
@@ -542,7 +536,10 @@ mod tests {
         store.store(entry1.clone()).await.unwrap();
         store.store(entry2.clone()).await.unwrap();
 
-        let results = store.get_by_label("unique-label".to_string()).await.unwrap();
+        let results = store
+            .get_by_label("unique-label".to_string())
+            .await
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, entry1.id);
     }

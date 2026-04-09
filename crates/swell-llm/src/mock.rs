@@ -1,9 +1,9 @@
 //! Mock LLM backend for testing.
 
-use crate::{LlmMessage, LlmResponse, LlmConfig, LlmToolDefinition, LlmBackend};
-use swell_core::SwellError;
+use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition};
 use async_trait::async_trait;
 use std::sync::atomic::{AtomicU64, Ordering};
+use swell_core::SwellError;
 
 static CALL_COUNT: AtomicU64 = AtomicU64::new(0);
 
@@ -63,7 +63,7 @@ impl LlmBackend for MockLlm {
         _config: LlmConfig,
     ) -> Result<LlmResponse, SwellError> {
         CALL_COUNT.fetch_add(1, Ordering::SeqCst);
-        
+
         if self.should_fail {
             return Err(SwellError::LlmError("Mock failure".to_string()));
         }
@@ -76,7 +76,7 @@ impl LlmBackend for MockLlm {
                 .map(|m| m.content.clone())
                 .collect::<Vec<_>>()
                 .join(" ");
-            
+
             if user_content.is_empty() {
                 self.response.clone()
             } else {
@@ -86,10 +86,7 @@ impl LlmBackend for MockLlm {
             self.response.clone()
         };
 
-        let input_tokens: u64 = messages
-            .iter()
-            .map(|m| m.content.len() as u64 / 4)
-            .sum();
+        let input_tokens: u64 = messages.iter().map(|m| m.content.len() as u64 / 4).sum();
 
         Ok(LlmResponse {
             content,
@@ -129,11 +126,15 @@ mod tests {
         }];
 
         let response = mock
-            .chat(messages, None, LlmConfig {
-                temperature: 0.7,
-                max_tokens: 4096,
-                stop_sequences: None,
-            })
+            .chat(
+                messages,
+                None,
+                LlmConfig {
+                    temperature: 0.7,
+                    max_tokens: 4096,
+                    stop_sequences: None,
+                },
+            )
             .await
             .unwrap();
 
@@ -152,11 +153,15 @@ mod tests {
         }];
 
         let response = mock
-            .chat(messages, None, LlmConfig {
-                temperature: 0.7,
-                max_tokens: 4096,
-                stop_sequences: None,
-            })
+            .chat(
+                messages,
+                None,
+                LlmConfig {
+                    temperature: 0.7,
+                    max_tokens: 4096,
+                    stop_sequences: None,
+                },
+            )
             .await
             .unwrap();
 
@@ -174,11 +179,17 @@ mod tests {
             content: "Hello".to_string(),
         }];
 
-        let result = mock.chat(messages, None, LlmConfig {
-            temperature: 0.7,
-            max_tokens: 4096,
-            stop_sequences: None,
-        }).await;
+        let result = mock
+            .chat(
+                messages,
+                None,
+                LlmConfig {
+                    temperature: 0.7,
+                    max_tokens: 4096,
+                    stop_sequences: None,
+                },
+            )
+            .await;
         assert!(result.is_err());
     }
 

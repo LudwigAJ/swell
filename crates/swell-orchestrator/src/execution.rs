@@ -1,10 +1,10 @@
 //! Execution controller for managing parallel agent execution.
 #![allow(clippy::should_implement_trait)]
 
-use swell_core::{SwellError, ValidationResult};
 use crate::{Orchestrator, MAX_CONCURRENT_AGENTS};
-use std::sync::Arc;
 use futures::stream::{self, StreamExt};
+use std::sync::Arc;
+use swell_core::{SwellError, ValidationResult};
 use tracing::info;
 
 /// Manages concurrent task execution with up to 6 agents
@@ -22,18 +22,15 @@ impl ExecutionController {
     }
 
     /// Execute a single task through the full pipeline
-    pub async fn execute_task(
-        &self,
-        task_id: uuid::Uuid,
-    ) -> Result<ValidationResult, SwellError> {
+    pub async fn execute_task(&self, task_id: uuid::Uuid) -> Result<ValidationResult, SwellError> {
         info!(task_id = %task_id, "Starting task execution");
-        
+
         // Step 1: Planning
         self.orchestrator.start_task(task_id).await?;
-        
+
         // Step 2: Generate & Validate (in MVP, simplified)
         self.orchestrator.start_validation(task_id).await?;
-        
+
         // Step 3: Complete with result
         let result = ValidationResult {
             passed: true,
@@ -44,9 +41,11 @@ impl ExecutionController {
             errors: vec![],
             warnings: vec![],
         };
-        
-        self.orchestrator.complete_task(task_id, result.clone()).await?;
-        
+
+        self.orchestrator
+            .complete_task(task_id, result.clone())
+            .await?;
+
         Ok(result)
     }
 
@@ -56,18 +55,16 @@ impl ExecutionController {
         task_ids: Vec<uuid::Uuid>,
     ) -> Vec<Result<ValidationResult, SwellError>> {
         info!(count = task_ids.len(), "Starting batch execution");
-        
+
         let results = stream::iter(task_ids)
             .map(|task_id| {
                 let controller = self.clone();
-                async move {
-                    controller.execute_task(task_id).await
-                }
+                async move { controller.execute_task(task_id).await }
             })
             .buffer_unordered(self.max_concurrent)
             .collect()
             .await;
-        
+
         results
     }
 
@@ -122,11 +119,17 @@ mod tests {
     async fn test_batch_execution() {
         let orchestrator = Orchestrator::new();
         let controller = ExecutionController::new(Arc::new(orchestrator));
-        
+
         // Create some tasks
-        let task1 = controller.orchestrator.create_task("Task 1".to_string()).await;
-        let task2 = controller.orchestrator.create_task("Task 2".to_string()).await;
-        
+        let task1 = controller
+            .orchestrator
+            .create_task("Task 1".to_string())
+            .await;
+        let task2 = controller
+            .orchestrator
+            .create_task("Task 2".to_string())
+            .await;
+
         let results = controller.execute_batch(vec![task1.id, task2.id]).await;
         assert_eq!(results.len(), 2);
     }

@@ -1,10 +1,10 @@
 //! OpenAI API backend (also handles Azure OpenAI).
 
-use crate::{LlmMessage, LlmRole, LlmResponse, LlmConfig, LlmToolDefinition, LlmUsage, LlmBackend};
-use swell_core::{SwellError, LlmToolCall};
+use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use swell_core::{LlmToolCall, SwellError};
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
@@ -25,7 +25,11 @@ impl OpenAIBackend {
         })
     }
 
-    pub fn with_base_url(model: impl Into<String>, api_key: impl Into<String>, base_url: impl Into<String>) -> Result<Self, SwellError> {
+    pub fn with_base_url(
+        model: impl Into<String>,
+        api_key: impl Into<String>,
+        base_url: impl Into<String>,
+    ) -> Result<Self, SwellError> {
         Ok(Self {
             model: model.into(),
             api_key: api_key.into(),
@@ -180,7 +184,8 @@ impl LlmBackend for OpenAIBackend {
             let body = response.text().await.unwrap_or_default();
             warn!(status = %status, body = %body, "OpenAI API error");
             return Err(SwellError::LlmError(format!(
-                "API error {}: {}", status, body
+                "API error {}: {}",
+                status, body
             )));
         }
 

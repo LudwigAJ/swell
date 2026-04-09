@@ -16,18 +16,18 @@
 //! let response = backend.chat(messages, None, config).await?;
 //! ```
 
-pub mod traits;
 pub mod anthropic;
-pub mod openai;
 pub mod mock;
+pub mod openai;
+pub mod traits;
 
-pub use traits::*;
 pub use anthropic::AnthropicBackend;
-pub use openai::OpenAIBackend;
 pub use mock::MockLlm;
+pub use openai::OpenAIBackend;
+pub use traits::*;
 
-use swell_core::{LlmBackend as CoreLlmBackend, SwellError};
 use std::sync::Arc;
+use swell_core::{LlmBackend as CoreLlmBackend, SwellError};
 
 /// Type alias for boxed LLM backend
 pub type BoxLlmBackend = Arc<dyn CoreLlmBackend>;
@@ -39,7 +39,10 @@ pub fn create_backend(url: &str, model: &str, api_key: &str) -> Result<BoxLlmBac
     } else if url.contains("openai") || url.contains("openai.com") || url.contains("azure") {
         Ok(Arc::new(OpenAIBackend::new(model, api_key)?))
     } else {
-        Err(SwellError::ConfigError(format!("Unknown LLM provider: {}", url)))
+        Err(SwellError::ConfigError(format!(
+            "Unknown LLM provider: {}",
+            url
+        )))
     }
 }
 

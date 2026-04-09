@@ -112,7 +112,10 @@ impl Sandbox for FirecrackerSandbox {
         // 3. Return actual output
         Ok(SandboxOutput {
             exit_code: 0,
-            stdout: format!("STUB: would execute '{}' with args {:?}", cmd.command, cmd.args),
+            stdout: format!(
+                "STUB: would execute '{}' with args {:?}",
+                cmd.command, cmd.args
+            ),
             stderr: String::new(),
             duration_ms: 10,
         })

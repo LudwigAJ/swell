@@ -15,7 +15,7 @@
 //! - [`CheckpointStore`] - State persistence
 //! - [`ValidationGate`] - Quality assurance steps
 
-use crate::{Task, TaskState, Plan, AgentId, AgentRole, SwellError};
+use crate::{AgentId, AgentRole, Plan, SwellError, Task, TaskState};
 use async_trait::async_trait;
 use std::any::Any;
 use uuid::Uuid;
@@ -481,17 +481,53 @@ pub struct ValidationArtifact {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", content = "data")]
 pub enum Event {
-    TaskCreated { task_id: Uuid },
-    TaskStateChanged { task_id: Uuid, from: TaskState, to: TaskState },
-    TaskProgress { task_id: Uuid, message: String },
-    TaskCompleted { task_id: Uuid, pr_url: Option<String> },
-    TaskFailed { task_id: Uuid, error: String },
-    AgentStarted { agent_id: AgentId, role: AgentRole, task_id: Uuid },
-    AgentFinished { agent_id: AgentId, task_id: Uuid, success: bool },
-    ToolExecuted { tool_name: String, success: bool, duration_ms: u64 },
-    ValidationStarted { task_id: Uuid, gate: &'static str },
-    ValidationCompleted { task_id: Uuid, gate: &'static str, passed: bool },
-    Error { message: String },
+    TaskCreated {
+        task_id: Uuid,
+    },
+    TaskStateChanged {
+        task_id: Uuid,
+        from: TaskState,
+        to: TaskState,
+    },
+    TaskProgress {
+        task_id: Uuid,
+        message: String,
+    },
+    TaskCompleted {
+        task_id: Uuid,
+        pr_url: Option<String>,
+    },
+    TaskFailed {
+        task_id: Uuid,
+        error: String,
+    },
+    AgentStarted {
+        agent_id: AgentId,
+        role: AgentRole,
+        task_id: Uuid,
+    },
+    AgentFinished {
+        agent_id: AgentId,
+        task_id: Uuid,
+        success: bool,
+    },
+    ToolExecuted {
+        tool_name: String,
+        success: bool,
+        duration_ms: u64,
+    },
+    ValidationStarted {
+        task_id: Uuid,
+        gate: &'static str,
+    },
+    ValidationCompleted {
+        task_id: Uuid,
+        gate: &'static str,
+        passed: bool,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// Event subscriber

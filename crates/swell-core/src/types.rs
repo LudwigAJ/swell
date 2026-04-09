@@ -58,8 +58,13 @@ pub struct Task {
 pub enum TaskSource {
     UserRequest,
     PlanDecomposition,
-    FailureDerived { original_task_id: Uuid, failure_signal: String },
-    SpecGap { spec_id: Uuid },
+    FailureDerived {
+        original_task_id: Uuid,
+        failure_signal: String,
+    },
+    SpecGap {
+        spec_id: Uuid,
+    },
 }
 
 impl Task {
@@ -185,9 +190,9 @@ pub enum ToolRiskLevel {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PermissionTier {
-    Auto,  // Approved automatically
-    Ask,   // Requires user confirmation
-    Deny,  // Never allowed without explicit override
+    Auto, // Approved automatically
+    Ask,  // Requires user confirmation
+    Deny, // Never allowed without explicit override
 }
 
 /// Validation result from the validation pipeline
@@ -267,7 +272,11 @@ impl CostGuard {
 
     pub fn add_cost(&mut self, tokens: u64) {
         self.spent += tokens;
-        tracing::debug!(spent = self.spent, limit = self.budget_limit, "CostGuard updated");
+        tracing::debug!(
+            spent = self.spent,
+            limit = self.budget_limit,
+            "CostGuard updated"
+        );
     }
 
     pub fn is_warning_threshold(&self) -> bool {

@@ -1,10 +1,10 @@
 //! Anthropic Claude API backend.
 
-use crate::{LlmMessage, LlmRole, LlmResponse, LlmConfig, LlmToolDefinition, LlmUsage, LlmBackend};
-use swell_core::{SwellError, LlmToolCall};
+use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use swell_core::{LlmToolCall, SwellError};
 use tracing::{debug, warn};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -142,7 +142,8 @@ impl LlmBackend for AnthropicBackend {
             let body = response.text().await.unwrap_or_default();
             warn!(status = %status, body = %body, "Anthropic API error");
             return Err(SwellError::LlmError(format!(
-                "API error {}: {}", status, body
+                "API error {}: {}",
+                status, body
             )));
         }
 
@@ -186,11 +187,7 @@ impl LlmBackend for AnthropicBackend {
 
     async fn health_check(&self) -> bool {
         // Simple check - just verify client can connect
-        self.client
-            .head(ANTHROPIC_API_URL)
-            .send()
-            .await
-            .is_ok()
+        self.client.head(ANTHROPIC_API_URL).send().await.is_ok()
     }
 }
 
@@ -209,6 +206,9 @@ mod tests {
     async fn test_role_conversion() {
         assert_eq!(AnthropicBackend::convert_role(LlmRole::System), "system");
         assert_eq!(AnthropicBackend::convert_role(LlmRole::User), "user");
-        assert_eq!(AnthropicBackend::convert_role(LlmRole::Assistant), "assistant");
+        assert_eq!(
+            AnthropicBackend::convert_role(LlmRole::Assistant),
+            "assistant"
+        );
     }
 }

@@ -415,7 +415,11 @@ impl EvidencePack {
         md.push_str(&format!(
             "- **Score**: {:.1}%\n- **Auto-merge**: {}\n\n",
             self.confidence.score * 100.0,
-            if self.confidence.auto_merge { "Yes" } else { "No" }
+            if self.confidence.auto_merge {
+                "Yes"
+            } else {
+                "No"
+            }
         ));
 
         // Test summary
@@ -425,7 +429,10 @@ impl EvidencePack {
             "- **Total**: {} | **Passed**: {} | **Failed**: {} | **Skipped**: {}\n",
             ts.total, ts.passed, ts.failed, ts.skipped
         ));
-        md.push_str(&format!("- **Duration**: {:.2}s\n\n", ts.duration_ms as f64 / 1000.0));
+        md.push_str(&format!(
+            "- **Duration**: {:.2}s\n\n",
+            ts.duration_ms as f64 / 1000.0
+        ));
 
         // Security
         md.push_str("## Security\n\n");

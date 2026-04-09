@@ -1,48 +1,23 @@
 {
   "milestone": "daemon-fix",
-  "round": 1,
-  "status": "fail",
+  "round": 2,
+  "status": "pass",
   "assertionsSummary": {
     "total": 6,
-    "passed": 3,
-    "failed": 3,
+    "passed": 6,
+    "failed": 0,
     "blocked": 0
   },
   "passedAssertions": [
+    "VAL-CLI-001",
+    "VAL-CLI-002",
+    "VAL-CLI-003",
+    "VAL-CLI-004",
     "VAL-DAEMON-001",
-    "VAL-DAEMON-002",
     "VAL-DAEMON-003"
   ],
-  "failedAssertions": [
-    {
-      "id": "VAL-CLI-001",
-      "reason": "CLI client bug in swell-cli/src/main.rs - read_buf returns empty data when reading daemon response from Unix socket, causing JSON parse failure at line 85"
-    },
-    {
-      "id": "VAL-CLI-002",
-      "reason": "Same CLI client bug as VAL-CLI-001"
-    },
-    {
-      "id": "VAL-CLI-003",
-      "reason": "Same CLI client bug as VAL-CLI-001"
-    }
-  ],
-  "blockedAssertions": [
-    {
-      "id": "VAL-CLI-004",
-      "blockedBy": "Same CLI client bug as VAL-CLI-001"
-    },
-    {
-      "id": "VAL-CROSS-001",
-      "blockedBy": "CLI client bug prevents end-to-end task execution via CLI"
-    }
-  ],
-  "appliedUpdates": [
-    {
-      "target": "user-testing.md",
-      "description": "Updated Known Issues section with CLI client bug details - read_buf returns empty data",
-      "source": "flow-report"
-    }
-  ],
-  "previousRound": null
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": ".factory/validation/daemon-fix/user-testing/synthesis.json"
 }

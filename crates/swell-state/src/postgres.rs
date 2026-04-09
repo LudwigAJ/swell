@@ -1,10 +1,10 @@
 //! PostgreSQL-based checkpoint store for production.
 
-use swell_core::{Checkpoint, CheckpointStore, SwellError};
 use async_trait::async_trait;
-use uuid::Uuid;
-use sqlx::{PgPool, Row};
 use chrono::{DateTime, Utc};
+use sqlx::{PgPool, Row};
+use swell_core::{Checkpoint, CheckpointStore, SwellError};
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct PostgresCheckpointStore {
@@ -87,7 +87,7 @@ impl CheckpointStore for PostgresCheckpointStore {
 
     async fn load_latest(&self, task_id: Uuid) -> Result<Option<Checkpoint>, SwellError> {
         let row = sqlx::query(
-            "SELECT * FROM checkpoints WHERE task_id = $1 ORDER BY created_at DESC LIMIT 1"
+            "SELECT * FROM checkpoints WHERE task_id = $1 ORDER BY created_at DESC LIMIT 1",
         )
         .bind(task_id)
         .fetch_optional(&self.pool)
@@ -98,13 +98,12 @@ impl CheckpointStore for PostgresCheckpointStore {
     }
 
     async fn list(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
-        let rows = sqlx::query(
-            "SELECT * FROM checkpoints WHERE task_id = $1 ORDER BY created_at ASC"
-        )
-        .bind(task_id)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let rows =
+            sqlx::query("SELECT * FROM checkpoints WHERE task_id = $1 ORDER BY created_at ASC")
+                .bind(task_id)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         let checkpoints: Vec<Checkpoint> = rows
             .into_iter()
