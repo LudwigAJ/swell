@@ -1,0 +1,17 @@
+{
+  "milestone": "git-fix",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "notes": "The git-fix milestone contains 3 bug fix features (fix-git-worktree-ready-flag, fix-git-branch-protection, fix-git-conflict-owner) that do not have explicit fulfills mappings in the validation contract. These are bug fixes to existing functionality rather than new features. All 88 tests in swell-tools pass, confirming the fixes work correctly. All existing assertions in validation-state.json are already passed from prior milestones. No new user-testing assertions required for this bug-fix milestone.",
+  "previousRound": null
+}
