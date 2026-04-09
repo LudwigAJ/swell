@@ -1,48 +1,24 @@
 {
   "milestone": "agents-fix",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
-    "test": {
-      "passed": true,
-      "command": "cargo test --workspace",
-      "exitCode": 0
-    },
-    "typecheck": {
-      "passed": true,
-      "command": "cargo clippy --workspace -- -D warnings",
-      "exitCode": 0
-    },
-    "lint": {
-      "passed": true,
-      "command": "cargo clippy --workspace",
-      "exitCode": 0
-    }
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 2,
+    "total": 3,
     "passed": 1,
-    "failed": 1,
-    "failedFeatures": ["fix-refactorer-validation"]
+    "failed": 2,
+    "failedFeatures": ["fix-refactorer-validation", "fix-refactorer-apply"]
   },
   "blockingIssues": [
     {
-      "featureId": "fix-refactorer-validation",
+      "featureId": "fix-refactorer-apply",
       "severity": "blocking",
-      "description": "execute() never calls apply_refactor(). Refactorings are identified but never applied before validation. Validation runs on current code state.",
-      "location": "crates/swell-orchestrator/src/agents.rs:3302"
-    },
-    {
-      "featureId": "fix-refactorer-validation",
-      "severity": "blocking",
-      "description": "before_passed is hardcoded to true instead of running tests before refactoring. No before/after comparison occurs.",
-      "location": "crates/swell-orchestrator/src/agents.rs:3312"
-    },
-    {
-      "featureId": "fix-refactorer-validation",
-      "severity": "blocking",
-      "description": "reverted field is hardcoded to false. The apply_refactor() method exists but is never called, so revert logic is not integrated.",
-      "location": "crates/swell-orchestrator/src/agents.rs:3315"
+      "description": "apply_refactor() method exists at line ~3118 but is never called in execute(). The code pushes to applied_opportunities but only simulates application with comments like 'In a full implementation, we would generate actual refactored code'. The method is dead code - never actually invoked.",
+      "location": "crates/swell-orchestrator/src/agents.rs:3346"
     }
   ],
   "appliedUpdates": [],
@@ -61,5 +37,5 @@
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": ".factory/validation/agents-fix/scrutiny/synthesis.json"
 }
