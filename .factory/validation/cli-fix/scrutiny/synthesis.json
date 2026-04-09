@@ -1,0 +1,48 @@
+{
+  "milestone": "cli-fix",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "observation": "All 250 tests passed across all crates"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0,
+      "observation": "No warnings treated as errors"
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace",
+      "exitCode": 0,
+      "observation": "Clippy passed with no warnings"
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify skill naming conventions: AGENTS.md defines a 'Rust' skill but workers may search for 'rust-worker'. Either rename the skill in AGENTS.md to match what workers expect, or document the correct skill name more prominently.",
+      "evidence": "Feature fix-cli-socket-bug (worker session 15276d13) attempted to invoke non-existent 'rust-worker' skill, then successfully used 'Rust' skill instead. This mismatch caused confusion and potential delays.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "No test coverage for socket read behavior in swell-cli crate",
+      "reason": "While this is a valid gap, the fix-cli-socket-bug feature was specifically scoped to fixing the immediate bug. Adding test coverage would be a separate feature work item, not within scope of this fix."
+    }
+  ],
+  "previousRound": null
+}
