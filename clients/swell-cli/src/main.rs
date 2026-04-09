@@ -1,8 +1,23 @@
 use swell_core::{CliCommand, DaemonEvent, Task};
+use std::io::{self, Write};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::signal::unix::{signal, SignalKind};
 use uuid::Uuid;
+
+/// Prompt user for confirmation and return true if they confirm with 'y' or 'yes' (case-insensitive)
+fn confirm(prompt: &str) -> bool {
+    print!("{} [y/N] ", prompt);
+    io::stdout().flush().unwrap();
+    
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input).is_ok() {
+        let trimmed = input.trim().to_lowercase();
+        trimmed == "y" || trimmed == "yes"
+    } else {
+        false
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,6 +61,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
             let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
+            
+            // Confirmation prompt before approving
+            if !confirm(&format!("Are you sure you want to approve task {}?", task_id)) {
+                println!("Approval cancelled.");
+                return Ok(());
+            }
+            
             let cmd = CliCommand::TaskApprove { task_id };
             send_command(&socket_path, cmd).await?;
         }
@@ -55,6 +77,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
             let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
+            
+            // Confirmation prompt before cancelling
+            if !confirm(&format!("Are you sure you want to cancel task {}?", task_id)) {
+                println!("Cancellation aborted.");
+                return Ok(());
+            }
+            
             let cmd = CliCommand::TaskCancel { task_id };
             send_command(&socket_path, cmd).await?;
         }
