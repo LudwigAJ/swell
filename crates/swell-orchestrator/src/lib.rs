@@ -20,7 +20,18 @@ pub mod drift_detector;
 
 pub use state_machine::TaskStateMachine;
 pub use task_graph::TaskGraph;
-pub use agents::{AgentPool, AgentHandle, PlannerAgent, GeneratorAgent, EvaluatorAgent};
+pub use agents::{
+    AgentPool, AgentHandle, 
+    PlannerAgent, GeneratorAgent, EvaluatorAgent,
+    CoderAgent, TestWriterAgent, ReviewerAgent, RefactorerAgent, DocWriterAgent,
+    SystemPromptBuilder, SystemPromptConfig,
+    ReactLoop, ReactLoopState, ReactLoopSummary, ReactStep, ReactPhase,
+    DEFAULT_REACT_MAX_ITERATIONS,
+    ContextCondensation, ContextWindow, ContextItem, ContextItemType, CondensationLevel, CondensationResult,
+    ReviewResult, CodeIssue, IssueSeverity, IssueCategory,
+    RefactorPlan, RefactorOpportunity, DocChange, DocChangeType,
+    TestSpec,
+};
 pub use execution::ExecutionController;
 pub use policy::{PolicyEngine, PolicyAction, PolicyDecision, PolicyEffect, PolicyFile, PolicyRule, PolicyCondition, action};
 pub use scheduler::{Scheduler, SchedulerConfig, SchedulerStats, TaskPriority, DEFAULT_MAX_WORKERS, MAX_MAX_WORKERS};

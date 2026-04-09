@@ -16,8 +16,10 @@ chrono.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 reqwest.workspace = true
+glob.workspace = true
+regex.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true
 mockall.workspace = true
-tempfile.workspace = true

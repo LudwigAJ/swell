@@ -7,12 +7,20 @@
 //!
 //! - [`LintGate`] - Runs linters (clippy, rustfmt)
 //! - [`TestGate`] - Runs test suites
-//! - [`SecurityGate`] - Runs security scans (stub for MVP)
-//! - [`AiReviewGate`] - AI-powered code review (stub for MVP)
+//! - [`SecurityGate`] - Runs security scans (Semgrep)
+//! - [`AiReviewGate`] - AI-powered code review with Evaluator agent
 //!
 //! # Pipeline
 //!
 //! Use [`ValidationPipeline`] to run all gates in order.
+//!
+//! # Confidence Scoring
+//!
+//! Use [`ConfidenceScorer`] to compute confidence scores from validation signals.
+//!
+//! # Evidence Pack
+//!
+//! Use [`EvidencePackBuilder`] to create comprehensive evidence packs for PR review.
 
 use async_trait::async_trait;
 use swell_core::{
@@ -21,6 +29,22 @@ use swell_core::{
 };
 use std::process::Command;
 use tokio::task;
+
+// Re-export confidence scoring for use by other crates
+pub mod confidence;
+pub use confidence::{
+    ConfidenceLevel, ConfidenceScore, ConfidenceScorer, ConfidenceSignal, ConfidenceThresholds,
+    FlakinessHistory, TestRun,
+};
+
+// Re-export evidence pack for use by other crates
+pub mod evidence;
+pub use evidence::{
+    AiReviewEvidence, ConfidenceEvidence, CoverageEvidence,
+    EvidenceOutcome, EvidencePack, EvidencePackBuilder, EvidencePackError, FlakinessEvidence,
+    GateEvidence, MessageCounts, ReviewComment, SecurityEvidence, SecurityFinding,
+    SignalScore, TestEvidence, TestResult,
+};
 
 // ============================================================================
 // Lint Gate

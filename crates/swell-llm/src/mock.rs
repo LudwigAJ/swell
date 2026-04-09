@@ -62,12 +62,8 @@ impl LlmBackend for MockLlm {
             return Err(SwellError::LlmError("Mock failure".to_string()));
         }
 
-        // Echo back the user message for testing
-        let user_message = messages
-            .iter()
-            .find(|m| m.role == crate::LlmRole::User)
-            .map(|m| m.content.clone())
-            .unwrap_or_else(|| "No user message".to_string());
+        // Return the configured response only
+        let content = self.response.clone();
 
         let input_tokens: u64 = messages
             .iter()
@@ -75,7 +71,7 @@ impl LlmBackend for MockLlm {
             .sum();
 
         Ok(LlmResponse {
-            content: format!("{}: {}", self.response, user_message),
+            content,
             tool_calls: None,
             usage: crate::LlmUsage {
                 input_tokens,
