@@ -109,9 +109,7 @@ impl BenchmarkMetrics {
         let mut metrics: HashMap<String, CategoryMetrics> = HashMap::new();
 
         for result in results {
-            // We need category info - in a real implementation, we'd look this up
-            // For now, we'll use a placeholder
-            let cat_key = "unknown".to_string();
+            let cat_key = result.category.to_string();
             let entry = metrics.entry(cat_key).or_default();
             entry.record(result);
         }
@@ -123,7 +121,7 @@ impl BenchmarkMetrics {
         let mut metrics: HashMap<String, DifficultyMetrics> = HashMap::new();
 
         for result in results {
-            let diff_key = "unknown".to_string();
+            let diff_key = result.difficulty.to_string();
             let entry = metrics.entry(diff_key).or_default();
             entry.record(result);
         }
@@ -311,6 +309,7 @@ impl ProgressTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::{TaskCategory, TaskDifficulty};
 
     #[test]
     fn test_task_outcome_is_success() {
@@ -334,9 +333,9 @@ mod tests {
     #[test]
     fn test_benchmark_metrics_all_success() {
         let results = vec![
-            TaskResult::success(TaskId("task1".to_string()), 10.0),
-            TaskResult::success(TaskId("task2".to_string()), 15.0),
-            TaskResult::success(TaskId("task3".to_string()), 20.0),
+            TaskResult::success(TaskId("task1".to_string()), TaskCategory::BugFix, TaskDifficulty::Low, 10.0),
+            TaskResult::success(TaskId("task2".to_string()), TaskCategory::Feature, TaskDifficulty::Medium, 15.0),
+            TaskResult::success(TaskId("task3".to_string()), TaskCategory::Refactoring, TaskDifficulty::High, 20.0),
         ];
 
         let metrics = BenchmarkMetrics::from_results(results, 3);
@@ -352,9 +351,9 @@ mod tests {
     #[test]
     fn test_benchmark_metrics_mixed() {
         let results = vec![
-            TaskResult::success(TaskId("task1".to_string()), 10.0),
-            TaskResult::failed(TaskId("task2".to_string()), 5.0, "Error"),
-            TaskResult::success(TaskId("task3".to_string()), 20.0),
+            TaskResult::success(TaskId("task1".to_string()), TaskCategory::BugFix, TaskDifficulty::Low, 10.0),
+            TaskResult::failed(TaskId("task2".to_string()), TaskCategory::Feature, TaskDifficulty::Medium, 5.0, "Error"),
+            TaskResult::success(TaskId("task3".to_string()), TaskCategory::Test, TaskDifficulty::VeryHigh, 20.0),
         ];
 
         let metrics = BenchmarkMetrics::from_results(results, 5);
@@ -384,9 +383,9 @@ mod tests {
     fn test_category_metrics() {
         let mut metrics = CategoryMetrics::default();
 
-        metrics.record(&TaskResult::success(TaskId("t1".to_string()), 10.0));
-        metrics.record(&TaskResult::success(TaskId("t2".to_string()), 10.0));
-        metrics.record(&TaskResult::failed(TaskId("t3".to_string()), 10.0, "err"));
+        metrics.record(&TaskResult::success(TaskId("t1".to_string()), TaskCategory::BugFix, TaskDifficulty::Low, 10.0));
+        metrics.record(&TaskResult::success(TaskId("t2".to_string()), TaskCategory::BugFix, TaskDifficulty::Medium, 10.0));
+        metrics.record(&TaskResult::failed(TaskId("t3".to_string()), TaskCategory::BugFix, TaskDifficulty::High, 10.0, "err"));
 
         assert_eq!(metrics.completed, 2);
         assert_eq!(metrics.failed, 1);

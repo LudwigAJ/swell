@@ -125,6 +125,10 @@ impl std::fmt::Display for TaskDifficulty {
 pub struct TaskResult {
     /// The task that was executed
     pub task_id: TaskId,
+    /// Category of the task
+    pub category: super::task::TaskCategory,
+    /// Difficulty level
+    pub difficulty: super::task::TaskDifficulty,
     /// Outcome of the task
     pub outcome: super::metrics::TaskOutcome,
     /// Time taken to complete
@@ -139,9 +143,11 @@ pub struct TaskResult {
 
 impl TaskResult {
     /// Create a successful task result
-    pub fn success(task_id: TaskId, duration_secs: f64) -> Self {
+    pub fn success(task_id: TaskId, category: super::task::TaskCategory, difficulty: super::task::TaskDifficulty, duration_secs: f64) -> Self {
         Self {
             task_id,
+            category,
+            difficulty,
             outcome: super::metrics::TaskOutcome::Completed,
             duration_secs,
             retries: 0,
@@ -151,9 +157,11 @@ impl TaskResult {
     }
 
     /// Create a failed task result
-    pub fn failed(task_id: TaskId, duration_secs: f64, notes: impl Into<String>) -> Self {
+    pub fn failed(task_id: TaskId, category: super::task::TaskCategory, difficulty: super::task::TaskDifficulty, duration_secs: f64, notes: impl Into<String>) -> Self {
         Self {
             task_id,
+            category,
+            difficulty,
             outcome: super::metrics::TaskOutcome::Failed,
             duration_secs,
             retries: 0,
@@ -163,9 +171,11 @@ impl TaskResult {
     }
 
     /// Create a skipped task result
-    pub fn skipped(task_id: TaskId, reason: impl Into<String>) -> Self {
+    pub fn skipped(task_id: TaskId, category: super::task::TaskCategory, difficulty: super::task::TaskDifficulty, reason: impl Into<String>) -> Self {
         Self {
             task_id,
+            category,
+            difficulty,
             outcome: super::metrics::TaskOutcome::Skipped,
             duration_secs: 0.0,
             retries: 0,
@@ -201,11 +211,18 @@ mod tests {
 
     #[test]
     fn test_task_result_success() {
-        let result = TaskResult::success(TaskId("test".to_string()), 10.5);
+        let result = TaskResult::success(
+            TaskId("test".to_string()),
+            TaskCategory::BugFix,
+            TaskDifficulty::Low,
+            10.5
+        );
 
         assert_eq!(result.outcome, TaskOutcome::Completed);
         assert_eq!(result.duration_secs, 10.5);
         assert_eq!(result.retries, 0);
+        assert_eq!(result.category, TaskCategory::BugFix);
+        assert_eq!(result.difficulty, TaskDifficulty::Low);
         assert!(result.notes.is_none());
     }
 
@@ -213,11 +230,15 @@ mod tests {
     fn test_task_result_failed() {
         let result = TaskResult::failed(
             TaskId("test".to_string()),
+            TaskCategory::Feature,
+            TaskDifficulty::Medium,
             5.0,
             "Implementation error",
         );
 
         assert_eq!(result.outcome, TaskOutcome::Failed);
         assert_eq!(result.notes, Some("Implementation error".to_string()));
+        assert_eq!(result.category, TaskCategory::Feature);
+        assert_eq!(result.difficulty, TaskDifficulty::Medium);
     }
 }

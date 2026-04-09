@@ -135,6 +135,13 @@ impl BenchmarkRunner {
                     }
                 }
 
+                // Filter by difficulty if configured
+                if let Some(ref difficulties) = self.config.difficulty_filter {
+                    if !difficulties.contains(&task.difficulty.to_string()) {
+                        return false;
+                    }
+                }
+
                 true
             })
             .collect()
@@ -189,6 +196,8 @@ impl BenchmarkRunner {
                     let duration = start.elapsed().as_secs_f64();
                     let task_result = TaskResult {
                         task_id: task.id.clone(),
+                        category: task.category,
+                        difficulty: task.difficulty,
                         outcome,
                         duration_secs: duration,
                         retries,
@@ -203,6 +212,8 @@ impl BenchmarkRunner {
                     if retries >= self.config.max_retries {
                         return TaskResult {
                             task_id: task.id.clone(),
+                            category: task.category,
+                            difficulty: task.difficulty,
                             outcome: TaskOutcome::Timeout,
                             duration_secs: start.elapsed().as_secs_f64(),
                             retries,
