@@ -7,12 +7,14 @@
 //! - MCP client for external tool servers
 //! - [`WorktreePool`] - git worktree pool for agent isolation
 //! - [`CommitStrategy`] - atomic commits with metadata trailers
+//! - [`PrCreator`] - PR creation with metadata, evidence, and labels
 
 pub mod branch_strategy;
 pub mod commit_strategy;
 pub mod conflict_resolution;
 pub mod executor;
 pub mod mcp;
+pub mod pr_creation;
 pub mod registry;
 pub mod tools;
 pub mod worktree_pool;
@@ -28,6 +30,9 @@ pub use conflict_resolution::{
     ConflictResolverConfig, ConflictResolutionError, FileOwner, ResolutionResult, ResolutionStrategy,
 };
 pub use executor::ToolExecutor;
+pub use pr_creation::{
+    EvidenceSummary, PrCreator, PrCreatorConfig, PrCreationError, PrLabel, PrMetadata, PrResult,
+};
 pub use registry::{ToolRegistration, ToolRegistry};
 pub use worktree_pool::{WorktreeAllocation, WorktreePool, WorktreePoolConfig};
 
