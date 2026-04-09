@@ -2038,6 +2038,7 @@ dependencies = [
  "swell-core",
  "swell-llm",
  "swell-state",
+ "swell-tools",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",

@@ -5,9 +5,8 @@ use swell_core::traits::Tool;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::fs;
 use std::io::{self, Write};
-use tokio::fs;
+use tokio::fs as tokio_fs;
 use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
 use tempfile::NamedTempFile;
@@ -89,7 +88,7 @@ impl Tool for ReadFileTool {
             return Err(SwellError::ToolExecutionFailed(format!("File not found: {}", args.path)));
         }
 
-        let metadata = fs::metadata(path).await
+        let metadata = tokio_fs::metadata(path).await
             .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
 
         if metadata.len() as usize > self.max_size {
@@ -98,7 +97,7 @@ impl Tool for ReadFileTool {
             )));
         }
 
-        let content = fs::read_to_string(path).await
+        let content = tokio_fs::read_to_string(path).await
             .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
 
         info!(path = %args.path, "File read successfully");
@@ -175,7 +174,7 @@ impl Tool for WriteFileTool {
         let temp_path = temp_file.into_temp_path();
         
         // Write content to temp file
-        let sync_result = tokio::fs::write(&temp_path, &args.content).await;
+        let sync_result = tokio_fs::write(&temp_path, &args.content).await;
         
         if let Err(e) = sync_result {
             // Temp file is dropped here, no rollback needed
@@ -367,9 +366,9 @@ impl GitTool {
         let mut status_info = serde_json::json!({
             "branch": "",
             "is_dirty": false,
-            "staged": [] as Vec<String>,
-            "modified": [] as Vec<String>,
-            "untracked": [] as Vec<String>,
+            "staged": Vec::<String>::new(),
+            "modified": Vec::<String>::new(),
+            "untracked": Vec::<String>::new(),
         });
 
         if let Some(branch_line) = lines.first() {
@@ -403,7 +402,7 @@ impl GitTool {
                     }));
                 }
                 if untracked == "?" {
-                    status_info["untracked"].as_array_mut().unwrap().push(path);
+                    status_info["untracked"].as_array_mut().unwrap().push(serde_json::json!(path));
                 }
             }
         }
@@ -664,7 +663,7 @@ impl Tool for FileEditTool {
             return Err(SwellError::ToolExecutionFailed(format!("File not found: {}", args.path)));
         }
 
-        let old_content = fs::read_to_string(path).await
+        let old_content = tokio_fs::read_to_string(path).await
             .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
 
         // Check if old_str exists in the file
@@ -697,7 +696,7 @@ impl Tool for FileEditTool {
         
         let temp_path = temp_file.into_temp_path();
         
-        tokio::fs::write(&temp_path, &new_content).await
+        tokio_fs::write(&temp_path, &new_content).await
             .map_err(|e| SwellError::ToolExecutionFailed(format!("Failed to write changes: {}", e)))?;
 
         temp_path.persist(&path)
@@ -921,7 +920,7 @@ impl Tool for SearchTool {
                 self.grep(&pattern, path, case_insensitive).await
             }
             "glob" => {
-                let pattern = args.pattern.unwrap_or("*");
+                let pattern = args.pattern.unwrap_or_else(|| "*".to_string());
                 let path = Path::new(args.path.as_deref().unwrap_or("."));
                 self.glob(&pattern, path)
             }
