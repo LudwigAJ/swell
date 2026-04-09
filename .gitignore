@@ -1,5 +1,4 @@
 .DS_Store
-.factory/
 target/
 **/*.rs.bk
 *.pdb
