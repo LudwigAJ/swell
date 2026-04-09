@@ -1,0 +1,34 @@
+{
+  "featureId": "cli-error-handling",
+  "reviewedAt": "2026-04-09T21:30:00Z",
+  "commitId": "9a1e4da",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is comprehensive and correct. Added CliError enum with 11 variants covering all error cases, implemented timeouts (5s connect, 30s request), structured error display with error codes, proper exit codes (0/1/2/10/11), and replaced all .expect() calls with proper error handling. Socket existence check before connecting improves error messages.",
+    "issues": [
+      {
+        "file": "clients/swell-cli/src/main.rs",
+        "line": 35,
+        "severity": "non_blocking",
+        "description": "CliError::UnexpectedResponse variant is defined but never used. All code paths that could fail use CliError::JsonParseError instead. Consider removing unused variant or using it in a case where the JSON parses but the event type is unexpected."
+      },
+      {
+        "file": "clients/swell-cli/src/main.rs",
+        "line": 115,
+        "severity": "non_blocking",
+        "description": "Early `return;` statement when user cancels approve/cancel bypasses the result handling at end of main(). While functionally correct (process exits immediately), it's inconsistent with the error-handling pattern used elsewhere. Consider using `return Ok(());` for consistency."
+      },
+      {
+        "file": "clients/swell-cli/src/main.rs",
+        "line": 542,
+        "severity": "non_blocking",
+        "description": "Exit code 1 for server errors (CliError::ServerError) is implemented but not documented in the usage() output. The documented exit codes are: 0=success, 1=server error, 2=invalid args, 10=connection, 11=timeout. Server error is mentioned but exit code 1 should be explicitly documented."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation is complete and correct. CliError enum covers all required error cases (connection, timeout, invalid UUID/command/args, server errors, JSON parse). Timeouts properly implemented with tokio::time::timeout. Structured error display with error codes works correctly. All .expect() calls replaced. Validation assertions VAL-DAEMON-003 and VAL-CROSS-001 both show as passed in validation-state.json. Minor non-blocking issues: unused variant, inconsistent early return pattern, undocumented exit code 1."
+}

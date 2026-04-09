@@ -1,0 +1,107 @@
+{
+  "milestone": "cli",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test -p swell-cli -p swell-daemon",
+      "exitCode": 0,
+      "notes": "39 daemon tests pass, 0 CLI tests (swell-cli has no unit tests)"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0,
+      "notes": "All packages pass with -D warnings"
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace",
+      "exitCode": 0,
+      "notes": "All packages pass lint"
+    }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "cli-task-list",
+      "severity": "non_blocking",
+      "file": "clients/swell-cli/src/main.rs",
+      "line": 406,
+      "description": "Description truncation edge case: if description.len() == 40, it displays without ellipsis. If 41+, it truncates with '...'. This is minor since 40-char limit is reasonable."
+    },
+    {
+      "featureId": "cli-task-watch",
+      "severity": "non_blocking",
+      "file": "clients/swell-cli/src/main.rs",
+      "line": 338,
+      "description": "The is_terminal_event() function only recognizes TaskCompleted and TaskFailed as terminal, but the daemon considers Accepted, Rejected, Failed, and Escalated as terminal states. This is inconsistent but not a functional bug."
+    },
+    {
+      "featureId": "cli-error-handling",
+      "severity": "non_blocking",
+      "file": "clients/swell-cli/src/main.rs",
+      "line": 35,
+      "description": "CliError::UnexpectedResponse variant is defined but never used."
+    },
+    {
+      "featureId": "cli-error-handling",
+      "severity": "non_blocking",
+      "file": "clients/swell-cli/src/main.rs",
+      "line": 115,
+      "description": "Early return; statement when user cancels approve/cancel bypasses result handling. Consider using return Ok(()); for consistency."
+    },
+    {
+      "featureId": "cli-error-handling",
+      "severity": "non_blocking",
+      "file": "clients/swell-cli/src/main.rs",
+      "line": 542,
+      "description": "Exit code 1 for server errors is implemented but not documented in usage() output."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance that commit messages should accurately reflect ALL changes in a commit. The watch feature was committed with a message about list output only.",
+      "evidence": "cli-task-watch review: Commit 78afc16 message mentions 'swell list' but the diff shows changes to both 'swell list' AND 'swell watch'.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify that the handoff's commitId should reflect the actual implementation commit, not the validation commit. Workers implementing features should note their own commit IDs.",
+      "evidence": "cli-task-create review: handoff.commitId='94ea6b7' but actual implementation was in commits 84eafda and 634f937. Commit 94ea6b7 is for kill_switch validation.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "cli-task-approve-cancel: worker noted stdin/stdout confirmation prompts difficult to unit test",
+      "reason": "This is factual and accurate - the observation was already correctly handled in the feature implementation. Not a gap to address."
+    },
+    {
+      "observation": "cli-task-approve-cancel: worker skillFeedback shows followedProcedure=true",
+      "reason": "This is process metadata, not a shared state observation requiring action."
+    }
+  ],
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Commit ID in handoff (94ea6b7) does not match actual implementation commits (84eafda, 634f937). The handoff commit is for kill_switch validation, not the CLI task create feature.",
+      "sourceFeature": "cli-task-create"
+    },
+    {
+      "area": "conventions",
+      "observation": "Commit message 'feat(cli): add formatted table output and JSON option for swell list' does not reflect that this commit also includes the watch command implementation.",
+      "sourceFeature": "cli-task-watch"
+    }
+  ],
+  "previousRound": null
+}

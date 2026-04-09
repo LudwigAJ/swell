@@ -1,0 +1,22 @@
+{
+  "featureId": "cli-task-list",
+  "reviewedAt": "2026-04-09T21:30:00.000Z",
+  "commitId": "7f0c96f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The `swell list` command implementation is complete and correct. It adds formatted table output (ID, STATE, DESCRIPTION columns) and a `--json` flag for raw JSON output. The implementation follows existing CLI patterns, uses proper error handling with timeouts, and the daemon-side TaskList handler already existed with tests covering the JSON serialization of task arrays.",
+    "issues": [
+      {
+        "file": "clients/swell-cli/src/main.rs",
+        "line": 406,
+        "severity": "non_blocking",
+        "description": "Description truncation edge case: if description.len() == 40, it displays without ellipsis. If 41+, it truncates with '...'. This is minor since 40-char limit is reasonable, but could be more consistent by always showing ellipsis when truncating."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Review passed. Implementation adds `swell list` with formatted table output showing ID, STATE, and DESCRIPTION columns (truncated to 40 chars). The `--json` flag provides raw JSON for scripting. All existing tests pass, build succeeds with no warnings, and VAL-CLI-002 is satisfied by the feature."
+}

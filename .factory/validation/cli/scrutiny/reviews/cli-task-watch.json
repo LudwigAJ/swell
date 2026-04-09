@@ -1,0 +1,28 @@
+{
+  "featureId": "cli-task-watch",
+  "reviewedAt": "2026-04-09T21:15:00Z",
+  "commitId": "78afc16c74325a5a37aae6e20bedcc6f1461e963",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The watch command implementation is solid and covers all required behavior: streaming updates, real-time display, and Ctrl+C cancellation. The daemon polls every 500ms for new events and stops when task reaches terminal state (Accepted/Rejected/Failed/Escalated). One minor inconsistency exists between CLI and daemon regarding what constitutes a terminal event.",
+    "issues": [
+      {
+        "file": "clients/swell-cli/src/main.rs",
+        "line": 338,
+        "severity": "non_blocking",
+        "description": "The `is_terminal_event()` function only recognizes `TaskCompleted` and `TaskFailed` as terminal, but the daemon (server.rs:305-310) considers `Accepted`, `Rejected`, `Failed`, and `Escalated` as terminal states. This is inconsistent but not a functional bug because the daemon closes the connection after sending a terminal state, and the CLI handles EOF (line 330). Future maintainers may be confused by this discrepancy."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The commit message 'feat(cli): add formatted table output and JSON option for swell list' does not reflect that this commit also includes the watch command implementation. The message is misleading about the actual changes in this commit.",
+      "evidence": "Commit 78afc16 message mentions 'swell list' but the diff shows changes to both 'swell list' (table output) AND 'swell watch' (streaming). The handoff correctly identifies this as implementing the watch feature."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Implementation passes review. The watch command correctly streams task events with 500ms polling, handles Ctrl+C cancellation via SIGINT, and terminates on terminal states. Build and tests passed (39 daemon tests, 37 core tests). The only issue is a non-blocking inconsistency in terminal event detection between CLI and daemon."
+}
