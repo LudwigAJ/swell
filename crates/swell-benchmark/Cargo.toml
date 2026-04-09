@@ -1,0 +1,25 @@
+[package]
+name = "swell-benchmark"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+swell-core = { path = "../swell-core" }
+swell-orchestrator = { path = "../swell-orchestrator" }
+swell-llm = { path = "../swell-llm" }
+swell-tools = { path = "../swell-tools" }
+swell-validation = { path = "../swell-validation" }
+swell-state = { path = "../swell-state" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true
+mockall.workspace = true
+tempfile.workspace = true

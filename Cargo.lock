@@ -1965,6 +1965,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+name = "swell-benchmark"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "mockall",
+ "serde",
+ "serde_json",
+ "swell-core",
+ "swell-llm",
+ "swell-orchestrator",
+ "swell-state",
+ "swell-tools",
+ "swell-validation",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "swell-cli"
 version = "0.1.0"
 dependencies = [
