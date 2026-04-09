@@ -103,6 +103,21 @@ impl ImmutableEventLog {
         &self.entries
     }
 
+    /// Get events for a specific task ID since a given sequence number (exclusive).
+    /// Returns events with sequence > given_sequence for the specified task.
+    pub fn get_events_since_for_task(&self, task_id: Uuid, since_sequence: u64) -> Vec<&EventLogEntry> {
+        self.entries
+            .iter()
+            .filter(|e| e.task_id == Some(task_id) && e.sequence > since_sequence)
+            .collect()
+    }
+
+    /// Get the current sequence number (the next sequence that will be assigned).
+    /// This allows callers to track what events are new since they last checked.
+    pub fn current_sequence(&self) -> u64 {
+        self.next_sequence
+    }
+
     /// Get the total number of events recorded
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -314,6 +329,23 @@ impl EventEmitter {
     pub async fn event_count(&self) -> usize {
         let log = self.log.read().await;
         log.len()
+    }
+
+    /// Get events for a specific task since a given sequence number.
+    /// Returns events with sequence > since_sequence for the specified task.
+    pub async fn get_events_since_for_task(&self, task_id: Uuid, since_sequence: u64) -> Vec<DaemonEvent> {
+        let log = self.log.read().await;
+        log.get_events_since_for_task(task_id, since_sequence)
+            .into_iter()
+            .map(|e| e.event.clone())
+            .collect()
+    }
+
+    /// Get the current sequence number.
+    /// This allows callers to track what events are new since they last checked.
+    pub async fn current_sequence(&self) -> u64 {
+        let log = self.log.read().await;
+        log.current_sequence()
     }
 }
 

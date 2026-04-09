@@ -1,6 +1,7 @@
 use swell_core::{CliCommand, DaemonEvent, Task};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use tokio::signal::unix::{signal, SignalKind};
 use uuid::Uuid;
 
 #[tokio::main]
@@ -37,8 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return Ok(());
             }
             let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
-            let cmd = CliCommand::TaskWatch { task_id };
-            send_command(&socket_path, cmd).await?;
+            watch_task(&socket_path, task_id).await?;
         }
         "approve" => {
             if args.len() < 3 {
@@ -84,39 +84,115 @@ async fn send_command(
         let response: DaemonEvent =
             serde_json::from_str(&response_str).expect("Invalid response format");
 
-        match response {
-            DaemonEvent::TaskCreated { id, correlation_id: _ } => {
-                println!("Task created: {}", id);
-            }
-            DaemonEvent::TaskStateChanged { id, state, correlation_id: _ } => {
-                println!("Task {} is now: {}", id, state);
-            }
-            DaemonEvent::TaskCompleted { id, pr_url, correlation_id: _ } => {
-                if id == Uuid::nil() {
-                    // This is a list response
-                    if let Some(json) = pr_url {
-                        println!("{}", json);
+        handle_event(&response);
+    }
+
+    Ok(())
+}
+
+/// Watch a task and stream events until Ctrl+C or terminal state
+async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), Box<dyn std::error::Error>> {
+    let mut stream = UnixStream::connect(socket_path).await?;
+
+    let cmd = CliCommand::TaskWatch { task_id };
+    let cmd_json = serde_json::to_string(&cmd)?;
+    stream.write_all(cmd_json.as_bytes()).await?;
+    stream.flush().await?;
+
+    // Set up Ctrl+C handler
+    let mut sigint = signal(SignalKind::interrupt())?;
+
+    println!("Watching task {}... (Press Ctrl+C to stop)", task_id);
+    println!("{}", "-".repeat(60));
+
+    // Use a buffered reader for line-by-line reading
+    let mut reader = tokio::io::BufReader::new(&mut stream);
+    let mut line = String::new();
+
+    loop {
+        tokio::select! {
+            result = reader.read_line(&mut line) => {
+                let n = result?;
+                if n == 0 {
+                    // EOF - connection closed
+                    println!("\nConnection closed by server.");
+                    break;
+                }
+
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+
+                // Parse and display the event
+                match serde_json::from_str::<DaemonEvent>(trimmed) {
+                    Ok(event) => {
+                        handle_event(&event);
+
+                        // Check if this is a terminal state event
+                        if is_terminal_event(&event) {
+                            println!("\nTask reached terminal state. Goodbye!");
+                            break;
+                        }
                     }
-                } else {
-                    println!("Task {} completed", id);
-                    if let Some(url) = pr_url {
-                        println!("PR: {}", url);
+                    Err(e) => {
+                        eprintln!("Failed to parse event: {}", e);
                     }
                 }
+
+                line.clear();
             }
-            DaemonEvent::TaskFailed { id, error, correlation_id: _ } => {
-                eprintln!("Task {} failed: {}", id, error);
-            }
-            DaemonEvent::TaskProgress { id, message, correlation_id: _ } => {
-                println!("[{}] {}", id, message);
-            }
-            DaemonEvent::Error { message, correlation_id: _ } => {
-                eprintln!("Error: {}", message);
+            _ = sigint.recv() => {
+                println!("\nInterrupted. Stopping watch...");
+                break;
             }
         }
     }
 
     Ok(())
+}
+
+/// Check if an event represents a terminal state
+fn is_terminal_event(event: &DaemonEvent) -> bool {
+    matches!(
+        event,
+        DaemonEvent::TaskCompleted { .. }
+            | DaemonEvent::TaskFailed { .. }
+    )
+}
+
+/// Handle and display a daemon event
+fn handle_event(event: &DaemonEvent) {
+    match event {
+        DaemonEvent::TaskCreated { id, correlation_id: _ } => {
+            println!("Task created: {}", id);
+        }
+        DaemonEvent::TaskStateChanged { id, state, correlation_id: _ } => {
+            println!("[{}] State changed to: {}", id, state);
+        }
+        DaemonEvent::TaskCompleted { id, pr_url, correlation_id: _ } => {
+            if *id == Uuid::nil() {
+                // This is a list response
+                if let Some(json) = pr_url {
+                    println!("{}", json);
+                }
+            } else {
+                println!("[{}] Task completed!", id);
+                if let Some(url) = pr_url {
+                    println!("PR: {}", url);
+                }
+            }
+        }
+        DaemonEvent::TaskFailed { id, error, correlation_id: _ } => {
+            eprintln!("[{}] Task failed: {}", id, error);
+        }
+        DaemonEvent::TaskProgress { id, message, correlation_id: _ } => {
+            println!("[{}] {}", id, message);
+        }
+        DaemonEvent::Error { message, correlation_id: _ } => {
+            eprintln!("Error: {}", message);
+        }
+    }
 }
 
 async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), Box<dyn std::error::Error>> {

@@ -1,18 +1,22 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use swell_core::{CliCommand, DaemonEvent};
+use swell_core::{CliCommand, DaemonEvent, TaskState};
 use swell_orchestrator::Orchestrator;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{watch, Mutex};
-use tokio::time::{timeout, Duration};
+use tokio::time::{timeout, Duration, interval};
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 use crate::commands::handle_command;
 use crate::events::EventEmitter;
 
 /// Maximum time to wait for active connections to complete during shutdown
 const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
+
+/// Polling interval for watch command to check for new events
+const WATCH_POLL_INTERVAL_MS: u64 = 500;
 
 /// Graceful shutdown configuration
 const SHUTDOWN_BROADCAST_INTERVAL_SECS: u64 = 1;
@@ -238,6 +242,12 @@ async fn handle_connection_with_shutdown(
         }
     };
 
+    // Handle TaskWatch specially - stream events instead of single response
+    if let CliCommand::TaskWatch { task_id } = command {
+        handle_watch_connection(stream, task_id, orchestrator, event_emitter, shutdown_rx).await?;
+        return Ok(());
+    }
+
     let response = handle_command(command, orchestrator, event_emitter).await;
 
     let response_json = serde_json::to_string(&response)?;
@@ -245,4 +255,113 @@ async fn handle_connection_with_shutdown(
     stream.flush().await?;
 
     Ok(())
+}
+
+/// Handle a watch connection that streams events for a specific task.
+/// Sends the current state immediately, then polls for new events and streams them.
+async fn handle_watch_connection(
+    mut stream: UnixStream,
+    task_id: Uuid,
+    orchestrator: Arc<Mutex<Orchestrator>>,
+    event_emitter: Arc<EventEmitter>,
+    mut shutdown_rx: watch::Receiver<bool>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    info!(task_id = %task_id, "Starting watch connection");
+
+    // Verify task exists and get current state
+    let current_state = {
+        let orch = orchestrator.lock().await;
+        match orch.get_task(task_id).await {
+            Ok(task) => Some(task.state),
+            Err(_) => None,
+        }
+    };
+
+    // Send initial state or error
+    let initial_event = match current_state {
+        Some(state) => {
+            let correlation_id = EventEmitter::new_correlation_id();
+            DaemonEvent::TaskStateChanged {
+                id: task_id,
+                state,
+                correlation_id,
+            }
+        }
+        None => {
+            let correlation_id = EventEmitter::new_correlation_id();
+            DaemonEvent::Error {
+                message: format!("Task not found: {}", task_id),
+                correlation_id,
+            }
+        }
+    };
+
+    let initial_json = serde_json::to_string(&initial_event)?;
+    stream.write_all(initial_json.as_bytes()).await?;
+    stream.write_all(b"\n").await?; // Delimiter for streaming
+    stream.flush().await?;
+
+    // If task not found, exit immediately
+    if current_state.is_none() {
+        return Ok(());
+    }
+
+    // Track terminal states - once task reaches these, stop watching
+    let terminal_states = [
+        TaskState::Accepted,
+        TaskState::Rejected,
+        TaskState::Failed,
+        TaskState::Escalated,
+    ];
+
+    // Get initial sequence number to track new events
+    let initial_sequence = event_emitter.current_sequence().await;
+
+    // Poll for new events
+    let mut poll_interval = interval(Duration::from_millis(WATCH_POLL_INTERVAL_MS));
+    let mut last_sequence = initial_sequence;
+
+    loop {
+        tokio::select! {
+            _ = poll_interval.tick() => {
+                // Check for new events for this task
+                let new_events = event_emitter.get_events_since_for_task(task_id, last_sequence).await;
+
+                // Track the sequence number to advance to after processing
+                // Events are ordered by sequence, so we can use the last event's sequence
+                let mut reached_terminal = false;
+
+                for event in new_events {
+                    let json = serde_json::to_string(&event)?;
+                    stream.write_all(json.as_bytes()).await?;
+                    stream.write_all(b"\n").await?;
+                    stream.flush().await?;
+
+                    // If this is a state change, check for terminal state
+                    if let DaemonEvent::TaskStateChanged { state, .. } = &event {
+                        // Check if task reached terminal state
+                        if terminal_states.contains(state) {
+                            info!(task_id = %task_id, state = ?state, "Task reached terminal state, ending watch");
+                            reached_terminal = true;
+                            break;
+                        }
+                    }
+                }
+
+                if reached_terminal {
+                    return Ok(());
+                }
+
+                // Update last_sequence to avoid reprocessing events
+                // Use the current sequence which is >= all events we've seen
+                last_sequence = event_emitter.current_sequence().await;
+            }
+            _ = shutdown_rx.changed() => {
+                if *shutdown_rx.borrow() {
+                    info!("Watch connection closed - shutdown in progress");
+                    return Ok(());
+                }
+            }
+        }
+    }
 }
