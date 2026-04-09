@@ -1,6 +1,6 @@
 {
   "milestone": "agents-fix",
-  "round": 3,
+  "round": 4,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -17,8 +17,8 @@
     {
       "featureId": "fix-refactorer-apply",
       "severity": "blocking",
-      "description": "apply_refactor() method exists at line 3304 but is never invoked in execute(). The method signature and implementation are complete, but execute() only simulates refactoring application at lines 3533-3537 where it pushes to applied_opportunities with comments referencing apply_refactor() but never calling it. The method is dead code - confirmed via grep across entire codebase.",
-      "location": "crates/swell-orchestrator/src/agents.rs:3304,3533-3537"
+      "description": "apply_refactor() method exists at line ~3304 but is never invoked in execute(). The method remains dead code - only simulated by pushing description strings to applied_opportunities. This is the same blocking issue from round 1 that persists through round 4. The feature description requires wiring apply_refactor() into execute().",
+      "location": "crates/swell-orchestrator/src/agents.rs:3525-3537"
     }
   ],
   "appliedUpdates": [],
@@ -26,28 +26,27 @@
     {
       "target": "AGENTS.md",
       "suggestion": "Add enforcement that cargo clippy must be run before completing validation. Workers should verify with 'cargo clippy --workspace' and fix all warnings before marking a feature complete.",
-      "evidence": "fix-refactorer-validation worker did not run clippy despite skill procedure requiring it. The feature passed build but would have caught dead code warnings.",
+      "evidence": "fix-refactorer-validation worker did not run clippy despite it being a known issue from prior round. All workers should be running clippy as part of validation.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Clarify feature scope boundaries. Consider requiring atomic commits per feature, or explicitly allowing multi-subsystem changes when necessary for a fix.",
-      "evidence": "fix-coder-agent-llm modified files in multiple crates (orchestrator, state, llm, tools) despite being scoped to CoderAgent.",
-      "isSystemic": false
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Add convention for tracking deferred 'full implementation' items. Comments like 'In a full implementation...' appear but no tracking mechanism (TODO, FIXME, tracked issue) exists. Consider requiring such deferred items to have associated tracking comments.",
-      "evidence": "Lines 3533-3537: 'Note: In a full implementation, we would generate actual refactored code... Apply the refactoring via apply_refactor()' - deferred implementation not tracked",
+      "suggestion": "Clarify that 'In a full implementation...' comments without TODO/FIXME tracking are insufficient. Deferred implementation items must have tracked follow-up items, not just comments.",
+      "evidence": "fix-refactorer-apply has comments 'In a full implementation, we would... Apply the refactoring via apply_refactor()' but no tracking mechanism. This is the third round where this pattern appears.",
       "isSystemic": true
     },
     {
       "target": "skills/rust-worker",
-      "suggestion": "Clarify when apply_refactor() should be called vs when simulation is acceptable. The refactorer-agent skill should specify if analysis-only mode is valid and when actual refactoring must be applied.",
-      "evidence": "execute() flow applies low-risk opportunities by pushing to applied_opportunities without calling apply_refactor(). Reviewer flagged this may be intentional for analysis-only mode but could confuse maintainers.",
+      "suggestion": "For fix features, explicitly verify the blocking issue described in the original feature is resolved. Do not partially address requirements - verify all specified behaviors are implemented.",
+      "evidence": "fix-refactorer-apply correctly implemented validation before/after and revert logic, but failed to wire apply_refactor() as specifically described in the feature requirements.",
       "isSystemic": false
     }
   ],
-  "rejectedObservations": [],
+  "rejectedObservations": [
+    {
+      "observation": "fix-coder-agent-llm: Worker modified multiple files beyond the assigned feature scope",
+      "reason": "Non-blocking convention observation. The actual implementation is correct and tests pass. Scope creep is a guidance issue, not a blocking code issue."
+    }
+  ],
   "previousRound": ".factory/validation/agents-fix/scrutiny/synthesis.json"
 }

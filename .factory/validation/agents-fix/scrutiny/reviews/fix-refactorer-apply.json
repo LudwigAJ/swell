@@ -1,0 +1,39 @@
+{
+  "featureId": "fix-refactorer-apply",
+  "reviewedAt": "2026-04-09T05:15:00Z",
+  "commitId": "649858c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The fix successfully wired validation before/after refactoring and revert logic, but the blocking issue persists: apply_refactor() is never called in execute(). The method remains dead code - only simulated by pushing descriptions to applied_opportunities.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 3533,
+        "severity": "blocking",
+        "description": "apply_refactor() is never invoked in execute(). The code only simulates refactoring application with comments 'In a real implementation, we would... Apply the refactoring via apply_refactor()' but never actually calls the method. applied_opportunities.push() only captures descriptions, not actual applied changes. The prior review blocking issue is NOT fixed."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 3525-3537,
+        "severity": "blocking",
+        "description": "The for loop over all_opportunities only pushes description strings to applied_opportunities. No actual refactoring is applied - no call to apply_refactor(file_path, old_content, new_content). The apply_refactor() method at line ~3304 is dead code."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The skillFeedback claims followedProcedure=true but the actual implementation doesn't call apply_refactor(). The code comments explicitly state 'In a full implementation, we would generate actual refactored code' - suggesting the worker treated this as deferred implementation rather than a required fix.",
+      "evidence": "Lines 3525-3537: comments about full implementation vs actual call. skillFeedback.deviations is empty."
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md doesn't specify when actual refactoring must be applied vs when simulation is acceptable. The worker left a comment-based deferred implementation without any tracking mechanism (TODO, FIXME, or issue).",
+      "evidence": "Lines 3530-3533: 'In a full implementation, we would generate actual refactored code' - no tracking of deferred work"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - The fix correctly implemented validation before/after and revert logic (before_passed now captures actual validation, reverted is set correctly), but the blocking issue persists: apply_refactor() is never called in execute(). The method exists at line ~3304 but execute() only simulates refactoring application by pushing descriptions to applied_opportunities without invoking the actual method. This is dead code. The feature partially addresses the original issues but fails to wire apply_refactor() as required."
+}
