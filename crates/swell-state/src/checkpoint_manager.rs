@@ -129,6 +129,10 @@ impl CheckpointManager {
     ///
     /// This is the main method for state transitions - it validates the transition
     /// is valid and creates an automatic checkpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SwellError::InvalidStateTransition` if the transition is not valid.
     pub async fn transition_with_checkpoint(
         &self,
         task: &mut Task,
@@ -137,7 +141,15 @@ impl CheckpointManager {
         let previous_state = task.state;
         let task_id = task.id;
 
-        // Validate and perform the transition
+        // Validate the transition before performing it
+        if !Self::is_valid_transition(previous_state, new_state) {
+            return Err(SwellError::InvalidStateTransition(format!(
+                "Cannot transition from {:?} to {:?}",
+                previous_state, new_state
+            )));
+        }
+
+        // Perform the transition
         task.transition_to(new_state);
 
         // Get checkpoint count for metadata
@@ -526,5 +538,28 @@ mod tests {
 
         // Task should still have checkpoint
         assert!(manager.has_checkpoint(task.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_transition_with_checkpoint_invalid_transition() {
+        let store = InMemoryCheckpointStore::new();
+        let manager = CheckpointManager::new(Arc::new(store));
+
+        let mut task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
+
+        // Attempt an invalid transition: Created -> Accepted (skipping Enriched, Ready, Assigned, Executing, Validating)
+        let result = manager.transition_with_checkpoint(&mut task, TaskState::Accepted).await;
+
+        // Should fail with InvalidStateTransition error
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, SwellError::InvalidStateTransition(_)));
+
+        // Task state should remain unchanged
+        assert_eq!(task.state, TaskState::Created);
+
+        // No checkpoint should be created for the failed transition
+        let history = manager.get_history(task.id).await.unwrap();
+        assert_eq!(history.len(), 1); // Only the creation checkpoint
     }
 }

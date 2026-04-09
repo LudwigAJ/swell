@@ -1,0 +1,46 @@
+{
+  "featureId": "state-checkpoint-manager",
+  "reviewedAt": "2026-04-09T15:30:00Z",
+  "commitId": "d21171eceda5feb1bca9958c05b376429eccf921",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "CheckpointManager implements auto-checkpointing, restore, and checkpoint listing functionality. However, there is a blocking bug: `is_valid_transition` is never called in `transition_with_checkpoint` despite the code comment stating 'Validate and perform the transition'. Additionally, the 'Agent checkpointing after each tool call' requirement from the feature description is not addressed - the CheckpointManager is standalone and not integrated into the orchestrator's agent execution flow.",
+    "issues": [
+      {
+        "file": "crates/swell-state/src/checkpoint_manager.rs",
+        "line": 138,
+        "severity": "blocking",
+        "description": "The `transition_with_checkpoint` method has a comment 'Validate and perform the transition' but never actually calls `is_valid_transition` to validate. The `Task::transition_to` method in swell-core does not validate state transitions either - it just blindly sets the new state. This means invalid state transitions (e.g., Created -> Accepted) would be allowed and checkpointed, corrupting task state."
+      },
+      {
+        "file": "crates/swell-state/src/checkpoint_manager.rs",
+        "line": 73,
+        "severity": "non_blocking",
+        "description": "The `checkpoint` method's docstring claims it is 'idempotent - calling save multiple times with the same task state will not create duplicate checkpoints'. However, the implementation always creates a new checkpoint with `Uuid::new_v4()` and calls `checkpoint_store.save()` without any deduplication logic. The CheckpointStore trait's `save` method also does not indicate idempotent behavior. This is misleading documentation."
+      },
+      {
+        "file": "crates/swell-state/src/checkpoint_manager.rs",
+        "line": 55,
+        "severity": "non_blocking",
+        "description": "The `pending: RwLock<HashMap<Uuid, Task>>` field is populated but never actually used - no code path adds tasks to `pending`. The `pending_count()` and `flush_pending()` methods are implemented but `flush_pending` only clears already-empty pending and logs warnings. The pending mechanism for batching uncommitted checkpoints appears incomplete/unused."
+      },
+      {
+        "file": "crates/swell-state/src/checkpoint_manager.rs",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "The feature description states 'Agent checkpointing after each tool call' but the CheckpointManager is not integrated into the orchestrator's agent execution flow. The orchestrator (swell-orchestrator) has no checkpoint-related code. The CheckpointManager provides the capability but the actual 'agent checkpointing after each tool call' behavior is not implemented - it would require integrating CheckpointManager into the agent execution loop."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The skill SKILL.md file at `.factory/skills/worker/SKILL.md` was read, but it only contains general Rust worker guidance. The transcript shows the worker used `skillName: 'rust-worker'` but no specific rust-worker skill file exists at that path - only `worker/SKILL.md`. The skillFeedback in the handoff was not provided so it's unclear if the worker deviated from expected procedure.",
+      "evidence": "Glob found `./.factory/skills/worker/SKILL.md` but the feature specified `skillName: 'rust-worker'`. Transcript shows worker tried to read rust-worker skill."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The CheckpointManager feature fails review due to a blocking bug: `transition_with_checkpoint` claims to validate state transitions but never calls `is_valid_transition`. The feature also does not address the 'Agent checkpointing after each tool call' requirement - it only provides the CheckpointManager component without orchestrator integration. The `pending` batch mechanism is unused, and the idempotency claim is misleading."
+}
