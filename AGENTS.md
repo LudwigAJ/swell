@@ -1,0 +1,52 @@
+# Repository Guidelines
+
+## Project Overview
+
+This is an autonomous coding engine project. The system is designed to autonomously handle software engineering tasks including planning, execution, testing, and validation.
+
+For the full project specification, see `plan/Autonomous Coding Engine.md`.
+
+## Project Structure
+
+```
+swell/
+├── plan/
+│   ├── Autonomous Coding Engine.md          # Master specification
+│   └── research_documents/                  # Detailed subsystem specs
+│       ├── Technical Architecture and Roadmap Spec.md
+│       ├── Memory and Learning Architecture for an Autonomous Coding Engine.md
+│       ├── Orchestrator and Execution Design Spec for an Autonomous Coding Engine.md
+│       ├── Product definition and UX strategy: the autonomous engineering system.md
+│       ├── Testing and Validation Research Spec for an Autonomous Coding Orchestrator.md
+│       └── Tools and Runtime Control Spec for Autonomous Coding Systems.md
+└── AGENTS.md                                 # This file
+```
+
+## Build, Test, and Development
+
+- (To be added once source code is implemented)
+
+## Coding Style & Conventions
+
+- (To be added once source code is implemented)
+
+## Testing Guidelines
+
+- (To be added once source code is implemented)
+
+## Commit & Pull Request Guidelines
+
+- Conventional commits preferred: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`
+- PRs should reference the relevant spec document in `plan/research_documents/`
+- All commits must pass lint and type checks before merge
+
+## Architecture Overview
+
+The autonomous coding engine consists of several core subsystems:
+
+- **Orchestrator**: Coordinates task planning and execution flow
+- **Memory System**: Persists context and learned patterns across sessions
+- **Tool Runtime**: Executes code, runs tests, and manages subprocesses
+- **Validation Layer**: Ensures outputs meet quality and correctness standards
+
+Detailed architecture documentation is available in `plan/Autonomous Coding Engine.md`.

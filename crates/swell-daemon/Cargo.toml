@@ -1,0 +1,16 @@
+[package]
+name = "swell-daemon"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+swell-core = { path = "../swell-core" }
+swell-orchestrator = { path = "../swell-orchestrator" }
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
