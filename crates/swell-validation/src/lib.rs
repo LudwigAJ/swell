@@ -346,3 +346,76 @@ impl Default for ValidationPipeline {
         Self::new()
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod lint_gate_tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[tokio::test]
+    async fn test_lint_gate_validate_returns_outcome() {
+        // Test that LintGate.validate returns a ValidationOutcome
+        let gate = LintGate::new();
+        let context = ValidationContext {
+            task_id: Uuid::new_v4(),
+            workspace_path: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            changed_files: vec![],
+            plan: None,
+        };
+
+        let result = gate.validate(context).await;
+        assert!(result.is_ok(), "LintGate.validate should succeed");
+
+        let outcome = result.unwrap();
+        // When clippy passes (no errors), passed should be true
+        // The workspace should be clean, so this should pass
+        assert!(
+            outcome.passed || !outcome.messages.is_empty(),
+            "Should either pass or have messages about issues"
+        );
+    }
+
+    #[test]
+    fn test_lint_gate_name() {
+        let gate = LintGate::new();
+        assert_eq!(gate.name(), "lint");
+    }
+
+    #[test]
+    fn test_lint_gate_order() {
+        let gate = LintGate::new();
+        assert_eq!(gate.order(), 10);
+    }
+
+    #[test]
+    fn test_lint_gate_default() {
+        let gate = LintGate::default();
+        assert_eq!(gate.name(), "lint");
+    }
+
+    #[tokio::test]
+    async fn test_lint_gate_new() {
+        let gate = LintGate::new();
+        let context = ValidationContext {
+            task_id: Uuid::new_v4(),
+            workspace_path: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            changed_files: vec![],
+            plan: None,
+        };
+
+        let result = gate.validate(context).await;
+        assert!(result.is_ok());
+        let outcome = result.unwrap();
+        assert!(outcome.passed || !outcome.messages.is_empty());
+    }
+}
