@@ -1,6 +1,6 @@
-use swell_core::{Task, TaskState, SwellError, Plan, RiskLevel, StepStatus};
+use swell_core::{Task, TaskState, SwellError, Plan};
 use std::collections::HashMap;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// Task state machine implementing the 8-state lifecycle from the spec
 pub struct TaskStateMachine {
@@ -214,7 +214,7 @@ impl Default for TaskStateMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swell_core::{Plan, PlanStep};
+    use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
 
     fn create_test_plan(task_id: uuid::Uuid) -> Plan {
         Plan {

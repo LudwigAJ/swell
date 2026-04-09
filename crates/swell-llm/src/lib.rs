@@ -27,7 +27,6 @@ pub use openai::OpenAIBackend;
 pub use mock::MockLlm;
 
 use swell_core::{LlmBackend as CoreLlmBackend, LlmMessage, LlmResponse, LlmConfig, LlmToolDefinition, SwellError};
-use async_trait::async_trait;
 use std::sync::Arc;
 
 /// Type alias for boxed LLM backend

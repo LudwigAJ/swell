@@ -4,7 +4,18 @@ pub mod traits;
 
 pub use types::*;
 pub use error::SwellError;
-pub use traits::*;
+// Explicitly re-export traits to avoid ambiguity with types::Agent and types::Tool
+// Also include LlmRole, LlmToolCall, LlmUsage from traits
+pub use traits::{
+    LlmBackend, LlmMessage, LlmRole, LlmToolCall, LlmResponse, LlmUsage, LlmConfig, LlmToolDefinition,
+    AgentContext, AgentResult, ToolCallResult, ToolInput, ToolOutput,
+    MemoryEntry, MemoryQuery, MemorySearchResult,
+    KgNode, KgNodeType, KgEdge, KgRelation, KgTraversal, KgDirection, KgPath,
+    SandboxCommand, SandboxOutput, Checkpoint, CheckpointStore,
+    ValidationContext, ValidationOutcome, ValidationMessage, ValidationLevel, ValidationArtifact,
+    Event, EventSubscriber, ServiceContainer, DynServiceContainer,
+    MemoryStore, KnowledgeGraph, Sandbox, ValidationGate,
+};
 
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 

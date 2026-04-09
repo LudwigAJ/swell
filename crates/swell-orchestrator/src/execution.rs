@@ -1,11 +1,10 @@
 //! Execution controller for managing parallel agent execution.
 
-use swell_core::{Task, TaskState, SwellError, AgentContext, AgentResult, ValidationResult, Plan};
-use crate::{Orchestrator, OrchestratorEvent, MAX_CONCURRENT_AGENTS};
+use swell_core::{SwellError, ValidationResult};
+use crate::{Orchestrator, MAX_CONCURRENT_AGENTS};
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
 use futures::stream::{self, StreamExt};
-use tracing::{info, warn, error, debug};
+use tracing::info;
 
 /// Manages concurrent task execution with up to 6 agents
 pub struct ExecutionController {

@@ -3,9 +3,9 @@
 use swell_core::{ToolOutput, SwellError, ToolRiskLevel, PermissionTier};
 use swell_core::traits::Tool;
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
-use std::io::{self, Write};
+use std::io::Write;
 use tokio::fs as tokio_fs;
 use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
@@ -185,7 +185,7 @@ impl Tool for WriteFileTool {
 
         // Attempt to persist the temp file to the target path atomically
         // If this fails, the temp file is dropped without affecting the original
-        let persist_result = temp_path.persist(&path);
+        let persist_result = temp_path.persist(path);
         
         match persist_result {
             Ok(_) => {
@@ -668,9 +668,7 @@ impl Tool for FileEditTool {
 
         // Check if old_str exists in the file
         if !old_content.contains(&args.old_str) {
-            return Err(SwellError::ToolExecutionFailed(format!(
-                "old_str not found in file. Please ensure the exact string exists."
-            )));
+            return Err(SwellError::ToolExecutionFailed("old_str not found in file. Please ensure the exact string exists.".to_string()));
         }
 
         // Generate diff
@@ -699,7 +697,7 @@ impl Tool for FileEditTool {
         tokio_fs::write(&temp_path, &new_content).await
             .map_err(|e| SwellError::ToolExecutionFailed(format!("Failed to write changes: {}", e)))?;
 
-        temp_path.persist(&path)
+        temp_path.persist(path)
             .map_err(|e| SwellError::ToolExecutionFailed(format!("Failed to save changes: {}", e)))?;
 
         info!(path = %args.path, "File edited successfully");
@@ -771,7 +769,7 @@ impl SearchTool {
 
     /// Execute glob search
     fn glob(&self, pattern: &str, base_path: &Path) -> Result<ToolOutput, SwellError> {
-        use std::ffi::OsStr;
+        
         use glob::glob as glob_match;
         
         let full_pattern = if pattern.starts_with('/') {
@@ -999,7 +997,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_tool() {
-        let tool = ShellTool;
+        let tool = ShellTool::new();
         let result = tool.execute(serde_json::json!({
             "command": "echo",
             "args": ["Hello, Shell!"]

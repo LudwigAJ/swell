@@ -445,7 +445,7 @@ impl EvidencePack {
                 gate.name, result, gate.message_counts.errors, gate.message_counts.warnings
             ));
         }
-        md.push_str("\n");
+        md.push('\n');
 
         // Flaky tests
         if self.flakiness.has_flaky {
@@ -453,7 +453,7 @@ impl EvidencePack {
             for test in &self.flakiness.flaky_tests {
                 md.push_str(&format!("- `{}`\n", test));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         // Metadata
@@ -462,7 +462,7 @@ impl EvidencePack {
             for (key, value) in &self.metadata {
                 md.push_str(&format!("- **{}**: {}\n", key, value));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         md.push_str(&format!("\n---\n*Evidence pack ID: {}*\n", self.id));

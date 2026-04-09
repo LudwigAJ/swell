@@ -4,7 +4,7 @@ use swell_core::traits::Agent;
 use swell_core::{
     AgentRole, AgentId, SwellError, AgentContext, AgentResult,
     MemoryBlock, LlmMessage, LlmRole, LlmConfig, Plan, PlanStep, StepStatus, RiskLevel, LlmBackend,
-    ToolOutput, ToolCallResult,
+    ToolOutput, ToolCallResult, ValidationGate, ValidationLevel,
 };
 use swell_tools::ToolRegistry;
 use async_trait::async_trait;
@@ -2641,6 +2641,7 @@ pub struct RefactorerAgent {
     system_prompt_builder: SystemPromptBuilder,
     llm: Option<Arc<dyn LlmBackend>>,
     tool_registry: Option<Arc<ToolRegistry>>,
+    validation_pipeline: Option<swell_validation::ValidationPipeline>,
 }
 
 impl RefactorerAgent {
@@ -2660,6 +2661,7 @@ impl RefactorerAgent {
             system_prompt_builder: SystemPromptBuilder::new(config),
             llm: None,
             tool_registry: None,
+            validation_pipeline: None,
         }
     }
 
@@ -2687,6 +2689,33 @@ impl RefactorerAgent {
         agent.llm = Some(llm);
         agent.tool_registry = Some(tool_registry);
         agent
+    }
+
+    /// Create a RefactorerAgent with a custom validation pipeline
+    pub fn with_validation_pipeline(mut self, pipeline: swell_validation::ValidationPipeline) -> Self {
+        self.validation_pipeline = Some(pipeline);
+        self
+    }
+
+    /// Create a RefactorerAgent with default validation pipeline (TestGate)
+    pub fn with_default_validation(model: String, tool_registry: Arc<ToolRegistry>) -> Self {
+        let mut pipeline = swell_validation::ValidationPipeline::new();
+        pipeline.add_gate(swell_validation::TestGate::new());
+        
+        Self {
+            model,
+            system_prompt_builder: SystemPromptBuilder::new(SystemPromptConfig {
+                project_name: "SWELL".to_string(),
+                repo_path: ".".to_string(),
+                for_role: AgentRole::Refactorer,
+                include_memory: true,
+                include_conventions: true,
+                max_tokens: 8000,
+            }),
+            llm: None,
+            tool_registry: Some(tool_registry),
+            validation_pipeline: Some(pipeline),
+        }
     }
 
     /// Extract affected files from the task's plan
@@ -3023,6 +3052,90 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
             ).to_string()
         }
     }
+
+    /// Run validation tests to verify behavior is preserved after refactoring
+    async fn run_validation(&self, context: &AgentContext) -> Result<ValidationResult, SwellError> {
+        let workspace_path = context.workspace_path.as_deref().unwrap_or(".");
+        
+        // Build validation context
+        let validation_context = swell_core::ValidationContext {
+            task_id: context.task.id,
+            workspace_path: workspace_path.to_string(),
+            changed_files: Self::extract_affected_files(context),
+            plan: context.task.plan.clone(),
+        };
+        
+        // Run validation using the pipeline if available, otherwise use TestGate directly
+        if let Some(ref pipeline) = self.validation_pipeline {
+            let outcome = pipeline.run(&validation_context).await?;
+            
+            let errors: Vec<String> = outcome
+                .messages
+                .iter()
+                .filter(|m| m.level == swell_core::ValidationLevel::Error)
+                .map(|m| m.message.clone())
+                .collect();
+            
+            let warnings: Vec<String> = outcome
+                .messages
+                .iter()
+                .filter(|m| m.level == swell_core::ValidationLevel::Warning)
+                .map(|m| m.message.clone())
+                .collect();
+            
+            return Ok(ValidationResult {
+                passed: outcome.passed,
+                errors,
+                warnings,
+            });
+        }
+        
+        // Fallback: run TestGate directly if no pipeline configured
+        let test_gate = swell_validation::TestGate::new();
+        let outcome = test_gate.validate(validation_context).await?;
+        
+        let errors: Vec<String> = outcome
+            .messages
+            .iter()
+            .filter(|m| m.level == swell_core::ValidationLevel::Error)
+            .map(|m| m.message.clone())
+            .collect();
+        
+        let warnings: Vec<String> = outcome
+            .messages
+            .iter()
+            .filter(|m| m.level == swell_core::ValidationLevel::Warning)
+            .map(|m| m.message.clone())
+            .collect();
+        
+        Ok(ValidationResult {
+            passed: outcome.passed,
+            errors,
+            warnings,
+        })
+    }
+    
+    /// Apply a refactoring change to a file using the tool registry
+    async fn apply_refactor(&self, file_path: &str, old_content: &str, new_content: &str) -> Result<String, SwellError> {
+        let registry = self.tool_registry.as_ref()
+            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
+        
+        let tool = registry.get("edit_file").await
+            .ok_or_else(|| SwellError::ToolExecutionFailed("edit_file tool not found".to_string()))?;
+        
+        let args = serde_json::json!({
+            "path": file_path,
+            "old_str": old_content,
+            "new_str": new_content
+        });
+        let result: ToolOutput = tool.execute(args).await?;
+        
+        if result.success {
+            Ok(result.result)
+        } else {
+            Err(SwellError::ToolExecutionFailed(result.error.unwrap_or_default()))
+        }
+    }
 }
 
 /// Simple MD5 hash for content comparison
@@ -3047,6 +3160,26 @@ pub struct RefactorOpportunity {
     pub target_files: Vec<String>,
     pub expected_improvement: String,
     pub risk_level: RiskLevel,
+}
+
+/// Result of post-refactor validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefactorValidationResult {
+    pub before_passed: bool,
+    pub after_passed: bool,
+    pub behavior_preserved: bool,
+    pub reverted: bool,
+    pub validation_errors: Vec<String>,
+    pub validation_warnings: Vec<String>,
+}
+
+/// Output from a refactoring execution including validation results
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefactorResult {
+    pub plan: RefactorPlan,
+    pub validation_result: Option<RefactorValidationResult>,
+    pub applied_opportunities: Vec<String>,
+    pub reverted_opportunities: Vec<String>,
 }
 
 #[async_trait]
@@ -3084,9 +3217,16 @@ impl Agent for RefactorerAgent {
                 preserved_behavior: true,
             };
 
+            let result = RefactorResult {
+                plan,
+                validation_result: None, // No validation in stub mode
+                applied_opportunities: vec![],
+                reverted_opportunities: vec![],
+            };
+
             return Ok(AgentResult {
                 success: true,
-                output: serde_json::to_string(&plan).unwrap_or_default(),
+                output: serde_json::to_string(&result).unwrap_or_default(),
                 tool_calls: vec![],
                 tokens_used: 700,
                 error: None,
@@ -3168,22 +3308,51 @@ impl Agent for RefactorerAgent {
 
         let risk_assessment = Self::assess_risk(&all_opportunities);
 
-        let plan = RefactorPlan {
+        // Build the initial refactor plan
+        let mut plan = RefactorPlan {
             opportunities: all_opportunities,
             risk_assessment,
             preserved_behavior: true, // We assume behavior is preserved until proven otherwise
         };
 
-        let output = serde_json::to_string(&plan).map_err(|e| {
-            SwellError::LlmError(format!("Failed to serialize refactor plan: {}", e))
+        // Run post-refactor validation if validation pipeline is configured
+        let validation_result = if self.validation_pipeline.is_some() {
+            let validation = self.run_validation(&context).await?;
+            
+            let refactor_validation = RefactorValidationResult {
+                before_passed: true, // We run validation after identifying opportunities
+                after_passed: validation.passed,
+                behavior_preserved: validation.passed,
+                reverted: false, // No reverts in analysis-only mode
+                validation_errors: validation.errors,
+                validation_warnings: validation.warnings,
+            };
+            
+            // Update preserved_behavior based on validation result
+            plan.preserved_behavior = validation.passed;
+            
+            Some(refactor_validation)
+        } else {
+            None
+        };
+
+        let result = RefactorResult {
+            plan,
+            validation_result,
+            applied_opportunities: vec![], // No opportunities applied in analysis-only mode
+            reverted_opportunities: vec![],
+        };
+
+        let output = serde_json::to_string(&result).map_err(|e| {
+            SwellError::LlmError(format!("Failed to serialize refactor result: {}", e))
         })?;
 
         Ok(AgentResult {
-            success: true,
+            success: result.plan.preserved_behavior,
             output,
             tool_calls,
             tokens_used: 1000 + (file_contents.len() as u64 * 100),
-            error: None,
+            error: if result.plan.preserved_behavior { None } else { Some("Validation failed - behavior not preserved".to_string()) },
         })
     }
 }
@@ -4140,8 +4309,8 @@ Then they should see all admin options
         let result = agent.execute(context).await.unwrap();
         assert!(result.success);
         
-        let plan: RefactorPlan = serde_json::from_str(&result.output).unwrap();
-        assert!(plan.preserved_behavior);
+        let refactor_result: RefactorResult = serde_json::from_str(&result.output).unwrap();
+        assert!(refactor_result.plan.preserved_behavior);
     }
 
     #[tokio::test]
@@ -4383,6 +4552,46 @@ fn deeply_nested() {
         assert!(parsed.preserved_behavior);
         assert_eq!(parsed.opportunities.len(), 1);
         assert_eq!(parsed.opportunities[0].risk_level, RiskLevel::Low);
+    }
+
+    #[tokio::test]
+    async fn test_refactor_result_serialization() {
+        let plan = RefactorPlan {
+            opportunities: vec![
+                RefactorOpportunity {
+                    description: "Extract helper".to_string(),
+                    target_files: vec!["src/main.rs".to_string()],
+                    expected_improvement: "Less duplication".to_string(),
+                    risk_level: RiskLevel::Low,
+                }
+            ],
+            risk_assessment: "Low risk refactoring".to_string(),
+            preserved_behavior: true,
+        };
+        
+        let validation_result = RefactorValidationResult {
+            before_passed: true,
+            after_passed: true,
+            behavior_preserved: true,
+            reverted: false,
+            validation_errors: vec![],
+            validation_warnings: vec!["Minor style issue".to_string()],
+        };
+        
+        let result = RefactorResult {
+            plan,
+            validation_result: Some(validation_result),
+            applied_opportunities: vec!["Extract helper".to_string()],
+            reverted_opportunities: vec![],
+        };
+        
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: RefactorResult = serde_json::from_str(&json).unwrap();
+        
+        assert!(parsed.plan.preserved_behavior);
+        assert!(parsed.validation_result.is_some());
+        assert!(parsed.validation_result.unwrap().behavior_preserved);
+        assert_eq!(parsed.applied_opportunities.len(), 1);
     }
 
     #[tokio::test]

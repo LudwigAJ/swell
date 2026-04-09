@@ -1,10 +1,9 @@
 //! Tool executor with permission enforcement.
 
-use swell_core::{ToolInput, ToolOutput, SwellError, ToolRiskLevel, PermissionTier};
+use swell_core::{ToolOutput, SwellError, PermissionTier};
 use swell_core::traits::Tool;
 use crate::registry::ToolRegistry;
-use std::sync::Arc;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 use std::time::Instant;
 
 /// Permission checker for tools

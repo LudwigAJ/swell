@@ -15,7 +15,7 @@
 //! - [`CheckpointStore`] - State persistence
 //! - [`ValidationGate`] - Quality assurance steps
 
-use crate::{Task, TaskState, Plan, AgentId, AgentRole, SwellError, ValidationResult};
+use crate::{Task, TaskState, Plan, AgentId, AgentRole, SwellError};
 use async_trait::async_trait;
 use std::any::Any;
 use uuid::Uuid;
@@ -501,7 +501,7 @@ pub trait EventSubscriber: Send + Sync {
     async fn on_event(&self, event: Event) -> Result<(), SwellError>;
 
     /// Filter - return true to receive this event
-    fn filter(&self, event_type: &str) -> bool {
+    fn filter(&self, _event_type: &str) -> bool {
         true
     }
 }

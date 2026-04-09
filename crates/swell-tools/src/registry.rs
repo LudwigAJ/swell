@@ -1,11 +1,10 @@
 //! Tool registry for managing available tools.
 
-use swell_core::{ToolInput, ToolOutput, SwellError, ToolRiskLevel, PermissionTier};
+use swell_core::{ToolRiskLevel, PermissionTier};
 use swell_core::traits::Tool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
 
 /// A registered tool with metadata
 #[derive(Clone)]

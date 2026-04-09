@@ -12,11 +12,8 @@
 //! - [`TaskQueue`] - priority-ordered queue of ready tasks
 //! - [`WorkerPool`] - tracks active workers and their assignments
 
-use crate::{Orchestrator, TaskState, SwellError};
-use crate::task_graph::TaskGraph;
-use std::collections::{BinaryHeap, HashMap, HashSet};
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use crate::SwellError;
+use std::collections::{BinaryHeap, HashSet};
 use uuid::Uuid;
 use tracing::{info, warn, debug};
 
@@ -206,7 +203,7 @@ impl WorkerPool {
     pub fn new(max_workers: usize) -> Self {
         let max = max_workers.min(MAX_MAX_WORKERS);
         Self {
-            slots: (0..max).map(|i| WorkerSlot::new(Uuid::new_v4())).collect(),
+            slots: (0..max).map(|_i| WorkerSlot::new(Uuid::new_v4())).collect(),
             max_workers: max,
         }
     }

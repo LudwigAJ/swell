@@ -86,11 +86,10 @@ impl ValidationGate for LintGate {
                 .output()
         })
         .await
-        .map_err(|e| SwellError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        .map_err(|e| SwellError::IoError(std::io::Error::other(
             format!("Task join error: {}", e),
         )))?
-        .map_err(|e| SwellError::IoError(e))?;
+        .map_err(SwellError::IoError)?;
 
         let passed = output.status.success();
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -168,11 +167,10 @@ impl ValidationGate for TestGate {
                 .output()
         })
         .await
-        .map_err(|e| SwellError::IoError(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        .map_err(|e| SwellError::IoError(std::io::Error::other(
             format!("Task join error: {}", e),
         )))?
-        .map_err(|e| SwellError::IoError(e))?;
+        .map_err(SwellError::IoError)?;
 
         let passed = output.status.success();
         let stdout = String::from_utf8_lossy(&output.stdout);

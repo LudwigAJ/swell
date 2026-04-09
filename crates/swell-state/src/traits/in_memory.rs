@@ -1,11 +1,10 @@
 //! In-memory checkpoint store for testing.
 
-use swell_core::{Checkpoint, CheckpointStore, SwellError, TaskState};
+use swell_core::{Checkpoint, CheckpointStore, SwellError};
 use async_trait::async_trait;
 use uuid::Uuid;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use chrono::Utc;
 
 #[derive(Debug)]
 pub struct InMemoryCheckpointStore {

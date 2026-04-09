@@ -8,8 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tracing::{info, warn, error};
+use tracing::warn;
 
 /// MCP client for connecting to MCP servers
 #[derive(Debug, Clone)]
@@ -77,7 +76,7 @@ impl McpClient {
     pub async fn call_tool(
         &self,
         name: &str,
-        arguments: serde_json::Value,
+        _arguments: serde_json::Value,
     ) -> Result<ToolOutput, SwellError> {
         // Placeholder - full implementation would send JSON-RPC request
         Err(SwellError::ToolExecutionFailed(format!(

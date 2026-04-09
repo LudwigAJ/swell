@@ -1,6 +1,6 @@
 //! SQLite-based checkpoint store for MVP.
 
-use swell_core::{Checkpoint, CheckpointStore, SwellError, TaskState};
+use swell_core::{Checkpoint, CheckpointStore, SwellError};
 use async_trait::async_trait;
 use uuid::Uuid;
 use sqlx::{SqlitePool, Row};

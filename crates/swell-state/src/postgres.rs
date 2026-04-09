@@ -1,9 +1,9 @@
 //! PostgreSQL-based checkpoint store for production.
 
-use swell_core::{Checkpoint, CheckpointStore, SwellError, TaskState};
+use swell_core::{Checkpoint, CheckpointStore, SwellError};
 use async_trait::async_trait;
 use uuid::Uuid;
-use sqlx::{PgPool, Postgres, Row};
+use sqlx::{PgPool, Row};
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
@@ -64,7 +64,7 @@ impl CheckpointStore for PostgresCheckpointStore {
         )
         .bind(checkpoint.id)
         .bind(checkpoint.task_id)
-        .bind(serde_json::to_value(&checkpoint.state).unwrap())
+        .bind(serde_json::to_value(checkpoint.state).unwrap())
         .bind(serde_json::to_value(&checkpoint.snapshot).unwrap())
         .bind(checkpoint.created_at)
         .bind(serde_json::to_value(&checkpoint.metadata).unwrap())

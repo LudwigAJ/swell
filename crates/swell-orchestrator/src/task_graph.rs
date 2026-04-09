@@ -46,14 +46,14 @@ impl TaskGraph {
         self.dependencies.insert(task_id, deps_set);
 
         // Ensure task exists in dependents map (with empty set if no dependents)
-        self.dependents.entry(task_id).or_insert_with(HashSet::new);
+        self.dependents.entry(task_id).or_default();
 
         // Update reverse lookup (dependents)
         if let Some(deps) = self.dependencies.get(&task_id) {
             for dep_id in deps {
                 self.dependents
                     .entry(*dep_id)
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(task_id);
             }
         }
@@ -438,7 +438,7 @@ impl TaskGraph {
         for new_dep in &new_deps_set {
             self.dependents
                 .entry(*new_dep)
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(task_id);
         }
 

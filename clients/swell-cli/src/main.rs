@@ -1,7 +1,6 @@
 use swell_core::{CliCommand, DaemonEvent};
 use tokio::net::UnixStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{info, error};
 use uuid::Uuid;
 
 #[tokio::main]

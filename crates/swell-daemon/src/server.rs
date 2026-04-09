@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Mutex;
-use swell_core::{CliCommand, DaemonEvent, Task, TaskState};
+use swell_core::{CliCommand, DaemonEvent, TaskState};
 use swell_orchestrator::Orchestrator;
 use tracing::{info, error, warn};
 
@@ -72,13 +72,13 @@ async fn handle_connection(
 
     let response = match command {
         CliCommand::TaskCreate { description } => {
-            let mut orch = orchestrator.lock().await;
+            let orch = orchestrator.lock().await;
             let task = orch.create_task(description.clone()).await;
             info!(task_id = %task.id, "Task created via CLI");
             DaemonEvent::TaskCreated(task.id)
         }
         CliCommand::TaskApprove { task_id } => {
-            let mut orch = orchestrator.lock().await;
+            let orch = orchestrator.lock().await;
             match orch.start_task(task_id).await {
                 Ok(()) => DaemonEvent::TaskStateChanged {
                     id: task_id,

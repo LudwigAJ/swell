@@ -292,14 +292,14 @@ impl FlakinessHistory {
 
         let total = runs.len();
         let failures: usize = runs.iter().filter(|r| !r.passed).count();
-        let passes = total - failures;
+        let _passes = total - failures;
 
         // Score based on inconsistency
         // More balanced pass/fail ratio = higher flakiness
         let balance = (failures as f64 / total as f64).abs() - 0.5;
-        let instability = 1.0 - (balance * 2.0).abs();
+        
 
-        instability
+        1.0 - (balance * 2.0).abs()
     }
 
     /// Get tests that should be quarantined

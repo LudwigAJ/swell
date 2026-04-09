@@ -1,6 +1,6 @@
 //! High-level state management.
 
-use swell_core::{Checkpoint, CheckpointStore, Task, TaskState, SwellError, Plan};
+use swell_core::{Checkpoint, CheckpointStore, Task, SwellError};
 use std::sync::Arc;
 use uuid::Uuid;
 use chrono::Utc;

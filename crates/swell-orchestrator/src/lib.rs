@@ -126,7 +126,7 @@ impl Orchestrator {
 
     /// Release an agent back to the pool
     pub async fn release_agent(&self, agent_id: AgentId, task_id: Uuid) {
-        let _ = {
+        {
             let mut pool = self.agent_pool.write().await;
             pool.release(agent_id)
         };
