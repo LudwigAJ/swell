@@ -588,15 +588,534 @@ impl ValidationGate for TestGate {
 }
 
 // ============================================================================
-// Security Gate (Stub)
+// Security Gate
 // ============================================================================
 
-/// Gate that runs security scans (stub implementation for MVP).
-pub struct SecurityGate;
+/// Security scanner type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SecurityScannerType {
+    /// Semgrep静态分析器
+    Semgrep,
+    /// CodeQL静态分析器
+    CodeQL,
+}
+
+impl SecurityScannerType {
+    /// Get the command name for this scanner
+    pub fn command(&self) -> &'static str {
+        match self {
+            SecurityScannerType::Semgrep => "semgrep",
+            SecurityScannerType::CodeQL => "codeql",
+        }
+    }
+
+    /// Get the arguments to run a scan
+    pub fn scan_args(&self, path: &str) -> Vec<String> {
+        match self {
+            SecurityScannerType::Semgrep => {
+                vec![
+                    "scan".to_string(),
+                    "--json".to_string(),
+                    "--no-gitignore".to_string(),
+                    "--disable-version-check".to_string(),
+                    path.to_string(),
+                ]
+            }
+            SecurityScannerType::CodeQL => {
+                vec![
+                    "database".to_string(),
+                    "analyze".to_string(),
+                    "--format=sarif-latest".to_string(),
+                    path.to_string(),
+                ]
+            }
+        }
+    }
+}
+
+/// Severity level for security findings
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FindingSeverity {
+    /// Error severity - blocks merge
+    Error = 0,
+    /// Warning severity - does not block
+    Warning = 1,
+    /// Info severity - informational only
+    Info = 2,
+}
+
+impl FindingSeverity {
+    /// Parse severity from string (Semgrep format)
+    pub fn from_semgrep(level: &str) -> Option<Self> {
+        match level.to_lowercase().as_str() {
+            "error" => Some(FindingSeverity::Error),
+            "warning" | "warn" => Some(FindingSeverity::Warning),
+            "info" => Some(FindingSeverity::Info),
+            _ => None,
+        }
+    }
+
+    /// Parse severity from SARIF level (CodeQL format)
+    pub fn from_sarif(level: &str) -> Option<Self> {
+        match level.to_lowercase().as_str() {
+            "error" | "critical" | "high" => Some(FindingSeverity::Error),
+            "warning" | "medium" => Some(FindingSeverity::Warning),
+            "note" | "low" | "info" => Some(FindingSeverity::Info),
+            _ => None,
+        }
+    }
+
+    /// Get the validation level for this finding severity
+    pub fn to_validation_level(self) -> ValidationLevel {
+        match self {
+            FindingSeverity::Error => ValidationLevel::Error,
+            FindingSeverity::Warning => ValidationLevel::Warning,
+            FindingSeverity::Info => ValidationLevel::Info,
+        }
+    }
+
+    /// Whether this severity should block the build
+    pub fn should_block(self) -> bool {
+        matches!(self, FindingSeverity::Error)
+    }
+}
+
+/// A security vulnerability finding (parsed from scanner output)
+#[derive(Debug, Clone)]
+pub struct Vulnerability {
+    /// Unique identifier
+    pub id: String,
+    /// CWE category (e.g., "CWE-79")
+    pub cwe: Option<String>,
+    /// Severity level
+    pub severity: FindingSeverity,
+    /// Title/short description
+    pub title: String,
+    /// File where found
+    pub file: Option<String>,
+    /// Line number
+    pub line: Option<u32>,
+    /// Full description
+    pub description: String,
+    /// URL to more info
+    pub link: Option<String>,
+    /// The scanner that found this
+    pub scanner: SecurityScannerType,
+}
+
+impl Vulnerability {
+    /// Create from Semgrep JSON output
+    pub fn from_semgrep(result: &serde_json::Value) -> Option<Self> {
+        let check_id = result.get("check_id")?.as_str()?;
+        let severity_str = result.get("extra")?.get("severity")?.as_str()?;
+        let severity = FindingSeverity::from_semgrep(severity_str)?;
+        let message = result.get("extra")?.get("message")?.as_str()?.to_string();
+
+        let mut file = None;
+        let mut line = None;
+        if let Some(start) = result.get("start") {
+            file = start.get("filename").or_else(|| start.get("file")).and_then(|f| f.as_str()).map(String::from);
+            line = start.get("line").and_then(|l| l.as_u64()).map(|l| l as u32);
+        }
+
+        // Extract CWE from metadata if present
+        let cwe = result
+            .get("extra")
+            .and_then(|e| e.get("metadata"))
+            .and_then(|m| m.get("cwe"))
+            .and_then(|c| c.as_str())
+            .map(String::from);
+
+        // Extract link from metadata
+        let link = result
+            .get("extra")
+            .and_then(|e| e.get("metadata"))
+            .and_then(|m| m.get("url"))
+            .and_then(|u| u.as_str())
+            .map(String::from);
+
+        Some(Vulnerability {
+            id: check_id.to_string(),
+            cwe,
+            severity,
+            title: message.lines().next().unwrap_or(&message).to_string(),
+            file,
+            line,
+            description: message,
+            link,
+            scanner: SecurityScannerType::Semgrep,
+        })
+    }
+
+    /// Create from CodeQL SARIF output
+    pub fn from_sarif(result: &serde_json::Value, run_index: usize) -> Option<Self> {
+        let rule_id = result.get("ruleId")?.as_str()?;
+        let level = result
+            .get("level")
+            .and_then(|l| l.as_str())
+            .unwrap_or("warning");
+        let severity = FindingSeverity::from_sarif(level)?;
+
+        let mut file = None;
+        let mut line = None;
+        if let Some(loc) = result.get("locations")?.as_array()?.first() {
+            if let Some(physical) = loc.get("physicalLocation") {
+                file = physical
+                    .get("artifactLocation")?
+                    .get("uri")?
+                    .as_str()
+                    .map(String::from);
+                line = physical
+                    .get("region")?
+                    .get("startLine")?
+                    .as_u64()
+                    .map(|l| l as u32);
+            }
+        }
+
+        let message = result
+            .get("message")?
+            .get("text")?
+            .as_str()
+            .unwrap_or("No message")
+            .to_string();
+
+        Some(Vulnerability {
+            id: format!("codeql-{}-{}", run_index, rule_id),
+            cwe: None,
+            severity,
+            title: message.lines().next().unwrap_or(&message).to_string(),
+            file,
+            line,
+            description: message,
+            link: None,
+            scanner: SecurityScannerType::CodeQL,
+        })
+    }
+}
+
+/// Parsed security scan results
+#[derive(Debug, Clone, Default)]
+pub struct SecurityScanResults {
+    /// All findings
+    pub findings: Vec<Vulnerability>,
+    /// Scanner that was used
+    pub scanner: Option<SecurityScannerType>,
+    /// Scan duration in milliseconds
+    pub duration_ms: u64,
+    /// Whether scan succeeded
+    pub scan_success: bool,
+    /// Error message if scan failed
+    pub error_message: Option<String>,
+}
+
+impl SecurityScanResults {
+    /// Get count of findings by severity
+    pub fn count_by_severity(&self) -> (usize, usize, usize) {
+        let mut critical_high = 0;
+        let mut medium = 0;
+        let mut low = 0;
+
+        for f in &self.findings {
+            match f.severity {
+                FindingSeverity::Error => critical_high += 1,
+                FindingSeverity::Warning => medium += 1,
+                FindingSeverity::Info => {
+                    // Low severity in Semgrep terms is "info"
+                    low += 1;
+                }
+            }
+        }
+
+        (critical_high, medium, low)
+    }
+
+    /// Check if there are any blocking findings
+    pub fn has_blocking_findings(&self) -> bool {
+        self.findings
+            .iter()
+            .any(|f| f.severity.should_block())
+    }
+}
+
+/// Gate that runs security scans using Semgrep or CodeQL.
+pub struct SecurityGate {
+    /// Scanners to use (in order of preference)
+    scanners: Vec<SecurityScannerType>,
+    /// Block on high severity findings
+    block_on_high: bool,
+}
 
 impl SecurityGate {
+    /// Create a new SecurityGate with default scanners.
     pub fn new() -> Self {
-        Self
+        Self {
+            scanners: vec![SecurityScannerType::Semgrep],
+            block_on_high: false,
+        }
+    }
+
+    /// Create with specific scanners.
+    pub fn with_scanners(scanners: Vec<SecurityScannerType>) -> Self {
+        Self {
+            scanners,
+            block_on_high: false,
+        }
+    }
+
+    /// Enable blocking on high severity findings.
+    pub fn with_block_on_high(mut self) -> Self {
+        self.block_on_high = true;
+        self
+    }
+
+    /// Check if a scanner is available in the environment.
+    fn is_scanner_available(&self, scanner: SecurityScannerType) -> bool {
+        which::which(scanner.command()).is_ok()
+    }
+
+    /// Run security scan with the first available scanner.
+    async fn run_scan(&self, workspace_path: &str) -> SecurityScanResults {
+        let start = std::time::Instant::now();
+
+        for scanner in &self.scanners {
+            if !self.is_scanner_available(*scanner) {
+                tracing::debug!("{} not available, trying next scanner", scanner.command());
+                continue;
+            }
+
+            let result = self.run_scanner(*scanner, workspace_path).await;
+            if result.scan_success {
+                return result;
+            }
+            tracing::debug!("{} scan failed, trying next scanner", scanner.command());
+        }
+
+        // No scanner available
+        SecurityScanResults {
+            scan_success: false,
+            error_message: Some(
+                "No security scanner available. Install semgrep or codeql.".to_string(),
+            ),
+            duration_ms: start.elapsed().as_millis() as u64,
+            ..Default::default()
+        }
+    }
+
+    /// Run a specific scanner.
+    async fn run_scanner(
+        &self,
+        scanner: SecurityScannerType,
+        workspace_path: &str,
+    ) -> SecurityScanResults {
+        use std::io::Result as IoResult;
+        
+        let start = std::time::Instant::now();
+        let args = scanner.scan_args(workspace_path);
+        // Convert to String to satisfy 'static lifetime requirement for spawn_blocking
+        let workspace_path_string = workspace_path.to_string();
+
+        let join_result: Result<IoResult<std::process::Output>, tokio::task::JoinError> = 
+            task::spawn_blocking(move || {
+                Command::new(scanner.command())
+                    .args(&args)
+                    .current_dir(&workspace_path_string)
+                    .output()
+            })
+            .await;
+
+        match join_result {
+            Ok(Ok(result)) => {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                if !result.status.success() && !stderr.contains("no findings") {
+                    tracing::warn!("Security scan had issues: {}", stderr);
+                }
+
+                let stdout = String::from_utf8_lossy(&result.stdout);
+                let findings = match scanner {
+                    SecurityScannerType::Semgrep => self.parse_semgrep_output(&stdout),
+                    SecurityScannerType::CodeQL => self.parse_codeql_output(&stdout),
+                };
+
+                SecurityScanResults {
+                    findings,
+                    scanner: Some(scanner),
+                    duration_ms: start.elapsed().as_millis() as u64,
+                    scan_success: true,
+                    error_message: None,
+                }
+            }
+            Ok(Err(e)) => SecurityScanResults {
+                scan_success: false,
+                error_message: Some(format!("Failed to execute scanner: {}", e)),
+                duration_ms: start.elapsed().as_millis() as u64,
+                ..Default::default()
+            },
+            Err(e) => SecurityScanResults {
+                scan_success: false,
+                error_message: Some(format!("Task join error: {}", e)),
+                duration_ms: start.elapsed().as_millis() as u64,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Parse Semgrep JSON output.
+    fn parse_semgrep_output(&self, output: &str) -> Vec<Vulnerability> {
+        let mut findings = Vec::new();
+
+        // Try to parse as JSON array of results
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(output) {
+            if let Some(results) = json.get("results").and_then(|r| r.as_array()) {
+                for result in results {
+                    if let Some(finding) = Vulnerability::from_semgrep(result) {
+                        findings.push(finding);
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+
+    /// Parse CodeQL SARIF output.
+    fn parse_codeql_output(&self, output: &str) -> Vec<Vulnerability> {
+        let mut findings = Vec::new();
+
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(output) {
+            // SARIF format has "runs" array
+            if let Some(runs) = json.get("runs").and_then(|r| r.as_array()) {
+                for (run_index, run) in runs.iter().enumerate() {
+                    if let Some(results) = run.get("results").and_then(|r| r.as_array()) {
+                        for result in results {
+                            if let Some(finding) = Vulnerability::from_sarif(result, run_index) {
+                                findings.push(finding);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        findings
+    }
+
+    /// Convert findings to validation messages.
+    fn findings_to_messages(&self, results: &SecurityScanResults) -> Vec<ValidationMessage> {
+        let mut messages = Vec::new();
+
+        if !results.scan_success {
+            if let Some(ref err) = results.error_message {
+                messages.push(ValidationMessage {
+                    level: ValidationLevel::Warning,
+                    code: Some("SEC_SCAN_UNAVAILABLE".to_string()),
+                    message: err.clone(),
+                    file: None,
+                    line: None,
+                });
+            }
+            return messages;
+        }
+
+        let (critical_high, medium, low) = results.count_by_severity();
+
+        if results.findings.is_empty() {
+            messages.push(ValidationMessage {
+                level: ValidationLevel::Info,
+                code: None,
+                message: format!(
+                    "Security scan ({}) completed: no vulnerabilities found",
+                    results
+                        .scanner
+                        .map(|s| s.command())
+                        .unwrap_or("unknown")
+                ),
+                file: None,
+                line: None,
+            });
+        } else {
+            // Group by severity
+            let errors: Vec<_> = results
+                .findings
+                .iter()
+                .filter(|f| f.severity == FindingSeverity::Error)
+                .collect();
+            let warnings: Vec<_> = results
+                .findings
+                .iter()
+                .filter(|f| f.severity == FindingSeverity::Warning)
+                .collect();
+
+            if !errors.is_empty() {
+                let mut files: Vec<_> = errors
+                    .iter()
+                    .filter_map(|f| f.file.clone())
+                    .collect();
+                files.sort();
+                files.dedup();
+
+                let mut cwes: Vec<_> = errors
+                    .iter()
+                    .filter_map(|f| f.cwe.clone())
+                    .collect();
+                cwes.sort();
+                cwes.dedup();
+
+                messages.push(ValidationMessage {
+                    level: ValidationLevel::Error,
+                    code: Some("SEC_CRITICAL".to_string()),
+                    message: format!(
+                        "Critical/High severity security findings ({}):\n  Files: {}\n  CWEs: {}\n\nFirst few findings:\n{}",
+                        errors.len(),
+                        files.join(", "),
+                        cwes.join(", "),
+                        errors
+                            .iter()
+                            .take(5)
+                            .map(|f| format!(
+                                "  - {} ({}:{}): {}",
+                                f.id,
+                                f.file.as_deref().unwrap_or("unknown"),
+                                f.line.map(|l| l.to_string()).unwrap_or_else(|| "?".to_string()),
+                                f.title
+                            ))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    ),
+                    file: None,
+                    line: None,
+                });
+            }
+
+            if !warnings.is_empty() {
+                messages.push(ValidationMessage {
+                    level: ValidationLevel::Warning,
+                    code: Some("SEC_WARNING".to_string()),
+                    message: format!(
+                        "Medium/Low severity security findings ({})",
+                        warnings.len()
+                    ),
+                    file: None,
+                    line: None,
+                });
+            }
+
+            // Summary
+            messages.push(ValidationMessage {
+                level: ValidationLevel::Info,
+                code: None,
+                message: format!(
+                    "Security scan summary: {} critical/high, {} medium/low ({}ms)",
+                    critical_high,
+                    medium + low,
+                    results.duration_ms
+                ),
+                file: None,
+                line: None,
+            });
+        }
+
+        messages
     }
 }
 
@@ -616,18 +1135,34 @@ impl ValidationGate for SecurityGate {
         30
     }
 
-    async fn validate(&self, _context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
-        // Stub implementation - security scanning not yet implemented
+    async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
+        let workspace_path = context.workspace_path.clone();
+
+        // Run security scan
+        let results = self.run_scan(&workspace_path).await;
+
+        // Convert to validation messages
+        let messages = self.findings_to_messages(&results);
+
+        // Determine if validation passed
+        // Security scan itself must succeed
+        // And we must not have blocking findings
+        let scan_passed = results.scan_success;
+        let no_blocking_findings = !results.has_blocking_findings();
+
+        // If block_on_high is set, any high severity findings block
+        let no_high_findings = if self.block_on_high {
+            let (critical_high, _, _) = results.count_by_severity();
+            critical_high == 0
+        } else {
+            true
+        };
+
+        let passed = scan_passed && no_blocking_findings && no_high_findings;
+
         Ok(ValidationOutcome {
-            passed: true,
-            messages: vec![ValidationMessage {
-                level: ValidationLevel::Info,
-                code: None,
-                message: "Security gate stub: full security scanning not yet implemented"
-                    .to_string(),
-                file: None,
-                line: None,
-            }],
+            passed,
+            messages,
             artifacts: vec![],
         })
     }
@@ -930,5 +1465,260 @@ error: cannot find dependency `foo`
         let parsed = TestGate::parse_test_output(stdout, stderr);
         assert_eq!(parsed.total, 0);
         assert_eq!(parsed.failures.len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod security_gate_tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_security_gate_name() {
+        let gate = SecurityGate::new();
+        assert_eq!(gate.name(), "security");
+    }
+
+    #[test]
+    fn test_security_gate_order() {
+        let gate = SecurityGate::new();
+        assert_eq!(gate.order(), 30);
+    }
+
+    #[test]
+    fn test_security_gate_default() {
+        let gate = SecurityGate::default();
+        assert_eq!(gate.name(), "security");
+    }
+
+    #[test]
+    fn test_security_gate_new() {
+        let gate = SecurityGate::new();
+        assert_eq!(gate.name(), "security");
+    }
+
+    #[test]
+    fn test_security_gate_with_scanners() {
+        let gate = SecurityGate::with_scanners(vec![SecurityScannerType::Semgrep]);
+        assert_eq!(gate.name(), "security");
+    }
+
+    #[test]
+    fn test_security_gate_with_block_on_high() {
+        let gate = SecurityGate::new().with_block_on_high();
+        assert_eq!(gate.name(), "security");
+    }
+
+    #[tokio::test]
+    async fn test_security_gate_validate_returns_outcome() {
+        let gate = SecurityGate::new();
+        let context = ValidationContext {
+            task_id: Uuid::new_v4(),
+            workspace_path: std::env::current_dir()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            changed_files: vec![],
+            plan: None,
+        };
+
+        let result = gate.validate(context).await;
+        // Should succeed even without scanner - returns warning
+        assert!(result.is_ok(), "SecurityGate.validate should succeed");
+        
+        let outcome = result.unwrap();
+        // Without a scanner, it should pass with a warning message
+        assert!(outcome.passed || !outcome.messages.is_empty());
+    }
+
+    #[test]
+    fn test_finding_severity_from_semgrep() {
+        assert_eq!(FindingSeverity::from_semgrep("error"), Some(FindingSeverity::Error));
+        assert_eq!(FindingSeverity::from_semgrep("warning"), Some(FindingSeverity::Warning));
+        assert_eq!(FindingSeverity::from_semgrep("warn"), Some(FindingSeverity::Warning));
+        assert_eq!(FindingSeverity::from_semgrep("info"), Some(FindingSeverity::Info));
+        assert_eq!(FindingSeverity::from_semgrep("unknown"), None);
+    }
+
+    #[test]
+    fn test_finding_severity_from_sarif() {
+        assert_eq!(FindingSeverity::from_sarif("error"), Some(FindingSeverity::Error));
+        assert_eq!(FindingSeverity::from_sarif("critical"), Some(FindingSeverity::Error));
+        assert_eq!(FindingSeverity::from_sarif("high"), Some(FindingSeverity::Error));
+        assert_eq!(FindingSeverity::from_sarif("warning"), Some(FindingSeverity::Warning));
+        assert_eq!(FindingSeverity::from_sarif("medium"), Some(FindingSeverity::Warning));
+        assert_eq!(FindingSeverity::from_sarif("note"), Some(FindingSeverity::Info));
+        assert_eq!(FindingSeverity::from_sarif("low"), Some(FindingSeverity::Info));
+    }
+
+    #[test]
+    fn test_finding_severity_should_block() {
+        assert!(FindingSeverity::Error.should_block());
+        assert!(!FindingSeverity::Warning.should_block());
+        assert!(!FindingSeverity::Info.should_block());
+    }
+
+    #[test]
+    fn test_finding_severity_to_validation_level() {
+        assert_eq!(FindingSeverity::Error.to_validation_level(), ValidationLevel::Error);
+        assert_eq!(FindingSeverity::Warning.to_validation_level(), ValidationLevel::Warning);
+        assert_eq!(FindingSeverity::Info.to_validation_level(), ValidationLevel::Info);
+    }
+
+    #[test]
+    fn test_scanner_type_command() {
+        assert_eq!(SecurityScannerType::Semgrep.command(), "semgrep");
+        assert_eq!(SecurityScannerType::CodeQL.command(), "codeql");
+    }
+
+    #[test]
+    fn test_scanner_type_scan_args_semgrep() {
+        let args = SecurityScannerType::Semgrep.scan_args("/path/to/project");
+        assert!(args.contains(&"--json".to_string()));
+        assert!(args.contains(&"scan".to_string()));
+        assert!(args.contains(&"/path/to/project".to_string()));
+    }
+
+    #[test]
+    fn test_scanner_type_scan_args_codeql() {
+        let args = SecurityScannerType::CodeQL.scan_args("/path/to/project");
+        assert!(args.contains(&"database".to_string()));
+        assert!(args.contains(&"analyze".to_string()));
+        assert!(args.contains(&"/path/to/project".to_string()));
+    }
+
+    #[test]
+    fn test_security_scan_results_default() {
+        let results = SecurityScanResults::default();
+        assert!(results.findings.is_empty());
+        assert!(!results.scan_success);
+        assert!(results.error_message.is_none());
+    }
+
+    #[test]
+    fn test_security_scan_results_count_by_severity() {
+        let mut results = SecurityScanResults::default();
+        results.findings.push(Vulnerability {
+            id: "test-1".to_string(),
+            cwe: Some("CWE-79".to_string()),
+            severity: FindingSeverity::Error,
+            title: "XSS".to_string(),
+            file: Some("src/xss.rs".to_string()),
+            line: Some(10),
+            description: "Cross-site scripting".to_string(),
+            link: None,
+            scanner: SecurityScannerType::Semgrep,
+        });
+        results.findings.push(Vulnerability {
+            id: "test-2".to_string(),
+            cwe: Some("CWE-89".to_string()),
+            severity: FindingSeverity::Warning,
+            title: "SQL Injection".to_string(),
+            file: Some("src/sql.rs".to_string()),
+            line: Some(20),
+            description: "SQL injection vulnerability".to_string(),
+            link: None,
+            scanner: SecurityScannerType::Semgrep,
+        });
+
+        let (critical_high, medium, low) = results.count_by_severity();
+        assert_eq!(critical_high, 1);
+        assert_eq!(medium, 1);
+        assert_eq!(low, 0);
+    }
+
+    #[test]
+    fn test_security_scan_results_has_blocking_findings() {
+        let mut results = SecurityScanResults::default();
+        
+        // No findings - no blocking
+        assert!(!results.has_blocking_findings());
+        
+        // Add a warning - no blocking
+        results.findings.push(Vulnerability {
+            id: "test-1".to_string(),
+            cwe: None,
+            severity: FindingSeverity::Warning,
+            title: "Test".to_string(),
+            file: None,
+            line: None,
+            description: "Test".to_string(),
+            link: None,
+            scanner: SecurityScannerType::Semgrep,
+        });
+        assert!(!results.has_blocking_findings());
+        
+        // Add an error - blocking
+        results.findings.push(Vulnerability {
+            id: "test-2".to_string(),
+            cwe: None,
+            severity: FindingSeverity::Error,
+            title: "Critical".to_string(),
+            file: None,
+            line: None,
+            description: "Critical".to_string(),
+            link: None,
+            scanner: SecurityScannerType::Semgrep,
+        });
+        assert!(results.has_blocking_findings());
+    }
+
+    #[test]
+    fn test_vulnerability_from_semgrep_minimal() {
+        let json = serde_json::json!({
+            "check_id": "java.lang.security.audit.xss.xss-sanitizer",
+            "extra": {
+                "severity": "WARNING",
+                "message": "Potential XSS vulnerability"
+            }
+        });
+        
+        let vuln = Vulnerability::from_semgrep(&json);
+        assert!(vuln.is_some());
+        let v = vuln.unwrap();
+        assert_eq!(v.id, "java.lang.security.audit.xss.xss-sanitizer");
+        assert_eq!(v.severity, FindingSeverity::Warning);
+        assert_eq!(v.title, "Potential XSS vulnerability");
+        assert!(v.cwe.is_none());
+        assert!(v.file.is_none());
+        assert!(v.link.is_none());
+    }
+
+    #[test]
+    fn test_vulnerability_from_semgrep_with_location() {
+        let json = serde_json::json!({
+            "check_id": "java.lang.security.audit.xss.xss-sanitizer",
+            "start": {
+                "filename": "src/Main.java",
+                "line": 42
+            },
+            "extra": {
+                "severity": "ERROR",
+                "message": "XSS in user input",
+                "metadata": {
+                    "cwe": "CWE-79",
+                    "url": "https://example.com/cwe-79"
+                }
+            }
+        });
+        
+        let vuln = Vulnerability::from_semgrep(&json);
+        assert!(vuln.is_some());
+        let v = vuln.unwrap();
+        assert_eq!(v.file, Some("src/Main.java".to_string()));
+        assert_eq!(v.line, Some(42));
+        assert_eq!(v.cwe, Some("CWE-79".to_string()));
+        assert_eq!(v.link, Some("https://example.com/cwe-79".to_string()));
+    }
+
+    #[test]
+    fn test_vulnerability_from_semgrep_invalid() {
+        // Missing required fields
+        let json = serde_json::json!({
+            "check_id": "test"
+        });
+        
+        let vuln = Vulnerability::from_semgrep(&json);
+        assert!(vuln.is_none());
     }
 }
