@@ -80,3 +80,17 @@ For MVP, sequential testing is sufficient. No parallel validators needed.
 
 - `ANTHROPIC_API_KEY` - Required for real LLM calls
 - `SWELL_SOCKET` - Unix socket path (default: `/tmp/swell-daemon.sock`)
+
+## Known Issues
+
+### Daemon Socket Reading Bug (CRITICAL)
+
+**File:** `crates/swell-daemon/src/server.rs`, line 54
+
+**Problem:** The buffer initialization `let mut buf = vec![0u8; 4096];` creates a Vec with 4096 bytes already used. Tokio's `read_buf()` appends to this buffer, but cannot because `length == capacity` (buffer appears "full"). The daemon reads 0 bytes and fails to parse an empty string as JSON, returning: `"Invalid command: expected value at line 1 column 1"`.
+
+**Impact:** ALL CLI commands fail because the daemon cannot read any socket data.
+
+**Quick Fix:** Change `let mut buf = vec![0u8; 4096];` to `let mut buf = Vec::with_capacity(4096);`
+
+**Verification:** Even sending valid JSON like `{"type":"TaskList"}` from a Python socket client returns the same error, confirming the issue is in the daemon's read implementation.
