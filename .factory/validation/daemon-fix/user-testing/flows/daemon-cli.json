@@ -1,0 +1,110 @@
+{
+  "groupId": "daemon-cli",
+  "testedAt": "2026-04-09T09:54:00Z",
+  "isolation": {
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell",
+    "socketPath": "/tmp/swell-daemon.sock",
+    "daemonCommand": "cargo run --bin swell-daemon",
+    "cliCommand": "cargo run --bin swell"
+  },
+  "toolsUsed": ["tuistory", "nc", "python3"],
+  "assertions": [
+    {
+      "id": "VAL-CLI-001",
+      "title": "Task creation",
+      "status": "fail",
+      "steps": [
+        { "action": "Start daemon in background", "expected": "Daemon listening on socket", "observed": "Daemon started and listening" },
+        { "action": "Run: cargo run --bin swell -- task \"hello world\"", "expected": "CLI creates task, returns task ID", "observed": "CLI panicked: Invalid response format: Error(\"expected value\", line: 1, column: 1)" }
+      ],
+      "evidence": {
+        "screenshots": ["daemon-fix/daemon-cli/VAL-CLI-001-panic.png"],
+        "consoleErrors": "CLI panicked at clients/swell-cli/src/main.rs:85:49",
+        "network": "Daemon receives command (verified via nc), but CLI cannot parse response"
+      },
+      "issues": "CLI fails to parse daemon response - gets empty/corrupted data when reading from Unix socket. The CLI uses read_buf into a pre-allocated vector, but the response is empty or malformed. Daemon works correctly via raw nc (verified TaskCreate and TaskList work)."
+    },
+    {
+      "id": "VAL-CLI-002",
+      "title": "Task listing",
+      "status": "fail",
+      "steps": [
+        { "action": "Run: cargo run --bin swell -- list", "expected": "List of tasks displayed", "observed": "CLI panicked: Invalid response format: Error(\"expected value\", line: 1, column: 1)" }
+      ],
+      "evidence": {
+        "screenshots": ["daemon-fix/daemon-cli/VAL-CLI-002-panic.png"],
+        "consoleErrors": "CLI panicked at clients/swell-cli/src/main.rs:85:49",
+        "network": "nc proves daemon returns valid JSON: {\"type\":\"TaskCompleted\",\"payload\":{...}}"
+      },
+      "issues": "Same issue as VAL-CLI-001 - CLI cannot parse daemon response. Verified via nc that daemon returns correct JSON but CLI read_buf returns empty/corrupted data."
+    },
+    {
+      "id": "VAL-CLI-003",
+      "title": "Task watch",
+      "status": "skipped",
+      "steps": [],
+      "evidence": {},
+      "issues": "Skipped - depends on CLI ability to communicate with daemon which is broken (same underlying bug as VAL-CLI-001/002)"
+    },
+    {
+      "id": "VAL-CLI-004",
+      "title": "Task approve/cancel",
+      "status": "skipped",
+      "steps": [],
+      "evidence": {},
+      "issues": "Skipped - depends on CLI ability to communicate with daemon which is broken (same underlying bug as VAL-CLI-001/002)"
+    },
+    {
+      "id": "VAL-DAEMON-001",
+      "title": "Unix socket communication",
+      "status": "pass",
+      "steps": [
+        { "action": "Start daemon with cargo run --bin swell-daemon", "expected": "Socket created at /tmp/swell-daemon.sock", "observed": "Socket created" },
+        { "action": "Send TaskCreate via nc: printf '{\"type\":\"TaskCreate\",\"payload\":{\"description\":\"test\"}}\\n' | nc -U /tmp/swell-daemon.sock", "expected": "Valid JSON response with task ID", "observed": "{\"type\":\"TaskCreated\",\"payload\":\"uuid\"}" },
+        { "action": "Send TaskList via nc", "expected": "List of tasks as JSON", "observed": "Valid JSON with task list" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "Direct socket communication verified working"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-DAEMON-003",
+      "title": "Error handling",
+      "status": "pass",
+      "steps": [
+        { "action": "Send malformed JSON: printf '{\"TaskCreate\":{\"description\":\"test\"}}\\n' | nc -U /tmp/swell-daemon.sock", "expected": "JSON error response with message", "observed": "{\"type\":\"Error\",\"payload\":{\"message\":\"Invalid command: missing field `type`...\"}}" }
+      ],
+      "evidence": {
+        "screenshots": [],
+        "consoleErrors": "none",
+        "network": "Daemon returns structured error for invalid commands"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [
+    {
+      "description": "nc sends JSON without newline terminator at end of transmission, daemon processes it correctly but nc shows concatenated output when multiple commands sent",
+      "resolved": true,
+      "resolution": "Used single command per nc invocation",
+      "affectedAssertions": ["VAL-DAEMON-001"]
+    },
+    {
+      "description": "Multiple daemon instances were running simultaneously from earlier attempts, causing confusion about which instance was handling requests",
+      "resolved": true,
+      "resolution": "Killed all daemon processes and restarted fresh",
+      "affectedAssertions": ["VAL-CLI-001", "VAL-CLI-002"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "CLI cannot read responses from daemon Unix socket - read_buf returns empty data causing JSON parse failure. This blocks all CLI assertions (VAL-CLI-001 to VAL-CLI-004)",
+      "affectedAssertions": ["VAL-CLI-001", "VAL-CLI-002", "VAL-CLI-003", "VAL-CLI-004"],
+      "quickFixAttempted": "Verified daemon works correctly via nc and Python socket test. The issue is in CLI's read_buf implementation. Tried rebuilding binaries - issue persists. Issue appears to be how CLI reads from Unix socket - daemon response is valid but CLI gets empty buffer."
+    }
+  ],
+  "summary": "Tested 6 assertions: 2 passed (VAL-DAEMON-001, VAL-DAEMON-003), 2 failed (VAL-CLI-001, VAL-CLI-002 - CLI cannot parse daemon responses), 2 skipped (VAL-CLI-003, VAL-CLI-004 - depend on working CLI). The daemon correctly implements Unix socket communication and error handling as verified via nc/Python. However, the CLI client has a bug where it cannot read responses from the Unix socket - read_buf returns empty data causing panic in JSON parsing. This is a bug in swell-cli/src/main.rs at line 85 in the send_command function."
+}

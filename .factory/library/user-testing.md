@@ -83,7 +83,7 @@ For MVP, sequential testing is sufficient. No parallel validators needed.
 
 ## Known Issues
 
-### Daemon Socket Reading Bug (CRITICAL)
+### Daemon Socket Reading Bug (CRITICAL) - FIXED in daemon
 
 **File:** `crates/swell-daemon/src/server.rs`, line 54
 
@@ -93,4 +93,16 @@ For MVP, sequential testing is sufficient. No parallel validators needed.
 
 **Quick Fix:** Change `let mut buf = vec![0u8; 4096];` to `let mut buf = Vec::with_capacity(4096);`
 
-**Verification:** Even sending valid JSON like `{"type":"TaskList"}` from a Python socket client returns the same error, confirming the issue is in the daemon's read implementation.
+**Verification:** Daemon fix verified working - Python socket client can communicate with daemon after the fix. TaskCreate and TaskList return correct JSON responses.
+
+### CLI Client Socket Reading Bug (SECONDARY)
+
+**File:** `clients/swell-cli/src/main.rs`, line 85 in `send_command` function
+
+**Problem:** The CLI uses `vec![0u8; 65536]` as the response buffer. When reading from the Unix socket, `read_buf` returns 0 bytes even though the daemon has sent data. The CLI then panics trying to parse an empty response as JSON.
+
+**Impact:** ALL CLI commands fail because CLI cannot read daemon responses. Daemon works correctly (verified via nc and Python).
+
+**Quick Fix:** Likely needs `Vec::with_capacity(65536)` instead of `vec![0u8; 65536]` or a different reading approach.
+
+**Note:** This is a separate bug from the daemon fix. The daemon fix (Vec::with_capacity) was correct and verified working. The CLI has its own socket reading issue.
