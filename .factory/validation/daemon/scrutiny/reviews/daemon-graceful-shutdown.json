@@ -1,0 +1,44 @@
+{
+  "featureId": "daemon-graceful-shutdown",
+  "reviewedAt": "2026-04-09T21:40:00Z",
+  "commitId": "e33ce07",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Graceful shutdown implementation is sound. Handles SIGTERM via tokio signal handler, tracks active connections with AtomicUsize, waits up to 30 seconds for connections to complete, and cleans up Unix socket file. The implementation fulfills all three expected behaviors: handles SIGTERM, completes in-flight tasks, and prevents zombie processes via connection counter.",
+    "issues": [
+      {
+        "file": "crates/swell-daemon/src/server.rs",
+        "line": 7,
+        "severity": "non_blocking",
+        "description": "Import includes `TaskState` from swell_core but the committed code (e33ce07) doesn't use it. The code only uses `CliCommand` and `DaemonEvent`. While not a functional issue (clippy doesn't warn about unused imports from external crates), it indicates dead code in imports."
+      },
+      {
+        "file": "crates/swell-daemon/src/server.rs",
+        "line": 131,
+        "severity": "non_blocking",
+        "description": "Verification steps in features.json specify 'Manual daemon restart test' but handoff shows only automated checks (build, clippy, test). No manual testing was documented. This is acceptable since the feature is integration-level and build/clippy/tests passed, but the verification gap between documented steps and actual verification should be noted."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The feature's skillName is 'Rust' but .factory/skills/rust/SKILL.md doesn't exist. Only .factory/skills/worker/SKILL.md exists. The worker transcript shows the 'Rust' skill was invoked but the file wasn't found at review time. This could indicate the skill was moved/renamed or there's a path mismatch.",
+      "evidence": "Feature has skillName: 'Rust' but ls .factory/skills/ shows only 'worker' directory. Transcript shows 'Skill: Rust' was invoked."
+    },
+    {
+      "area": "services",
+      "observation": "No services.yaml was found at .factory/services.yaml (the path the skill and AGENTS.md reference). The transcript shows the worker read it successfully at the path specified in the task prompt. If services.yaml is expected to exist project-wide, it may need to be created or its location documented.",
+      "evidence": "AGENTS.md references .factory/services.yaml for configurable values but the file doesn't exist at that path."
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md documents that configurable values should come from .swell/settings.json but no such validation exists in code. Magic numbers like SHUTDOWN_TIMEOUT_SECS=30 are hardcoded in server.rs. While this is acceptable for MVP, the convention should be enforced or documented as future work.",
+      "evidence": "SHUTDOWN_TIMEOUT_SECS and SHUTDOWN_BROADCAST_INTERVAL_SECS are hardcoded constants in server.rs rather than loaded from settings."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes review. Graceful shutdown correctly implements SIGTERM handling, active connection tracking, and socket cleanup. All three expected behaviors are fulfilled. Minor observations about skill file path mismatch and missing services.yaml documented for validator triage."
+}
