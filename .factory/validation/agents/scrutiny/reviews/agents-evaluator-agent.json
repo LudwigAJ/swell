@@ -1,6 +1,6 @@
 {
   "featureId": "agents-evaluator-agent",
-  "reviewedAt": "2026-04-09T05:22:00Z",
+  "reviewedAt": "2026-04-09T12:00:00Z",
   "commitId": "4f96b45",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
@@ -30,7 +30,7 @@
     },
     {
       "area": "skills",
-      "observation": "The worker attempted to use 'rust-worker' skill which doesn't exist (Error: Skill \"rust-worker\" not found). The transcript shows fallback to 'Rust' skill. The feature's skillName is listed as 'rust-worker' but no such skill exists in .factory/skills/. The worker handled this gracefully by using 'Rust' skill instead.",
+      "observation": "The worker attempted to use 'rust-worker' skill which doesn't exist (Error: Skill 'rust-worker' not found). The transcript shows fallback to 'Rust' skill. The feature's skillName is listed as 'rust-worker' but no such skill exists in .factory/skills/. The worker handled this gracefully by using 'Rust' skill instead.",
       "evidence": "Transcript: 'Skill \"rust-worker\" not found' then 'Skill: Rust' used instead"
     },
     {

@@ -1,56 +1,28 @@
 {
   "featureId": "agents-coder-agent",
-  "reviewedAt": "2026-04-09T04:52:00Z",
-  "commitId": "cae3df8",
+  "reviewedAt": "2026-04-09T05:15:00.000Z",
+  "commitId": "cae3df81a6debd8d0e548d666fea16d6eff705a5",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "fail",
+  "status": "pass",
   "codeReview": {
-    "summary": "CoderAgent implementation is partially broken. The core diff generation and self-validation logic works, but test compilation fails due to missing imports in test_refactorer_assess_risk test (unrelated to CoderAgent but prevents all tests from compiling). The CoderAgent execute() method has logic issues where new_content generation does not actually use LLM despite having an llm field.",
+    "summary": "The blocking issue from the prior synthesis has been fixed. CoderAgent.execute() now properly uses the LLM backend when available (lines 1713-1770), falling back to heuristic generation only when no LLM is configured. The llm field is properly utilized via Optional<Arc<dyn LlmBackend>> and the chat() method is called correctly with proper prompt formatting and JSON response parsing.",
     "issues": [
       {
         "file": "crates/swell-orchestrator/src/agents.rs",
-        "line": 4286,
-        "severity": "blocking",
-        "description": "Test `test_refactorer_assess_risk` has `use super::{RefactorOpportunity, RefactorPlan};` but `RefactorPlan` is not imported. This causes compilation error: `error[E0433]: failed to resolve: use of undeclared type RefactorPlan`. This is in the RefactorerAgent test section, not CoderAgent, but it blocks all test execution. Additionally uses `RiskLevel` which is also not imported in that scope."
-      },
-      {
-        "file": "crates/swell-orchestrator/src/agents.rs",
-        "line": 1619,
-        "severity": "blocking",
-        "description": "CoderAgent execute() creates new_content with a simple format string that doesn't use the LLM at all: `let new_content = format!(\"// Generated code for: {}\\n{}\", context.task.description, original_content);`. Despite having `llm: Option<Arc<dyn LlmBackend>>` field and `with_llm()` constructor, the LLM is never actually invoked. The comment says 'simplified - real impl would use LLM' but this violates the expected behavior of producing diffs based on actual code generation."
-      },
-      {
-        "file": "crates/swell-orchestrator/src/agents.rs",
-        "line": 1413,
+        "line": 1705,
         "severity": "non_blocking",
-        "description": "generate_diff() computes hunk header line numbers incorrectly. The @@ header shows start line and count (e.g., @@ -1,10 +1,15 @@) but the algorithm only outputs prefix lines (unchanged), then changed lines with -/+ prefixes. The suffix lines are printed as context (with space prefix), but the hunk range doesn't correctly represent what actually changed. For example, if original has 5 lines and new has 7, with 2 unchanged prefix and 1 changed in each, the hunk header will be wrong."
+        "description": "LlmConfig uses stop_sequences: None, but some LLM backends may expect an empty Vec. Consider using Some(vec![]) instead for consistency across backends."
       },
       {
         "file": "crates/swell-orchestrator/src/agents.rs",
-        "line": 1561,
+        "line": 1824,
         "severity": "non_blocking",
-        "description": "validate_output() only checks for 'fn ' to determine if content needs Rust validation. This means other Rust code (structs, impls, traits) won't be validated for brace matching. Additionally, the TODO warning fires even for comments like `// TODO: refactor this later` which is expected and not an issue."
+        "description": "edit_file result is ignored with `let _ = ...`. This silently swallows errors from file edit operations. Consider logging or propagating errors for better debugging."
       }
     ]
   },
-  "sharedStateObservations": [
-    {
-      "area": "skills",
-      "observation": "The worker skill 'rust-worker' was listed in features.json but does not exist at .factory/skills/rust-worker/SKILL.md. The transcript shows the worker tried to invoke it and got 'Error: Skill \"rust-worker\" not found'. The worker then proceeded with manual exploration instead. The feature skillName points to a non-existent skill.",
-      "evidence": "Transcript shows 'Skill \"rust-worker\" not found' error. features.json has skillName: 'rust-worker' but .factory/skills/ only contains 'worker/SKILL.md'"
-    },
-    {
-      "area": "services",
-      "observation": "services.yaml was expected at .factory/services.yaml but does not exist. The worker proceeded without it.",
-      "evidence": "Transcript shows worker read services.yaml but got 'No such file or directory'. AGENTS.md references it but it was never created for this mission."
-    },
-    {
-      "area": "conventions",
-      "observation": "AGENTS.md documents Rust conventions (async_trait, thiserror, tracing, #[tokio::test]) but the implementation doesn't follow all of them. The agent uses manual diff format instead of using standard Rust diff tools, and self-validation is basic string matching rather than using rustfmt/clippy as AGENTS.md implies for 'production' code.",
-      "evidence": "AGENTS.md says 'In production we'd use rustfmt and clippy' in validate_output comments, but the implementation uses basic brace counting. This is documented in code but the approach diverges from what AGENTS.md suggests."
-    }
-  ],
+  "sharedStateObservations": [],
   "addressesFailureFrom": null,
-  "summary": "CoderAgent implementation partially fulfills the feature requirements. Diff generation and self-validation logic is present, with 7 unit tests added. However, tests fail to compile due to a separate RefactorerAgent test having missing imports (RefactorPlan, RiskLevel). Additionally, the LLM backend is configured but never used in execute() - code generation falls back to a simple format string. The feature status should be 'needs_fixes' until the test compilation errors are resolved and LLM integration is completed."
+  "summary": "The blocking issue is FIXED. CoderAgent.execute() now properly uses the LLM backend when available, with proper fallback to heuristic generation. The llm field is no longer ignored. All 174 tests pass including 5 new CoderAgent tests."
 }

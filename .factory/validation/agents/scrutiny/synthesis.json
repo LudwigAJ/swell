@@ -1,59 +1,65 @@
 {
   "milestone": "agents",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
-    "test": { "passed": true, "command": "cargo test -p swell-orchestrator", "exitCode": 0, "note": "swell-orchestrator tests pass; swell-state has pre-existing import issues" },
-    "typecheck": { "passed": false, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 101 },
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
     "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
     "total": 11,
-    "passed": 9,
-    "failed": 2,
-    "failedFeatures": ["agents-coder-agent", "agents-refactorer-agent"]
+    "passed": 8,
+    "failed": 3,
+    "failedFeatures": ["agents-generator-agent", "agents-doc-writer-agent", "agents-context-condensation"]
   },
   "blockingIssues": [
     {
-      "featureId": "agents-coder-agent",
+      "featureId": "agents-generator-agent",
       "severity": "blocking",
-      "description": "CoderAgent.execute() does not use LLM backend despite having llm field - falls back to simple format string",
-      "location": "crates/swell-orchestrator/src/agents.rs:1619"
+      "description": "tool_call_results in AgentResult are never populated even when ReAct loop executes with tool registry. Also total_tokens is always 0u64 even when LLM is used - token usage from LLM.chat is not captured.",
+      "location": "crates/swell-orchestrator/src/agents.rs:571-572"
     },
     {
-      "featureId": "agents-refactorer-agent",
+      "featureId": "agents-doc-writer-agent",
       "severity": "blocking",
-      "description": "RefactorerAgent expected behavior 'Validates after refactor' not implemented",
-      "location": "crates/swell-orchestrator/src/agents.rs:2973"
-    }
-  ],
-  "appliedUpdates": [
+      "description": "DocWriterAgent.execute() is a stub - returns hardcoded DocChange values instead of actually generating documentation from code changes via LLM. The _prompt is built but never used.",
+      "location": "crates/swell-orchestrator/src/agents.rs:3755-3768"
+    },
     {
-      "target": "swell-orchestrator/src/state_machine.rs",
-      "description": "Added missing imports: RiskLevel, StepStatus to test module",
-      "sourceFeature": "agents-coder-agent, agents-refactorer-agent (fix)"
+      "featureId": "agents-context-condensation",
+      "severity": "blocking",
+      "description": "Worker did not implement this feature - ContextCondensation was pre-existing in commit 3a8c017, not implemented by worker session 80c83202. Handoff commitId '8ad9098' corresponds to RefactorerAgent enhancement, not this feature.",
+      "location": "handoff file"
     }
   ],
+  "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Add convention for test module imports: when test modules use types from parent or sibling modules, they must use full paths (e.g., `use crate::{RiskLevel, StepStatus}`) rather than assuming `use super::*` will bring in all needed types",
-      "evidence": "state_machine.rs test module at lines 229-231 uses RiskLevel::Low and StepStatus::Pending but these are not imported, causing compilation failure across all swell-orchestrator tests",
+      "suggestion": "Add convention: all agent implementations should use LLM backend when configured. The llm field must not be ignored - if present, the agent must call llm.chat() and use the response. Stub implementations that return hardcoded output without LLM calls do not fulfill the feature's expected behavior.",
+      "evidence": "agents-doc-writer-agent returns hardcoded DocChange without using _prompt; agents-generator-agent ignores token usage from LLM calls",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Clarify that 'rust-worker' skill name in features.json is incorrect - the actual skill is named 'Rust' (not 'rust-worker')",
-      "evidence": "Multiple features (all 11 agent features) have skillName: 'rust-worker' but .factory/skills/rust/SKILL.md is the actual skill path",
+      "suggestion": "Add convention: when a feature is already implemented (verification scenario), the handoff should clearly state 'verification only - feature was pre-existing' rather than implying implementation. The commitId field should accurately reflect what was changed.",
+      "evidence": "agents-context-condensation handoff claims commitId 8ad9098 but feature was pre-existing in different commit",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the stub mode pattern: when an agent provides MVP fallback behavior (e.g., returning hardcoded success when no LLM is configured), this should be explicitly marked as stub mode and the expected full implementation path documented.",
+      "evidence": "agents-evaluator-agent uses stub mode pattern (if validation_pipeline is None) but it's not documented",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Document that agents should not use _prompt pattern where SystemPromptBuilder is called but result is discarded",
-      "evidence": "CoderAgent, DocWriterAgent, TestWriterAgent, RefactorerAgent all call system_prompt_builder.build() and assign to _prompt without using it",
+      "suggestion": "Fix features.json skillName: the 'rust-worker' skill doesn't exist. The actual Rust skill is named 'Rust'. All 11 agent features incorrectly specify skillName: 'rust-worker'.",
+      "evidence": "All 11 agent features have skillName: 'rust-worker' which doesn't exist in .factory/skills/",
       "isSystemic": true
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": ".factory/validation/agents/scrutiny/synthesis.json (round 1)"
 }
