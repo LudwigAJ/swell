@@ -1,20 +1,20 @@
 use swell_core::{CliCommand, DaemonEvent};
-use tokio::net::UnixStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
 use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Simple CLI parsing for MVP
     let args: Vec<String> = std::env::args().collect();
-    
+
     if args.len() < 2 {
         usage();
         return Ok(());
     }
 
-    let socket_path = std::env::var("SWELL_SOCKET")
-        .unwrap_or_else(|_| "/tmp/swell-daemon.sock".to_string());
+    let socket_path =
+        std::env::var("SWELL_SOCKET").unwrap_or_else(|_| "/tmp/swell-daemon.sock".to_string());
 
     match args[1].as_str() {
         "task" => {
@@ -36,8 +36,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Error: 'watch' command requires a task ID");
                 return Ok(());
             }
-            let task_id = Uuid::parse_str(&args[2])
-                .expect("Invalid UUID format");
+            let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
             let cmd = CliCommand::TaskWatch { task_id };
             send_command(&socket_path, cmd).await?;
         }
@@ -46,8 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Error: 'approve' command requires a task ID");
                 return Ok(());
             }
-            let task_id = Uuid::parse_str(&args[2])
-                .expect("Invalid UUID format");
+            let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
             let cmd = CliCommand::TaskApprove { task_id };
             send_command(&socket_path, cmd).await?;
         }
@@ -56,8 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 eprintln!("Error: 'cancel' command requires a task ID");
                 return Ok(());
             }
-            let task_id = Uuid::parse_str(&args[2])
-                .expect("Invalid UUID format");
+            let task_id = Uuid::parse_str(&args[2]).expect("Invalid UUID format");
             let cmd = CliCommand::TaskCancel { task_id };
             send_command(&socket_path, cmd).await?;
         }
@@ -69,21 +66,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn send_command(socket_path: &str, cmd: CliCommand) -> Result<(), Box<dyn std::error::Error>> {
+async fn send_command(
+    socket_path: &str,
+    cmd: CliCommand,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut stream = UnixStream::connect(socket_path).await?;
-    
+
     let cmd_json = serde_json::to_string(&cmd)?;
     stream.write_all(cmd_json.as_bytes()).await?;
     stream.flush().await?;
 
-    let mut response_buf = vec![0u8; 65536];
+    let mut response_buf = Vec::with_capacity(65536);
     let n = stream.read_buf(&mut response_buf).await?;
-    
+
     if n > 0 {
         let response_str = String::from_utf8_lossy(&response_buf[..n]);
-        let response: DaemonEvent = serde_json::from_str(&response_str)
-            .expect("Invalid response format");
-        
+        let response: DaemonEvent =
+            serde_json::from_str(&response_str).expect("Invalid response format");
+
         match response {
             DaemonEvent::TaskCreated(id) => {
                 println!("Task created: {}", id);
@@ -120,13 +120,17 @@ async fn send_command(socket_path: &str, cmd: CliCommand) -> Result<(), Box<dyn 
 }
 
 fn usage() {
-    eprintln!("swell - Autonomous Coding Engine CLI
-    ");
-    eprintln!("Usage:
+    eprintln!(
+        "swell - Autonomous Coding Engine CLI
+    "
+    );
+    eprintln!(
+        "Usage:
     swell task <description>     Create a new task
     swell list                     List all tasks
     swell watch <task-id>         Watch task status
     swell approve <task-id>       Approve task plan
     swell cancel <task-id>         Cancel a task
-    ");
+    "
+    );
 }
