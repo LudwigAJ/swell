@@ -2593,9 +2593,12 @@ impl Agent for ReviewerAgent {
 pub struct RefactorerAgent {
     model: String,
     system_prompt_builder: SystemPromptBuilder,
+    llm: Option<Arc<dyn LlmBackend>>,
+    tool_registry: Option<Arc<ToolRegistry>>,
 }
 
 impl RefactorerAgent {
+    /// Create a new RefactorerAgent with just model name (for testing)
     pub fn new(model: String) -> Self {
         let config = SystemPromptConfig {
             project_name: "SWELL".to_string(),
@@ -2609,8 +2612,380 @@ impl RefactorerAgent {
         Self {
             model,
             system_prompt_builder: SystemPromptBuilder::new(config),
+            llm: None,
+            tool_registry: None,
         }
     }
+
+    /// Create a RefactorerAgent with LLM backend for intelligent refactoring analysis
+    pub fn with_llm(model: String, llm: Arc<dyn LlmBackend>) -> Self {
+        let mut agent = Self::new(model);
+        agent.llm = Some(llm);
+        agent
+    }
+
+    /// Create a RefactorerAgent with tool registry for file operations
+    pub fn with_tools(model: String, tool_registry: Arc<ToolRegistry>) -> Self {
+        let mut agent = Self::new(model);
+        agent.tool_registry = Some(tool_registry);
+        agent
+    }
+
+    /// Create a fully configured RefactorerAgent with LLM and tools
+    pub fn with_llm_and_tools(
+        model: String,
+        llm: Arc<dyn LlmBackend>,
+        tool_registry: Arc<ToolRegistry>,
+    ) -> Self {
+        let mut agent = Self::new(model);
+        agent.llm = Some(llm);
+        agent.tool_registry = Some(tool_registry);
+        agent
+    }
+
+    /// Extract affected files from the task's plan
+    fn extract_affected_files(context: &AgentContext) -> Vec<String> {
+        let mut files = Vec::new();
+
+        if let Some(ref plan) = context.task.plan {
+            for step in &plan.steps {
+                for file in &step.affected_files {
+                    if !files.contains(file) {
+                        files.push(file.clone());
+                    }
+                }
+            }
+        }
+
+        files
+    }
+
+    /// Read file content using tool registry
+    async fn read_file(&self, path: &str) -> Result<String, SwellError> {
+        let registry = self.tool_registry.as_ref()
+            .ok_or_else(|| SwellError::ToolExecutionFailed("No tool registry configured".to_string()))?;
+        
+        let tool = registry.get("read_file").await
+            .ok_or_else(|| SwellError::ToolExecutionFailed("read_file tool not found".to_string()))?;
+        
+        let args = serde_json::json!({ "path": path });
+        let result: ToolOutput = tool.execute(args).await?;
+        
+        if result.success {
+            Ok(result.result)
+        } else {
+            Err(SwellError::ToolExecutionFailed(result.error.unwrap_or_default()))
+        }
+    }
+
+    /// Identify code duplication opportunities
+    fn identify_duplication(&self, file_path: &str, content: &str) -> Vec<RefactorOpportunity> {
+        let mut opportunities = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+        
+        // Simple duplicate detection: find similar function bodies
+        let mut seen_functions: std::collections::HashMap<String, Vec<u32>> = std::collections::HashMap::new();
+        
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            
+            // Look for function definitions
+            if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
+                // Extract a signature hash to identify duplicates
+                let sig: String = trimmed.chars().take(100).collect();
+                
+                // Count similar lines in function body (simplified approach)
+                if idx + 5 < lines.len() {
+                    let body_start = idx + 1;
+                    let body_end = (idx + 20).min(lines.len());
+                    let body: String = lines[body_start..body_end].iter()
+                        .map(|s| s.trim())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    
+                    // Check for duplicated patterns
+                    if body.len() > 50 {
+                        let body_hash = format!("{:x}", md5_hash(&body));
+                        seen_functions
+                            .entry(body_hash)
+                            .or_default()
+                            .push(idx as u32 + 1);
+                    }
+                }
+            }
+        }
+        
+        // Report opportunities where the same pattern appears multiple times
+        for (hash, locations) in &seen_functions {
+            if locations.len() > 1 {
+                opportunities.push(RefactorOpportunity {
+                    description: format!("Duplicate code pattern detected at lines {:?}", locations),
+                    target_files: vec![file_path.to_string()],
+                    expected_improvement: "Extract duplicated logic into a shared helper function".to_string(),
+                    risk_level: RiskLevel::Medium,
+                });
+            }
+        }
+        
+        opportunities
+    }
+
+    /// Identify long function opportunities
+    fn identify_long_functions(&self, file_path: &str, content: &str) -> Vec<RefactorOpportunity> {
+        let mut opportunities = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+        
+        let fn_lines: Vec<usize> = lines.iter()
+            .enumerate()
+            .filter(|(_, l)| l.trim().starts_with("fn ") || l.trim().starts_with("async fn "))
+            .map(|(i, _)| i)
+            .collect();
+
+        for (i, fn_start) in fn_lines.iter().enumerate() {
+            let fn_end = if i + 1 < fn_lines.len() {
+                fn_lines[i + 1]
+            } else {
+                lines.len()
+            };
+            let fn_length = fn_end - fn_start;
+            
+            if fn_length > 100 {
+                let fn_line = lines[*fn_start].trim();
+                opportunities.push(RefactorOpportunity {
+                    description: format!("Function '{}' is {} lines (recommended max: 100)", fn_line, fn_length),
+                    target_files: vec![file_path.to_string()],
+                    expected_improvement: format!("Break down into smaller, focused functions (reduce by ~{} lines)", fn_length - 50),
+                    risk_level: RiskLevel::Low,
+                });
+            } else if fn_length > 50 {
+                let fn_line = lines[*fn_start].trim();
+                opportunities.push(RefactorOpportunity {
+                    description: format!("Function '{}' is {} lines (consider refactoring)", fn_line, fn_length),
+                    target_files: vec![file_path.to_string()],
+                    expected_improvement: "Consider splitting into smaller functions".to_string(),
+                    risk_level: RiskLevel::Low,
+                });
+            }
+        }
+
+        opportunities
+    }
+
+    /// Identify deeply nested code that could be flattened
+    fn identify_nesting(&self, file_path: &str, content: &str) -> Vec<RefactorOpportunity> {
+        let mut opportunities = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+
+        let mut fn_depth = 0;
+        let mut max_depth = 0;
+        let mut in_fn = false;
+        let mut fn_start_line = 0;
+
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            
+            if trimmed.starts_with("fn ") || trimmed.starts_with("async fn ") {
+                in_fn = true;
+                fn_depth = 0;
+                fn_start_line = idx;
+            }
+            
+            if in_fn {
+                fn_depth += line.matches('{').count() as i32;
+                fn_depth -= line.matches('}').count() as i32;
+                max_depth = max_depth.max(fn_depth);
+
+                if fn_depth <= 0 && trimmed.ends_with('}') {
+                    in_fn = false;
+                    if max_depth > 5 {
+                        let fn_name = lines[fn_start_line].trim();
+                        opportunities.push(RefactorOpportunity {
+                            description: format!("Function '{}' has {} levels of nesting", fn_name, max_depth),
+                            target_files: vec![file_path.to_string()],
+                            expected_improvement: "Use early returns, guard clauses, or extract nested logic".to_string(),
+                            risk_level: RiskLevel::Medium,
+                        });
+                    }
+                    max_depth = 0;
+                }
+            }
+        }
+
+        opportunities
+    }
+
+    /// Identify opportunities for using iterator adapters instead of loops
+    fn identify_iterators(&self, file_path: &str, content: &str) -> Vec<RefactorOpportunity> {
+        let mut opportunities = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+
+        for (idx, line) in lines.iter().enumerate() {
+            let trimmed = line.trim();
+            
+            // Look for collectInto Vec, then iterate
+            if trimmed.contains("let mut ")
+                && (trimmed.contains(".push(") || trimmed.contains(".insert("))
+                && idx + 1 < lines.len()
+            {
+                let next_line = lines[idx + 1].trim();
+                if next_line.contains("for ") && next_line.contains(" in ") {
+                    // Could potentially use .map().collect() instead
+                    opportunities.push(RefactorOpportunity {
+                        description: format!("Loop at line {} could use iterator adapter", idx + 1),
+                        target_files: vec![file_path.to_string()],
+                        expected_improvement: "Replace for loop with .map().collect() for conciseness".to_string(),
+                        risk_level: RiskLevel::Low,
+                    });
+                }
+            }
+        }
+
+        opportunities
+    }
+
+    /// Perform LLM-based refactoring analysis if LLM is available
+    async fn perform_llm_analysis(
+        &self,
+        files: &[(String, String)],
+        task_description: &str,
+    ) -> Result<Vec<RefactorOpportunity>, SwellError> {
+        let Some(llm) = &self.llm else {
+            return Ok(Vec::new());
+        };
+
+        let file_summaries: Vec<String> = files
+            .iter()
+            .take(5) // Limit to first 5 files
+            .map(|(path, content)| {
+                format!("File: {}\n```rust\n{}\n```", path, &content[..content.len().min(2000)])
+            })
+            .collect();
+
+        let prompt = format!(
+            r#"You are a refactoring expert for a Rust project. Identify refactoring opportunities that:
+1. Improve code structure and readability
+2. Reduce code duplication
+3. Simplify complex logic
+4. Improve performance
+5. Preserve external behavior (API contracts)
+
+Task description: {}
+
+Files to analyze:
+{}
+
+Provide your refactoring opportunities as a JSON array:
+{{
+  "opportunities": [
+    {{
+      "description": "Description of the refactoring",
+      "target_files": ["file1.rs", "file2.rs"],
+      "expected_improvement": "What improvement this makes",
+      "risk_level": "low|medium|high"
+    }}
+  ]
+}}
+
+Focus on impactful refactorings that preserve behavior. Be specific and actionable."#,
+            task_description,
+            file_summaries.join("\n\n")
+        );
+
+        let messages = vec![
+            LlmMessage {
+                role: LlmRole::User,
+                content: prompt,
+            },
+        ];
+
+        let config = LlmConfig {
+            temperature: 0.3,
+            max_tokens: 3000,
+            stop_sequences: None,
+        };
+
+        let response = llm.chat(messages, None, config).await?;
+
+        // Parse the LLM response
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&response.content) {
+            let opportunities: Vec<RefactorOpportunity> = json["opportunities"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|opp| {
+                            let risk_str = opp["risk_level"].as_str().unwrap_or("medium");
+                            let risk_level = match risk_str.to_lowercase().as_str() {
+                                "low" => RiskLevel::Low,
+                                "high" => RiskLevel::High,
+                                _ => RiskLevel::Medium,
+                            };
+                            
+                            Some(RefactorOpportunity {
+                                description: opp["description"].as_str()?.to_string(),
+                                target_files: opp["target_files"]
+                                    .as_array()
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|v| v.as_str().map(String::from))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                                expected_improvement: opp["expected_improvement"].as_str()?.to_string(),
+                                risk_level,
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            Ok(opportunities)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Assess overall risk of the refactoring plan
+    fn assess_risk(opportunities: &[RefactorOpportunity]) -> String {
+        if opportunities.is_empty() {
+            return "No refactoring opportunities identified".to_string();
+        }
+
+        let high_risk_count = opportunities.iter()
+            .filter(|o| o.risk_level == RiskLevel::High)
+            .count();
+        let medium_risk_count = opportunities.iter()
+            .filter(|o| o.risk_level == RiskLevel::Medium)
+            .count();
+        let low_risk_count = opportunities.iter()
+            .filter(|o| o.risk_level == RiskLevel::Low)
+            .count();
+
+        if high_risk_count > 0 {
+            format!(
+                "High risk: {} opportunities, Medium: {}, Low: {}. Recommend thorough testing.",
+                high_risk_count, medium_risk_count, low_risk_count
+            ).to_string()
+        } else if medium_risk_count > 2 {
+            format!(
+                "Medium risk: {} opportunities, Low: {}. Standard refactoring with validation recommended.",
+                medium_risk_count, low_risk_count
+            ).to_string()
+        } else {
+            format!(
+                "Low risk: {} opportunities identified. Safe to proceed with standard validation.",
+                low_risk_count + medium_risk_count
+            ).to_string()
+        }
+    }
+}
+
+/// Simple MD5 hash for content comparison
+fn md5_hash(input: &str) -> u32 {
+    let mut hash: u32 = 0;
+    for (i, byte) in input.bytes().enumerate() {
+        hash = hash.wrapping_add((byte as u32).wrapping_mul(31_u32.wrapping_pow(i as u32)));
+    }
+    hash
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2639,31 +3014,129 @@ impl Agent for RefactorerAgent {
     }
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
+        let workspace_path = context.workspace_path.as_deref().unwrap_or(".");
+        
         let task_context = format!(
-            "Task: {}\n\nIdentify refactoring opportunities.",
+            "Task: {}\n\nIdentify refactoring opportunities that preserve behavior.",
             context.task.description
         );
         
         let _prompt = self.system_prompt_builder.build(&task_context, &context.memory_blocks);
         
-        let plan = RefactorPlan {
-            opportunities: vec![
-                RefactorOpportunity {
-                    description: "Extract helper function for duplicated logic".to_string(),
-                    target_files: vec!["src/modified.rs".to_string()],
-                    expected_improvement: "Reduce code duplication by 20%".to_string(),
-                    risk_level: RiskLevel::Low,
+        // If no tool registry is configured, use stub mode
+        if self.tool_registry.is_none() && self.llm.is_none() {
+            let plan = RefactorPlan {
+                opportunities: vec![
+                    RefactorOpportunity {
+                        description: "Extract helper function for duplicated logic".to_string(),
+                        target_files: vec!["src/modified.rs".to_string()],
+                        expected_improvement: "Reduce code duplication by 20%".to_string(),
+                        risk_level: RiskLevel::Low,
+                    }
+                ],
+                risk_assessment: "Low risk refactoring identified".to_string(),
+                preserved_behavior: true,
+            };
+
+            return Ok(AgentResult {
+                success: true,
+                output: serde_json::to_string(&plan).unwrap_or_default(),
+                tool_calls: vec![],
+                tokens_used: 700,
+                error: None,
+            });
+        }
+
+        // Extract affected files from plan
+        let affected_files = Self::extract_affected_files(&context);
+        
+        let mut all_opportunities = Vec::new();
+        let mut tool_calls = Vec::new();
+        let mut file_contents = Vec::new();
+
+        // Read and analyze each affected file
+        for file_path in &affected_files {
+            let start = std::time::Instant::now();
+            
+            match self.read_file(file_path).await {
+                Ok(content) => {
+                    let duration_ms = start.elapsed().as_millis() as u64;
+                    
+                    tool_calls.push(ToolCallResult {
+                        tool_name: "read_file".to_string(),
+                        arguments: serde_json::json!({ "path": file_path }),
+                        result: Ok(format!("Read {} bytes", content.len())),
+                        duration_ms,
+                    });
+
+                    file_contents.push((file_path.clone(), content.clone()));
+
+                    // Analyze the file for refactoring opportunities
+                    let duplication_opps = self.identify_duplication(file_path, &content);
+                    let long_fn_opps = self.identify_long_functions(file_path, &content);
+                    let nesting_opps = self.identify_nesting(file_path, &content);
+                    let iterator_opps = self.identify_iterators(file_path, &content);
+
+                    all_opportunities.extend(duplication_opps);
+                    all_opportunities.extend(long_fn_opps);
+                    all_opportunities.extend(nesting_opps);
+                    all_opportunities.extend(iterator_opps);
                 }
-            ],
-            risk_assessment: "Low risk refactoring identified".to_string(),
-            preserved_behavior: true,
+                Err(e) => {
+                    tool_calls.push(ToolCallResult {
+                        tool_name: "read_file".to_string(),
+                        arguments: serde_json::json!({ "path": file_path }),
+                        result: Err(e.to_string()),
+                        duration_ms: start.elapsed().as_millis() as u64,
+                    });
+                }
+            }
+        }
+
+        // Perform LLM-based analysis if available
+        if !file_contents.is_empty() {
+            let llm_opportunities = self.perform_llm_analysis(&file_contents, &context.task.description).await?;
+            all_opportunities.extend(llm_opportunities);
+        }
+
+        // Deduplicate opportunities by description
+        let mut seen_descriptions = std::collections::HashSet::new();
+        all_opportunities.retain(|opp| {
+            seen_descriptions.insert(opp.description.clone())
+        });
+
+        // Sort by risk level (high first)
+        fn risk_ordinal(r: &RiskLevel) -> u8 {
+            match r {
+                RiskLevel::High => 2,
+                RiskLevel::Medium => 1,
+                RiskLevel::Low => 0,
+            }
+        }
+        all_opportunities.sort_by(|a, b| {
+            risk_ordinal(&b.risk_level).cmp(&risk_ordinal(&a.risk_level))
+        });
+
+        // Limit to top 10 opportunities
+        all_opportunities.truncate(10);
+
+        let risk_assessment = Self::assess_risk(&all_opportunities);
+
+        let plan = RefactorPlan {
+            opportunities: all_opportunities,
+            risk_assessment,
+            preserved_behavior: true, // We assume behavior is preserved until proven otherwise
         };
+
+        let output = serde_json::to_string(&plan).map_err(|e| {
+            SwellError::LlmError(format!("Failed to serialize refactor plan: {}", e))
+        })?;
 
         Ok(AgentResult {
             success: true,
-            output: serde_json::to_string(&plan).unwrap_or_default(),
-            tool_calls: vec![],
-            tokens_used: 700,
+            output,
+            tool_calls,
+            tokens_used: 1000 + (file_contents.len() as u64 * 100),
             error: None,
         })
     }
@@ -3623,6 +4096,264 @@ Then they should see all admin options
         
         let plan: RefactorPlan = serde_json::from_str(&result.output).unwrap();
         assert!(plan.preserved_behavior);
+    }
+
+    #[tokio::test]
+    async fn test_refactorer_agent_with_plan_extracts_files() {
+        let agent = RefactorerAgent::new("claude-sonnet".to_string());
+        
+        let mut task = Task::new("Refactor auth module".to_string());
+        task.plan = Some(Plan {
+            id: Uuid::new_v4(),
+            task_id: task.id,
+            steps: vec![
+                PlanStep {
+                    id: Uuid::new_v4(),
+                    description: "Refactor auth".to_string(),
+                    affected_files: vec!["src/auth.rs".to_string(), "src/models/user.rs".to_string()],
+                    expected_tests: vec![],
+                    risk_level: RiskLevel::Medium,
+                    dependencies: vec![],
+                    status: StepStatus::Pending,
+                },
+            ],
+            total_estimated_tokens: 5000,
+            risk_assessment: "Medium risk".to_string(),
+        });
+        
+        let context = AgentContext {
+            task,
+            memory_blocks: vec![],
+            session_id: Uuid::new_v4(),
+            workspace_path: Some("/workspace".to_string()),
+        };
+        
+        // Test that extract_affected_files works correctly
+        let files = RefactorerAgent::extract_affected_files(&context);
+        assert_eq!(files.len(), 2);
+        assert!(files.contains(&"src/auth.rs".to_string()));
+        assert!(files.contains(&"src/models/user.rs".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_refactorer_identify_long_functions() {
+        let agent = RefactorerAgent::new("claude-sonnet".to_string());
+        
+        let content = r#"
+fn very_long_function() {
+    let x = 1;
+    let y = 2;
+    let z = 3;
+    let a = 4;
+    let b = 5;
+    let c = 6;
+    let d = 7;
+    let e = 8;
+    let f = 9;
+    let g = 10;
+    let h = 11;
+    let i = 12;
+    let j = 13;
+    let k = 14;
+    let l = 15;
+    let m = 16;
+    let n = 17;
+    let o = 18;
+    let p = 19;
+    let q = 20;
+    let r = 21;
+    let s = 22;
+    let t = 23;
+    let u = 24;
+    let v = 25;
+    let w = 26;
+    let y = 27;
+    let z = 28;
+    let aa = 29;
+    let ab = 30;
+    let ac = 31;
+    let ad = 32;
+    let ae = 33;
+    let af = 34;
+    let ag = 35;
+    let ah = 36;
+    let ai = 37;
+    let aj = 38;
+    let ak = 39;
+    let al = 40;
+    let am = 41;
+    let an = 42;
+    let ao = 43;
+    let ap = 44;
+    let aq = 45;
+    let ar = 46;
+    let as = 47;
+    let at = 48;
+    let au = 49;
+    let av = 50;
+    let aw = 51;
+    let ax = 52;
+    let ay = 53;
+    let az = 54;
+    let ba = 55;
+    let bb = 56;
+    let bc = 57;
+    let bd = 58;
+    let be = 59;
+    let bf = 60;
+    let bg = 61;
+    let bh = 62;
+    let bi = 63;
+    let bj = 64;
+    let bk = 65;
+    let bl = 66;
+    let bm = 67;
+    let bn = 68;
+    let bo = 69;
+    let bp = 70;
+    let bq = 71;
+    let br = 72;
+    let bs = 73;
+    let bt = 74;
+    let bu = 75;
+    let bv = 76;
+    let bw = 77;
+    let bx = 78;
+    let by = 79;
+    let bz = 80;
+    let ca = 81;
+    let cb = 82;
+    let cc = 83;
+    let cd = 84;
+    let ce = 85;
+    let cf = 86;
+    let cg = 87;
+    let ch = 88;
+    let ci = 89;
+    let cj = 90;
+    let ck = 91;
+    let cl = 92;
+    let cm = 93;
+    let cn = 94;
+    let co = 95;
+    let cp = 96;
+    let cq = 97;
+    let cr = 98;
+    let cs = 99;
+    let ct = 100;
+    println!("done");
+}
+"#;
+        
+        let opps = agent.identify_long_functions("test.rs", content);
+        assert!(!opps.is_empty());
+        
+        // The function is over 100 lines, should be identified
+        let long_fn_opp = opps.iter().find(|o| o.description.contains("very_long_function"));
+        assert!(long_fn_opp.is_some());
+        assert_eq!(long_fn_opp.unwrap().risk_level, RiskLevel::Low);
+    }
+
+    #[tokio::test]
+    async fn test_refactorer_identify_nesting() {
+        let agent = RefactorerAgent::new("claude-sonnet".to_string());
+        
+        let content = r#"
+fn deeply_nested() {
+    if condition1 {
+        if condition2 {
+            if condition3 {
+                if condition4 {
+                    if condition5 {
+                        if condition6 {
+                            println!("deeply nested");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+"#;
+        
+        let opps = agent.identify_nesting("test.rs", content);
+        assert!(!opps.is_empty());
+        
+        let nesting_opp = opps.iter().find(|o| o.description.contains("nesting"));
+        assert!(nesting_opp.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_refactorer_assess_risk() {
+        use super::{RefactorOpportunity, RefactorPlan};
+        
+        // Empty opportunities
+        let risk = RefactorerAgent::assess_risk(&[]);
+        assert!(risk.contains("No refactoring opportunities"));
+        
+        // Low risk only
+        let low_risk_opps = vec![
+            RefactorOpportunity {
+                description: "Minor refactor".to_string(),
+                target_files: vec!["test.rs".to_string()],
+                expected_improvement: "Cleaner code".to_string(),
+                risk_level: RiskLevel::Low,
+            }
+        ];
+        let risk = RefactorerAgent::assess_risk(&low_risk_opps);
+        assert!(risk.contains("Low risk"));
+        
+        // High risk present
+        let high_risk_opps = vec![
+            RefactorOpportunity {
+                description: "Major refactor".to_string(),
+                target_files: vec!["test.rs".to_string()],
+                expected_improvement: "Better structure".to_string(),
+                risk_level: RiskLevel::High,
+            }
+        ];
+        let risk = RefactorerAgent::assess_risk(&high_risk_opps);
+        assert!(risk.contains("High risk"));
+    }
+
+    #[tokio::test]
+    async fn test_refactor_plan_serialization() {
+        let plan = RefactorPlan {
+            opportunities: vec![
+                RefactorOpportunity {
+                    description: "Extract helper".to_string(),
+                    target_files: vec!["src/main.rs".to_string()],
+                    expected_improvement: "Less duplication".to_string(),
+                    risk_level: RiskLevel::Low,
+                }
+            ],
+            risk_assessment: "Low risk refactoring".to_string(),
+            preserved_behavior: true,
+        };
+        
+        let json = serde_json::to_string(&plan).unwrap();
+        let parsed: RefactorPlan = serde_json::from_str(&json).unwrap();
+        
+        assert!(parsed.preserved_behavior);
+        assert_eq!(parsed.opportunities.len(), 1);
+        assert_eq!(parsed.opportunities[0].risk_level, RiskLevel::Low);
+    }
+
+    #[tokio::test]
+    async fn test_refactor_opportunity_serialization() {
+        let opp = RefactorOpportunity {
+            description: "Test description".to_string(),
+            target_files: vec!["a.rs".to_string(), "b.rs".to_string()],
+            expected_improvement: "Improved maintainability".to_string(),
+            risk_level: RiskLevel::Medium,
+        };
+        
+        let json = serde_json::to_string(&opp).unwrap();
+        let parsed: RefactorOpportunity = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(parsed.description, "Test description");
+        assert_eq!(parsed.target_files.len(), 2);
+        assert!(matches!(parsed.risk_level, RiskLevel::Medium));
     }
 
     // ========================================================================
