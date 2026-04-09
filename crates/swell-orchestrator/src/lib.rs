@@ -5,14 +5,17 @@
 //! The orchestrator manages:
 //! - [`Orchestrator`] - main coordinator
 //! - [`TaskStateMachine`] - state transitions
+//! - [`TaskGraph`] - dependency tracking and execution ordering
 //! - [`AgentPool`] - manages agent instances
 //! - [`ExecutionController`] - handles parallel execution
 
 pub mod state_machine;
+pub mod task_graph;
 pub mod agents;
 pub mod execution;
 
 pub use state_machine::TaskStateMachine;
+pub use task_graph::TaskGraph;
 pub use agents::{AgentPool, AgentHandle, PlannerAgent, GeneratorAgent, EvaluatorAgent};
 pub use execution::ExecutionController;
 
