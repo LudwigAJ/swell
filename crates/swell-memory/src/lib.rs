@@ -68,6 +68,15 @@ pub use meta_cognitive::{
     PromptingStrategy, Recommendation, SqliteMetaCognitiveStore, TaskType,
 };
 
+// Time-based decay module - Different decay rates per memory type:
+// Procedural (slow): 0.99^(days), Environmental (medium): 0.95^(days), Buffer (fast): 0.90^(days)
+pub mod decay;
+
+pub use decay::{
+    apply_decay, buffer_decay_rate, calculate_decay, days_since, decay_rate_for_block_type,
+    environmental_decay_rate, procedural_decay_rate, DecayRate, DecayedScore,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
