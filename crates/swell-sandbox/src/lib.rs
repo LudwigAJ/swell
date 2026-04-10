@@ -1,8 +1,27 @@
-//! swell-sandbox - Sandbox management (Firecracker, E2B)
+//! swell-sandbox - Sandbox management (Firecracker, gVisor, E2B)
 //!
-//! This crate provides sandboxed execution environments using Firecracker microVMs
-//! for strong isolation. The current implementation is a stub that can be extended
-//! with real Firecracker integration later.
+//! This crate provides sandboxed execution environments using various isolation
+//! technologies:
+//! - Firecracker microVMs for kernel-level isolation (requires KVM)
+//! - gVisor (runsc) for user-space syscall interception
+//! - Docker containers for lightweight isolation
+//!
+//! ## Usage
+//!
+//! ```rust,ignore
+//! use swell_sandbox::{FirecrackerSandbox, GvisorSandbox};
+//!
+//! // Firecracker (requires KVM)
+//! let firecracker = FirecrackerSandbox::with_params("vm-1".to_string(), 256);
+//!
+//! // gVisor (works with Docker)
+//! let config = GvisorConfig::default();
+//! let gvisor = GvisorSandbox::new(config);
+//! ```
+
+mod gvisor;
+
+pub use gvisor::{GvisorConfig, GvisorNetworkMode, GvisorSandbox};
 
 use async_trait::async_trait;
 use swell_core::{Sandbox, SandboxCommand, SandboxOutput, SwellError};
