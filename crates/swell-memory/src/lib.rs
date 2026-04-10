@@ -32,6 +32,14 @@ pub mod event_log;
 // Recall module - BM25 keyword search and temporal queries for conversation logs
 pub mod recall;
 
+// Triple-stream retrieval module - Vector + BM25 + Graph traversal with Reciprocal Rank Fusion
+pub mod triple_stream;
+
+pub use triple_stream::{
+    TripleStreamConfig, TripleStreamQuery, TripleStreamResult, TripleStreamService,
+    ReciprocalRankFusion, GraphTraversal,
+};
+
 // Skill extraction module - Extracts reusable procedures from successful task trajectories
 pub mod skill_extraction;
 
