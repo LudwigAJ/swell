@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -20,95 +20,56 @@
     }
   },
   "reviewsSummary": {
-    "total": 24,
-    "passed": 16,
-    "failed": 8,
+    "total": 5,
+    "passed": 3,
+    "failed": 2,
     "failedFeatures": [
-      "memory-pattern-learning",
-      "mem-event-log-jsonl",
-      "mem-episodic-memory",
-      "mem-deprecation",
-      "mem-scoping",
-      "mem-cross-encoder-rerank",
-      "mem-provenance-tracking",
-      "mem-triple-stream-retrieval"
+      "memory-skill-extraction",
+      "memory-pattern-learning"
     ]
   },
   "blockingIssues": [
     {
+      "featureId": "memory-skill-extraction",
+      "severity": "blocking",
+      "description": "Skills are stored in `.skills` directory but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. The ExtractionConfig defaults store_path to `.skills` which does not match the documented skill discovery path. Extracted skills will not be discoverable by the system's skill discovery mechanism."
+    },
+    {
+      "featureId": "memory-skill-extraction",
+      "severity": "blocking",
+      "description": "TrajectoryAnalyzer has #[allow(dead_code)] and its store field is never used for database lookups. The analyzer appears designed to query historical trajectory data but currently only processes input in memory."
+    },
+    {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: confidence calculation uses sum of all pattern frequencies instead of per-pattern frequency. Line 1143: convention parsing uses wrong string slice index [3..] instead of [4..]. Line 1175: get_anti_patterns_for_error is an unimplemented stub returning empty vec."
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (`frequency_map.values().sum()`) as denominator instead of per-pattern frequency. Still NOT FIXED from round 1."
     },
     {
-      "featureId": "mem-event-log-jsonl",
+      "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Lines 196, 218, 237, 253, 271: unwrap_or_default() silently swallows JSON serialization errors, risking lost audit trail data. Should propagate error or handle explicitly."
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. Still NOT FIXED from round 1."
     },
     {
-      "featureId": "mem-episodic-memory",
+      "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "EventType::Observation and ObservationPayload are defined but log_observation() method is missing from EventLog. The expectedBehavior requires 'Stores observations and outcomes immutably' but only log_outcome() exists."
-    },
-    {
-      "featureId": "mem-deprecation",
-      "severity": "blocking",
-      "description": "MemoryEntry does not have a confidence field (added in mem-confidence-bayesian but not integrated). SqliteMemoryStore database schema has no deprecation columns. Deprecatable trait is dead code since MemoryEntry doesn't implement it."
-    },
-    {
-      "featureId": "mem-scoping",
-      "severity": "blocking",
-      "description": "get_by_type(), get_by_label(), and get_by_provenance() do NOT filter by repository - return ALL memories across ALL repositories. Violates 'cross-repo memories isolated by default' requirement. Root cause: MemoryStore trait doesn't include repository parameters for these methods."
-    },
-    {
-      "featureId": "mem-cross-encoder-rerank",
-      "severity": "blocking",
-      "description": "Feature description requires 'BGE-reranker for cross-encoder reranking' but only SimpleReranker is implemented. RerankerModelType::Bge falls through to SimpleReranker - no ONNX model loading or actual BGE inference exists."
-    },
-    {
-      "featureId": "mem-provenance-tracking",
-      "severity": "blocking",
-      "description": "search() does NOT filter by source_episode_id despite it being in MemoryQuery. The handoff claimed 4 provenance tests but they don't exist in codebase."
-    },
-    {
-      "featureId": "mem-triple-stream-retrieval",
-      "severity": "blocking",
-      "description": "BM25 search stream (line 620) generates Uuid::new_v4() instead of using actual RecallResult.entry_id. This breaks RRF fusion since IDs don't match actual memory entries."
+      "description": "Line 1169: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. Still NOT FIXED from round 1."
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Document the error handling convention: 'All fallible operations return Result<T, SwellError>' - several features used Option or io::Error instead, and the event_log module uses io::Error directly rather than SwellError/thiserror.",
-      "evidence": "mem-event-log-jsonl (io::Error), mem-deprecation (Option return), mem-confidence-bayesian (proper Result usage documented)",
+      "suggestion": "Clarify the skill store path convention: skill extraction outputs to `.skills/` but AGENTS.md documents `.swell/skills/` as the user-extensible skill directory. Either (a) update skill_extraction.rs to use `.swell/skills/` as the default store path, or (b) update AGENTS.md to document both locations with different purposes.",
+      "evidence": "memory-skill-extraction stores to `.skills/` (line 107) but AGENTS.md line ~210 states 'Users can add new skills to .swell/skills/ - no code changes needed. SWELL discovers skills at startup.'",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the skills directory structure more explicitly. The memory-skill-extraction feature extracts skills to `.skills/` but the existing skill discovery reads from `.swell/skills/`. There's a disconnect between skill extraction and skill discovery.",
+      "evidence": "memory-skill-extraction review found skills stored in `.skills/` but discovery mechanism expects `.swell/skills/`. Workers are confused about which location to use.",
       "isSystemic": true
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Clarify skills directory convention: '.swell/skills/' per AGENTS.md vs '.skills/' used by some features. The memory-skill-extraction feature uses '.skills' default which conflicts with documented convention.",
-      "evidence": "memory-skill-extraction stores to '.skills' but AGENTS.md shows '.swell/skills/rust-coding/SKILL.md' structure",
-      "isSystemic": false
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Add guidance on magic numbers and tuning parameters. The mem-meta-cognitive feature has hardcoded weights (100_000.0, 60_000.0, 0.3/0.2/0.5) with no documentation on how to manage such values.",
-      "evidence": "mem-meta-cognitive composite_score() uses hardcoded weights per task type",
-      "isSystemic": false
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Clarify parse/fallback patterns for FromStr conversions - whether they should be fallible (Result) or use silent defaults like SemanticEntityType::parse() does.",
-      "evidence": "mem-semantic-memory uses silent defaults in parse methods, no guidance in AGENTS.md or Rust skill",
-      "isSystemic": false
-    },
-    {
-      "target": "skills/rust",
-      "suggestion": "Add note about #[async_trait] macro usage - new developers might not know to use it without checking existing code.",
-      "evidence": "mem-contrastive-learning review notes async_trait pattern not mentioned in Rust skill",
-      "isSystemic": false
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json"
 }
