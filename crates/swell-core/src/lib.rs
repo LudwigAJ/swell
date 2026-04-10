@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod circuit_breaker;
 pub mod error;
 pub mod kill_switch;
@@ -6,6 +7,10 @@ pub mod tracing_json;
 pub mod traits;
 pub mod types;
 
+pub use audit::{
+    verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,
+    ChainVerificationResult, GENESIS_HASH,
+};
 pub use error::SwellError;
 pub use kill_switch::{
     EnvVarVerifier, FileVerifier, KillLevel, KillSwitchError, KillSwitchGuard, KillSwitchState,

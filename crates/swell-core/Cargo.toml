@@ -22,5 +22,9 @@ opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.16", optional = true }
 tracing-opentelemetry = "0.28"
 
+# Hashing for audit trail
+sha2.workspace = true
+
 [dev-dependencies]
 tokio-test.workspace = true
+tempfile.workspace = true
