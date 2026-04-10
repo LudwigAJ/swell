@@ -21,6 +21,7 @@ pub mod os_sandbox;
 pub mod pr_creation;
 pub mod registry;
 pub mod tools;
+pub mod vault;
 pub mod worktree_isolation;
 pub mod worktree_pool;
 
@@ -37,6 +38,10 @@ pub use conflict_resolution::{
 pub use credential_proxy::{
     AccessToken, Credential, CredentialProxy, CredentialProxyError, CredentialProvider,
     CredentialScope, EnvCredentialProvider,
+};
+pub use vault::{
+    AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType,
+    VaultClient, VaultClientConfig, VaultCredentialProvider, VaultDynamicSecret, VaultError,
 };
 pub use executor::ToolExecutor;
 pub use hybrid::{
