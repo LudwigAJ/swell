@@ -26,7 +26,7 @@ pub use events::{
 };
 pub use kill_switch::{
     EnvVarVerifier, FileVerifier, KillLevel, KillSwitchError, KillSwitchGuard, KillSwitchState,
-    KillSwitchVerifier, ScopeBlock, ThrottleConfig,
+    KillSwitchVerifier, RedisVerifier, ScopeBlock, ThrottleConfig,
 };
 pub use trace_waterfall::{
     SpanAttribute, SpanAttributeValue, SpanKind, ToTraceSpan, ToolSpanDetails, TraceSpan,

@@ -262,10 +262,7 @@ impl ToolRegistry {
             .iter()
             .map(|category| {
                 let is_loaded = loaded.contains(category);
-                let tool_count = index
-                    .get(category)
-                    .map(|v| v.len())
-                    .unwrap_or(0);
+                let tool_count = index.get(category).map(|v| v.len()).unwrap_or(0);
 
                 // Add factory count for unloaded categories
                 let factory_count = factories
@@ -414,7 +411,10 @@ mod tests {
         fn input_schema(&self) -> serde_json::Value {
             serde_json::json!({})
         }
-        async fn execute(&self, _: serde_json::Value) -> Result<ToolOutput, swell_core::SwellError> {
+        async fn execute(
+            &self,
+            _: serde_json::Value,
+        ) -> Result<ToolOutput, swell_core::SwellError> {
             Ok(ToolOutput {
                 success: true,
                 result: "executed".to_string(),
@@ -455,7 +455,11 @@ mod tests {
         let categories = registry.list_categories().await;
         assert_eq!(categories.len(), 7);
         for cat in categories {
-            assert!(!cat.is_loaded, "Category {:?} should not be loaded initially", cat.category);
+            assert!(
+                !cat.is_loaded,
+                "Category {:?} should not be loaded initially",
+                cat.category
+            );
         }
     }
 
@@ -465,13 +469,22 @@ mod tests {
 
         // Register tools in different categories
         registry
-            .register(MockTool::new("file_tool", ToolCategory::File), ToolCategory::File)
+            .register(
+                MockTool::new("file_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
             .await;
         registry
-            .register(MockTool::new("git_tool", ToolCategory::Git), ToolCategory::Git)
+            .register(
+                MockTool::new("git_tool", ToolCategory::Git),
+                ToolCategory::Git,
+            )
             .await;
         registry
-            .register(MockTool::new("shell_tool", ToolCategory::Shell), ToolCategory::Shell)
+            .register(
+                MockTool::new("shell_tool", ToolCategory::Shell),
+                ToolCategory::Shell,
+            )
             .await;
 
         // Verify all tools are registered
@@ -486,13 +499,22 @@ mod tests {
         let registry = ToolRegistry::new();
 
         registry
-            .register(MockTool::new("file_tool_1", ToolCategory::File), ToolCategory::File)
+            .register(
+                MockTool::new("file_tool_1", ToolCategory::File),
+                ToolCategory::File,
+            )
             .await;
         registry
-            .register(MockTool::new("file_tool_2", ToolCategory::File), ToolCategory::File)
+            .register(
+                MockTool::new("file_tool_2", ToolCategory::File),
+                ToolCategory::File,
+            )
             .await;
         registry
-            .register(MockTool::new("git_tool", ToolCategory::Git), ToolCategory::Git)
+            .register(
+                MockTool::new("git_tool", ToolCategory::Git),
+                ToolCategory::Git,
+            )
             .await;
 
         // List by category
@@ -512,15 +534,10 @@ mod tests {
         let load_count_clone = load_count.clone();
 
         registry
-            .register_factory(
-                "deferred_tool".to_string(),
-                ToolCategory::File,
-                move || {
-                    let count = load_count_clone.clone();
-                    Arc::new(MockTool::new("deferred_tool", ToolCategory::File))
-                        as Arc<dyn Tool>
-                },
-            )
+            .register_factory("deferred_tool".to_string(), ToolCategory::File, move || {
+                let count = load_count_clone.clone();
+                Arc::new(MockTool::new("deferred_tool", ToolCategory::File)) as Arc<dyn Tool>
+            })
             .await;
 
         // Tool should be in registry (as a factory) but not yet loaded
@@ -548,8 +565,7 @@ mod tests {
             let registry_name = name.clone();
             registry
                 .register_factory(name, ToolCategory::Misc, move || {
-                    Arc::new(MockTool::new(&registry_name, ToolCategory::Misc))
-                        as Arc<dyn Tool>
+                    Arc::new(MockTool::new(&registry_name, ToolCategory::Misc)) as Arc<dyn Tool>
                 })
                 .await;
         }
@@ -581,18 +597,19 @@ mod tests {
 
         // Register a regular tool
         registry
-            .register(MockTool::new("regular_tool", ToolCategory::File), ToolCategory::File)
+            .register(
+                MockTool::new("regular_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
             .await;
         assert_eq!(registry.count().await, 1);
         assert_eq!(registry.loaded_count().await, 1);
 
         // Register a factory
         registry
-            .register_factory(
-                "factory_tool".to_string(),
-                ToolCategory::Git,
-                || Arc::new(MockTool::new("factory_tool", ToolCategory::Git)) as Arc<dyn Tool>,
-            )
+            .register_factory("factory_tool".to_string(), ToolCategory::Git, || {
+                Arc::new(MockTool::new("factory_tool", ToolCategory::Git)) as Arc<dyn Tool>
+            })
             .await;
         assert_eq!(registry.count().await, 2); // Total = 1 loaded + 1 factory
         assert_eq!(registry.loaded_count().await, 1); // Still only 1 loaded
@@ -604,10 +621,16 @@ mod tests {
 
         // MockTool defaults to ToolRiskLevel::Read
         registry
-            .register(MockTool::new("read_tool", ToolCategory::File), ToolCategory::File)
+            .register(
+                MockTool::new("read_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
             .await;
         registry
-            .register(MockTool::new("another_read_tool", ToolCategory::File), ToolCategory::File)
+            .register(
+                MockTool::new("another_read_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
             .await;
 
         let read_tools = registry.by_risk_level(ToolRiskLevel::Read).await;
@@ -620,7 +643,10 @@ mod tests {
 
         // Register tools
         registry
-            .register(MockTool::new("tool1", ToolCategory::File), ToolCategory::File)
+            .register(
+                MockTool::new("tool1", ToolCategory::File),
+                ToolCategory::File,
+            )
             .await;
 
         // File category should be marked as loaded after registration
@@ -633,7 +659,10 @@ mod tests {
         let registry = ToolRegistry::new();
 
         registry
-            .register(MockTool::new("my_tool", ToolCategory::Search), ToolCategory::Search)
+            .register(
+                MockTool::new("my_tool", ToolCategory::Search),
+                ToolCategory::Search,
+            )
             .await;
 
         let tools = registry.list_by_category(ToolCategory::Search).await;

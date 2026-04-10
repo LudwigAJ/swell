@@ -278,7 +278,11 @@ impl ToolLoopTracker {
         }
 
         let config = &self.config;
-        let executions: Vec<_> = history.iter().rev().take(config.oscillation_window_size).collect();
+        let executions: Vec<_> = history
+            .iter()
+            .rev()
+            .take(config.oscillation_window_size)
+            .collect();
 
         // Determine if we have enough executions for pattern detection
         let has_enough_executions = total_executions >= config.min_executions_for_detection;
@@ -306,10 +310,7 @@ impl ToolLoopTracker {
         // Same-tool retry detection
         if has_enough_executions && same_tool_streak >= config.same_tool_retry_threshold {
             loop_detected = true;
-            severity = self.calculate_severity(
-                same_tool_streak,
-                config.same_tool_retry_threshold,
-            );
+            severity = self.calculate_severity(same_tool_streak, config.same_tool_retry_threshold);
             loop_pattern = Some(LoopPattern::new(
                 LoopPatternType::SameToolRetry,
                 vec![last_tool.unwrap_or_else(|| "unknown".to_string())],
@@ -321,10 +322,8 @@ impl ToolLoopTracker {
 
         // Oscillation detection (higher priority if more severe)
         if oscillation_count >= config.oscillation_threshold {
-            let oscillation_severity = self.calculate_severity(
-                oscillation_count,
-                config.oscillation_threshold,
-            );
+            let oscillation_severity =
+                self.calculate_severity(oscillation_count, config.oscillation_threshold);
             if oscillation_severity > severity {
                 loop_detected = true;
                 severity = oscillation_severity;
@@ -443,10 +442,7 @@ impl ToolLoopTracker {
 
     /// Get the tools involved in oscillation
     fn get_oscillating_tools(&self, executions: &[&ToolExecution]) -> Vec<String> {
-        let mut tools: Vec<String> = executions
-            .iter()
-            .map(|e| e.tool_name.clone())
-            .collect();
+        let mut tools: Vec<String> = executions.iter().map(|e| e.tool_name.clone()).collect();
         tools.dedup();
         tools.truncate(4); // Limit to first 4 unique tools
         tools

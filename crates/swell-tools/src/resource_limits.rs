@@ -55,8 +55,8 @@ impl Default for SessionLimits {
         Self {
             max_turns: 100,
             wall_clock_timeout: Duration::from_secs(3600), // 1 hour default
-            token_cap: 1_000_000,                        // 1M tokens
-            cost_cap: 50.0,                               // $50 default
+            token_cap: 1_000_000,                          // 1M tokens
+            cost_cap: 50.0,                                // $50 default
             failure_threshold: 5,
         }
     }
@@ -391,11 +391,31 @@ impl SessionResourceTracker {
         let cost_limit = (self.limits.cost_cap * 100.0) as u64;
 
         ResourceLimitResult {
-            turns: LimitCheckResult::new("turns", turns_current, self.limits.max_turns as u64, self.warning_ratio),
-            wall_clock: LimitCheckResult::new("wall_clock", wall_clock_current, self.limits.wall_clock_timeout.as_secs(), self.warning_ratio),
-            tokens: LimitCheckResult::new("tokens", tokens_current, self.limits.token_cap, self.warning_ratio),
+            turns: LimitCheckResult::new(
+                "turns",
+                turns_current,
+                self.limits.max_turns as u64,
+                self.warning_ratio,
+            ),
+            wall_clock: LimitCheckResult::new(
+                "wall_clock",
+                wall_clock_current,
+                self.limits.wall_clock_timeout.as_secs(),
+                self.warning_ratio,
+            ),
+            tokens: LimitCheckResult::new(
+                "tokens",
+                tokens_current,
+                self.limits.token_cap,
+                self.warning_ratio,
+            ),
             cost: LimitCheckResult::new("cost", cost_current, cost_limit, self.warning_ratio),
-            failures: LimitCheckResult::new("failures", failures_current, self.limits.failure_threshold as u64, self.warning_ratio),
+            failures: LimitCheckResult::new(
+                "failures",
+                failures_current,
+                self.limits.failure_threshold as u64,
+                self.warning_ratio,
+            ),
         }
     }
 
@@ -719,7 +739,10 @@ mod tests {
         tracker.record_failure();
         tracker.record_failure();
         let error = tracker.get_first_error().unwrap();
-        assert!(matches!(error, ResourceLimitError::FailureThresholdExceeded { .. }));
+        assert!(matches!(
+            error,
+            ResourceLimitError::FailureThresholdExceeded { .. }
+        ));
 
         // Reset and test turns
         tracker.reset();
@@ -775,7 +798,10 @@ mod tests {
 
     #[test]
     fn test_resource_limit_error_display() {
-        let error = ResourceLimitError::MaxTurnsExceeded { current: 100, limit: 50 };
+        let error = ResourceLimitError::MaxTurnsExceeded {
+            current: 100,
+            limit: 50,
+        };
         assert!(error.to_string().contains("Max turns exceeded"));
 
         let error = ResourceLimitError::WallClockTimeoutExceeded {
@@ -784,20 +810,33 @@ mod tests {
         };
         assert!(error.to_string().contains("Wall-clock timeout exceeded"));
 
-        let error = ResourceLimitError::TokenCapExceeded { current: 1_000_000, limit: 500_000 };
+        let error = ResourceLimitError::TokenCapExceeded {
+            current: 1_000_000,
+            limit: 500_000,
+        };
         assert!(error.to_string().contains("Token cap exceeded"));
 
-        let error = ResourceLimitError::CostCapExceeded { current: 10.0, limit: 5.0 };
+        let error = ResourceLimitError::CostCapExceeded {
+            current: 10.0,
+            limit: 5.0,
+        };
         assert!(error.to_string().contains("Cost cap exceeded"));
 
-        let error = ResourceLimitError::FailureThresholdExceeded { current: 5, limit: 3 };
+        let error = ResourceLimitError::FailureThresholdExceeded {
+            current: 5,
+            limit: 3,
+        };
         assert!(error.to_string().contains("Failure threshold exceeded"));
     }
 
     #[test]
     fn test_resource_limit_error_limit_name() {
         assert_eq!(
-            ResourceLimitError::MaxTurnsExceeded { current: 100, limit: 50 }.limit_name(),
+            ResourceLimitError::MaxTurnsExceeded {
+                current: 100,
+                limit: 50
+            }
+            .limit_name(),
             "turns"
         );
         assert_eq!(
@@ -809,15 +848,27 @@ mod tests {
             "wall_clock"
         );
         assert_eq!(
-            ResourceLimitError::TokenCapExceeded { current: 1_000_000, limit: 500_000 }.limit_name(),
+            ResourceLimitError::TokenCapExceeded {
+                current: 1_000_000,
+                limit: 500_000
+            }
+            .limit_name(),
             "tokens"
         );
         assert_eq!(
-            ResourceLimitError::CostCapExceeded { current: 10.0, limit: 5.0 }.limit_name(),
+            ResourceLimitError::CostCapExceeded {
+                current: 10.0,
+                limit: 5.0
+            }
+            .limit_name(),
             "cost"
         );
         assert_eq!(
-            ResourceLimitError::FailureThresholdExceeded { current: 5, limit: 3 }.limit_name(),
+            ResourceLimitError::FailureThresholdExceeded {
+                current: 5,
+                limit: 3
+            }
+            .limit_name(),
             "failures"
         );
     }
@@ -828,12 +879,7 @@ mod tests {
 
         let mut tracker = SessionResourceTracker::with_default_limits();
 
-        let record = CostRecord::new(
-            Uuid::new_v4(),
-            "claude-3-5-sonnet".to_string(),
-            1000,
-            500,
-        );
+        let record = CostRecord::new(Uuid::new_v4(), "claude-3-5-sonnet".to_string(), 1000, 500);
 
         tracker.record_cost_record(&record);
 

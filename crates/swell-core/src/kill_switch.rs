@@ -231,6 +231,100 @@ impl KillSwitchVerifier for FileVerifier {
     }
 }
 
+/// Redis-based verifier for kill switch state
+///
+/// This verifier polls a Redis key to check for kill signals.
+/// The key should contain a kill level string (e.g., "full_stop", "network_kill").
+///
+/// # Configuration
+/// - `redis_url`: Redis connection URL (e.g., "redis://localhost:6379")
+/// - `key`: The Redis key to check (default: "swell:kill_switch")
+///
+/// # Example
+/// ```rust,ignore
+/// let verifier = RedisVerifier::new("redis://localhost:6379", "swell:kill_switch");
+/// let guard = KillSwitchGuard::new().with_verifier(Box::new(verifier));
+/// ```
+#[derive(Debug, Clone)]
+pub struct RedisVerifier {
+    /// Redis connection URL
+    redis_url: String,
+    /// Key to check in Redis
+    key: String,
+}
+
+impl RedisVerifier {
+    /// Create a new Redis verifier
+    ///
+    /// # Arguments
+    /// * `redis_url` - Redis connection URL (e.g., "redis://localhost:6379")
+    /// * `key` - The Redis key to check for kill signal (default: "swell:kill_switch")
+    pub fn new(redis_url: impl Into<String>, key: impl Into<String>) -> Self {
+        Self {
+            redis_url: redis_url.into(),
+            key: key.into(),
+        }
+    }
+
+    fn parse_level(value: &str) -> Option<KillLevel> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        match trimmed.to_lowercase().as_str() {
+            "full_stop" | "1" | "true" => Some(KillLevel::FullStop),
+            "network_kill" | "2" => Some(KillLevel::NetworkKill),
+            "scope_block" | "3" => Some(KillLevel::ScopeBlock),
+            "throttle" | "4" => Some(KillLevel::Throttle),
+            _ => None,
+        }
+    }
+}
+
+impl KillSwitchVerifier for RedisVerifier {
+    fn verify(&self) -> Option<KillLevel> {
+        // Note: This is a synchronous verification.
+        // If we're already in a Tokio runtime context, we can't nested block_on,
+        // so we use try_current() to detect that and handle gracefully.
+        if tokio::runtime::Handle::try_current().is_ok() {
+            // We're in a runtime - we can't nested block_on from within a runtime.
+            // Return None to indicate verification is not available from sync context.
+            // Callers should use verify_async() directly in async contexts.
+            None
+        } else {
+            // We're not in a runtime - create a new one for sync verification
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .ok()?;
+            rt.block_on(self.verify_async())
+        }
+    }
+}
+
+impl RedisVerifier {
+    /// Async verification using a connection manager
+    pub async fn verify_async(&self) -> Option<KillLevel> {
+        use redis::aio::ConnectionManager;
+        use redis::AsyncCommands;
+
+        let client = redis::Client::open(self.redis_url.as_str()).ok()?;
+        let mut conn = ConnectionManager::new(client).await.ok()?;
+
+        let value: Option<String> = conn.get(&self.key).await.ok()?;
+        value.and_then(|v| Self::parse_level(&v))
+    }
+
+    /// Verify using an existing connection (useful for connection pooling)
+    pub async fn verify_with_conn<C: redis::AsyncCommands>(
+        &self,
+        conn: &mut C,
+    ) -> Option<KillLevel> {
+        let value: Option<String> = conn.get(&self.key).await.ok()?;
+        value.and_then(|v| Self::parse_level(&v))
+    }
+}
+
 /// The main kill switch guard that orchestrator checks before operations
 pub struct KillSwitchGuard {
     state: Arc<RwLock<KillSwitchState>>,
@@ -267,6 +361,17 @@ impl KillSwitchGuard {
     /// Add file verifier
     pub fn with_file_verifier(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         self.verifiers.push(Box::new(FileVerifier::new(path)));
+        self
+    }
+
+    /// Add Redis verifier
+    pub fn with_redis_verifier(
+        mut self,
+        redis_url: impl Into<String>,
+        key: impl Into<String>,
+    ) -> Self {
+        self.verifiers
+            .push(Box::new(RedisVerifier::new(redis_url, key)));
         self
     }
 
@@ -659,5 +764,53 @@ mod tests {
 
         let result = guard.check_path("safe.rs").await;
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_redis_verifier_parse_level() {
+        assert_eq!(
+            RedisVerifier::parse_level("full_stop"),
+            Some(KillLevel::FullStop)
+        );
+        assert_eq!(
+            RedisVerifier::parse_level("network_kill"),
+            Some(KillLevel::NetworkKill)
+        );
+        assert_eq!(
+            RedisVerifier::parse_level("scope_block"),
+            Some(KillLevel::ScopeBlock)
+        );
+        assert_eq!(
+            RedisVerifier::parse_level("throttle"),
+            Some(KillLevel::Throttle)
+        );
+        assert_eq!(RedisVerifier::parse_level("1"), Some(KillLevel::FullStop));
+        assert_eq!(
+            RedisVerifier::parse_level("2"),
+            Some(KillLevel::NetworkKill)
+        );
+        assert_eq!(RedisVerifier::parse_level("3"), Some(KillLevel::ScopeBlock));
+        assert_eq!(RedisVerifier::parse_level("4"), Some(KillLevel::Throttle));
+        assert_eq!(
+            RedisVerifier::parse_level("FULL_STOP"),
+            Some(KillLevel::FullStop)
+        );
+        assert_eq!(RedisVerifier::parse_level(""), None);
+        assert_eq!(RedisVerifier::parse_level("invalid"), None);
+    }
+
+    #[test]
+    fn test_redis_verifier_new() {
+        let verifier = RedisVerifier::new("redis://localhost:6379", "swell:kill_switch");
+        assert_eq!(verifier.redis_url, "redis://localhost:6379");
+        assert_eq!(verifier.key, "swell:kill_switch");
+    }
+
+    #[test]
+    fn test_kill_switch_guard_with_redis_verifier() {
+        let _guard = KillSwitchGuard::new()
+            .with_redis_verifier("redis://localhost:6379", "swell:kill_switch");
+        // Guard should be created without error
+        assert!(true);
     }
 }

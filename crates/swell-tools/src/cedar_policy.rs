@@ -14,9 +14,7 @@
 //! - [`PolicyValidator`] - formal verification of policy correctness
 //! - [`CedarPolicyBridge`] - connects existing YAML policies to Cedar evaluation
 
-use cedar_policy::{
-    Authorizer, Decision, Entities, EntityUid, PolicySet, Request,
-};
+use cedar_policy::{Authorizer, Decision, Entities, EntityUid, PolicySet, Request};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -129,7 +127,9 @@ impl ToolOperation {
     /// Get the resource entity UID for this operation
     pub fn resource_uid(&self) -> Option<EntityUid> {
         match self {
-            ToolOperation::Read { path } | ToolOperation::Write { path } | ToolOperation::Edit { path } => {
+            ToolOperation::Read { path }
+            | ToolOperation::Write { path }
+            | ToolOperation::Edit { path } => {
                 EntityUid::from_str(&format!("File::\"{}\"", path.display())).ok()
             }
             ToolOperation::Shell { command } => {
@@ -169,9 +169,9 @@ impl ToolOperation {
     pub fn risk_level(&self) -> CedarRiskLevel {
         match self {
             ToolOperation::Read { .. } | ToolOperation::Search { .. } => CedarRiskLevel::Low,
-            ToolOperation::Write { .. } | ToolOperation::Edit { .. } | ToolOperation::Git { .. } => {
-                CedarRiskLevel::Medium
-            }
+            ToolOperation::Write { .. }
+            | ToolOperation::Edit { .. }
+            | ToolOperation::Git { .. } => CedarRiskLevel::Medium,
             ToolOperation::Shell { .. } | ToolOperation::Destructive { .. } => CedarRiskLevel::High,
             ToolOperation::ReadOnly { .. } => CedarRiskLevel::Low,
         }
@@ -220,8 +220,14 @@ impl ToolAuthorizationRequest {
             .resource_uid()
             .ok_or_else(|| CedarError::ParseError("Invalid resource entity".to_string()))?;
 
-        Request::new(principal.clone(), action, resource, cedar_policy::Context::empty(), None)
-            .map_err(|e| CedarError::ParseError(e.to_string()))
+        Request::new(
+            principal.clone(),
+            action,
+            resource,
+            cedar_policy::Context::empty(),
+            None,
+        )
+        .map_err(|e| CedarError::ParseError(e.to_string()))
     }
 }
 
@@ -280,12 +286,16 @@ impl CedarPolicyEngine {
     }
 
     /// Authorize a tool operation request
-    pub fn authorize(&self, request: &ToolAuthorizationRequest) -> Result<CedarDecision, CedarError> {
-        let policies = self
-            .policies
+    pub fn authorize(
+        &self,
+        request: &ToolAuthorizationRequest,
+    ) -> Result<CedarDecision, CedarError> {
+        let policies = self.policies.as_ref().ok_or(CedarError::NoPoliciesLoaded)?;
+        let entities = self
+            .entities
             .as_ref()
-            .ok_or(CedarError::NoPoliciesLoaded)?;
-        let entities = self.entities.as_ref().cloned().unwrap_or_else(Entities::empty);
+            .cloned()
+            .unwrap_or_else(Entities::empty);
 
         let cedar_request = request.to_cedar_request()?;
 
@@ -295,7 +305,9 @@ impl CedarPolicyEngine {
             "Authorizing tool operation with Cedar"
         );
 
-        let answer = self.authorizer.is_authorized(&cedar_request, policies, &entities);
+        let answer = self
+            .authorizer
+            .is_authorized(&cedar_request, policies, &entities);
 
         let decision: CedarDecision = answer.decision().into();
 
@@ -324,15 +336,21 @@ impl CedarPolicyEngine {
     }
 
     /// Get diagnostics from the last authorization decision
-    pub fn get_diagnostics(&self, request: &ToolAuthorizationRequest) -> Result<String, CedarError> {
-        let policies = self
-            .policies
+    pub fn get_diagnostics(
+        &self,
+        request: &ToolAuthorizationRequest,
+    ) -> Result<String, CedarError> {
+        let policies = self.policies.as_ref().ok_or(CedarError::NoPoliciesLoaded)?;
+        let entities = self
+            .entities
             .as_ref()
-            .ok_or(CedarError::NoPoliciesLoaded)?;
-        let entities = self.entities.as_ref().cloned().unwrap_or_else(Entities::empty);
+            .cloned()
+            .unwrap_or_else(Entities::empty);
 
         let cedar_request = request.to_cedar_request()?;
-        let answer = self.authorizer.is_authorized(&cedar_request, policies, &entities);
+        let answer = self
+            .authorizer
+            .is_authorized(&cedar_request, policies, &entities);
 
         Ok(format!("{:?}", answer.diagnostics()))
     }
@@ -453,7 +471,10 @@ impl PolicyValidator {
         // Check for common security issues by scanning the source text
         {
             // Check for overly permissive policies (permit without restrictions)
-            if policy_src.contains("permit(") && !policy_src.contains("when") && !policy_src.contains("unless") {
+            if policy_src.contains("permit(")
+                && !policy_src.contains("when")
+                && !policy_src.contains("unless")
+            {
                 result.warnings.push(PolicyValidationWarning {
                     code: "OVERLY_PERMISSIVE".to_string(),
                     message: "Policy permit has no conditions - may be too permissive".to_string(),
@@ -481,10 +502,7 @@ impl PolicyValidator {
         if result.errors.is_empty() {
             Ok(())
         } else {
-            Err(CedarError::ValidationError(format!(
-                "{:?}",
-                result.errors
-            )))
+            Err(CedarError::ValidationError(format!("{:?}", result.errors)))
         }
     }
 }
@@ -542,8 +560,8 @@ impl CedarPolicyBridge {
             return Err(CedarError::PolicyNotFound(yaml_path.display().to_string()));
         }
 
-        let content =
-            std::fs::read_to_string(yaml_path).map_err(|e| CedarError::ParseError(e.to_string()))?;
+        let content = std::fs::read_to_string(yaml_path)
+            .map_err(|e| CedarError::ParseError(e.to_string()))?;
 
         // Try to load as Cedar directly
         // If that fails, return error
@@ -562,7 +580,10 @@ impl CedarPolicyBridge {
     }
 
     /// Authorize a tool operation using the bridge
-    pub fn authorize(&self, request: &ToolAuthorizationRequest) -> Result<CedarDecision, CedarError> {
+    pub fn authorize(
+        &self,
+        request: &ToolAuthorizationRequest,
+    ) -> Result<CedarDecision, CedarError> {
         self.engine.authorize(request)
     }
 
@@ -632,7 +653,8 @@ permit(
 
 /// Parse an entity UID from a string
 pub fn parse_entity_uid(type_name: &str, id: &str) -> Result<EntityUid, CedarError> {
-    EntityUid::from_str(&format!("{}::\"{}\"", type_name, id)).map_err(|e| CedarError::ParseError(e.to_string()))
+    EntityUid::from_str(&format!("{}::\"{}\"", type_name, id))
+        .map_err(|e| CedarError::ParseError(e.to_string()))
 }
 
 // =============================================================================
@@ -819,7 +841,13 @@ permit(
         );
 
         let cedar_req = request.to_cedar_request().unwrap();
-        assert_eq!(cedar_req.principal().expect("principal should be set").to_string(), "Agent::\"generator\"");
+        assert_eq!(
+            cedar_req
+                .principal()
+                .expect("principal should be set")
+                .to_string(),
+            "Agent::\"generator\""
+        );
     }
 
     #[test]

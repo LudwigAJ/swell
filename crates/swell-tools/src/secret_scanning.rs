@@ -53,7 +53,7 @@ pub enum SecretScannerType {
     /// Gitleaks - open-source secret scanning tool
     Gitleaks,
     /// ggshield - GitLab's secret scanning tool
-   Ggshield,
+    Ggshield,
 }
 
 impl std::fmt::Display for SecretScannerType {
@@ -138,10 +138,7 @@ impl SecretScanResult {
             return String::from("No secrets detected");
         }
 
-        let mut report = format!(
-            "⚠️  BLOCKED: {} secret(s) detected\n\n",
-            self.secrets.len()
-        );
+        let mut report = format!("⚠️  BLOCKED: {} secret(s) detected\n\n", self.secrets.len());
 
         for secret in &self.secrets {
             report.push_str(&format!(
@@ -226,14 +223,15 @@ impl SecretScanner {
         // Set working directory
         cmd.current_dir(cwd);
 
-        info!(scanner = scanner_name, "Running secret scan on staged changes");
+        info!(
+            scanner = scanner_name,
+            "Running secret scan on staged changes"
+        );
 
-        let output = tokio::task::spawn_blocking(move || {
-            cmd.output()
-        })
-        .await
-        .map_err(|e| SecretScannerError::ExecutionFailed(e.to_string()))?
-        .map_err(|e| SecretScannerError::ExecutionFailed(e.to_string()))?;
+        let output = tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| SecretScannerError::ExecutionFailed(e.to_string()))?
+            .map_err(|e| SecretScannerError::ExecutionFailed(e.to_string()))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -308,7 +306,10 @@ impl SecretScanner {
             secret_type,
             file,
             line,
-            commit: finding.get("Commit").and_then(|c| c.as_str()).map(String::from),
+            commit: finding
+                .get("Commit")
+                .and_then(|c| c.as_str())
+                .map(String::from),
             match_preview,
         })
     }
@@ -340,14 +341,15 @@ impl SecretScanner {
         // Set working directory
         cmd.current_dir(cwd);
 
-        info!(scanner = scanner_name, "Running secret scan on staged changes");
+        info!(
+            scanner = scanner_name,
+            "Running secret scan on staged changes"
+        );
 
-        let output = tokio::task::spawn_blocking(move || {
-            cmd.output()
-        })
-        .await
-        .map_err(|e| SecretScannerError::ExecutionFailed(e.to_string()))?
-        .map_err(|e| SecretScannerError::ExecutionFailed(e.to_string()))?;
+        let output = tokio::task::spawn_blocking(move || cmd.output())
+            .await
+            .map_err(|e| SecretScannerError::ExecutionFailed(e.to_string()))?
+            .map_err(|e| SecretScannerError::ExecutionFailed(e.to_string()))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -367,7 +369,9 @@ impl SecretScanner {
                 // GGShield has result array under "results" or similar structure
                 if let Some(results) = json_output.get("results").and_then(|r| r.as_array()) {
                     for result_item in results {
-                        if let Some(secrets) = result_item.get("incidents").and_then(|i| i.as_array()) {
+                        if let Some(secrets) =
+                            result_item.get("incidents").and_then(|i| i.as_array())
+                        {
                             for secret in secrets {
                                 if let Some(detected) = self.parse_ggshield_incident(secret) {
                                     result.secrets.push(detected);
@@ -377,7 +381,9 @@ impl SecretScanner {
                     }
                 }
                 // Alternative: GGShield format with "secret_scan" -> "matches"
-                if let Some(scan_results) = json_output.get("secret_scan").and_then(|s| s.get("results"))
+                if let Some(scan_results) = json_output
+                    .get("secret_scan")
+                    .and_then(|s| s.get("results"))
                 {
                     if let Some(matches) = scan_results.get("matches").and_then(|m| m.as_array()) {
                         for m in matches {
@@ -455,10 +461,7 @@ impl SecretScanner {
             .unwrap_or("unknown")
             .to_string();
 
-        let line = match_data
-            .get("line")
-            .and_then(|l| l.as_u64())
-            .unwrap_or(0) as u32;
+        let line = match_data.get("line").and_then(|l| l.as_u64()).unwrap_or(0) as u32;
 
         let match_preview = match_data
             .get("match")
@@ -755,7 +758,11 @@ mod tests {
         let scanner_no_block = SecretScanner::with_config(config);
         let mut result_with_secrets2 = SecretScanResult::new("gitleaks");
         result_with_secrets2.has_secrets = true;
-        assert!(!scanner_no_block.should_block_commit(&result_with_secrets2).await);
+        assert!(
+            !scanner_no_block
+                .should_block_commit(&result_with_secrets2)
+                .await
+        );
     }
 
     #[tokio::test]

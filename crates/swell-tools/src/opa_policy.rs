@@ -114,9 +114,9 @@ impl ToolOperation {
     pub fn risk_level(&self) -> OpaRiskLevel {
         match self {
             ToolOperation::Read { .. } | ToolOperation::Search { .. } => OpaRiskLevel::Low,
-            ToolOperation::Write { .. } | ToolOperation::Edit { .. } | ToolOperation::Git { .. } => {
-                OpaRiskLevel::Medium
-            }
+            ToolOperation::Write { .. }
+            | ToolOperation::Edit { .. }
+            | ToolOperation::Git { .. } => OpaRiskLevel::Medium,
             ToolOperation::Shell { .. } => OpaRiskLevel::High,
         }
     }
@@ -214,14 +214,34 @@ impl OpaAction {
     pub fn from_operation(op: &ToolOperation) -> Self {
         let action_type = op.operation_type().to_string();
         let params = match op {
-            ToolOperation::Read { path } => Some(HashMap::from([("path".to_string(), path.display().to_string())])),
-            ToolOperation::Write { path } => Some(HashMap::from([("path".to_string(), path.display().to_string())])),
-            ToolOperation::Edit { path } => Some(HashMap::from([("path".to_string(), path.display().to_string())])),
-            ToolOperation::Shell { command } => Some(HashMap::from([("command".to_string(), command.clone())])),
-            ToolOperation::Git { operation } => Some(HashMap::from([("operation".to_string(), operation.clone())])),
-            ToolOperation::Search { operation } => Some(HashMap::from([("operation".to_string(), operation.clone())])),
+            ToolOperation::Read { path } => Some(HashMap::from([(
+                "path".to_string(),
+                path.display().to_string(),
+            )])),
+            ToolOperation::Write { path } => Some(HashMap::from([(
+                "path".to_string(),
+                path.display().to_string(),
+            )])),
+            ToolOperation::Edit { path } => Some(HashMap::from([(
+                "path".to_string(),
+                path.display().to_string(),
+            )])),
+            ToolOperation::Shell { command } => {
+                Some(HashMap::from([("command".to_string(), command.clone())]))
+            }
+            ToolOperation::Git { operation } => Some(HashMap::from([(
+                "operation".to_string(),
+                operation.clone(),
+            )])),
+            ToolOperation::Search { operation } => Some(HashMap::from([(
+                "operation".to_string(),
+                operation.clone(),
+            )])),
         };
-        Self { action_type, params }
+        Self {
+            action_type,
+            params,
+        }
     }
 }
 
@@ -241,9 +261,9 @@ impl OpaResource {
     /// Create a new resource from a tool operation
     pub fn from_operation(op: &ToolOperation) -> Self {
         let (resource_type, path) = match op {
-            ToolOperation::Read { path } | ToolOperation::Write { path } | ToolOperation::Edit { path } => {
-                ("file".to_string(), path.display().to_string())
-            }
+            ToolOperation::Read { path }
+            | ToolOperation::Write { path }
+            | ToolOperation::Edit { path } => ("file".to_string(), path.display().to_string()),
             ToolOperation::Shell { command } => ("command".to_string(), command.clone()),
             ToolOperation::Git { operation } => ("git".to_string(), operation.clone()),
             ToolOperation::Search { operation } => ("search".to_string(), operation.clone()),
@@ -306,14 +326,15 @@ impl OpaPolicyEngine {
         }
 
         let url = format!("{}/v1/data{}", self.server_url, self.decision_path);
-        
+
         debug!(
             server = %self.server_url,
             decision_path = %self.decision_path,
             "Evaluating policy with OPA"
         );
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .json(input)
             .send()
@@ -395,8 +416,9 @@ impl OpaPolicyEngine {
     /// Get health status of OPA server
     pub async fn healthcheck(&self) -> Result<bool, OpaError> {
         let url = format!("{}/health", self.server_url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
@@ -435,14 +457,13 @@ impl OpaClient {
     /// Load policies from a bundle file
     pub async fn load_bundle(&self, bundle_path: &Path) -> Result<(), OpaError> {
         if !bundle_path.exists() {
-            return Err(OpaError::PolicyNotFound(
-                bundle_path.display().to_string(),
-            ));
+            return Err(OpaError::PolicyNotFound(bundle_path.display().to_string()));
         }
 
         let url = format!("{}/v1/bundles/{}", self.base_url, bundle_path.display());
-        
-        let response = self.client
+
+        let response = self
+            .client
             .put(&url)
             .send()
             .await
@@ -602,18 +623,20 @@ allow {
 // =============================================================================
 
 /// Create an OPA input from a tool operation and agent context
-pub fn create_opa_input(
-    agent_id: &str,
-    role: &str,
-    operation: &ToolOperation,
-) -> OpaInput {
+pub fn create_opa_input(agent_id: &str, role: &str, operation: &ToolOperation) -> OpaInput {
     let subject = OpaSubject::new(agent_id, role, operation.risk_level());
     let action = OpaAction::from_operation(operation);
     let resource = OpaResource::from_operation(operation);
 
     OpaInput::new(subject, action, resource)
-        .with_context("timestamp", serde_json::json!(chrono::Utc::now().to_rfc3339()))
-        .with_context("operation_risk", serde_json::json!(operation.risk_level().to_string()))
+        .with_context(
+            "timestamp",
+            serde_json::json!(chrono::Utc::now().to_rfc3339()),
+        )
+        .with_context(
+            "operation_risk",
+            serde_json::json!(operation.risk_level().to_string()),
+        )
 }
 
 // =============================================================================
@@ -629,9 +652,9 @@ mod tests {
         let op = ToolOperation::Read {
             path: std::path::PathBuf::from("/workspace/src/main.rs"),
         };
-        
+
         let input = create_opa_input("planner", "agent", &op);
-        
+
         assert_eq!(input.subject.agent_id, "planner");
         assert_eq!(input.subject.role, "agent");
         assert_eq!(input.action.action_type, "read");
@@ -654,7 +677,7 @@ mod tests {
     #[test]
     fn test_opa_subject_creation() {
         let subject = OpaSubject::new("agent1", "planner", OpaRiskLevel::Medium);
-        
+
         assert_eq!(subject.agent_id, "agent1");
         assert_eq!(subject.role, "planner");
         assert_eq!(subject.operation_risk, "medium");
@@ -666,10 +689,13 @@ mod tests {
             path: std::path::PathBuf::from("/workspace/src/lib.rs"),
         };
         let action = OpaAction::from_operation(&read_op);
-        
+
         assert_eq!(action.action_type, "read");
         assert!(action.params.is_some());
-        assert_eq!(action.params.as_ref().unwrap().get("path").unwrap(), "/workspace/src/lib.rs");
+        assert_eq!(
+            action.params.as_ref().unwrap().get("path").unwrap(),
+            "/workspace/src/lib.rs"
+        );
     }
 
     #[test]
@@ -678,7 +704,7 @@ mod tests {
             path: std::path::PathBuf::from("/workspace/src/lib.rs"),
         };
         let resource = OpaResource::from_operation(&edit_op);
-        
+
         assert_eq!(resource.resource_type, "file");
         assert_eq!(resource.path, "/workspace/src/lib.rs");
     }
@@ -713,7 +739,7 @@ mod tests {
     fn test_opa_decision_serialization() {
         let allow = OpaDecision::Allow;
         let deny = OpaDecision::Deny;
-        
+
         assert_eq!(allow.is_allowed(), true);
         assert_eq!(deny.is_allowed(), false);
     }

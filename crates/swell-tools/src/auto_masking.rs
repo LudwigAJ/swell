@@ -387,7 +387,9 @@ impl AutoMasker {
                     continue;
                 }
 
-                let replacement = secret_pattern.replacement.replace("{name}", &secret_pattern.name);
+                let replacement = secret_pattern
+                    .replacement
+                    .replace("{name}", &secret_pattern.name);
                 replacements.push((m.range().clone(), replacement));
 
                 total_found += 1;
@@ -575,8 +577,12 @@ MIICXAIBAAKBgQCqGSIb3DQEB
     fn test_custom_pattern() {
         let mut masker = AutoMasker::minimal();
         masker.add_pattern(
-            SecretPattern::new("Custom Secret", r"\b(MYSECRET_[A-Za-z0-9_]+)\b", "[REDACTED Custom]")
-                .unwrap(),
+            SecretPattern::new(
+                "Custom Secret",
+                r"\b(MYSECRET_[A-Za-z0-9_]+)\b",
+                "[REDACTED Custom]",
+            )
+            .unwrap(),
         );
 
         let text = "MYSECRET_ABC123XYZ";
@@ -677,10 +683,7 @@ MIICXAIBAAKBgQCqGSIb3DQEB
         assert!(config.enabled);
 
         // Check AWS pattern exists
-        let has_aws = config
-            .patterns
-            .iter()
-            .any(|p| p.name == "AWS Access Key");
+        let has_aws = config.patterns.iter().any(|p| p.name == "AWS Access Key");
         assert!(has_aws);
     }
 
@@ -694,15 +697,10 @@ MIICXAIBAAKBgQCqGSIb3DQEB
 
     #[test]
     fn test_masking_config_with_patterns() {
-        let custom_pattern = SecretPattern::new(
-            "Test Secret",
-            r"\b(TEST_[A-Z0-9]+)\b",
-            "[REDACTED Test]",
-        )
-        .unwrap();
+        let custom_pattern =
+            SecretPattern::new("Test Secret", r"\b(TEST_[A-Z0-9]+)\b", "[REDACTED Test]").unwrap();
 
-        let config = MaskingConfig::default()
-            .with_patterns(vec![custom_pattern.clone()]);
+        let config = MaskingConfig::default().with_patterns(vec![custom_pattern.clone()]);
 
         assert_eq!(config.patterns.len(), 1);
         assert_eq!(config.patterns[0].name, "Test Secret");
@@ -710,12 +708,9 @@ MIICXAIBAAKBgQCqGSIb3DQEB
 
     #[test]
     fn test_masking_config_add_pattern() {
-        let custom_pattern = SecretPattern::new(
-            "Extra Secret",
-            r"\b(EXTRA_[A-Z0-9]+)\b",
-            "[REDACTED Extra]",
-        )
-        .unwrap();
+        let custom_pattern =
+            SecretPattern::new("Extra Secret", r"\b(EXTRA_[A-Z0-9]+)\b", "[REDACTED Extra]")
+                .unwrap();
 
         let config = MaskingConfig::minimal().add_pattern(custom_pattern);
 
@@ -735,9 +730,7 @@ MIICXAIBAAKBgQCqGSIb3DQEB
         )
         .unwrap();
 
-        let masker = AutoMasker::with_config(
-            MaskingConfig::default().with_patterns(vec![pattern]),
-        );
+        let masker = AutoMasker::with_config(MaskingConfig::default().with_patterns(vec![pattern]));
 
         // Short string should not be masked (only 4 chars, below min_length of 8)
         let short = "ABCD";

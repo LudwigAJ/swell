@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use swell_core::traits::Tool;
-use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
 use swell_core::traits::ToolBehavioralHints;
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
 use tempfile::NamedTempFile;
 use tokio::fs as tokio_fs;
 use tokio::time::{timeout, Duration};
@@ -582,7 +582,7 @@ impl Tool for GitTool {
         ToolBehavioralHints {
             read_only_hint: false,
             destructive_hint: false, // commit/branch operations are recoverable
-            idempotent_hint: false, // status/diff are idempotent, but commit/branch are not
+            idempotent_hint: false,  // status/diff are idempotent, but commit/branch are not
         }
     }
 
@@ -786,7 +786,7 @@ impl Tool for FileEditTool {
         ToolBehavioralHints {
             read_only_hint: false,
             destructive_hint: false, // Atomic write preserves original on failure
-            idempotent_hint: true, // Same edit can be retried
+            idempotent_hint: true,   // Same edit can be retried
         }
     }
 
@@ -1444,7 +1444,10 @@ mod tests {
         let tool = ReadFileTool::new();
         let hints = tool.behavioral_hints();
         assert!(hints.read_only_hint, "ReadFileTool should be read-only");
-        assert!(!hints.destructive_hint, "ReadFileTool should not be destructive");
+        assert!(
+            !hints.destructive_hint,
+            "ReadFileTool should not be destructive"
+        );
         assert!(hints.idempotent_hint, "ReadFileTool should be idempotent");
     }
 
@@ -1453,7 +1456,10 @@ mod tests {
         let tool = WriteFileTool::new();
         let hints = tool.behavioral_hints();
         assert!(!hints.read_only_hint, "WriteFileTool should modify state");
-        assert!(!hints.destructive_hint, "WriteFileTool uses atomic write and preserves original on failure");
+        assert!(
+            !hints.destructive_hint,
+            "WriteFileTool uses atomic write and preserves original on failure"
+        );
         assert!(hints.idempotent_hint, "WriteFileTool should be idempotent");
     }
 
@@ -1461,9 +1467,15 @@ mod tests {
     async fn test_shell_annotations() {
         let tool = ShellTool::new();
         let hints = tool.behavioral_hints();
-        assert!(!hints.read_only_hint, "ShellTool can execute arbitrary commands");
+        assert!(
+            !hints.read_only_hint,
+            "ShellTool can execute arbitrary commands"
+        );
         assert!(hints.destructive_hint, "ShellTool can be destructive");
-        assert!(!hints.idempotent_hint, "ShellTool idempotency depends on the command");
+        assert!(
+            !hints.idempotent_hint,
+            "ShellTool idempotency depends on the command"
+        );
     }
 
     #[tokio::test]
@@ -1471,8 +1483,14 @@ mod tests {
         let tool = GitTool::new();
         let hints = tool.behavioral_hints();
         assert!(!hints.read_only_hint, "GitTool modifies git state");
-        assert!(!hints.destructive_hint, "GitTool operations are generally recoverable");
-        assert!(!hints.idempotent_hint, "GitTool commit/branch are not idempotent");
+        assert!(
+            !hints.destructive_hint,
+            "GitTool operations are generally recoverable"
+        );
+        assert!(
+            !hints.idempotent_hint,
+            "GitTool commit/branch are not idempotent"
+        );
     }
 
     #[tokio::test]
@@ -1480,7 +1498,10 @@ mod tests {
         let tool = FileEditTool::new();
         let hints = tool.behavioral_hints();
         assert!(!hints.read_only_hint, "FileEditTool modifies files");
-        assert!(!hints.destructive_hint, "FileEditTool preserves original on failure");
+        assert!(
+            !hints.destructive_hint,
+            "FileEditTool preserves original on failure"
+        );
         assert!(hints.idempotent_hint, "FileEditTool should be idempotent");
     }
 
@@ -1489,7 +1510,10 @@ mod tests {
         let tool = SearchTool::new();
         let hints = tool.behavioral_hints();
         assert!(hints.read_only_hint, "SearchTool should be read-only");
-        assert!(!hints.destructive_hint, "SearchTool should not be destructive");
+        assert!(
+            !hints.destructive_hint,
+            "SearchTool should not be destructive"
+        );
         assert!(hints.idempotent_hint, "SearchTool should be idempotent");
     }
 }
