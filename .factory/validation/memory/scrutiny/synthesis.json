@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 3,
+  "round": 4,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -24,64 +24,58 @@
     {
       "featureId": "mem-decay-function",
       "severity": "blocking",
-      "description": "calculate_decay() returns decay factor > 1.0 when now < last_reinforcement (negative elapsed time). Code: let days_elapsed = (now - last_reinforcement).num_days() as f64; base.powf(negative) returns value > 1.0 when days_elapsed is negative (future time), violating documented [0.0, 1.0] range.",
+      "description": "calculate_decay() returns decay factor > 1.0 when now < last_reinforcement (negative elapsed time). Code: let days_elapsed = (now - last_reinforcement).num_days() as f64; base.powf(negative) returns value > 1.0 when days_elapsed is negative.",
       "file": "crates/swell-memory/src/decay.rs",
-      "line": 56
+      "line": 56,
+      "status": "persist"
     },
     {
       "featureId": "mem-deprecation",
       "severity": "blocking",
-      "description": "MemoryEntry lacks 'confidence' and 'deprecation_info' fields needed for deprecation feature. Deprecation module cannot integrate with memory system as specified.",
+      "description": "MemoryEntry lacks 'confidence', 'deprecation_info', and 'superseded_by' fields. Deprecation module cannot integrate with memory system as specified.",
       "file": "crates/swell-core/src/traits.rs",
-      "line": 58
+      "line": 58,
+      "status": "persist"
     },
     {
       "featureId": "mem-triple-stream-retrieval",
       "severity": "blocking",
-      "description": "BM25 search stream generates Uuid::new_v4() for results instead of actual memory entry IDs. This is a documented MVP placeholder - 'In real implementation, recall results would link to memory entries'. Breaks RRF fusion for BM25 stream.",
+      "description": "BM25 search stream generates Uuid::new_v4() for results instead of actual memory entry IDs. Documented as 'Placeholder' in code. Breaks RRF fusion for BM25 stream.",
       "file": "crates/swell-memory/src/triple_stream.rs",
-      "line": 520
+      "line": 520,
+      "status": "persist"
     },
     {
       "featureId": "mem-cross-encoder-rerank",
       "severity": "blocking",
-      "description": "RerankableCandidates trait (line 518) creates MemoryEntry with empty fields but is never called - dead code. Same BM25 UUID bug as triple-stream.",
+      "description": "RerankableCandidates trait creates MemoryEntry with empty fields but is never called - dead code. Same BM25 UUID bug as triple_stream.",
       "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
-      "line": 518
+      "line": 518,
+      "status": "persist"
     },
     {
       "featureId": "memory-sqlite-store",
       "severity": "blocking",
       "description": "search() method does not filter by source_episode_id even though MemoryQuery has this field. get_by_provenance() provides provenance filtering separately.",
       "file": "crates/swell-memory/src/lib.rs",
-      "line": 681
+      "line": 681,
+      "status": "persist"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "non_blocking",
-      "description": "Previously blocking - FIXED in commit 6192803 (repository: self.repository.clone()). Now non-blocking.",
+      "description": "FIXED in commit 6192803. repository field now uses self.repository.clone().",
       "file": "crates/swell-memory/src/pattern_learning.rs",
-      "line": 1087
+      "line": 1087,
+      "status": "fixed"
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Clarify magic number guideline: 'Never hardcode magic numbers - always load from .swell/settings.json' applies only when settings.json intentionally provides those values. Since no crates currently load settings.json, this should be optional guidance until the pattern is first implemented in a reference crate.",
-      "evidence": "pattern_learning.rs hardcodes PromotionThresholds values that match settings.json. This is systemic - no crates implement settings.json loading.",
-      "isSystemic": true
-    },
-    {
-      "target": "AGENTS.md",
       "suggestion": "Document that some blocking issues are working-as-intended MVP placeholders. The BM25 UUID generation and recall-to-memory linking limitations are documented in code comments as 'placeholder' and 'In real implementation'. These are acceptable for MVP if flagged upfront.",
       "evidence": "triple_stream.rs line 520 comment: 'Placeholder' and line 518: 'In real implementation, recall results would link to memory entries'. Reviewer flagged as blocking but this is documented MVP limitation.",
-      "isSystemic": false
-    },
-    {
-      "target": "features.json",
-      "suggestion": "Fix skillName 'rust-worker' → 'rust'. memory-sqlite-store uses non-existent skill 'rust-worker'.",
-      "evidence": "features.json skillName mismatch with AGENTS.md skill table.",
       "isSystemic": false
     }
   ],
@@ -101,9 +95,9 @@
     }
   ],
   "commonBugAcrossFeatures": {
-    "description": "memory-pattern-learning FIXED. Remaining issues are independent or documented limitations.",
+    "description": "memory-pattern-learning FIXED. Remaining issues are independent or documented MVP limitations.",
     "affectedFeatures": [],
     "fixLocation": null
   },
-  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json (round 2)"
+  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json (round 3)"
 }
