@@ -25,6 +25,7 @@ pub mod loop_detection;
 pub mod mcp;
 pub mod opa_policy;
 pub mod os_sandbox;
+pub mod post_tool_hooks;
 pub mod pr_creation;
 pub mod registry;
 pub mod resource_limits;
@@ -35,7 +36,7 @@ pub mod worktree_isolation;
 pub mod worktree_pool;
 
 pub use auto_masking::{
-    AutoMasker, MaskingConfig, MaskingResult, MaskingStats, SecretPattern, MaskSecrets,
+    AutoMasker, MaskSecrets, MaskingConfig, MaskingResult, MaskingStats, SecretPattern,
 };
 pub use branch_strategy::{
     BranchRequest, BranchResult, BranchStrategy, BranchStrategyConfig, BranchStrategyError,
@@ -71,23 +72,27 @@ pub use loop_detection::{
     LoopDetectionResult, LoopPattern, LoopPatternType, SharedToolLoopTracker, ToolExecution,
     ToolLoopTracker,
 };
-pub use resource_limits::{
-    LimitCheckResult, LimitState, ResourceLimitError, ResourceLimitResult, SessionLimits,
-    SessionResourceTracker,
-};
 pub use os_sandbox::{
     detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox,
     FilesystemPermission, LandlockSandbox, NetworkPolicy, OsSandbox, OsSandboxConfig,
     PlatformSandbox, SandboxAvailability, SandboxType, SeatbeltSandbox,
 };
+pub use post_tool_hooks::{
+    tool_names, FormatHook, HookConfig, HookResult, HookTrigger, LintHook, PostToolHook,
+    PostToolHookManager,
+};
 pub use pr_creation::{
     EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
 };
-pub use secret_scanning::{
-    install_precommit_hook, DetectedSecret, SecretScanResult, SecretScanner,
-    SecretScannerConfig, SecretScannerError, SecretScannerType,
+pub use registry::{CategoryInfo, ToolCategory, ToolRegistration, ToolRegistry};
+pub use resource_limits::{
+    LimitCheckResult, LimitState, ResourceLimitError, ResourceLimitResult, SessionLimits,
+    SessionResourceTracker,
 };
-pub use registry::{ToolCategory, ToolRegistry, CategoryInfo, ToolRegistration};
+pub use secret_scanning::{
+    install_precommit_hook, DetectedSecret, SecretScanResult, SecretScanner, SecretScannerConfig,
+    SecretScannerError, SecretScannerType,
+};
 pub use vault::{
     AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType, VaultClient,
     VaultClientConfig, VaultCredentialProvider, VaultDynamicSecret, VaultError,

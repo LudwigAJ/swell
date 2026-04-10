@@ -1,8 +1,12 @@
 //! Tool executor with permission enforcement.
 
+use crate::post_tool_hooks::PostToolHookManager;
 use crate::registry::ToolRegistry;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 use swell_core::{PermissionTier, SwellError, ToolOutput};
+use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 /// Permission checker for tools
@@ -51,6 +55,8 @@ impl Default for PermissionChecker {
 pub struct ToolExecutor {
     registry: ToolRegistry,
     permissions: PermissionChecker,
+    hook_manager: Option<Arc<RwLock<PostToolHookManager>>>,
+    workspace_path: PathBuf,
 }
 
 impl ToolExecutor {
@@ -58,6 +64,8 @@ impl ToolExecutor {
         Self {
             registry,
             permissions: PermissionChecker::new(),
+            hook_manager: None,
+            workspace_path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         }
     }
 
@@ -66,11 +74,37 @@ impl ToolExecutor {
         self
     }
 
+    /// Set the workspace path for hook execution
+    pub fn with_workspace_path(mut self, path: PathBuf) -> Self {
+        self.workspace_path = path;
+        self
+    }
+
+    /// Enable post-tool hooks with the given manager
+    pub fn with_hook_manager(mut self, manager: PostToolHookManager) -> Self {
+        self.hook_manager = Some(Arc::new(RwLock::new(manager)));
+        self
+    }
+
     /// Execute a tool by name
     pub async fn execute(
         &self,
         name: &str,
         arguments: serde_json::Value,
+    ) -> Result<ToolOutput, SwellError> {
+        self.execute_with_hooks(name, arguments, vec![]).await
+    }
+
+    /// Execute a tool with post-tool hooks
+    ///
+    /// This method runs the tool and then executes any applicable post-tool hooks.
+    /// The `modified_files` parameter provides hints about which files were modified,
+    /// allowing hooks to decide whether to run.
+    pub async fn execute_with_hooks(
+        &self,
+        name: &str,
+        arguments: serde_json::Value,
+        modified_files: Vec<String>,
     ) -> Result<ToolOutput, SwellError> {
         let start = Instant::now();
 
@@ -95,7 +129,38 @@ impl ToolExecutor {
         let duration = start.elapsed();
         info!(tool = %name, duration_ms = %duration.as_millis(), "Tool execution completed");
 
+        // Run post-tool hooks if enabled and tool succeeded
+        if result.is_ok() {
+            self.run_post_hooks(name, &modified_files).await;
+        }
+
         result
+    }
+
+    /// Run post-tool hooks for a tool
+    async fn run_post_hooks(&self, tool_name: &str, modified_files: &[String]) {
+        if let Some(ref hook_manager) = self.hook_manager {
+            let manager = hook_manager.read().await;
+            let results = manager
+                .execute_hooks(tool_name, &self.workspace_path, modified_files)
+                .await;
+
+            for hook_result in results {
+                if hook_result.success {
+                    info!(
+                        hook = %hook_result.hook_name,
+                        command = %hook_result.command,
+                        "Post-tool hook completed successfully"
+                    );
+                } else {
+                    warn!(
+                        hook = %hook_result.hook_name,
+                        error = ?hook_result.error,
+                        "Post-tool hook completed with issues"
+                    );
+                }
+            }
+        }
     }
 
     /// Check if a tool can be executed (exists and permitted)
@@ -111,6 +176,16 @@ impl ToolExecutor {
     pub fn registry(&self) -> &ToolRegistry {
         &self.registry
     }
+
+    /// Get the workspace path
+    pub fn workspace_path(&self) -> &PathBuf {
+        &self.workspace_path
+    }
+
+    /// Get hook results from the last execution (for testing/debugging)
+    pub fn has_hook_manager(&self) -> bool {
+        self.hook_manager.is_some()
+    }
 }
 
 impl Clone for ToolExecutor {
@@ -118,6 +193,8 @@ impl Clone for ToolExecutor {
         Self {
             registry: self.registry.clone(),
             permissions: self.permissions.clone(),
+            hook_manager: self.hook_manager.clone(),
+            workspace_path: self.workspace_path.clone(),
         }
     }
 }
@@ -125,7 +202,9 @@ impl Clone for ToolExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::post_tool_hooks::PostToolHookManager;
     use crate::tools::ReadFileTool;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_executor_permission_denied() {
@@ -151,5 +230,25 @@ mod tests {
 
         let result = executor.execute("nonexistent", serde_json::json!({})).await;
         assert!(matches!(result, Err(SwellError::ToolExecutionFailed(_))));
+    }
+
+    #[tokio::test]
+    async fn test_executor_with_workspace_path() {
+        let registry = ToolRegistry::new();
+        let dir = tempdir().unwrap();
+
+        let executor = ToolExecutor::new(registry).with_workspace_path(dir.path().to_path_buf());
+
+        assert_eq!(executor.workspace_path(), dir.path());
+    }
+
+    #[tokio::test]
+    async fn test_executor_with_hook_manager() {
+        let registry = ToolRegistry::new();
+        let hook_manager = PostToolHookManager::new();
+
+        let executor = ToolExecutor::new(registry).with_hook_manager(hook_manager);
+
+        assert!(executor.has_hook_manager());
     }
 }
