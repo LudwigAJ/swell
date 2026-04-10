@@ -20,11 +20,13 @@ pub mod credential_proxy;
 pub mod egress;
 pub mod executor;
 pub mod hybrid;
+pub mod killswitch;
 pub mod mcp;
 pub mod opa_policy;
 pub mod os_sandbox;
 pub mod pr_creation;
 pub mod registry;
+pub mod resource_limits;
 pub mod secret_scanning;
 pub mod tools;
 pub mod vault;
@@ -41,11 +43,6 @@ pub use cedar_policy::{
     CedarDecision, CedarError, CedarPolicyBridge, CedarPolicyEngine, CedarRiskLevel,
     PolicyValidationError, PolicyValidationResult, PolicyValidator, ToolAuthorizationRequest,
     ToolOperation,
-};
-pub use opa_policy::{
-    create_opa_input, default_allow_policy, default_deny_policy, development_policy,
-    production_policy, OpaAction, OpaClient, OpaDecision, OpaError, OpaInput, OpaPolicyEngine,
-    OpaResource, OpaRiskLevel, OpaSubject, ToolOperation as OpaToolOperation,
 };
 pub use commit_strategy::{
     CommitMetadata, CommitRequest, CommitResult, CommitStrategy, CommitStrategyError,
@@ -66,6 +63,11 @@ pub use executor::ToolExecutor;
 pub use hybrid::{
     ExecutorInput, HybridConfig, HybridExecutor, LocalExecutor, RemoteExecutor, RiskClass,
     ToolExecutorTrait,
+};
+pub use killswitch::ToolKillSwitch;
+pub use resource_limits::{
+    LimitCheckResult, LimitState, ResourceLimitError, ResourceLimitResult, SessionLimits,
+    SessionResourceTracker,
 };
 pub use os_sandbox::{
     detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox,
