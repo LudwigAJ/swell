@@ -1084,7 +1084,7 @@ impl PatternLearningService {
                     "last_updated": chrono::Utc::now().to_rfc3339(),
                     "conventions_count": conventions.len(),
                 }),
-                repository: String::new(),
+                repository: self.repository.clone(),
                 language: None,
                 task_type: None,
                 last_reinforcement: Some(chrono::Utc::now()),

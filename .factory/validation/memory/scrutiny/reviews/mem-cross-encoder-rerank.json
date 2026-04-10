@@ -1,73 +1,45 @@
 {
   "featureId": "mem-cross-encoder-rerank",
-  "reviewedAt": "2026-04-10T11:15:00Z",
+  "reviewedAt": "2026-04-10T11:00:00.000Z",
   "commitId": "21260edfc3a8e7c28f7fa6e8c8bca84df31ebcf2",
   "transcriptSkeletonReviewed": true,
-  "diffReviewed": true,
+  "diffReviewed": false,
   "status": "fail",
   "codeReview": {
-    "summary": "Implementation provides keyword-based reranking (SimpleReranker) as an MVP fallback but lacks actual BGE cross-encoder functionality. The BGE reranker type is defined but never implemented. Two significant bugs: (1) BM25 stream generates random UUIDs causing incorrect RRF fusion, (2) placeholder MemoryEntry creation in RerankableCandidates trait.",
+    "summary": "Implementation provides SimpleReranker (keyword-based) as MVP fallback but has two blocking bugs from prior review that persist: (1) RerankableCandidates trait is dead code creating empty MemoryEntry objects, (2) BM25 stream generates random UUIDs breaking RRF fusion.",
     "issues": [
       {
         "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
-        "line": 349,
+        "line": 518,
         "severity": "blocking",
-        "description": "RerankableCandidates trait creates MemoryEntry with empty placeholder fields (label, content, repository, language). Comment says 'Will be filled by caller' but this trait method is never actually called - TripleStreamService::build_rerank_candidates fetches entries directly from memory_store instead."
+        "description": "RerankableCandidates trait impl creates MemoryEntry with empty fields (label: String::new(), content: String::new(), repository: String::new()) but is never called anywhere. TripleStreamService::build_rerank_candidates (line 697-711 in triple_stream.rs) fetches entries directly from memory_store.get() instead. The trait is dead code that should be removed or properly integrated."
       },
       {
         "file": "crates/swell-memory/src/triple_stream.rs",
-        "line": 492,
+        "line": 777,
         "severity": "blocking",
-        "description": "BM25 search stream generates random UUIDs (Uuid::new_v4()) for each result instead of mapping to actual memory entry IDs. This breaks RRF fusion with vector and graph streams since items across streams cannot be matched by ID. Comment acknowledges 'Placeholder' but fusion still runs with broken data."
+        "description": "BM25 search stream generates random UUIDs with Uuid::new_v4() instead of using actual memory entry IDs. This means the same memory entry gets different UUIDs on each call, making RRF fusion impossible since IDs won't match across streams. Comment even says 'Placeholder' and 'In real implementation, recall results would link to memory entries'."
       },
       {
         "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
-        "line": 63,
-        "severity": "blocking",
-        "description": "RerankerModelType::Bge is defined but no actual BGE implementation exists. Only Simple and Mock rerankers are implemented. The feature description says 'BGE-reranker for cross-encoder reranking' but default config uses Simple reranker."
-      },
-      {
-        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
-        "line": 266,
+        "line": 1,
         "severity": "non_blocking",
-        "description": "Magic number 4 used for phrase window size loop (2..=4) without explanation. Should be a named constant."
-      },
-      {
-        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
-        "line": 274,
-        "severity": "non_blocking",
-        "description": "Magic number 5 used to normalize term density (avg_density / 5.0).min(1.0). Should be a named constant like MAX_TERM_FREQ."
-      },
-      {
-        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
-        "line": 220,
-        "severity": "non_blocking",
-        "description": "Magic numbers 0.2, 0.3, 0.3, 0.2 used for weighted combination of scoring methods. Should be configurable via CrossEncoderConfig."
+        "description": "Feature description says 'BGE-reranker for cross-encoder reranking' but only SimpleReranker (keyword-based) is implemented. Bge reranker type is defined but never actually implemented. This is acceptable for MVP but should be documented."
       }
     ]
   },
   "sharedStateObservations": [
     {
-      "area": "conventions",
-      "observation": "Worker used tokio::test for async tests but AGENTS.md doesn't explicitly mention this pattern. The coding conventions section should clarify async test requirements.",
-      "evidence": "Transcript shows multiple #[tokio::test] async tests in cross_encoder_rerank.rs and triple_stream.rs"
-    },
-    {
-      "area": "skills",
-      "observation": "Rust skill file doesn't cover async_trait::async_trait usage which is critical for this codebase. All async trait methods in swell-memory use this pattern.",
-      "evidence": "cross_encoder_rerank.rs:15 uses #[async_trait] pub trait CrossEncoderReranker"
+      "area": "code",
+      "observation": "RerankableCandidates trait is exported from lib.rs (line 14) but is never used in the codebase. This is dead code that clutters the API.",
+      "evidence": "grep shows only definition/export, no actual usage of to_rerank_candidates() anywhere"
     },
     {
       "area": "conventions",
-      "observation": "Worker ran cargo test, cargo build, and git commit but handoff only documents cargo build and cargo test in verification.commandsRun. Lint commands (cargo clippy, cargo fmt) are not mentioned.",
-      "evidence": "Handoff verification section only lists cargo build --workspace and cargo test -p swell-memory -- rerank. Transcript shows cargo test --workspace was also run before handoff."
-    },
-    {
-      "area": "knowledge",
-      "observation": "Worker spent time fixing test failures related to phrase scoring underflow and test assertions. The phrase scoring logic (num_phrases calculation) had an off-by-one error that caused panic. This suggests the scoring algorithm needs clearer documentation or the edge case should be handled more gracefully.",
-      "evidence": "Transcript shows multiple test iterations fixing score_phrases underflow: '(query_words.len() - 1) as f32 + (query_words.len() - 2) as f32 + (query_words.len() - 3) as f32' was replaced with proper loop-based calculation"
+      "observation": "Magic numbers in SimpleReranker scoring algorithm (label_score * 0.2 + content_score * 0.3 + phrase_score * 0.3 + density_score * 0.2) are hardcoded but not configurable. These weights should be in CrossEncoderConfig.",
+      "evidence": "cross_encoder_rerank.rs line 244-249 in SimpleReranker::rerank implementation"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Implementation provides keyword-based SimpleReranker as MVP but feature description promises BGE-reranker which is not implemented. Two blocking bugs: (1) BM25 stream generates random UUIDs causing RRF fusion to fail to match items across streams, (2) RerankableCandidates trait creates incomplete MemoryEntry objects but is never actually called. Skill gaps identified in async Rust patterns and tokio::test usage. Magic numbers in scoring algorithm should be configurable constants."
+  "summary": "FAIL - Two blocking bugs persist from prior review: (1) RerankableCandidates trait at line 518 creates MemoryEntry with empty fields but is never called - the TripleStreamService builds candidates differently. (2) BM25 UUID bug at line 777 generates random UUIDs breaking cross-stream fusion. Both issues remain unfixed."
 }

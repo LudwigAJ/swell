@@ -1,13 +1,20 @@
 {
   "featureId": "memory-sqlite-store",
-  "reviewedAt": "2026-04-10T18:35:00Z",
+  "reviewedAt": "2026-04-10T16:00:00Z",
   "commitId": "9229e2f",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "Feature was already implemented before this worker session. Worker correctly identified pre-existence and verified implementation. All CRUD operations (store/get/update/delete), search(), and type/label filtering are implemented in SqliteMemoryStore. Tests pass. Implementation is solid.",
-    "issues": []
+    "summary": "SqliteMemoryStore implementation exists in lib.rs. Feature was already implemented prior to this worker session. The implementation passes tests (374 tests pass, clippy clean) and core CRUD/search/filter operations work. However, a blocking issue remains: search() does NOT filter by source_episode_id even though MemoryQuery has this field.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 681,
+        "severity": "blocking",
+        "description": "search() method does not filter by source_episode_id even though MemoryQuery struct has this field. The search() implementation filters by repository, is_stale, query_text, block_types, labels, language, and task_type, but source_episode_id filter is missing. This means provenance-based search filtering is only available via get_by_provenance() method, not through general search()."
+      }
+    ]
   },
   "sharedStateObservations": [
     {
@@ -17,10 +24,10 @@
     },
     {
       "area": "conventions",
-      "observation": "CommitId in handoff (9229e2f) does not correspond to memory-sqlite-store implementation. Commit 9229e2f is 'feat(validation): user-testing synthesis for state milestone'. This suggests the memory-sqlite-store feature was implemented in an earlier commit that was not recorded in the handoff.",
-      "evidence": "git show 9229e2f --stat shows validation/state/user-testing/synthesis.json changed, not any memory code. handoff.commitId='9229e2f'."
+      "observation": "CommitId in handoff (9229e2f) does not correspond to memory-sqlite-store implementation. Commit 9229e2f is 'feat(validation): user-testing synthesis for state milestone'. The memory-sqlite-store feature was implemented in an earlier commit not recorded in the handoff.",
+      "evidence": "git show 9229e2f --stat shows validation/state/user-testing/synthesis.json changed, not any memory code."
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature memory-sqlite-store passes review. Implementation already existed prior to this worker session. Worker properly verified existing code: build succeeds, all 5 tests pass (test_store_and_get, test_update_and_delete, test_search, test_get_by_type, test_get_by_label), clippy clean. Implementation covers all required behaviors: CRUD operations, search() with query/block_types/labels filtering, get_by_type/get_by_label with repository scoping. Minor shared state gap: features.json references non-existent 'rust-worker' skill instead of 'rust'."
+  "summary": "Feature memory-sqlite-store FAILS due to blocking issue: search() doesn't filter by source_episode_id. Core CRUD operations work correctly, repository scoping is properly implemented for get_by_type/get_by_label/get_by_provenance, and all 374 tests pass. The provenance fields (source_episode_id, evidence, provenance_context) ARE stored correctly via store(). However, the search() method ignores the source_episode_id field in MemoryQuery, preventing provenance-based filtering in general search operations."
 }
