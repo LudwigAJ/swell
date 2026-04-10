@@ -168,6 +168,94 @@ impl TaskStateMachine {
         Ok(())
     }
 
+    /// Pause a task (operator intervention)
+    pub fn pause_task(&mut self, id: uuid::Uuid, reason: String) -> Result<(), SwellError> {
+        let task = self.get_task_mut(id)?;
+        match task.state {
+            TaskState::Executing | TaskState::Validating => {
+                task.paused_reason = Some(reason);
+                task.transition_to(TaskState::Paused);
+                Ok(())
+            }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot pause task in state {}",
+                task.state
+            ))),
+        }
+    }
+
+    /// Resume a paused task
+    pub fn resume_task(&mut self, id: uuid::Uuid) -> Result<(), SwellError> {
+        let task = self.get_task_mut(id)?;
+        match task.state {
+            TaskState::Paused => {
+                task.paused_reason = None;
+                // Resume to previous state - if was validating, go back to validating
+                // otherwise go back to executing
+                let previous_validating = task.validation_result.is_some();
+                if previous_validating {
+                    task.transition_to(TaskState::Validating);
+                } else {
+                    task.transition_to(TaskState::Executing);
+                }
+                Ok(())
+            }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot resume task in state {}",
+                task.state
+            ))),
+        }
+    }
+
+    /// Inject instructions into a task
+    pub fn inject_instruction(&mut self, id: uuid::Uuid, instruction: String) -> Result<(), SwellError> {
+        let task = self.get_task_mut(id)?;
+        // Can inject into any active state
+        match task.state {
+            TaskState::Created
+            | TaskState::Enriched
+            | TaskState::Ready
+            | TaskState::Assigned
+            | TaskState::Executing
+            | TaskState::Paused
+            | TaskState::Validating => {
+                task.injected_instructions.push(instruction);
+                tracing::info!(task_id = %id, instruction_count = task.injected_instructions.len(), "Instruction injected");
+                Ok(())
+            }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot inject instructions into task in state {}",
+                task.state
+            ))),
+        }
+    }
+
+    /// Modify task scope boundaries
+    pub fn modify_scope(&mut self, id: uuid::Uuid, new_scope: swell_core::TaskScope) -> Result<(), SwellError> {
+        let task = self.get_task_mut(id)?;
+        // Store original scope if not already stored
+        if task.original_scope.is_none() {
+            task.original_scope = Some(task.current_scope.clone());
+        }
+        task.current_scope = new_scope;
+        tracing::info!(task_id = %id, "Task scope modified");
+        Ok(())
+    }
+
+    /// Restore original scope (revert modify_scope)
+    pub fn restore_original_scope(&mut self, id: uuid::Uuid) -> Result<(), SwellError> {
+        let task = self.get_task_mut(id)?;
+        if let Some(original) = task.original_scope.take() {
+            task.current_scope = original;
+            tracing::info!(task_id = %id, "Task scope restored to original");
+            Ok(())
+        } else {
+            Err(SwellError::InvalidStateTransition(
+                "No original scope to restore".to_string(),
+            ))
+        }
+    }
+
     /// Escalate task to human
     pub fn escalate_task(&mut self, id: uuid::Uuid) -> Result<(), SwellError> {
         let task = self.get_task_mut(id)?;

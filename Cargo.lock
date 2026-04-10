@@ -2684,6 +2684,7 @@ dependencies = [
  "anyhow",
  "axum 0.7.9",
  "chrono",
+ "futures",
  "futures-util",
  "http-body-util",
  "hyper 1.9.0",

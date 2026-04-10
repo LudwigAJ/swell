@@ -20,6 +20,10 @@ use uuid::Uuid;
 /// - `TaskCancel` - Cancels a task (transitions to Failed)
 /// - `TaskList` - Returns all tasks as JSON
 /// - `TaskWatch` - Returns current state of a specific task
+/// - `TaskPause` - Pauses a running task (operator intervention)
+/// - `TaskResume` - Resumes a paused task (operator intervention)
+/// - `TaskInjectInstruction` - Injects instructions into a task (operator intervention)
+/// - `TaskModifyScope` - Modifies task scope boundaries (operator intervention)
 ///
 /// # Error Handling
 /// Returns `DaemonEvent::Error` with a message for:
@@ -141,6 +145,88 @@ pub async fn handle_command(
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
                         .emit_error(format!("Task not found: {}", e), correlation_id)
+                        .await
+                }
+            }
+        }
+        CliCommand::TaskPause { task_id, reason } => {
+            let orch = orchestrator.lock().await;
+            match orch.pause_task(task_id, reason.clone()).await {
+                Ok(()) => {
+                    info!(task_id = %task_id, reason = %reason, "Task paused by operator");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_task_state_changed(task_id, TaskState::Paused, correlation_id)
+                        .await
+                }
+                Err(e) => {
+                    warn!(task_id = %task_id, error = %e, "Failed to pause task");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_error(format!("Failed to pause task: {}", e), correlation_id)
+                        .await
+                }
+            }
+        }
+        CliCommand::TaskResume { task_id } => {
+            let orch = orchestrator.lock().await;
+            match orch.resume_task(task_id).await {
+                Ok(()) => {
+                    info!(task_id = %task_id, "Task resumed by operator");
+                    let task = orch.get_task(task_id).await.unwrap();
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_task_state_changed(task_id, task.state, correlation_id)
+                        .await
+                }
+                Err(e) => {
+                    warn!(task_id = %task_id, error = %e, "Failed to resume task");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_error(format!("Failed to resume task: {}", e), correlation_id)
+                        .await
+                }
+            }
+        }
+        CliCommand::TaskInjectInstruction { task_id, instruction } => {
+            let orch = orchestrator.lock().await;
+            match orch.inject_instruction(task_id, instruction.clone()).await {
+                Ok(()) => {
+                    info!(task_id = %task_id, instruction = %instruction, "Instruction injected by operator");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    DaemonEvent::TaskProgress {
+                        id: task_id,
+                        message: format!("Instruction injected: {}", instruction),
+                        correlation_id,
+                    }
+                }
+                Err(e) => {
+                    warn!(task_id = %task_id, error = %e, "Failed to inject instruction");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_error(format!("Failed to inject instruction: {}", e), correlation_id)
+                        .await
+                }
+            }
+        }
+        CliCommand::TaskModifyScope { task_id, scope } => {
+            let orch = orchestrator.lock().await;
+            match orch.modify_scope(task_id, scope.clone()).await {
+                Ok(()) => {
+                    info!(task_id = %task_id, files = ?scope.files, "Task scope modified by operator");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    DaemonEvent::TaskProgress {
+                        id: task_id,
+                        message: format!("Scope modified: {} files, {} directories", 
+                            scope.files.len(), scope.directories.len()),
+                        correlation_id,
+                    }
+                }
+                Err(e) => {
+                    warn!(task_id = %task_id, error = %e, "Failed to modify scope");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_error(format!("Failed to modify scope: {}", e), correlation_id)
                         .await
                 }
             }
@@ -686,6 +772,416 @@ mod tests {
                 assert_eq!(reason, "test reason");
             }
             other => panic!("Expected TaskReject command, got: {:?}", other),
+        }
+    }
+
+    // --- Operator Intervention Tests ---
+
+    fn create_test_task_in_executing_state(orch: &Arc<Mutex<Orchestrator>>) -> Uuid {
+        let task_id = futures::executor::block_on(async {
+            orch.lock().await.create_task("Test task".to_string()).await.id
+        });
+        let plan = create_test_plan(task_id);
+        futures::executor::block_on(async { orch.lock().await.set_plan(task_id, plan).await }).unwrap();
+        futures::executor::block_on(async {
+            let sm = orch.lock().await.state_machine();
+            let mut sm_guard = sm.write().await;
+            sm_guard.enrich_task(task_id).unwrap();
+            sm_guard.ready_task(task_id).unwrap();
+            sm_guard.assign_task(task_id, Uuid::new_v4()).unwrap();
+            sm_guard.start_execution(task_id).unwrap();
+        });
+        task_id
+    }
+
+    fn create_test_task_in_validating_state(orch: &Arc<Mutex<Orchestrator>>) -> Uuid {
+        let task_id = futures::executor::block_on(async {
+            orch.lock().await.create_task("Test task".to_string()).await.id
+        });
+        let plan = create_test_plan(task_id);
+        futures::executor::block_on(async { orch.lock().await.set_plan(task_id, plan).await }).unwrap();
+        futures::executor::block_on(async {
+            let sm = orch.lock().await.state_machine();
+            let mut sm_guard = sm.write().await;
+            sm_guard.enrich_task(task_id).unwrap();
+            sm_guard.ready_task(task_id).unwrap();
+            sm_guard.assign_task(task_id, Uuid::new_v4()).unwrap();
+            sm_guard.start_execution(task_id).unwrap();
+            sm_guard.start_validation(task_id).unwrap();
+        });
+        task_id
+    }
+
+    // --- TaskPause Tests ---
+
+    #[tokio::test]
+    async fn test_task_pause_nonexistent_returns_error() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let fake_id = Uuid::new_v4();
+        let command = CliCommand::TaskPause {
+            task_id: fake_id,
+            reason: "Operator requested".to_string(),
+        };
+
+        let event = handle_command(command, orch, emitter).await;
+
+        match event {
+            DaemonEvent::Error { message, .. } => {
+                assert!(message.contains("not found") || message.contains("TaskNotFound"));
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_pause_executing_task_returns_paused_state() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task_id = create_test_task_in_executing_state(&orch);
+
+        let command = CliCommand::TaskPause {
+            task_id,
+            reason: "Operator requested pause".to_string(),
+        };
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+
+        match event {
+            DaemonEvent::TaskStateChanged { id, state, .. } => {
+                assert_eq!(id, task_id);
+                assert_eq!(state, TaskState::Paused);
+            }
+            other => panic!("Expected TaskStateChanged event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_pause_validating_task_returns_paused_state() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task_id = create_test_task_in_validating_state(&orch);
+
+        let command = CliCommand::TaskPause {
+            task_id,
+            reason: "Operator requested pause during validation".to_string(),
+        };
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+
+        match event {
+            DaemonEvent::TaskStateChanged { id, state, .. } => {
+                assert_eq!(id, task_id);
+                assert_eq!(state, TaskState::Paused);
+            }
+            other => panic!("Expected TaskStateChanged event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_pause_created_task_returns_error() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task = orch.lock().await.create_task("Test task".to_string()).await;
+        let command = CliCommand::TaskPause {
+            task_id: task.id,
+            reason: "Operator requested".to_string(),
+        };
+
+        let event = handle_command(command, orch, emitter).await;
+
+        match event {
+            DaemonEvent::Error { message, .. } => {
+                assert!(message.contains("Cannot pause") || message.contains("state"));
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    // --- TaskResume Tests ---
+
+    #[tokio::test]
+    async fn test_task_resume_nonexistent_returns_error() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let fake_id = Uuid::new_v4();
+        let command = CliCommand::TaskResume { task_id: fake_id };
+
+        let event = handle_command(command, orch, emitter).await;
+
+        match event {
+            DaemonEvent::Error { message, .. } => {
+                assert!(message.contains("not found") || message.contains("TaskNotFound"));
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_resume_paused_task_returns_executing_state() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task_id = create_test_task_in_executing_state(&orch);
+
+        // First pause the task
+        {
+            let command = CliCommand::TaskPause {
+                task_id,
+                reason: "Operator requested".to_string(),
+            };
+            handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        }
+
+        // Now resume
+        let command = CliCommand::TaskResume { task_id };
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+
+        match event {
+            DaemonEvent::TaskStateChanged { id, state, .. } => {
+                assert_eq!(id, task_id);
+                assert_eq!(state, TaskState::Executing);
+            }
+            other => panic!("Expected TaskStateChanged event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_resume_non_paused_task_returns_error() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task_id = create_test_task_in_executing_state(&orch);
+
+        // Try to resume without pausing first
+        let command = CliCommand::TaskResume { task_id };
+        let event = handle_command(command, orch, emitter).await;
+
+        match event {
+            DaemonEvent::Error { message, .. } => {
+                assert!(message.contains("Cannot resume") || message.contains("state"));
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    // --- TaskInjectInstruction Tests ---
+
+    #[tokio::test]
+    async fn test_task_inject_instruction_nonexistent_returns_error() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let fake_id = Uuid::new_v4();
+        let command = CliCommand::TaskInjectInstruction {
+            task_id: fake_id,
+            instruction: "Check the logs".to_string(),
+        };
+
+        let event = handle_command(command, orch, emitter).await;
+
+        match event {
+            DaemonEvent::Error { message, .. } => {
+                assert!(message.contains("not found") || message.contains("TaskNotFound"));
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_inject_instruction_executing_task_succeeds() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task_id = create_test_task_in_executing_state(&orch);
+
+        let command = CliCommand::TaskInjectInstruction {
+            task_id,
+            instruction: "Remember to check the logs first".to_string(),
+        };
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+
+        match event {
+            DaemonEvent::TaskProgress { id, message, .. } => {
+                assert_eq!(id, task_id);
+                assert!(message.contains("Instruction injected"));
+            }
+            other => panic!("Expected TaskProgress event, got: {:?}", other),
+        }
+
+        // Verify instruction was stored
+        let instructions = orch.lock().await.get_injected_instructions(task_id).await.unwrap();
+        assert_eq!(instructions.len(), 1);
+        assert_eq!(instructions[0], "Remember to check the logs first");
+    }
+
+    #[tokio::test]
+    async fn test_task_inject_instruction_multiple_instructions() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task_id = create_test_task_in_executing_state(&orch);
+
+        // Inject multiple instructions
+        for i in 1..=3 {
+            let command = CliCommand::TaskInjectInstruction {
+                task_id,
+                instruction: format!("Instruction {}", i),
+            };
+            handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        }
+
+        let instructions = orch.lock().await.get_injected_instructions(task_id).await.unwrap();
+        assert_eq!(instructions.len(), 3);
+    }
+
+    // --- TaskModifyScope Tests ---
+
+    #[tokio::test]
+    async fn test_task_modify_scope_nonexistent_returns_error() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let fake_id = Uuid::new_v4();
+        let scope = swell_core::TaskScope {
+            files: vec!["src/lib.rs".to_string()],
+            directories: vec!["src".to_string()],
+            allowed_operations: vec![],
+        };
+        let command = CliCommand::TaskModifyScope { task_id: fake_id, scope };
+
+        let event = handle_command(command, orch, emitter).await;
+
+        match event {
+            DaemonEvent::Error { message, .. } => {
+                assert!(message.contains("not found") || message.contains("TaskNotFound"));
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_modify_scope_executing_task_succeeds() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task_id = create_test_task_in_executing_state(&orch);
+
+        let scope = swell_core::TaskScope {
+            files: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+            directories: vec!["src".to_string(), "tests".to_string()],
+            allowed_operations: vec![],
+        };
+        let command = CliCommand::TaskModifyScope { task_id, scope: scope.clone() };
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+
+        match event {
+            DaemonEvent::TaskProgress { id, message, .. } => {
+                assert_eq!(id, task_id);
+                assert!(message.contains("Scope modified"));
+            }
+            other => panic!("Expected TaskProgress event, got: {:?}", other),
+        }
+
+        // Verify scope was stored
+        let current_scope = orch.lock().await.get_task_scope(task_id).await.unwrap();
+        assert_eq!(current_scope.files.len(), 2);
+        assert_eq!(current_scope.directories.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_task_modify_scope_stores_original_scope() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        let task_id = create_test_task_in_executing_state(&orch);
+
+        let new_scope = swell_core::TaskScope {
+            files: vec!["new_file.rs".to_string()],
+            directories: vec!["new_dir".to_string()],
+            allowed_operations: vec![],
+        };
+        let command = CliCommand::TaskModifyScope { task_id, scope: new_scope };
+        handle_command(command, Arc::clone(&orch), emitter).await;
+
+        // Verify original scope was saved
+        let task = orch.lock().await.get_task(task_id).await.unwrap();
+        assert!(task.original_scope.is_some());
+        assert_eq!(task.original_scope.as_ref().unwrap().files.len(), 0); // Default empty
+    }
+
+    // --- parse_command Tests for new commands ---
+
+    #[tokio::test]
+    async fn test_parse_task_pause_command() {
+        let task_id = Uuid::new_v4();
+        let json = format!(
+            r#"{{"type":"TaskPause","payload":{{"task_id":"{}","reason":"test pause"}}}}"#,
+            task_id
+        );
+        let command = parse_command(&json).unwrap();
+
+        match command {
+            CliCommand::TaskPause { task_id: id, reason } => {
+                assert_eq!(id, task_id);
+                assert_eq!(reason, "test pause");
+            }
+            other => panic!("Expected TaskPause command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_task_resume_command() {
+        let task_id = Uuid::new_v4();
+        let json = format!(
+            r#"{{"type":"TaskResume","payload":{{"task_id":"{}"}}}}"#,
+            task_id
+        );
+        let command = parse_command(&json).unwrap();
+
+        match command {
+            CliCommand::TaskResume { task_id: id } => {
+                assert_eq!(id, task_id);
+            }
+            other => panic!("Expected TaskResume command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_task_inject_instruction_command() {
+        let task_id = Uuid::new_v4();
+        let json = format!(
+            r#"{{"type":"TaskInjectInstruction","payload":{{"task_id":"{}","instruction":"check logs"}}}}"#,
+            task_id
+        );
+        let command = parse_command(&json).unwrap();
+
+        match command {
+            CliCommand::TaskInjectInstruction { task_id: id, instruction } => {
+                assert_eq!(id, task_id);
+                assert_eq!(instruction, "check logs");
+            }
+            other => panic!("Expected TaskInjectInstruction command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_task_modify_scope_command() {
+        let task_id = Uuid::new_v4();
+        let json = format!(
+            r#"{{"type":"TaskModifyScope","payload":{{"task_id":"{}","scope":{{"files":["file1.rs"],"directories":["src"],"allowed_operations":[]}}}}}}"#,
+            task_id
+        );
+        let command = parse_command(&json).unwrap();
+
+        match command {
+            CliCommand::TaskModifyScope { task_id: id, scope } => {
+                assert_eq!(id, task_id);
+                assert_eq!(scope.files.len(), 1);
+                assert_eq!(scope.files[0], "file1.rs");
+                assert_eq!(scope.directories.len(), 1);
+                assert_eq!(scope.directories[0], "src");
+            }
+            other => panic!("Expected TaskModifyScope command, got: {:?}", other),
         }
     }
 }

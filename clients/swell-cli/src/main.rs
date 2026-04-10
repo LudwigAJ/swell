@@ -193,6 +193,88 @@ async fn main() {
                 }
             }
         }
+        "pause" => {
+            if args.len() < 3 {
+                Err(CliError::MissingArgument("task-id".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(task_id) => {
+                        let reason = if args.len() > 4 && args[3] == "--reason" {
+                            args[4..].join(" ")
+                        } else {
+                            "Operator requested pause".to_string()
+                        };
+                        let cmd = CliCommand::TaskPause { task_id, reason };
+                        send_command(&socket_path, cmd).await
+                    }
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
+            }
+        }
+        "resume" => {
+            if args.len() < 3 {
+                Err(CliError::MissingArgument("task-id".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(task_id) => {
+                        let cmd = CliCommand::TaskResume { task_id };
+                        send_command(&socket_path, cmd).await
+                    }
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
+            }
+        }
+        "inject" => {
+            if args.len() < 4 {
+                Err(CliError::MissingArgument("task-id and instruction".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(task_id) => {
+                        let instruction = args[3..].join(" ");
+                        let cmd = CliCommand::TaskInjectInstruction { task_id, instruction };
+                        send_command(&socket_path, cmd).await
+                    }
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
+            }
+        }
+        "scope" => {
+            if args.len() < 3 {
+                Err(CliError::MissingArgument("task-id".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(task_id) => {
+                        // Parse scope arguments: swell scope <task-id> --files file1.rs file2.rs --dirs src tests
+                        let mut files = Vec::new();
+                        let mut directories = Vec::new();
+                        let mut i = 3;
+                        while i < args.len() {
+                            match args[i].as_str() {
+                                "--files" => {
+                                    i += 1;
+                                    while i < args.len() && !args[i].starts_with("--") {
+                                        files.push(args[i].clone());
+                                        i += 1;
+                                    }
+                                }
+                                "--dirs" => {
+                                    i += 1;
+                                    while i < args.len() && !args[i].starts_with("--") {
+                                        directories.push(args[i].clone());
+                                        i += 1;
+                                    }
+                                }
+                                _ => i += 1,
+                            }
+                        }
+                        let scope = swell_core::TaskScope { files, directories, allowed_operations: vec![] };
+                        let cmd = CliCommand::TaskModifyScope { task_id, scope };
+                        send_command(&socket_path, cmd).await
+                    }
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
+            }
+        }
         unknown => Err(CliError::InvalidCommand(unknown.to_string())),
     };
 
@@ -559,6 +641,10 @@ Usage:
     swell watch <task-id>        Watch task status
     swell approve <task-id>      Approve task plan
     swell cancel <task-id>        Cancel a task
+    swell pause <task-id> [--reason <reason>]   Pause a running task
+    swell resume <task-id>       Resume a paused task
+    swell inject <task-id> <instruction>   Inject instructions into a task
+    swell scope <task-id> [--files <files>] [--dirs <dirs>]   Modify task scope
 
 Environment:
     SWELL_SOCKET                  Socket path (default: /tmp/swell-daemon.sock)

@@ -11,6 +11,7 @@ pub enum TaskState {
     Ready,
     Assigned,
     Executing,
+    Paused, // Operator-initiated pause
     Validating,
     Accepted,
     Rejected,
@@ -75,6 +76,7 @@ impl std::fmt::Display for TaskState {
             TaskState::Ready => write!(f, "READY"),
             TaskState::Assigned => write!(f, "ASSIGNED"),
             TaskState::Executing => write!(f, "EXECUTING"),
+            TaskState::Paused => write!(f, "PAUSED"),
             TaskState::Validating => write!(f, "VALIDATING"),
             TaskState::Accepted => write!(f, "ACCEPTED"),
             TaskState::Rejected => write!(f, "REJECTED"),
@@ -104,6 +106,29 @@ pub struct Task {
     /// Autonomy level controlling approval requirements
     #[serde(default)]
     pub autonomy_level: AutonomyLevel,
+    /// Reason for pause (set when state is Paused)
+    #[serde(default)]
+    pub paused_reason: Option<String>,
+    /// Instructions injected by operator mid-task
+    #[serde(default)]
+    pub injected_instructions: Vec<String>,
+    /// Original scope boundaries (for modify_scope)
+    #[serde(default)]
+    pub original_scope: Option<TaskScope>,
+    /// Current scope boundaries
+    #[serde(default)]
+    pub current_scope: TaskScope,
+}
+
+/// Scope defining task boundaries for modification
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TaskScope {
+    /// Files in scope
+    pub files: Vec<String>,
+    /// Directories in scope
+    pub directories: Vec<String>,
+    /// Allowed operations
+    pub allowed_operations: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -138,6 +163,10 @@ impl Task {
             tokens_used: 0,
             validation_result: None,
             autonomy_level: AutonomyLevel::default(),
+            paused_reason: None,
+            injected_instructions: Vec::new(),
+            original_scope: None,
+            current_scope: TaskScope::default(),
         }
     }
 
@@ -160,6 +189,10 @@ impl Task {
             tokens_used: 0,
             validation_result: None,
             autonomy_level,
+            paused_reason: None,
+            injected_instructions: Vec::new(),
+            original_scope: None,
+            current_scope: TaskScope::default(),
         }
     }
 
@@ -375,6 +408,14 @@ pub enum CliCommand {
     TaskCancel { task_id: Uuid },
     TaskList,
     TaskWatch { task_id: Uuid },
+    /// Pause a task (operator intervention)
+    TaskPause { task_id: Uuid, reason: String },
+    /// Resume a paused task (operator intervention)
+    TaskResume { task_id: Uuid },
+    /// Inject instructions into a running task (operator intervention)
+    TaskInjectInstruction { task_id: Uuid, instruction: String },
+    /// Modify task scope boundaries (operator intervention)
+    TaskModifyScope { task_id: Uuid, scope: TaskScope },
 }
 
 /// A correlation ID used to track related events across the system.

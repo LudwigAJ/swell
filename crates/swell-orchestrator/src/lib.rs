@@ -327,6 +327,54 @@ impl Orchestrator {
     ) -> Result<Vec<Checkpoint>, SwellError> {
         self.checkpoint_manager.list_checkpoints(task_id).await
     }
+
+    // ========================================================================
+    // Operator Intervention APIs
+    // ========================================================================
+
+    /// Pause a task (operator-initiated)
+    pub async fn pause_task(&self, task_id: Uuid, reason: String) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        sm.pause_task(task_id, reason)
+    }
+
+    /// Resume a paused task
+    pub async fn resume_task(&self, task_id: Uuid) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        sm.resume_task(task_id)
+    }
+
+    /// Inject instructions into a task
+    pub async fn inject_instruction(&self, task_id: Uuid, instruction: String) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        sm.inject_instruction(task_id, instruction)
+    }
+
+    /// Modify task scope boundaries
+    pub async fn modify_scope(&self, task_id: Uuid, new_scope: swell_core::TaskScope) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        sm.modify_scope(task_id, new_scope)
+    }
+
+    /// Restore original scope (revert modify_scope)
+    pub async fn restore_original_scope(&self, task_id: Uuid) -> Result<(), SwellError> {
+        let mut sm = self.state_machine.write().await;
+        sm.restore_original_scope(task_id)
+    }
+
+    /// Get injected instructions for a task
+    pub async fn get_injected_instructions(&self, task_id: Uuid) -> Result<Vec<String>, SwellError> {
+        let sm = self.state_machine.read().await;
+        let task = sm.get_task(task_id)?;
+        Ok(task.injected_instructions.clone())
+    }
+
+    /// Get current scope for a task
+    pub async fn get_task_scope(&self, task_id: Uuid) -> Result<swell_core::TaskScope, SwellError> {
+        let sm = self.state_machine.read().await;
+        let task = sm.get_task(task_id)?;
+        Ok(task.current_scope.clone())
+    }
 }
 
 impl Default for Orchestrator {
