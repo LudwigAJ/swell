@@ -405,3 +405,20 @@ Detailed specifications for each subsystem:
 | `Tools and Runtime Control Spec.md` | Tools and sandbox design |
 
 Detailed architecture documentation is available in `plan/Autonomous Coding Engine.md`.
+
+## Available Skills (.factory/skills/)
+
+SWELL uses these skills from `~/.factory/skills/`:
+
+| Skill | Purpose | Used By |
+|-------|---------|---------|
+| `rust` | Idiomatic Rust patterns, ownership, async | Mission workers |
+| `rust-patterns` | Production patterns (Tokio, Axum, SQLx) | Advanced features |
+| `rust-code-review` | Ownership/borrowing code review | Validation |
+| `git` | Branches, commits, rebases, PRs | Git operations |
+| `agentic-coding` | PACT protocol, red-green loops | Agent workflow |
+| `agent-team-orchestration` | Multi-agent coordination | Orchestrator |
+| `task-development-workflow` | TDD, PR workflow | Development |
+| `prompt-engineering-expert` | LLM prompt optimization | LLM integration |
+
+See `~/.factory/skills/*/SKILL.md` for full skill documentation.
