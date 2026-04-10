@@ -1,15 +1,73 @@
 {
   "featureId": "mem-cross-encoder-rerank",
-  "reviewedAt": "2026-04-10T10:40:00.000Z",
+  "reviewedAt": "2026-04-10T11:15:00Z",
   "commitId": "21260edfc3a8e7c28f7fa6e8c8bca84df31ebcf2",
   "transcriptSkeletonReviewed": true,
-  "diffReviewed": false,
-  "status": "pass",
+  "diffReviewed": true,
+  "status": "fail",
   "codeReview": {
-    "summary": "Implementation is solid. CrossEncoderReranker trait with SimpleReranker (keyword overlap + phrase matching + term density) and MockReranker for testing. Clean integration into TripleStreamService via search_with_reranking method. 28 comprehensive tests covering all reranking functionality pass.",
-    "issues": []
+    "summary": "Implementation provides keyword-based reranking (SimpleReranker) as an MVP fallback but lacks actual BGE cross-encoder functionality. The BGE reranker type is defined but never implemented. Two significant bugs: (1) BM25 stream generates random UUIDs causing incorrect RRF fusion, (2) placeholder MemoryEntry creation in RerankableCandidates trait.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
+        "line": 349,
+        "severity": "blocking",
+        "description": "RerankableCandidates trait creates MemoryEntry with empty placeholder fields (label, content, repository, language). Comment says 'Will be filled by caller' but this trait method is never actually called - TripleStreamService::build_rerank_candidates fetches entries directly from memory_store instead."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 492,
+        "severity": "blocking",
+        "description": "BM25 search stream generates random UUIDs (Uuid::new_v4()) for each result instead of mapping to actual memory entry IDs. This breaks RRF fusion with vector and graph streams since items across streams cannot be matched by ID. Comment acknowledges 'Placeholder' but fusion still runs with broken data."
+      },
+      {
+        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
+        "line": 63,
+        "severity": "blocking",
+        "description": "RerankerModelType::Bge is defined but no actual BGE implementation exists. Only Simple and Mock rerankers are implemented. The feature description says 'BGE-reranker for cross-encoder reranking' but default config uses Simple reranker."
+      },
+      {
+        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
+        "line": 266,
+        "severity": "non_blocking",
+        "description": "Magic number 4 used for phrase window size loop (2..=4) without explanation. Should be a named constant."
+      },
+      {
+        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
+        "line": 274,
+        "severity": "non_blocking",
+        "description": "Magic number 5 used to normalize term density (avg_density / 5.0).min(1.0). Should be a named constant like MAX_TERM_FREQ."
+      },
+      {
+        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
+        "line": 220,
+        "severity": "non_blocking",
+        "description": "Magic numbers 0.2, 0.3, 0.3, 0.2 used for weighted combination of scoring methods. Should be configurable via CrossEncoderConfig."
+      }
+    ]
   },
-  "sharedStateObservations": [],
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker used tokio::test for async tests but AGENTS.md doesn't explicitly mention this pattern. The coding conventions section should clarify async test requirements.",
+      "evidence": "Transcript shows multiple #[tokio::test] async tests in cross_encoder_rerank.rs and triple_stream.rs"
+    },
+    {
+      "area": "skills",
+      "observation": "Rust skill file doesn't cover async_trait::async_trait usage which is critical for this codebase. All async trait methods in swell-memory use this pattern.",
+      "evidence": "cross_encoder_rerank.rs:15 uses #[async_trait] pub trait CrossEncoderReranker"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker ran cargo test, cargo build, and git commit but handoff only documents cargo build and cargo test in verification.commandsRun. Lint commands (cargo clippy, cargo fmt) are not mentioned.",
+      "evidence": "Handoff verification section only lists cargo build --workspace and cargo test -p swell-memory -- rerank. Transcript shows cargo test --workspace was also run before handoff."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker spent time fixing test failures related to phrase scoring underflow and test assertions. The phrase scoring logic (num_phrases calculation) had an off-by-one error that caused panic. This suggests the scoring algorithm needs clearer documentation or the edge case should be handled more gracefully.",
+      "evidence": "Transcript shows multiple test iterations fixing score_phrases underflow: '(query_words.len() - 1) as f32 + (query_words.len() - 2) as f32 + (query_words.len() - 3) as f32' was replaced with proper loop-based calculation"
+    }
+  ],
   "addressesFailureFrom": null,
-  "summary": "Feature implementation passes review. Created cross_encoder_rerank.rs module with CrossEncoderReranker trait, SimpleReranker (keyword-based scoring with Jaccard similarity, phrase matching, term density), MockReranker for testing, and CrossEncoderService for orchestration. Integrated into TripleStreamService via search_with_reranking method. All 28 tests pass. Implementation meets expected behavior: takes top-N candidates from retriever, performs cross-encoder reranking, returns final ranking maximizing relevance."
+  "summary": "Implementation provides keyword-based SimpleReranker as MVP but feature description promises BGE-reranker which is not implemented. Two blocking bugs: (1) BM25 stream generates random UUIDs causing RRF fusion to fail to match items across streams, (2) RerankableCandidates trait creates incomplete MemoryEntry objects but is never actually called. Skill gaps identified in async Rust patterns and tokio::test usage. Magic numbers in scoring algorithm should be configurable constants."
 }

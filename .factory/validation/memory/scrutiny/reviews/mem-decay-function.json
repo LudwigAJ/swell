@@ -1,6 +1,6 @@
 {
   "featureId": "mem-decay-function",
-  "reviewedAt": "2026-04-10T09:45:00Z",
+  "reviewedAt": "2026-04-10T15:30:00Z",
   "commitId": "5f0bfc1",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
@@ -16,7 +16,7 @@
       },
       {
         "file": "crates/swell-memory/src/decay.rs",
-        "line": 56,
+        "line": 80,
         "severity": "non_blocking",
         "description": "days_since function has the same negative time issue as calculate_decay - it will return a negative value if now < last_reinforcement, which could cause issues in caller code."
       },
@@ -32,7 +32,7 @@
     {
       "area": "conventions",
       "observation": "The worker correctly followed Rust conventions and coding patterns. No convention violations found.",
-      "evidence": "Worker used async_trait, proper error handling with Result, appropriate use of Arc<dyn Trait>, and followed the same code organization as other modules in swell-memory."
+      "evidence": "Worker used #[cfg(test)] guard for Duration import, proper documentation comments, idiomatic Rust with pub fn, enums, and structs matching the codebase style."
     },
     {
       "area": "skills",
@@ -41,15 +41,15 @@
     },
     {
       "area": "knowledge",
-      "observation": "The worker discovered that chrono::Duration is only available in test context for this crate (used #[cfg(test)] guard). This knowledge appears to be correctly applied.",
-      "evidence": "decay.rs line 14: '#[cfg(test)] use chrono::Duration;' - Duration is used only in tests, confirming the worker's understanding of the dependency structure."
+      "observation": "The decay module is exported from lib.rs and is available for integration with other memory modules (recall, sqlite_store) but is not yet integrated into any retrieval pipeline. This is expected for an isolated feature implementation.",
+      "evidence": "Grep search shows apply_decay, DecayedScore, calculate_decay are only defined in decay.rs and exported from lib.rs - no consumption by recall.rs or sqlite_store.rs yet."
     },
     {
       "area": "services",
       "observation": "No services or external dependencies were started by the worker that would require documentation in services.yaml.",
-      "evidence": "Transcript shows only local cargo commands (build, test, clippy) were run. No external services were started."
+      "evidence": "Handoff shows only local cargo commands (build, test, clippy) were run. No external services were started."
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "The mem-decay-function implementation correctly implements time-based decay with three tiers (procedural 0.99/day, environmental 0.95/day, buffer 0.90/day) and has 19 comprehensive unit tests. However, there is a blocking bug: calculate_decay does not handle the edge case where the current time is earlier than the last reinforcement timestamp, which would cause it to return a decay factor > 1.0, violating the documented contract. This should be fixed before the feature can be marked as passing. The worker followed proper Rust conventions and the skill procedure correctly."
+  "summary": "The mem-decay-function implementation correctly implements time-based decay with three tiers (procedural 0.99/day, environmental 0.95/day, buffer 0.90/day) and has 19 comprehensive unit tests. However, there is a blocking bug: calculate_decay does not handle the edge case where the current time is earlier than the last reinforcement timestamp, which would cause it to return a decay factor > 1.0, violating the documented contract [0.0, 1.0]. The days_since function has the same issue. The worker followed proper Rust conventions and the skill procedure correctly. The decay module is properly structured and exported but not yet integrated into retrieval pipelines."
 }

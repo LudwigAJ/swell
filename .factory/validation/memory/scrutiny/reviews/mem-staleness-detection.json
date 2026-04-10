@@ -1,26 +1,49 @@
 {
   "featureId": "mem-staleness-detection",
-  "reviewedAt": "2026-04-10T12:35:00Z",
-  "commitId": "0241792",
+  "reviewedAt": "2026-04-10T10:47:00Z",
+  "commitId": "0241792217eb6ea94eb25b833f6cae265a8ef696",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "Implementation is correct and comprehensive. All 18 staleness tests pass. Build succeeds with no warnings. The feature correctly tracks last_reinforcement timestamps, marks memories as stale after the configured window (30 days), and excludes stale memories from search results.",
-    "issues": []
+    "summary": "Implementation fully covers the feature requirements: tracks last_reinforcement timestamp, invalidates after staleness window (30 days), excludes stale memories from retrieval. Code is well-structured with proper separation of concerns (staleness.rs module, staleness-related methods in separate impl block), comprehensive tests (21 test cases). No blocking issues found.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 680,
+        "severity": "non_blocking",
+        "description": "SQL injection risk in update_staleness_status: UUID strings are joined directly into SQL IN clause. While UUIDs are safe, this pattern should use sqlx query binding instead of format!(). Consider using sqlx::query_with.bind() with array or batch approach."
+      },
+      {
+        "file": "crates/swell-memory/src/staleness.rs",
+        "line": 99,
+        "severity": "non_blocking",
+        "description": "StalenessCheckResult::not_stale() has hardcoded DEFAULT_REINFORCEMENT_INTERVAL_DAYS in should_reinforce calculation instead of using the config's reinforcement_update_interval_days. This means the should_reinforce field may not match config expectations for custom configs."
+      }
+    ]
   },
   "sharedStateObservations": [
     {
-      "area": "conventions",
-      "observation": "The `get()` method intentionally does not filter stale memories, unlike `search()`. This is a deliberate design choice to allow internal maintenance operations (reinforce, mark_stale) to access entries by ID regardless of staleness status. This design choice is not documented in AGENTS.md or anywhere else in shared state.",
-      "evidence": "lib.rs:612 - async fn get(&self, id: Uuid) does not include 'AND is_stale = 0' filter, while search() at line 692 does. Tests like test_reinforce_memory() confirm this behavior is intentional."
+      "area": "knowledge",
+      "observation": "New staleness configuration keys (staleness_window_days, reinforcement_update_interval_days) added to settings.json but not documented anywhere in .factory/library/architecture.md or mission AGENTS.md. These are important memory system parameters that future developers should know about.",
+      "evidence": "settings.json lines 44-45: \"staleness_window_days\": 30, \"reinforcement_update_interval_days\": 7"
     },
     {
-      "area": "skills",
-      "observation": "The Rust skill's procedure was followed correctly. The worker implemented the feature using idiomatic Rust patterns with async/await, proper error handling with Result types, and comprehensive unit tests.",
-      "evidence": "Handoff skillFeedback.followedProcedure: true, deviations: []"
+      "area": "knowledge",
+      "observation": "MemoryEntry gained two new fields (last_reinforcement, is_stale) but architecture.md section on swell-memory only mentions 'SqliteMemoryStore - SQLite-based memory' without describing the data model.",
+      "evidence": "architecture.md has no MemoryEntry field documentation"
+    },
+    {
+      "area": "knowledge",
+      "observation": "New staleness module (staleness.rs) exports public functions check_staleness, is_stale_memory, reinforce, etc. but these are not referenced in architecture.md or any library docs. The staleness detection is a key memory system feature.",
+      "evidence": "staleness.rs exports 8 public functions plus StalenessConfig and StalenessCheckResult types, none documented in library"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker followed all documented conventions (async_trait, thiserror, tracing). No deviations from AGENTS.md patterns.",
+      "evidence": "Handoff shows skillFeedback.followedProcedure: true with no deviations"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "PASS - Memory staleness detection feature implemented correctly. The implementation adds last_reinforcement timestamp tracking, staleness window enforcement (30 days), reinforcement mechanisms, and proper exclusion of stale memories from search results. All tests pass. Build succeeds with no clippy warnings. No blocking issues found."
+  "summary": "Feature implementation passes review. All three expected behaviors implemented correctly: last_reinforcement tracking, staleness window enforcement (30 days), and exclusion of stale memories from retrieval. Implementation includes staleness.rs module with comprehensive staleness logic, SqliteMemoryStore integration with reinforce/mark_stale/update_staleness_status methods, and 21 test cases covering all core paths. Two non-blocking code issues identified: potential SQL injection pattern and hardcoded reinforcement interval in StalenessCheckResult. Several knowledge gaps noted where new configuration keys and staleness module should be documented in .factory/library."
 }

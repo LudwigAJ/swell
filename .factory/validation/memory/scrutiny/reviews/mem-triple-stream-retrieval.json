@@ -1,51 +1,62 @@
 {
   "featureId": "mem-triple-stream-retrieval",
-  "reviewedAt": "2026-04-10T12:00:00Z",
+  "reviewedAt": "2026-04-10T12:45:00.000Z",
   "commitId": "46d9dbd1fca0d70bbf9ccf4b0b9b52dbac52ccec",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "The triple-stream retrieval implementation has a critical bug in the BM25 stream where fake UUIDs are generated instead of actual memory entry IDs, making the fusion results invalid. The vector search stream is also a placeholder that uses text matching rather than actual embedding similarity. Additionally, there is a redundant API design issue with the reranking configuration.",
+    "summary": "Implementation has critical functional bugs despite passing tests. The BM25 search stream generates random UUIDs for results instead of linking to actual memory entries, breaking cross-stream fusion. The vector_search method visibility is restricted to pub(crate), preventing external use.",
     "issues": [
       {
         "file": "crates/swell-memory/src/triple_stream.rs",
-        "line": 595,
+        "line": 520,
         "severity": "blocking",
-        "description": "BM25 search stream generates random UUIDs (Uuid::new_v4()) for each recall result instead of actual memory entry IDs. RecallService.search() operates on ConversationLog entries, not MemoryEntry entries. The fusion combines results from different streams, but since BM25 results get random UUIDs, the final TripleStreamResult IDs will not correspond to real memory entries. This makes the entire triple-stream fusion meaningless for any BM25-enabled query."
+        "description": "BM25 search stream generates Uuid::new_v4() for each result instead of using actual memory entry IDs from RecallResults. This breaks fusion because RRF cannot correlate BM25 results with other streams - each BM25 result gets a unique random ID that won't match anything in the vector or graph streams."
       },
       {
         "file": "crates/swell-memory/src/triple_stream.rs",
-        "line": 514,
-        "severity": "non_blocking",
-        "description": "Vector search stream is a placeholder implementation. The code uses memory_store.search() with text matching (LIKE queries) and then fakes vector scores based on label matching. Comments explicitly state 'In a real implementation, we would generate an embedding for the query'. The feature description says 'Dense vector search component' but this is actually text matching with mock scores, not actual vector similarity search."
+        "line": 518,
+        "severity": "blocking",
+        "description": "RecallService.search() returns RecallResult items which contain session_id, task_id, agent_role, action, start_time, end_time - but no reference to the memory entries they came from. The code attempts to use result.score directly but cannot correlate back to memory entry IDs for fusion. Either RecallResult needs a memory_entry_id field, or triple_stream needs a different approach to map recall results to memory entries."
       },
       {
         "file": "crates/swell-memory/src/triple_stream.rs",
-        "line": 452,
-        "severity": "non_blocking",
-        "description": "API design issue: search_with_reranking takes a separate reranker_config parameter, but TripleStreamConfig already has a reranker: Option<CrossEncoderConfig> field. This is redundant and confusing - the config is specified twice in two different places. The method ignores query.config.reranker and only uses the passed parameter."
+        "line": 400,
+        "severity": "blocking",
+        "description": "vector_search method is pub(crate), not pub, so TripleStreamService (which is external to the crate) cannot call self.memory_store.vector_search(). The code actually bypasses this by using self.memory_store.search() instead and generating mock vector scores based on label matching."
       },
       {
         "file": "crates/swell-memory/src/triple_stream.rs",
-        "line": 448,
+        "line": 475,
         "severity": "non_blocking",
-        "description": "TripleStreamService.config field has #[allow(dead_code)] attribute suggesting it's never read. However, the config is passed during construction and stored, but the search methods read from query.config instead. This dead code field should either be used or removed."
+        "description": "TripleStreamService::with_config has #[allow(dead_code)] on config field, suggesting the config is stored but not actually used for the search. Indeed, the config weights are used in search(), but the full config (including reranker settings) is not applied in search_with_reranking()."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 530,
+        "severity": "non_blocking",
+        "description": "vector_search_stream generates 'vector_score' based on label match (0.9) vs content match (0.7) - these are arbitrary placeholders, not actual cosine similarity scores. The comment acknowledges this: 'This is a placeholder that simulates vector similarity'."
       }
     ]
   },
   "sharedStateObservations": [
     {
-      "area": "conventions",
-      "observation": "The feature description in features.json says 'Dense vector search component' but the implementation is a placeholder using text matching. Either the description should be updated to reflect the actual implementation, or the implementation should be completed to do real vector search.",
-      "source": "Feature description vs implementation at triple_stream.rs:514"
+      "area": "skills",
+      "observation": "The worker used skill 'Rust' but the skill file was not consulted during implementation. The transcript skeleton shows the skill was loaded but skillFeedback.followedProcedure=true with no deviations noted. However, the implementation reveals design-level issues (BM25 not linked to memory entries) that a Rust skill review would likely catch.",
+      "evidence": "transcript shows Skill tool called but implementation has BM25 linkage bug at a fundamental design level"
     },
     {
-      "area": "skills",
-      "observation": "The Rust skill was followed correctly. No deviations noted.",
-      "source": "skillFeedback.followedProcedure: true in handoff"
+      "area": "conventions",
+      "observation": "No convention documented for linking RecallService results back to MemoryEntry IDs. The recall module operates on conversation logs, not directly on memory entries, but triple_stream tries to use it for keyword search on memory. This mismatch wasn't documented as a convention gap - the worker had to discover it experimentally.",
+      "evidence": "RecallQuery searches conversation_logs table which stores task/conversation context, while triple_stream tries to correlate with memory_entries. The recall module has no field linking its results to memory entry IDs."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that vector_search requires embeddings but triple_stream implementation uses placeholder scoring. This is documented in code comments but the actual embedding model integration (for generating query embeddings) is missing. The skill might benefit from noting that vector search requires an embedding model endpoint.",
+      "evidence": "triple_stream.rs line 530: 'In a real implementation, we would generate an embedding for the query. For now, we search using content matching and return mock vector scores. This is a placeholder that simulates vector similarity'"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "The triple-stream retrieval feature fails review due to a critical bug where BM25 results are assigned random UUIDs instead of actual memory entry IDs, making the fusion invalid. The vector search is also a placeholder using text matching. The BM25 stream bug is blocking because it produces incorrect results - the final output contains UUIDs that don't correspond to real memory entries. Additionally, there's an API design issue where reranking config is specified twice in different places."
+  "summary": "Implementation has critical BM25 fusion bug where random UUIDs are generated instead of actual memory entry IDs, preventing correct RRF fusion across streams. Vector search uses placeholder scoring. Tests pass but functionality is broken by design. The feature fulfills the architectural components (RRF, graph traversal, BM25 interface) but the cross-stream correlation is broken for BM25."
 }

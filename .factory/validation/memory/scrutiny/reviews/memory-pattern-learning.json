@@ -1,34 +1,52 @@
 {
   "featureId": "memory-pattern-learning",
-  "reviewedAt": "2026-04-10T15:00:00Z",
+  "reviewedAt": "2026-04-10T00:00:00Z",
   "commitId": "536231e",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "Round 20 re-review confirms all 3 prior blocking issues remain unfixed. The feature was committed at 536231e (Apr 9). No code changes to fix these specific bugs have been made. The anti-pattern name extraction at line 1145 still uses wrong index [3..] which captures the leading '*' from '**' prefix.",
+    "summary": "Implementation creates pattern_learning.rs with RejectionData, AntiPattern, Convention structs, PatternLearningAnalyzer, and PatternLearningService. Tests pass and build succeeds. However, there is a critical bug where MemoryEntry.repository is set to String::new() instead of self.repository when creating new convention blocks.",
     "issues": [
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
+        "line": 1087,
+        "severity": "blocking",
+        "description": "BUG: repository field is set to String::new() when creating a new MemoryEntry in update_memory_blocks(). This means all convention memory blocks created will have an empty repository field, causing get_by_label queries (which filter by repository) to fail to find them. Should be repository: self.repository.clone()"
+      },
+      {
+        "file": "crates/swell-memory/src/pattern_learning.rs",
+        "line": 181,
+        "severity": "non_blocking",
+        "description": "Magic numbers hardcoded in PromotionThresholds::default(). The values (pattern_min_confirmations: 5, pattern_min_confidence: 0.6, etc.) match settings.json but AGENTS.md says 'Never hardcode magic numbers - always load from .swell/settings.json'. However, no crates currently load settings.json, so this is a systemic issue."
+      },
+      {
+        "file": "crates/swell-memory/src/pattern_learning.rs",
         "line": 955,
-        "severity": "blocking",
-        "description": "Confidence calculation uses sum of all pattern frequencies as denominator instead of per-pattern frequency. `final_pattern.update_confidence(frequency_map.values().sum())` aggregates frequencies across ALL patterns (e.g., X:3, Y:5, Z:2 → sum=10) but should use the actual count of distinct rejection events for each pattern. Causes inflated confidence values."
+        "severity": "non_blocking",
+        "description": "Semantic issue: deduplicate_anti_patterns passes frequency_map.values().sum() as total_rejections to update_confidence(). This sums all pattern frequencies across ALL patterns, not the actual number of rejections. For example, if 5 rejections each produce 2 patterns, sum would be 10. While this may produce reasonable results, the variable name and semantics are misleading."
       },
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
-        "line": 1145,
-        "severity": "blocking",
-        "description": "Convention parsing uses wrong string slice index [3..] instead of [4..]. For line '- **name**: description', index 3 points to '*' (second asterisk in '**'), so `trimmed[3..colon_pos]` extracts '*name' with leading asterisk. Correct index should be [4..] to skip '- **' prefix. Same bug has persisted across 20 rounds of review."
+        "line": 1047,
+        "severity": "non_blocking",
+        "description": "Feature gap: PatternLearningAnalyzer::analyze returns anti_patterns but they are never persisted - only conventions are stored via update_memory_blocks(). The get_anti_patterns_for_error method always returns empty (marked TODO in code)."
       },
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
-        "line": 1170,
-        "severity": "blocking",
-        "description": "get_anti_patterns_for_error is an unimplemented stub returning empty vec. Comment 'For MVP, return empty - in full implementation would query stored anti-patterns' acknowledges this. Code relying on this to retrieve anti-patterns for a given error type will always receive nothing."
+        "line": 620,
+        "severity": "non_blocking",
+        "description": "Parameter store is unused in PatternLearningAnalyzer::new (marked _store). The analyzer doesn't persist anti-patterns - it only returns them in memory. The store parameter suggests future persistence capability but is not connected."
       }
     ]
   },
-  "sharedStateObservations": [],
-  "addressesFailureFrom": ".factory/validation/memory/scrutiny/reviews/memory-pattern-learning.json",
-  "summary": "Round 20 review confirms all 3 blocking issues from prior rounds remain unfixed. No code changes to fix these specific bugs since commit 536231e (Apr 9). Feature builds and 29 pattern_learning tests pass, but correctness bugs persist: 1) confidence calculation uses wrong denominator (sum of all frequencies vs actual per-pattern count), 2) convention name parsing extracts '*name' instead of 'name' due to off-by-one slice index, 3) anti-pattern retrieval is an empty stub. Worker followed Rust skill procedure correctly; the issues are pure code correctness bugs that tests don't catch."
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md says 'Never hardcode magic numbers - always load from .swell/settings.json', but no crates currently load settings.json. The pattern_learning module hardcodes PromotionThresholds that match settings.json values (confidence_promotion_threshold: 0.6, pattern_promotion_confirmations: 5, etc.). This is a systemic gap - either the guideline should be implemented or relaxed.",
+      "evidence": "PromotionThresholds::default() hardcodes values that exist in .swell/settings.json under memory. No crates use serde_json::from_reader or similar to load settings."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The pattern_learning module provides pattern extraction from rejection feedback with good test coverage. Build passes and 14 tests pass. However, there is a CRITICAL bug at line 1087 where MemoryEntry.repository is set to String::new() instead of self.repository, causing repository-scoped queries to fail. Additionally, anti-patterns are returned but never persisted, and the store parameter in PatternLearningAnalyzer is unused."
 }

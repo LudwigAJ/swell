@@ -1,26 +1,31 @@
 {
   "featureId": "memory-memory-blocks",
-  "reviewedAt": "2026-04-10T00:00:00Z",
-  "commitId": "4cbce48",
-  "transcriptSkeletonReviewed": false,
+  "reviewedAt": "2026-04-10T18:30:00.000Z",
+  "commitId": "4cbce480b1aca3618aedc103c4891a634f471374",
+  "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "Implementation is correct and functional. All 7 tests pass. Project/User/Task memory blocks with auto-loading via DefaultBlockLoader and context assembly via ContextAssembler are properly implemented.",
+    "summary": "Memory blocks feature fully implemented with Project/User/Task block types, auto-loading via MemoryBlockLoader trait, and context assembly via ContextAssembler. 7 tests pass covering block creation, loading, and context assembly.",
     "issues": []
   },
   "sharedStateObservations": [
     {
       "area": "skills",
-      "observation": "Worker attempted to use 'rust-worker' skill per features.json but the skill did not exist. Worker used 'Rust' skill instead and followed appropriate Rust patterns. The features.json skillName may need updating or the rust-worker skill should be created.",
-      "source": "handoff.skillFeedback"
+      "observation": "Worker attempted to invoke 'rust-worker' skill but it does not exist. features.json specifies skillName: 'Rust' but worker transcript shows initial attempt was for 'rust-worker'. The AGENTS.md documents 'Rust' skill exists in .factory/skills/ but the mission worker base skill references 'rust-worker' which doesn't exist. This is a documentation/implementation mismatch.",
+      "evidence": "Transcript shows: 'Skill \"rust-worker\" not found' error, then worker correctly used 'Rust' skill instead. skillFeedback.followedProcedure: false with deviation noting rust-worker skill doesn't exist."
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill documentation is thorough but focuses on language patterns. For workers implementing features in existing crates (like swell-memory), there may be value in documenting crate-integration patterns - how to properly expose new modules, use pub use from swell_core, integrate with existing store patterns.",
+      "evidence": "Worker spent time exploring crate structure (swell-memory/src/lib.rs, swell-core/src/traits.rs) to understand how to add blocks module and what types to import from swell_core."
     },
     {
       "area": "conventions",
-      "observation": "The PROJECT_CONVENTIONS label constant is defined but not used in create_project_block - architecture and conventions are combined into a single 'project:architecture' label. This is not a bug but may be worth documenting if separate project block types are planned.",
-      "source": "blocks.rs:13-17"
+      "observation": "The code has a minor redundancy: DefaultBlockLoader has both #[derive(Default)] and an explicit new() method that does the same thing. While not incorrect (new() is useful for clarity), AGENTS.md doesn't document when to use derive(Default) vs a custom new() constructor.",
+      "evidence": "crates/swell-memory/src/blocks.rs:42 - impl DefaultBlockLoader { pub fn new() -> Self { Self } } while #[derive(Default)] is already on line 41"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature memory-memory-blocks passes review. Implementation correctly provides MemoryBlocks struct with Project/User/Task block types, DefaultBlockLoader for auto-loading blocks per agent/repository context, ContextAssembler for assembling AgentContext from memory blocks, and helper functions for creating labeled memory entries. All 7 unit tests pass and the workspace builds successfully. No blocking issues found."
+  "summary": "Implementation review passed. All expected behaviors (Project/User/Task blocks, auto-loading, context assembly) implemented correctly. 7 tests pass. Minor observations about skill name mismatch (rust-worker vs Rust) documented for shared state improvement."
 }

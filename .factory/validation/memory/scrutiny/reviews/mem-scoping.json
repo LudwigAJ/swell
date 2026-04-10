@@ -1,86 +1,67 @@
 {
   "featureId": "mem-scoping",
-  "reviewedAt": "2026-04-10T14:30:00Z",
-  "commitId": "103568b",
+  "reviewedAt": "2026-04-10T10:30:00Z",
+  "commitId": "103568bc82cf003ce827490d97e2dbcd61266849",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "The implementation adds repository, language, and task_type scoping fields to MemoryEntry and MemoryQuery. The search() method correctly enforces cross-repo isolation. However, several critical issues remain: (1) update() does not persist scoping fields, (2) get_by_type/get_by_label/get_by_provenance do not filter by repository, (3) delete/get/reinforce/mark_stale don't validate repository scope.",
+    "summary": "The mem-scoping feature adds repository, language, and task_type fields to MemoryEntry and MemoryQuery for cross-repo isolation. The search, get_by_type, get_by_label, and get_by_provenance operations are properly scoped. However, there is a blocking bug in pattern_learning.rs where convention blocks are stored with an empty repository string, causing get_conventions() to fail finding any conventions.",
     "issues": [
       {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 638,
+        "file": "crates/swell-memory/src/pattern_learning.rs",
+        "line": 1085,
         "severity": "blocking",
-        "description": "update() does NOT persist repository, language, or task_type fields. The SQL UPDATE statement only updates: block_type, label, content, embedding, updated_at, metadata. This means if you update an entry's language or task_type, the change is not persisted to the database. This is a data integrity bug."
+        "description": "Convention blocks are stored with `repository: String::new()` instead of `self.repository.clone()`. This causes get_conventions() to fail finding any convention blocks since it queries with `self.repository` via get_by_label. When PatternLearningService is created with a non-empty repository, all convention blocks are orphaned with empty repository strings and are never retrieved."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 475,
+        "severity": "non_blocking",
+        "description": "The delete(id) function does not filter by repository in the WHERE clause. Anyone who knows a memory entry's UUID from any repository can delete it. However, this may be an intentional design choice since UUID is already a unique identifier."
       },
       {
         "file": "crates/swell-memory/src/lib.rs",
         "line": 450,
-        "severity": "blocking",
-        "description": "get_by_type() does not filter by repository - returns ALL memories of a given type across ALL repositories. This violates 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'."
-      },
-      {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 462,
-        "severity": "blocking",
-        "description": "get_by_label() does not filter by repository - returns ALL memories with a given label across ALL repositories. Same cross-repo isolation violation."
-      },
-      {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 472,
-        "severity": "blocking",
-        "description": "get_by_provenance() does not filter by repository - returns ALL memories from a source episode across ALL repositories. Same cross-repo isolation violation."
-      },
-      {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 396,
-        "severity": "blocking",
-        "description": "delete(id) does not validate repository scope - could delete memories from any repository if ID is known. This violates the principle that repository scope should be required for all memory operations."
-      },
-      {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 608,
-        "severity": "blocking",
-        "description": "get(id) does not validate repository scope - could retrieve memories from any repository by ID. Same cross-repo isolation violation."
-      },
-      {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 816,
         "severity": "non_blocking",
-        "description": "reinforce(id) does not validate repository scope - could reinforce memories from any repository. While less severe than delete, this still violates the isolation principle."
+        "description": "The update(entry) function does not filter by repository in the WHERE clause. The repository field is also missing from the UPDATE SET clause, meaning repository cannot be changed after creation. This may be intentional design."
       },
       {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 830,
+        "file": "crates/swell-core/src/traits.rs",
+        "line": 232,
         "severity": "non_blocking",
-        "description": "mark_stale(id) does not validate repository scope - could mark memories from any repository as stale."
+        "description": "MemoryQuery::default() initializes repository to String::new(). If a search is performed without explicitly setting repository, it will search with an empty string and only find entries stored with empty repository (like the orphaned convention blocks from pattern_learning)."
       },
       {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 498,
+        "file": "crates/swell-memory/src/blocks.rs",
+        "line": 230,
         "severity": "non_blocking",
-        "description": "get_stale_memories() does not filter by repository - returns ALL stale memories across all repositories."
+        "description": "create_user_block() uses empty repository string via create_user_block_with_repo(user_id, preferences, \"\"). Similarly, create_task_block() uses empty repository. These helper functions create unscoped entries that won't be found in repository-filtered queries."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "conventions",
-      "observation": "The MemoryStore trait (swell-core/src/traits.rs) defines get_by_type, get_by_label, get_by_provenance, get, delete, update without repository parameters. This is a trait design issue - the feature implementation correctly added repository to MemoryQuery for search(), but these methods predate the scoping feature and don't have repository scope. The trait would need updating to fully enforce repository isolation.",
-      "evidence": "swell-core/src/traits.rs:232-240 - trait methods lack repository parameter"
+      "observation": "The feature description says 'Repository scope required for all memory operations', but the implementation only enforces repository scope in search and query operations. The store, update, and delete operations don't validate repository scope. AGENTS.md doesn't clarify which operations should require repository validation.",
+      "evidence": "store() accepts any repository value including empty string. delete() and update() don't filter by repository."
     },
     {
       "area": "skills",
-      "observation": "The Rust skill was followed correctly for the search() implementation. However, the worker did not identify that update() needs to persist the new scoping fields, and that get_by_type/get_by_label/etc also need repository filtering because the trait doesn't support it.",
-      "evidence": "Transcript shows worker correctly implemented search() scoping but missed update() field persistence and other methods"
+      "observation": "The Rust skill was used and the worker followed standard async Rust patterns (async_trait, tokio::test). No deviations from skill procedure were noted. The implementation is consistent with existing codebase patterns.",
+      "evidence": "Handoff shows skillFeedback with no deviations. Transcript shows proper use of async_trait and SqliteMemoryStore patterns."
+    },
+    {
+      "area": "services",
+      "observation": "Worker used standard commands (cargo build, cargo test, cargo clippy) which are documented in .factory/services.yaml. No undocumented services or commands were used.",
+      "evidence": "Handoff verification.commandsRun shows all commands are in services.yaml"
     },
     {
       "area": "knowledge",
-      "observation": "Empty repository strings (String::new()) are used for user blocks and task blocks with comment 'User blocks are not scoped to repository'. This design choice means user/task blocks cannot be retrieved via search() with a specific repository filter - they can only be found with empty repository string. This might be intentional for cross-cutting concerns but is not documented.",
-      "evidence": "crates/swell-memory/src/blocks.rs:225 and :244 - repository: String::new() with comment about not being scoped"
+      "observation": "No knowledge gaps identified. The worker properly implemented repository scoping using existing SqliteMemoryStore patterns and followed the codebase conventions for schema migrations and query building.",
+      "evidence": "Worker correctly added schema columns, indexes, and updated query building logic"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "The mem-scoping feature partially implements repository scope isolation. The search() method correctly enforces cross-repo isolation. However, update() does NOT persist the repository/language/task_type fields (critical data integrity bug). Additionally, get_by_type(), get_by_label(), get_by_provenance(), get(), and delete() do NOT enforce repository scope, returning/modifying memories from ALL repositories. This violates the feature description requiring 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'. The root cause is that the MemoryStore trait doesn't include repository parameters for these methods - fixing would require trait updates."
+  "summary": "The mem-scoping feature correctly implements repository, language, and task_type filtering for search operations. However, there is a blocking bug in pattern_learning.rs where convention blocks are stored with empty repository strings instead of the service's repository, causing get_conventions() to fail. Additionally, the store/update/delete operations don't validate repository scope, which may be intentional but conflicts with the stated requirement that 'repository scope is required for all memory operations'."
 }

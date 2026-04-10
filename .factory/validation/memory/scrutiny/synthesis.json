@@ -1,105 +1,120 @@
 {
   "milestone": "memory",
-  "round": 22,
+  "round": 1,
   "status": "fail",
   "validatorsRun": {
-    "test": { "passed": true, "command": "cargo test -p swell-memory", "exitCode": 0 },
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
     "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
     "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 5,
-    "passed": 3,
-    "failed": 2,
+    "total": 25,
+    "passed": 19,
+    "failed": 6,
     "failedFeatures": [
-      "memory-skill-extraction",
-      "memory-pattern-learning"
-    ],
-    "note": "mem-* features cancelled (roadmap placeholders) - not re-reviewed. Only completed memory-* features reviewed."
+      "memory-pattern-learning",
+      "mem-decay-function",
+      "mem-deprecation",
+      "mem-scoping",
+      "mem-triple-stream-retrieval",
+      "mem-cross-encoder-rerank"
+    ]
   },
-  "fixesVerified": [
-    {
-      "commit": "74e53df",
-      "description": "Fixed pagination bug in recall search - truncate now correctly applied after skip"
-    },
-    {
-      "commit": "024eda6",
-      "description": "Fixed repository scoping in get_by_type/get_by_label/get_by_provenance - now filter by repository"
-    }
-  ],
   "blockingIssues": [
     {
-      "featureId": "memory-skill-extraction",
-      "severity": "blocking",
-      "description": "Line 125: ExtractionConfig::default() sets store_path to '.skills' but AGENTS.md specifies user-extensible skills should be in '.swell/skills/'. STILL NOT FIXED since round 1.",
-      "evidence": "crates/swell-memory/src/skill_extraction.rs:125: store_path: \".skills\".to_string()"
-    },
-    {
-      "featureId": "memory-skill-extraction",
-      "severity": "blocking",
-      "description": "Line 141: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. STILL NOT FIXED since round 1.",
-      "evidence": "crates/swell-memory/src/skill_extraction.rs:141: #[allow(dead_code)]"
-    },
-    {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1.",
-      "evidence": "crates/swell-memory/src/pattern_learning.rs:955: final_pattern.update_confidence(frequency_map.values().sum())"
-    },
-    {
-      "featureId": "memory-pattern-learning",
-      "severity": "blocking",
-      "description": "Line 1147: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1.",
-      "evidence": "crates/swell-memory/src/pattern_learning.rs:1147: let name = trimmed[3..colon_pos].trim().to_string();"
-    }
-  ],
-  "previouslyReportedIssuesNowObsolete": [
-    {
-      "featureId": "memory-recall",
-      "description": "Pagination bug (truncate before skip) - FIXED in commit 74e53df"
-    },
-    {
-      "featureId": "memory-sqlite-store",
-      "description": "Repository scoping in get_by_type/get_by_label - FIXED in commit 024eda6"
-    },
-    {
-      "featureId": "mem-scoping",
-      "description": "Repository scoping in get_by_type/get_by_label/get_by_provenance and update() - FIXED in commit 024eda6"
-    },
-    {
-      "featureId": "mem-provenance-tracking",
-      "description": "Repository scoping in store/update/search - FIXED in commit 024eda6"
-    },
-    {
-      "featureId": "mem-episodic-memory",
-      "description": "Feature cancelled - issue no longer actionable"
-    },
-    {
-      "featureId": "mem-meta-cognitive",
-      "description": "Feature cancelled - issue no longer actionable"
+      "description": "pattern_learning.rs line 1087: MemoryEntry.repository set to String::new() instead of self.repository.clone(), causing repository-scoped queries to fail finding convention blocks",
+      "file": "crates/swell-memory/src/pattern_learning.rs",
+      "line": 1087
     },
     {
       "featureId": "mem-decay-function",
-      "description": "Feature cancelled - issue no longer actionable"
+      "severity": "blocking",
+      "description": "decay.rs line 56: calculate_decay() returns decay factor > 1.0 when now < last_reinforcement (negative elapsed time), violating documented [0.0, 1.0] range",
+      "file": "crates/swell-memory/src/decay.rs",
+      "line": 56
     },
     {
-      "featureId": "mem-contrastive-learning",
-      "description": "Feature cancelled - issue no longer actionable"
+      "featureId": "mem-deprecation",
+      "severity": "blocking",
+      "description": "MemoryEntry lacks confidence, deprecation_info, and superseded_by fields. The deprecation module cannot integrate with the memory system as specified",
+      "file": "crates/swell-core/src/traits.rs",
+      "line": 58
+    },
+    {
+      "featureId": "mem-scoping",
+      "severity": "blocking",
+      "description": "pattern_learning.rs line 1085: Same repository bug as memory-pattern-learning - convention blocks stored with empty repository string, causing get_conventions() to fail",
+      "file": "crates/swell-memory/src/pattern_learning.rs",
+      "line": 1085
     },
     {
       "featureId": "mem-triple-stream-retrieval",
-      "description": "Feature cancelled - issue no longer actionable"
+      "severity": "blocking",
+      "description": "triple_stream.rs line 520: BM25 search generates random Uuid::new_v4() instead of actual memory entry IDs, breaking RRF fusion across streams",
+      "file": "crates/swell-memory/src/triple_stream.rs",
+      "line": 520
+    },
+    {
+      "featureId": "mem-cross-encoder-rerank",
+      "severity": "blocking",
+      "description": "cross_encoder_rerank.rs line 349: RerankableCandidates trait creates MemoryEntry with empty fields but is never called. Also line 492: Same BM25 UUID bug as triple-stream",
+      "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
+      "line": 349
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "CRITICAL SYSTEMIC ISSUE: 4 blocking issues have persisted for 22 rounds without resolution in memory-skill-extraction and memory-pattern-learning. These are well-identified, localized bugs with exact line numbers. Workers follow Rust skill correctly but miss these specific logic bugs that tests don't catch. Recommend: Create explicit fix feature for these 4 specific line-level bugs, or acknowledge these are accepted technical debt.",
-      "evidence": "Issues marked 'STILL NOT FIXED since round 1' across 2 features. Tests pass but correctness bugs persist.",
+      "suggestion": "Document the pattern: Never hardcode magic numbers, always load from .swell/settings.json - but currently no crates implement this pattern. Either implement settings loading or clarify the guideline applies only when settings.json exists.",
+      "evidence": "memory-pattern-learning hardcodes PromotionThresholds values that match settings.json. This is systemic - no crates currently load settings.json",
       "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance on async test patterns: #[tokio::test] for async tests should be documented as the standard approach",
+      "evidence": "mem-cross-encoder-rerank review identified tokio::test pattern not documented in AGENTS.md",
+      "isSystemic": true
+    },
+    {
+      "target": "Rust skill",
+      "suggestion": "Document async_trait::async_trait usage which is critical for this codebase. All async trait methods in swell-memory use this pattern but it's not in the skill file",
+      "evidence": "Workers spent time discovering async_trait pattern; cross_encoder_rerank.rs uses #[async_trait] pub trait CrossEncoderReranker",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that operator feedback files (CLAUDE.md, AGENTS.md) are parsed for pattern extraction with higher trust weight",
+      "evidence": "mem-operator-feedback review found this is implicit knowledge not documented in AGENTS.md",
+      "isSystemic": false
     }
   ],
-  "rejectedObservations": [],
-  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json (round 21)"
+  "rejectedObservations": [
+    {
+      "observation": "Feature mem-scoping: 'repository scope required for all memory operations' conflicts with implementation where store/update/delete don't validate repository",
+      "reason": "This is an intentional design choice per reviewer analysis - UUID is unique identifier so filtering is not needed for single-item operations"
+    }
+  ],
+  "sharedStateObservations": [
+    {
+      "featureId": "memory-pattern-learning",
+      "observation": "AGENTS.md says 'Never hardcode magic numbers - always load from .swell/settings.json', but no crates currently load settings.json. The pattern_learning module hardcodes PromotionThresholds that match settings.json values."
+    },
+    {
+      "featureId": "mem-cross-encoder-rerank",
+      "observation": "Worker spent time fixing phrase scoring underflow - scoring algorithm edge case handling needs documentation or graceful handling"
+    },
+    {
+      "featureId": "mem-provenance-tracking",
+      "observation": "Handoff claims 4 provenance-specific tests but cargo test shows 0 tests matched"
+    }
+  ],
+  "commonBugAcrossFeatures": {
+    "description": "memory-pattern-learning and mem-scoping share the same bug: pattern_learning.rs creates MemoryEntry with repository: String::new() instead of self.repository.clone()",
+    "affectedFeatures": ["memory-pattern-learning", "mem-scoping"],
+    "fixLocation": "crates/swell-memory/src/pattern_learning.rs line 1085-1087"
+  },
+  "previousRound": null
 }

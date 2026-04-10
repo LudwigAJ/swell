@@ -1,15 +1,62 @@
 {
   "featureId": "mem-deprecation",
-  "reviewedAt": "2026-04-10T09:15:00Z",
+  "reviewedAt": "2026-04-10T08:58:00Z",
   "commitId": "29d1b85",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "The mem-deprecation feature implements memory deprecation with confidence threshold checking at 0.3 and superseded_by links. The implementation is well-structured with 17 passing unit tests covering all scenarios.",
-    "issues": []
+    "summary": "The deprecation module was created with proper types and functions, but it is NOT integrated with MemoryEntry. MemoryEntry lacks both 'confidence' and 'deprecation_info' fields, making the feature non-functional as specified.",
+    "issues": [
+      {
+        "file": "crates/swell-core/src/traits.rs",
+        "line": 58,
+        "severity": "blocking",
+        "description": "MemoryEntry struct does not have a 'confidence' field. The feature requires marking memories with confidence <0.3 as deprecated, but MemoryEntry has no confidence field to track this."
+      },
+      {
+        "file": "crates/swell-core/src/traits.rs",
+        "line": 58,
+        "severity": "blocking",
+        "description": "MemoryEntry struct does not have a 'deprecation_info' field. The DeprecationInfo struct created in deprecation.rs cannot be attached to MemoryEntry."
+      },
+      {
+        "file": "crates/swell-core/src/traits.rs",
+        "line": 58,
+        "severity": "blocking",
+        "description": "MemoryEntry struct does not have a 'superseded_by' field. The feature requirement 'superseded_by link to replacement knowledge' cannot be implemented without this field."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 118,
+        "severity": "blocking",
+        "description": "The memory_entries SQLite table schema does not include 'confidence', 'deprecation_info', or 'superseded_by' columns. The deprecation module functions operate on standalone values, not integrated with actual memory storage."
+      },
+      {
+        "file": "crates/swell-memory/src/deprecation.rs",
+        "line": 161,
+        "severity": "non_blocking",
+        "description": "The Deprecatable trait is defined but never implemented for any type. This trait could be used to extend MemoryEntry with deprecation capabilities but is currently unused."
+      }
+    ]
   },
-  "sharedStateObservations": [],
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker followed Rust skill guidelines and AGENTS.md conventions. Code style, error handling, and testing patterns are consistent.",
+      "evidence": "Transcript shows proper use of thiserror, async_trait, tracing. All verification steps passed (build, clippy, test, fmt)."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed Rust skill procedure correctly. The skillFeedback confirms 'followedProcedure: true' with no deviations.",
+      "evidence": "Handoff shows skillFeedback.deviations is empty, suggesting the skill procedure was appropriate for this task."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The worker discovered that MemoryEntry doesn't have confidence/deprecation fields but proceeded with implementation anyway, creating a module that cannot integrate with the existing memory system without schema changes. This architectural gap should have been flagged.",
+      "evidence": "Transcript shows worker read MemoryEntry definition (line showing 'id, block_type, label, content, embedding...') but did not pause to note that confidence field was missing before implementing."
+    }
+  ],
   "addressesFailureFrom": null,
-  "summary": "Pass - The deprecation module provides correct functionality for marking memories with confidence <0.3 as deprecated with superseded_by links. All 17 unit tests pass, build succeeds with no warnings, and all verification steps completed successfully."
+  "summary": "The mem-deprecation feature created a well-structured deprecation module with proper types, functions, and tests, BUT it is not integrated with MemoryEntry. The core data structure lacks confidence and deprecation_info fields, so memories cannot actually be marked as deprecated as specified. The implementation provides the building blocks (DeprecationInfo, should_be_deprecated, apply_confidence_deprecation, check_deprecation) but these require MemoryEntry schema changes and storage integration to function. The feature passes lint/tests but does not meet the functional requirements."
 }
