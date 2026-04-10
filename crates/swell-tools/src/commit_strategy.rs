@@ -335,11 +335,46 @@ impl CommitStrategy {
         // Common verbs: add, fix, update, remove, refactor, implement, create, delete, etc.
         let first_word = trimmed.split_whitespace().next().unwrap_or("");
         let imperative_verbs = [
-            "add", "fix", "update", "remove", "refactor", "implement", "create", "delete",
-            "improve", "optimize", "clean", "format", "document", "test", "debug", "enable",
-            "disable", "configure", "merge", "split", "extract", "inline", "rename", "move",
-            "reorder", "combine", "separate", "validate", "verify", "check", "ensure", "make",
-            "set", "reset", "restore", "revert", "rollback", "apply", "dispatch", "handle",
+            "add",
+            "fix",
+            "update",
+            "remove",
+            "refactor",
+            "implement",
+            "create",
+            "delete",
+            "improve",
+            "optimize",
+            "clean",
+            "format",
+            "document",
+            "test",
+            "debug",
+            "enable",
+            "disable",
+            "configure",
+            "merge",
+            "split",
+            "extract",
+            "inline",
+            "rename",
+            "move",
+            "reorder",
+            "combine",
+            "separate",
+            "validate",
+            "verify",
+            "check",
+            "ensure",
+            "make",
+            "set",
+            "reset",
+            "restore",
+            "revert",
+            "rollback",
+            "apply",
+            "dispatch",
+            "handle",
         ];
 
         let first_word_lower = first_word.to_lowercase();
@@ -435,7 +470,7 @@ impl CommitStrategy {
 
         // Clone metadata for later use (after we borrow request for staging)
         let mut metadata = request.metadata.clone();
-        
+
         // Add generated-by if not already set
         if metadata.generated_by.is_none() {
             metadata.generated_by = Some(self.generator_id.clone());
@@ -838,8 +873,8 @@ mod tests {
         let file_path = dir.path().join("test.txt");
         tokio::fs::write(&file_path, "Hello, World!").await.unwrap();
 
-        let strategy = CommitStrategy::new("swell-test/1.0.0")
-            .with_default_model("claude-sonnet-test");
+        let strategy =
+            CommitStrategy::new("swell-test/1.0.0").with_default_model("claude-sonnet-test");
 
         let request = CommitRequest::new("Add test file")
             .with_description("A simple test file for commit strategy testing");
@@ -853,7 +888,9 @@ mod tests {
             .unwrap();
 
         // Create commit using strategy
-        let result = strategy.create_commit(&request.build_message(), dir.path()).await;
+        let result = strategy
+            .create_commit(&request.build_message(), dir.path())
+            .await;
         assert!(result.is_ok(), "Commit should succeed: {:?}", result.err());
 
         let commit_hash = result.unwrap();
@@ -890,7 +927,9 @@ mod tests {
 
         // Create a file
         let file_path = dir.path().join("feature.txt");
-        tokio::fs::write(&file_path, "Feature content").await.unwrap();
+        tokio::fs::write(&file_path, "Feature content")
+            .await
+            .unwrap();
 
         let task_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
 

@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
+use std::hash::Hash;
 use swell_core::{Checkpoint, CheckpointStore, SwellError};
 use uuid::Uuid;
-use std::hash::Hash;
 
 /// Event types for event-sourced checkpoint storage
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -54,19 +54,23 @@ pub struct CheckpointEvent {
 fn compute_event_hash(event: &CheckpointEvent, previous_hash: &Option<String>) -> String {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    
+
     let mut hasher = DefaultHasher::new();
     event.id.hash(&mut hasher);
     event.task_id.hash(&mut hasher);
     event.event_type.hash(&mut hasher);
-    serde_json::to_string(&event.state).unwrap_or_default().hash(&mut hasher);
-    serde_json::to_string(&event.snapshot).unwrap_or_default().hash(&mut hasher);
+    serde_json::to_string(&event.state)
+        .unwrap_or_default()
+        .hash(&mut hasher);
+    serde_json::to_string(&event.snapshot)
+        .unwrap_or_default()
+        .hash(&mut hasher);
     event.created_at.hash(&mut hasher);
     event.sequence.hash(&mut hasher);
     if let Some(prev) = previous_hash {
         prev.hash(&mut hasher);
     }
-    
+
     format!("{:016x}", hasher.finish())
 }
 
@@ -214,13 +218,12 @@ impl PostgresCheckpointStore {
 
     /// Get the next sequence number for a task
     async fn get_next_sequence(&self, task_id: Uuid) -> Result<i64, SwellError> {
-        let result: Option<i64> = sqlx::query_scalar(
-            "SELECT MAX(sequence) FROM checkpoint_events WHERE task_id = $1"
-        )
-        .bind(task_id)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let result: Option<i64> =
+            sqlx::query_scalar("SELECT MAX(sequence) FROM checkpoint_events WHERE task_id = $1")
+                .bind(task_id)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(result.unwrap_or(0) + 1)
     }
@@ -379,7 +382,7 @@ impl CheckpointStore for PostgresCheckpointStore {
     async fn prune(&self, task_id: Uuid, keep: usize) -> Result<(), SwellError> {
         // For event sourcing, pruning means marking old events as superseded
         // We don't actually delete events (append-only), but we can record a prune event
-        
+
         if keep == 0 {
             return Ok(());
         }
@@ -421,8 +424,9 @@ impl CheckpointStore for PostgresCheckpointStore {
             };
 
             let mut prune_event_with_hash = prune_event;
-            prune_event_with_hash.event_hash = compute_event_hash(&prune_event_with_hash, &prev_hash);
-            
+            prune_event_with_hash.event_hash =
+                compute_event_hash(&prune_event_with_hash, &prev_hash);
+
             self.append_event(prune_event_with_hash).await?;
         }
 
@@ -544,7 +548,7 @@ mod tests {
 
         let json = serde_json::to_string(&event).unwrap();
         let parsed: CheckpointEvent = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(parsed.id, event.id);
         assert_eq!(parsed.task_id, event.task_id);
         assert_eq!(parsed.event_type, event.event_type);
@@ -555,8 +559,8 @@ mod tests {
 #[cfg(test)]
 mod postgres_integration_tests {
     use super::*;
-    use swell_core::TaskState;
     use std::env;
+    use swell_core::TaskState;
 
     #[tokio::test]
     async fn test_postgres_checkpoint_save_and_load() {
@@ -567,7 +571,7 @@ mod postgres_integration_tests {
 
         let store = PostgresCheckpointStore::new(&db_url).await.unwrap();
         let task_id = Uuid::new_v4();
-        
+
         let checkpoint = Checkpoint {
             id: Uuid::new_v4(),
             task_id,

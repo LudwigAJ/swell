@@ -5,7 +5,7 @@ use swell_orchestrator::Orchestrator;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{watch, Mutex};
-use tokio::time::{timeout, Duration, interval};
+use tokio::time::{interval, timeout, Duration};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -100,7 +100,12 @@ impl Daemon {
             }
 
             // Use timeout on accept to allow checking shutdown flag periodically
-            match timeout(Duration::from_secs(SHUTDOWN_BROADCAST_INTERVAL_SECS), listener.accept()).await {
+            match timeout(
+                Duration::from_secs(SHUTDOWN_BROADCAST_INTERVAL_SECS),
+                listener.accept(),
+            )
+            .await
+            {
                 Ok(Ok((stream, _))) => {
                     // Increment active connections
                     self.active_connections.fetch_add(1, Ordering::Relaxed);
@@ -110,7 +115,13 @@ impl Daemon {
                     let event_emitter = Arc::clone(&self.event_emitter);
 
                     tokio::spawn(async move {
-                        let result = handle_connection_with_shutdown(stream, orchestrator, event_emitter, shutdown_rx).await;
+                        let result = handle_connection_with_shutdown(
+                            stream,
+                            orchestrator,
+                            event_emitter,
+                            shutdown_rx,
+                        )
+                        .await;
                         // Decrement active connections when done
                         active_connections.fetch_sub(1, Ordering::Relaxed);
                         if let Err(e) = result {
@@ -139,7 +150,9 @@ impl Daemon {
     }
 
     /// Wait for all active connections to complete
-    async fn wait_for_active_connections(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn wait_for_active_connections(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut remaining = self.active_connections.load(Ordering::Relaxed);
         let start = std::time::Instant::now();
 
@@ -173,7 +186,9 @@ impl Daemon {
         if std::path::Path::new(&self.socket_path).exists() {
             match std::fs::remove_file(&self.socket_path) {
                 Ok(()) => info!(path = %self.socket_path, "Socket file removed"),
-                Err(e) => warn!(path = %self.socket_path, error = %e, "Failed to remove socket file"),
+                Err(e) => {
+                    warn!(path = %self.socket_path, error = %e, "Failed to remove socket file")
+                }
             }
         }
     }

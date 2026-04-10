@@ -7,10 +7,10 @@
 // pattern_learning learns from REJECTED trajectories (what NOT to do).
 
 use crate::{SqliteMemoryStore, SwellError};
-use swell_core::MemoryStore;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use swell_core::MemoryStore;
 use uuid::Uuid;
 
 /// Represents data about a rejection/failure from validation
@@ -342,7 +342,10 @@ impl PatternLearningAnalyzer {
     }
 
     /// Analyze rejection data and extract anti-patterns
-    pub async fn analyze(&self, rejection: RejectionData) -> Result<PatternLearningResult, SwellError> {
+    pub async fn analyze(
+        &self,
+        rejection: RejectionData,
+    ) -> Result<PatternLearningResult, SwellError> {
         let mut anti_patterns = Vec::new();
         let mut conventions = Vec::new();
         let mut errors = Vec::new();
@@ -424,7 +427,8 @@ impl PatternLearningAnalyzer {
                     });
                 }
                 ap.confidence = 0.9;
-                ap.rejection_reasons.push(RejectionReason::ValidationFailure);
+                ap.rejection_reasons
+                    .push(RejectionReason::ValidationFailure);
                 ap.add_convention("Always run syntax validation before submitting".to_string());
                 patterns.push(ap);
             }
@@ -486,7 +490,8 @@ impl PatternLearningAnalyzer {
                 );
                 ap.description = format!("Missing import: {}", error.message);
                 ap.confidence = 0.9;
-                ap.rejection_reasons.push(RejectionReason::ValidationFailure);
+                ap.rejection_reasons
+                    .push(RejectionReason::ValidationFailure);
                 ap.add_convention("Check all imports are present and correct".to_string());
                 patterns.push(ap);
             }
@@ -498,7 +503,8 @@ impl PatternLearningAnalyzer {
                 );
                 ap.description = error.message.clone();
                 ap.confidence = 0.9;
-                ap.rejection_reasons.push(RejectionReason::ValidationFailure);
+                ap.rejection_reasons
+                    .push(RejectionReason::ValidationFailure);
                 ap.add_convention("Run type checker before submitting".to_string());
                 patterns.push(ap);
             }
@@ -510,8 +516,11 @@ impl PatternLearningAnalyzer {
                 );
                 ap.description = error.message.clone();
                 ap.confidence = 0.9;
-                ap.rejection_reasons.push(RejectionReason::ValidationFailure);
-                ap.add_convention("Ensure all referenced items are defined or imported".to_string());
+                ap.rejection_reasons
+                    .push(RejectionReason::ValidationFailure);
+                ap.add_convention(
+                    "Ensure all referenced items are defined or imported".to_string(),
+                );
                 patterns.push(ap);
             }
             ValidationErrorType::FormattingError => {
@@ -547,7 +556,8 @@ impl PatternLearningAnalyzer {
                 );
                 ap.description = error.message.clone();
                 ap.confidence = 0.5;
-                ap.rejection_reasons.push(RejectionReason::ValidationFailure);
+                ap.rejection_reasons
+                    .push(RejectionReason::ValidationFailure);
                 patterns.push(ap);
             }
         }
@@ -571,7 +581,8 @@ impl PatternLearningAnalyzer {
                         let mut ap = AntiPattern::new(
                             "shell_permission_error".to_string(),
                             AntiPatternType::ShellCommand,
-                            "Shell commands requiring elevated permissions should be avoided".to_string(),
+                            "Shell commands requiring elevated permissions should be avoided"
+                                .to_string(),
                         );
                         ap.confidence = 0.85;
                         ap.add_example(AntiPatternExample {
@@ -590,7 +601,8 @@ impl PatternLearningAnalyzer {
             "write_file" | "edit_file" => {
                 // Check for dangerous file paths
                 if let Some(path) = tool_call.arguments.get("path").and_then(|v| v.as_str()) {
-                    if path.contains("/etc/") || path.contains("/usr/") || path.contains("/System/") {
+                    if path.contains("/etc/") || path.contains("/usr/") || path.contains("/System/")
+                    {
                         let mut ap = AntiPattern::new(
                             "system_file_modification".to_string(),
                             AntiPatternType::FileOperation,
@@ -605,7 +617,9 @@ impl PatternLearningAnalyzer {
                             rejection_reason: RejectionReason::PolicyViolation,
                             timestamp: rejection.timestamp,
                         });
-                        ap.add_convention("Only modify files within the project workspace".to_string());
+                        ap.add_convention(
+                            "Only modify files within the project workspace".to_string(),
+                        );
                         patterns.push(ap);
                     }
                 }
@@ -642,10 +656,13 @@ impl PatternLearningAnalyzer {
                             AntiPatternType::NamingConvention,
                             "Rust files should use snake_case naming".to_string(),
                         );
-                        ap.description = format!("File '{}' mixes snake_case with PascalCase", file);
+                        ap.description =
+                            format!("File '{}' mixes snake_case with PascalCase", file);
                         ap.confidence = 0.7;
                         ap.add_convention("Use snake_case for Rust source files".to_string());
-                        ap.add_convention("Use PascalCase for module names (Rust convention)".to_string());
+                        ap.add_convention(
+                            "Use PascalCase for module names (Rust convention)".to_string(),
+                        );
                         patterns.push(ap);
                     }
                 }
@@ -689,7 +706,11 @@ impl PatternLearningAnalyzer {
                 _ => ConventionType::CodeStructure,
             },
             pattern: convention_text,
-            examples: anti_pattern.examples.iter().map(|e| e.error_message.clone()).collect(),
+            examples: anti_pattern
+                .examples
+                .iter()
+                .map(|e| e.error_message.clone())
+                .collect(),
             source: ConventionSource::FromAntiPattern,
             confidence: anti_pattern.confidence,
             created_at: Utc::now(),
@@ -765,7 +786,9 @@ impl PatternLearningService {
         if self.config.store_conventions_as_blocks {
             match self.update_memory_blocks(&result.conventions).await {
                 Ok(count) => result.memory_blocks_updated = count,
-                Err(e) => result.errors.push(format!("Failed to update memory blocks: {}", e)),
+                Err(e) => result
+                    .errors
+                    .push(format!("Failed to update memory blocks: {}", e)),
             }
         }
 
@@ -812,7 +835,10 @@ impl PatternLearningService {
         }
 
         // Try to find existing conventions block and update it, or create new one
-        let existing = self.store.get_by_label(self.config.convention_block_label.clone()).await?;
+        let existing = self
+            .store
+            .get_by_label(self.config.convention_block_label.clone())
+            .await?;
 
         if let Some(mut entry) = existing.into_iter().next() {
             // Update existing entry
@@ -848,7 +874,10 @@ impl PatternLearningService {
 
     /// Get all conventions from memory blocks
     pub async fn get_conventions(&self) -> Result<Vec<Convention>, SwellError> {
-        let entries = self.store.get_by_label(self.config.convention_block_label.clone()).await?;
+        let entries = self
+            .store
+            .get_by_label(self.config.convention_block_label.clone())
+            .await?;
 
         let mut conventions = Vec::new();
 
@@ -996,9 +1025,7 @@ mod tests {
     async fn test_pattern_learning_analyzer() {
         use crate::SqliteMemoryStore;
 
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         let analyzer = PatternLearningAnalyzer::with_default_config(store);
 
@@ -1049,7 +1076,10 @@ mod tests {
             column: None,
         });
 
-        assert_eq!(rejection.validation_errors[0].error_type, ValidationErrorType::LintWarning);
+        assert_eq!(
+            rejection.validation_errors[0].error_type,
+            ValidationErrorType::LintWarning
+        );
     }
 
     #[tokio::test]
@@ -1059,12 +1089,20 @@ mod tests {
             (ValidationErrorType::TypeError, "type_error"),
             (ValidationErrorType::MissingImport, "missing_import"),
             (ValidationErrorType::TestFailed, "test_failed"),
-            (ValidationErrorType::SecurityVulnerability, "security_vulnerability"),
+            (
+                ValidationErrorType::SecurityVulnerability,
+                "security_vulnerability",
+            ),
         ];
 
         for (error_type, expected_str) in error_types {
             let json = serde_json::to_string(&error_type).unwrap();
-            assert!(json.contains(expected_str), "Expected {} in {}", expected_str, json);
+            assert!(
+                json.contains(expected_str),
+                "Expected {} in {}",
+                expected_str,
+                json
+            );
         }
     }
 
@@ -1112,9 +1150,7 @@ mod tests {
     async fn test_pattern_learning_service_conventions() {
         use crate::SqliteMemoryStore;
 
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         let service = PatternLearningService::with_default_config(store);
 

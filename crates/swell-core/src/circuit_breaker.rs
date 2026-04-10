@@ -76,11 +76,7 @@ impl CircuitBreakerConfig {
         }
     }
 
-    pub fn with_half_open_config(
-        mut self,
-        max_requests: u32,
-        success_threshold: u32,
-    ) -> Self {
+    pub fn with_half_open_config(mut self, max_requests: u32, success_threshold: u32) -> Self {
         self.half_open_max_requests = max_requests;
         self.half_open_success_threshold = success_threshold;
         self
@@ -398,7 +394,9 @@ impl Default for CircuitBreaker {
 /// Async wrapper for CircuitBreaker with Arc<RwLock>
 impl CircuitBreaker {
     /// Async check if request is allowed
-    pub async fn check_async(breaker: &Arc<RwLock<CircuitBreaker>>) -> Result<(), CircuitBreakerError> {
+    pub async fn check_async(
+        breaker: &Arc<RwLock<CircuitBreaker>>,
+    ) -> Result<(), CircuitBreakerError> {
         let b = breaker.read().await;
         b.check()
     }
@@ -664,7 +662,10 @@ mod tests {
         assert!(err.is_open());
 
         let err = CircuitBreakerError::HalfOpenCapacityLimited(2);
-        assert_eq!(err.to_string(), "Circuit is half-open: only 2 requests allowed");
+        assert_eq!(
+            err.to_string(),
+            "Circuit is half-open: only 2 requests allowed"
+        );
 
         let err = CircuitBreakerError::NotAvailable;
         assert_eq!(err.to_string(), "Circuit breaker not available");
@@ -685,7 +686,10 @@ mod tests {
         assert!(CircuitBreaker::check_async(&breaker).await.is_ok());
 
         // Test state_async
-        assert_eq!(CircuitBreaker::state_async(&breaker).await, CircuitState::Closed);
+        assert_eq!(
+            CircuitBreaker::state_async(&breaker).await,
+            CircuitState::Closed
+        );
 
         // Test record_success_async
         CircuitBreaker::record_success_async(&breaker).await;
@@ -722,7 +726,10 @@ mod tests {
         breaker.half_open_requests = 2; // Simulate two requests already made
         let result = breaker.check();
         assert!(result.is_err());
-        assert!(matches!(result, Err(CircuitBreakerError::HalfOpenCapacityLimited(_))));
+        assert!(matches!(
+            result,
+            Err(CircuitBreakerError::HalfOpenCapacityLimited(_))
+        ));
     }
 
     #[test]

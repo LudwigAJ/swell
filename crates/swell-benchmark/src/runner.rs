@@ -235,10 +235,7 @@ impl BenchmarkRunner {
     }
 
     /// Run a task with timeout
-    async fn run_task_with_timeout(
-        &self,
-        task: &BenchmarkTask,
-    ) -> Result<TaskOutcome, ()> {
+    async fn run_task_with_timeout(&self, task: &BenchmarkTask) -> Result<TaskOutcome, ()> {
         tokio::time::timeout(self.config.task_timeout, self.simulate_task(task))
             .await
             .map_err(|_| ())
@@ -340,7 +337,10 @@ mod tests {
     #[test]
     fn test_config_only_tasks() {
         let config = RunnerConfig::only_tasks(vec!["task1", "task2"]);
-        assert_eq!(config.task_filter, Some(vec!["task1".to_string(), "task2".to_string()]));
+        assert_eq!(
+            config.task_filter,
+            Some(vec!["task1".to_string(), "task2".to_string()])
+        );
     }
 
     #[tokio::test]

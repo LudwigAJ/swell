@@ -92,7 +92,12 @@ impl KillSwitchState {
     }
 
     /// Trigger the kill switch at a specific level
-    pub fn trigger(&mut self, level: KillLevel, reason: impl Into<String>, trigger: impl Into<String>) {
+    pub fn trigger(
+        &mut self,
+        level: KillLevel,
+        reason: impl Into<String>,
+        trigger: impl Into<String>,
+    ) {
         let now = chrono::Utc::now();
         let reason_str = reason.into();
         let trigger_str = trigger.into();
@@ -278,7 +283,12 @@ impl KillSwitchGuard {
     }
 
     /// Manually trigger the kill switch
-    pub async fn trigger(&self, level: KillLevel, reason: impl Into<String>, trigger: impl Into<String>) {
+    pub async fn trigger(
+        &self,
+        level: KillLevel,
+        reason: impl Into<String>,
+        trigger: impl Into<String>,
+    ) {
         let mut state = self.state.write().await;
         state.trigger(level, reason, trigger);
     }
@@ -295,7 +305,11 @@ impl KillSwitchGuard {
             if let Some(level) = verifier.verify() {
                 let mut state = self.state.write().await;
                 if !state.active || state.level.map(|l| l.severity()) < Some(level.severity()) {
-                    state.trigger(level, format!("External: {:?}", std::any::type_name::<Self>()), "external");
+                    state.trigger(
+                        level,
+                        format!("External: {:?}", std::any::type_name::<Self>()),
+                        "external",
+                    );
                 }
             }
         }
@@ -458,7 +472,9 @@ impl KillSwitchError {
     pub fn is_blocking(&self) -> bool {
         matches!(
             self,
-            KillSwitchError::FullStop(_) | KillSwitchError::NetworkKilled(_) | KillSwitchError::ScopeBlocked(_)
+            KillSwitchError::FullStop(_)
+                | KillSwitchError::NetworkKilled(_)
+                | KillSwitchError::ScopeBlocked(_)
         )
     }
 }

@@ -157,7 +157,13 @@ impl FlakinessDetector {
     }
 
     /// Record a test run with metadata
-    pub fn record_with_retry(&mut self, test_name: String, passed: bool, duration_ms: u64, is_retry: bool) {
+    pub fn record_with_retry(
+        &mut self,
+        test_name: String,
+        passed: bool,
+        duration_ms: u64,
+        is_retry: bool,
+    ) {
         let run = TestRun {
             timestamp: Utc::now(),
             passed,
@@ -208,7 +214,9 @@ impl FlakinessDetector {
         let failure_rate = failures as f64 / total as f64;
 
         // Check if failure rate is in the "potentially flaky" range
-        if failure_rate < self.config.min_failure_rate || failure_rate > self.config.max_failure_rate {
+        if failure_rate < self.config.min_failure_rate
+            || failure_rate > self.config.max_failure_rate
+        {
             return 0.0;
         }
 
@@ -448,8 +456,15 @@ impl FlakinessReport {
 
         // Summary
         md.push_str("## Summary\n\n");
-        md.push_str(&format!("- **Total Tests Tracked**: {}\n", self.total_tests));
-        md.push_str(&format!("- **Flaky Tests**: {} ({:.1}%)\n", self.flaky_tests, self.flaky_percentage()));
+        md.push_str(&format!(
+            "- **Total Tests Tracked**: {}\n",
+            self.total_tests
+        ));
+        md.push_str(&format!(
+            "- **Flaky Tests**: {} ({:.1}%)\n",
+            self.flaky_tests,
+            self.flaky_percentage()
+        ));
         md.push_str(&format!(
             "- **Quarantine Threshold**: {:.0}%\n\n",
             self.quarantined_threshold * 100.0
@@ -504,7 +519,10 @@ impl FlakinessReport {
             for report in stable_with_failures {
                 md.push_str(&format!(
                     "- `{}`: {:.0}% failure rate ({} failures in {} runs)\n",
-                    report.test_name, report.failure_rate * 100.0, report.failures, report.total_runs
+                    report.test_name,
+                    report.failure_rate * 100.0,
+                    report.failures,
+                    report.total_runs
                 ));
             }
             md.push('\n');
@@ -1152,11 +1170,14 @@ mod quarantine_pool_tests {
         pool.record_result("test_record", true);
         let test = pool.get_quarantined_test("test_record").unwrap();
         assert_eq!(test.consecutive_passes, 2);
-        
+
         // After 3rd pass, record_result signals evaluation is needed
         let should_evaluate = pool.record_result("test_record", true);
-        assert!(!should_evaluate, "Should signal that evaluation is needed after 3 passes");
-        
+        assert!(
+            !should_evaluate,
+            "Should signal that evaluation is needed after 3 passes"
+        );
+
         // But test is still quarantined until update() is called
         assert!(pool.is_quarantined("test_record"));
     }
@@ -1326,8 +1347,7 @@ mod integration_tests {
     fn test_full_flakiness_workflow() {
         // Simulate a full workflow: detect -> quarantine -> monitor -> release
         // This test uses a more forgiving configuration for the flakiness detector
-        let config = FlakinessConfig::new()
-            .with_quarantine_threshold(0.7); // Higher threshold so score of ~0.6 triggers release
+        let config = FlakinessConfig::new().with_quarantine_threshold(0.7); // Higher threshold so score of ~0.6 triggers release
         let mut detector = FlakinessDetector::new(config);
         let mut pool = QuarantinePool::with_defaults();
 
@@ -1337,9 +1357,15 @@ mod integration_tests {
         }
 
         // Should be detected as flaky
-        assert!(detector.is_flaky("workflow_test"), "Should be detected as flaky after mixed results");
+        assert!(
+            detector.is_flaky("workflow_test"),
+            "Should be detected as flaky after mixed results"
+        );
         pool.sync_with_detector(&detector);
-        assert!(pool.is_quarantined("workflow_test"), "Should be quarantined");
+        assert!(
+            pool.is_quarantined("workflow_test"),
+            "Should be quarantined"
+        );
 
         // Phase 2: Test improves - record many passes to stabilize the score
         // Add enough passes to drive the score below threshold
@@ -1351,11 +1377,15 @@ mod integration_tests {
         // Phase 3: Update pool - test should be released due to sufficient consecutive passes
         // even if score hasn't dropped below threshold
         let released = pool.update(&detector);
-        
+
         // After enough consecutive passes (10 > default 3), the test should be released
-        assert!(released.contains(&"workflow_test".to_string()), 
-            "Test should be released after {} consecutive passes (threshold is 3)", 
-            pool.get_quarantined_test("workflow_test").map(|t| t.consecutive_passes).unwrap_or(0));
+        assert!(
+            released.contains(&"workflow_test".to_string()),
+            "Test should be released after {} consecutive passes (threshold is 3)",
+            pool.get_quarantined_test("workflow_test")
+                .map(|t| t.consecutive_passes)
+                .unwrap_or(0)
+        );
 
         // Phase 4: Verify test is no longer flagged
         assert!(!pool.is_quarantined("workflow_test"));

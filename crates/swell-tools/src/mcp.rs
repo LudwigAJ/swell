@@ -225,17 +225,20 @@ impl McpClient {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit())
             .spawn()
-            .map_err(|e| SwellError::ToolExecutionFailed(format!(
-                "Failed to spawn MCP server '{}': {}", self.server_url, e
-            )))?;
+            .map_err(|e| {
+                SwellError::ToolExecutionFailed(format!(
+                    "Failed to spawn MCP server '{}': {}",
+                    self.server_url, e
+                ))
+            })?;
 
-        let stdin = child.stdin.take().ok_or_else(|| SwellError::ToolExecutionFailed(
-            "Failed to take MCP server stdin".to_string()
-        ))?;
+        let stdin = child.stdin.take().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("Failed to take MCP server stdin".to_string())
+        })?;
 
-        let stdout = child.stdout.take().ok_or_else(|| SwellError::ToolExecutionFailed(
-            "Failed to take MCP server stdout".to_string()
-        ))?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("Failed to take MCP server stdout".to_string())
+        })?;
 
         let process = McpProcess {
             child,
@@ -262,7 +265,7 @@ impl McpClient {
 
         if parts.is_empty() {
             return Err(SwellError::ConfigError(
-                "MCP server command is empty".to_string()
+                "MCP server command is empty".to_string(),
             ));
         }
 
@@ -285,11 +288,17 @@ impl McpClient {
             },
         };
 
-        let response_value = self.send_request("initialize", Some(serde_json::to_value(&request).unwrap())).await?;
+        let response_value = self
+            .send_request("initialize", Some(serde_json::to_value(&request).unwrap()))
+            .await?;
 
-        let response: McpInitializeResponse = serde_json::from_value(response_value).map_err(|e| {
-            SwellError::ToolExecutionFailed(format!("Failed to parse initialize response: {}", e))
-        })?;
+        let response: McpInitializeResponse =
+            serde_json::from_value(response_value).map_err(|e| {
+                SwellError::ToolExecutionFailed(format!(
+                    "Failed to parse initialize response: {}",
+                    e
+                ))
+            })?;
 
         // Verify protocol version compatibility
         if response.protocol_version != MCP_PROTOCOL_VERSION {
@@ -329,31 +338,39 @@ impl McpClient {
         // Handle error responses
         if let Some(error) = response.error {
             return Err(SwellError::ToolExecutionFailed(format!(
-                "MCP error {}: {}", error.code, error.message
+                "MCP error {}: {}",
+                error.code, error.message
             )));
         }
 
-        response.result.ok_or_else(|| SwellError::ToolExecutionFailed(
-            "MCP response missing result".to_string()
-        ))
+        response.result.ok_or_else(|| {
+            SwellError::ToolExecutionFailed("MCP response missing result".to_string())
+        })
     }
 
     /// Internal method to send a request and read response
-    async fn send_request_raw(&self, request: &JsonRpcRequest) -> Result<JsonRpcResponse, SwellError> {
+    async fn send_request_raw(
+        &self,
+        request: &JsonRpcRequest,
+    ) -> Result<JsonRpcResponse, SwellError> {
         // Use write lock to get mutable access to process
         let mut process_guard = self.process.write().await;
-        let process = process_guard.as_mut().ok_or_else(|| SwellError::ToolExecutionFailed(
-            "MCP server not connected".to_string()
-        ))?;
+        let process = process_guard.as_mut().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("MCP server not connected".to_string())
+        })?;
 
         // Send request
         let request_json = serde_json::to_string(&request).map_err(|e| {
             SwellError::ToolExecutionFailed(format!("Failed to serialize request: {}", e))
         })?;
 
-        process.writer.write_all(request_json.as_bytes()).await.map_err(|e| {
-            SwellError::ToolExecutionFailed(format!("Failed to write to MCP stdin: {}", e))
-        })?;
+        process
+            .writer
+            .write_all(request_json.as_bytes())
+            .await
+            .map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Failed to write to MCP stdin: {}", e))
+            })?;
 
         process.writer.write_all(b"\n").await.map_err(|e| {
             SwellError::ToolExecutionFailed(format!("Failed to write newline: {}", e))
@@ -365,9 +382,13 @@ impl McpClient {
 
         // Read response
         let mut response_line = String::new();
-        process.reader.read_line(&mut response_line).await.map_err(|e| {
-            SwellError::ToolExecutionFailed(format!("Failed to read MCP response: {}", e))
-        })?;
+        process
+            .reader
+            .read_line(&mut response_line)
+            .await
+            .map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Failed to read MCP response: {}", e))
+            })?;
 
         let response: JsonRpcResponse = serde_json::from_str(&response_line).map_err(|e| {
             SwellError::ToolExecutionFailed(format!("Failed to parse MCP response: {}", e))
@@ -380,17 +401,21 @@ impl McpClient {
     async fn send_notification_raw(&self, request: &JsonRpcRequest) -> Result<(), SwellError> {
         // Use write lock to get mutable access to process
         let mut process_guard = self.process.write().await;
-        let process = process_guard.as_mut().ok_or_else(|| SwellError::ToolExecutionFailed(
-            "MCP server not connected".to_string()
-        ))?;
+        let process = process_guard.as_mut().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("MCP server not connected".to_string())
+        })?;
 
         let request_json = serde_json::to_string(&request).map_err(|e| {
             SwellError::ToolExecutionFailed(format!("Failed to serialize notification: {}", e))
         })?;
 
-        process.writer.write_all(request_json.as_bytes()).await.map_err(|e| {
-            SwellError::ToolExecutionFailed(format!("Failed to write to MCP stdin: {}", e))
-        })?;
+        process
+            .writer
+            .write_all(request_json.as_bytes())
+            .await
+            .map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Failed to write to MCP stdin: {}", e))
+            })?;
 
         process.writer.write_all(b"\n").await.map_err(|e| {
             SwellError::ToolExecutionFailed(format!("Failed to write newline: {}", e))
@@ -424,7 +449,8 @@ impl McpClient {
 
         let result: Value = self.send_request("tools/list", None).await?;
 
-        let tools_list = result.get("tools")
+        let tools_list = result
+            .get("tools")
             .and_then(|t| t.as_array())
             .cloned()
             .unwrap_or_default();
@@ -433,7 +459,8 @@ impl McpClient {
             .into_iter()
             .filter_map(|t| {
                 let name = t.get("name")?.as_str()?.to_string();
-                let description = t.get("description")
+                let description = t
+                    .get("description")
                     .and_then(|d| d.as_str())
                     .unwrap_or("")
                     .to_string();
@@ -473,11 +500,7 @@ impl McpClient {
     }
 
     /// Call an MCP tool
-    pub async fn call_tool(
-        &self,
-        name: &str,
-        arguments: Value,
-    ) -> Result<ToolOutput, SwellError> {
+    pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<ToolOutput, SwellError> {
         // Handle arguments that may already be JSON-encoded as a string
         let args_value = if let Some(args_str) = arguments.as_str() {
             // Arguments is a string - parse it as JSON to get the actual object
@@ -485,7 +508,7 @@ impl McpClient {
         } else {
             arguments
         };
-        
+
         let params = serde_json::json!({
             "name": name,
             "arguments": args_value
@@ -494,26 +517,30 @@ impl McpClient {
         let result: Value = self.send_request("tools/call", Some(params)).await?;
 
         // Parse the tool call result according to MCP spec
-        let content = result.get("content")
+        let content = result
+            .get("content")
             .and_then(|c| c.as_array())
             .and_then(|arr| arr.first())
             .cloned();
 
         let (success, result_str, error_msg) = match content {
             Some(content_obj) => {
-                let text = content_obj.get("text")
+                let text = content_obj
+                    .get("text")
                     .and_then(|t| t.as_str())
                     .unwrap_or("")
                     .to_string();
 
-                let is_error = content_obj.get("isError")
+                let is_error = content_obj
+                    .get("isError")
                     .and_then(|e| e.as_bool())
                     .unwrap_or(false);
 
                 (!is_error, text, None)
             }
             None => {
-                let content_str = result.get("content")
+                let content_str = result
+                    .get("content")
                     .map(|c| serde_json::to_string(c).unwrap_or_default())
                     .unwrap_or_default();
 

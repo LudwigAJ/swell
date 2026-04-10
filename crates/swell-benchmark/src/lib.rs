@@ -11,13 +11,13 @@
 //! - **Measurable**: Each task has clear success criteria
 //! - **Repeatable**: Tasks can be run multiple times with consistent results
 
-mod task;
-mod runner;
 mod metrics;
+mod runner;
+mod task;
 
-pub use task::{BenchmarkTask, TaskCategory, TaskDifficulty, TaskResult, TaskId};
-pub use runner::BenchmarkRunner;
 pub use metrics::{BenchmarkMetrics, TaskOutcome};
+pub use runner::BenchmarkRunner;
+pub use task::{BenchmarkTask, TaskCategory, TaskDifficulty, TaskId, TaskResult};
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -55,7 +55,8 @@ impl BenchmarkSuite {
         Self {
             id: BenchmarkId::new(),
             name: "SWELL Standard Benchmark Suite".to_string(),
-            description: "50 curated tasks spanning bug fixes, features, refactoring, and tests".to_string(),
+            description: "50 curated tasks spanning bug fixes, features, refactoring, and tests"
+                .to_string(),
             tasks,
             created_at: chrono::Utc::now(),
         }
@@ -117,7 +118,10 @@ impl BenchmarkSuite {
                 "Timeouts should trigger appropriate error types".to_string(),
                 "Resources should be cleaned up on timeout".to_string(),
             ],
-            vec!["swell-llm/src/anthropic.rs".to_string(), "swell-llm/src/openai.rs".to_string()],
+            vec![
+                "swell-llm/src/anthropic.rs".to_string(),
+                "swell-llm/src/openai.rs".to_string(),
+            ],
         ));
 
         tasks.push(BenchmarkTask::new(
@@ -280,7 +284,8 @@ impl BenchmarkSuite {
             "Implement Bayesian confidence tracking".to_string(),
             vec![
                 "Alpha/Beta posterior tracking".to_string(),
-                "Thresholds: <0.3 deprecated, 0.3-0.6 uncertain, 0.6-0.8 probable, >0.8 confident".to_string(),
+                "Thresholds: <0.3 deprecated, 0.3-0.6 uncertain, 0.6-0.8 probable, >0.8 confident"
+                    .to_string(),
             ],
             vec!["swell-memory/src/pattern_learning.rs".to_string()],
         ));
@@ -477,7 +482,10 @@ impl BenchmarkSuite {
                 "Fluent API for message construction".to_string(),
                 "Reduce boilerplate in message creation".to_string(),
             ],
-            vec!["swell-llm/src/anthropic.rs".to_string(), "swell-llm/src/openai.rs".to_string()],
+            vec![
+                "swell-llm/src/anthropic.rs".to_string(),
+                "swell-llm/src/openai.rs".to_string(),
+            ],
         ));
 
         tasks.push(BenchmarkTask::new(
@@ -501,7 +509,10 @@ impl BenchmarkSuite {
                 "Consistent error type across backends".to_string(),
                 "Better error context preservation".to_string(),
             ],
-            vec!["swell-llm/src/anthropic.rs".to_string(), "swell-llm/src/openai.rs".to_string()],
+            vec![
+                "swell-llm/src/anthropic.rs".to_string(),
+                "swell-llm/src/openai.rs".to_string(),
+            ],
         ));
 
         // Refactoring 9-12: Tool Refactoring
@@ -616,7 +627,10 @@ impl BenchmarkSuite {
                 "Test exponential backoff calculation".to_string(),
                 "Test max retry limit".to_string(),
             ],
-            vec!["swell-llm/src/anthropic.rs".to_string(), "swell-llm/src/openai.rs".to_string()],
+            vec![
+                "swell-llm/src/anthropic.rs".to_string(),
+                "swell-llm/src/openai.rs".to_string(),
+            ],
         ));
 
         tasks.push(BenchmarkTask::new(
@@ -692,7 +706,10 @@ impl BenchmarkSuite {
                 "Test branch operation isolation".to_string(),
                 "Test worktree cleanup on failure".to_string(),
             ],
-            vec!["swell-tools/src/commit_strategy.rs".to_string(), "swell-tools/src/branch_strategy.rs".to_string()],
+            vec![
+                "swell-tools/src/commit_strategy.rs".to_string(),
+                "swell-tools/src/branch_strategy.rs".to_string(),
+            ],
         ));
 
         tasks.push(BenchmarkTask::new(
@@ -709,19 +726,29 @@ impl BenchmarkSuite {
         ));
 
         // Ensure we have exactly 50 tasks
-        assert_eq!(tasks.len(), 50, "Benchmark suite must have exactly 50 tasks");
+        assert_eq!(
+            tasks.len(),
+            50,
+            "Benchmark suite must have exactly 50 tasks"
+        );
 
         tasks
     }
 
     /// Get tasks by category
     pub fn tasks_by_category(&self, category: TaskCategory) -> Vec<&BenchmarkTask> {
-        self.tasks.iter().filter(|t| t.category == category).collect()
+        self.tasks
+            .iter()
+            .filter(|t| t.category == category)
+            .collect()
     }
 
     /// Get tasks by difficulty
     pub fn tasks_by_difficulty(&self, difficulty: TaskDifficulty) -> Vec<&BenchmarkTask> {
-        self.tasks.iter().filter(|t| t.difficulty == difficulty).collect()
+        self.tasks
+            .iter()
+            .filter(|t| t.difficulty == difficulty)
+            .collect()
     }
 
     /// Get task statistics
@@ -815,14 +842,22 @@ mod tests {
         let mut ids: Vec<_> = suite.tasks.iter().map(|t| t.id.clone()).collect();
         ids.sort();
         ids.dedup();
-        assert_eq!(ids.len(), suite.tasks.len(), "All task IDs should be unique");
+        assert_eq!(
+            ids.len(),
+            suite.tasks.len(),
+            "All task IDs should be unique"
+        );
     }
 
     #[test]
     fn test_all_tasks_have_success_criteria() {
         let suite = BenchmarkSuite::standard();
         for task in &suite.tasks {
-            assert!(!task.success_criteria.is_empty(), "Task {} should have success criteria", task.id);
+            assert!(
+                !task.success_criteria.is_empty(),
+                "Task {} should have success criteria",
+                task.id
+            );
         }
     }
 
@@ -830,7 +865,11 @@ mod tests {
     fn test_all_tasks_have_affected_files() {
         let suite = BenchmarkSuite::standard();
         for task in &suite.tasks {
-            assert!(!task.affected_files.is_empty(), "Task {} should have affected files", task.id);
+            assert!(
+                !task.affected_files.is_empty(),
+                "Task {} should have affected files",
+                task.id
+            );
         }
     }
 

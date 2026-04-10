@@ -1,7 +1,7 @@
-use swell_core::init_tracing;
-use swell_daemon::Daemon;
-use swell_daemon::dashboard::{start_dashboard_server, DashboardState};
 use std::sync::Arc;
+use swell_core::init_tracing;
+use swell_daemon::dashboard::{start_dashboard_server, DashboardState};
+use swell_daemon::Daemon;
 use tracing::info;
 
 #[tokio::main]
@@ -24,7 +24,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start both servers concurrently
     let daemon_run = daemon.run();
-    let dashboard_run = start_dashboard_server(Arc::clone(&daemon), dashboard_state, dashboard_port);
+    let dashboard_run =
+        start_dashboard_server(Arc::clone(&daemon), dashboard_state, dashboard_port);
 
     tokio::select! {
         result = daemon_run => {

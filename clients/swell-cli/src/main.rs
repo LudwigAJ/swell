@@ -1,6 +1,6 @@
-use swell_core::{CliCommand, DaemonEvent, Task};
 use std::io::{self, Write};
 use std::time::Duration;
+use swell_core::{CliCommand, DaemonEvent, Task};
 use thiserror::Error;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -100,7 +100,7 @@ fn confirm(prompt: &str) -> bool {
         eprintln!("Warning: flush failed: {}", e);
         return false;
     }
-    
+
     let mut input = String::new();
     match io::stdin().read_line(&mut input) {
         Ok(_) => {
@@ -158,7 +158,10 @@ async fn main() {
                 match Uuid::parse_str(&args[2]) {
                     Ok(task_id) => {
                         // Confirmation prompt before approving
-                        if !confirm(&format!("Are you sure you want to approve task {}?", task_id)) {
+                        if !confirm(&format!(
+                            "Are you sure you want to approve task {}?",
+                            task_id
+                        )) {
                             println!("Approval cancelled.");
                             return;
                         }
@@ -176,7 +179,10 @@ async fn main() {
                 match Uuid::parse_str(&args[2]) {
                     Ok(task_id) => {
                         // Confirmation prompt before cancelling
-                        if !confirm(&format!("Are you sure you want to cancel task {}?", task_id)) {
+                        if !confirm(&format!(
+                            "Are you sure you want to cancel task {}?",
+                            task_id
+                        )) {
                             println!("Cancellation aborted.");
                             return;
                         }
@@ -196,20 +202,14 @@ async fn main() {
     }
 }
 
-async fn send_command(
-    socket_path: &str,
-    cmd: CliCommand,
-) -> Result<(), CliError> {
+async fn send_command(socket_path: &str, cmd: CliCommand) -> Result<(), CliError> {
     // Check if socket file exists before trying to connect
     if !std::path::Path::new(socket_path).exists() {
         return Err(CliError::SocketNotFound(socket_path.to_string()));
     }
 
     // Connect with timeout
-    let connect_result = timeout(
-        DEFAULT_CONNECT_TIMEOUT,
-        UnixStream::connect(socket_path)
-    ).await;
+    let connect_result = timeout(DEFAULT_CONNECT_TIMEOUT, UnixStream::connect(socket_path)).await;
 
     let mut stream = match connect_result {
         Ok(Ok(stream)) => stream,
@@ -225,17 +225,15 @@ async fn send_command(
     };
 
     // Serialize command
-    let cmd_json = serde_json::to_string(&cmd)
-        .map_err(|e| CliError::JsonParseError(e.to_string()))?;
+    let cmd_json =
+        serde_json::to_string(&cmd).map_err(|e| CliError::JsonParseError(e.to_string()))?;
 
     // Write with timeout
-    let write_result = timeout(
-        DEFAULT_REQUEST_TIMEOUT,
-        async {
-            stream.write_all(cmd_json.as_bytes()).await?;
-            stream.flush().await
-        }
-    ).await;
+    let write_result = timeout(DEFAULT_REQUEST_TIMEOUT, async {
+        stream.write_all(cmd_json.as_bytes()).await?;
+        stream.flush().await
+    })
+    .await;
 
     if write_result.is_err() {
         return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
@@ -243,16 +241,14 @@ async fn send_command(
 
     // Read response with timeout
     let mut response_buf = Vec::with_capacity(65536);
-    let read_result = timeout(
-        DEFAULT_REQUEST_TIMEOUT,
-        stream.read_buf(&mut response_buf)
-    ).await;
+    let read_result = timeout(DEFAULT_REQUEST_TIMEOUT, stream.read_buf(&mut response_buf)).await;
 
     let n = match read_result {
         Ok(Ok(n)) => n,
         Ok(Err(e)) => {
             return Err(CliError::ConnectionFailed(format!(
-                "Failed to read response: {}", e
+                "Failed to read response: {}",
+                e
             )));
         }
         Err(_) => {
@@ -279,10 +275,7 @@ async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), CliError> {
     }
 
     // Connect with timeout
-    let connect_result = timeout(
-        DEFAULT_CONNECT_TIMEOUT,
-        UnixStream::connect(socket_path)
-    ).await;
+    let connect_result = timeout(DEFAULT_CONNECT_TIMEOUT, UnixStream::connect(socket_path)).await;
 
     let mut stream = match connect_result {
         Ok(Ok(stream)) => stream,
@@ -298,17 +291,15 @@ async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), CliError> {
     };
 
     let cmd = CliCommand::TaskWatch { task_id };
-    let cmd_json = serde_json::to_string(&cmd)
-        .map_err(|e| CliError::JsonParseError(e.to_string()))?;
+    let cmd_json =
+        serde_json::to_string(&cmd).map_err(|e| CliError::JsonParseError(e.to_string()))?;
 
     // Write with timeout
-    let write_result = timeout(
-        DEFAULT_REQUEST_TIMEOUT,
-        async {
-            stream.write_all(cmd_json.as_bytes()).await?;
-            stream.flush().await
-        }
-    ).await;
+    let write_result = timeout(DEFAULT_REQUEST_TIMEOUT, async {
+        stream.write_all(cmd_json.as_bytes()).await?;
+        stream.flush().await
+    })
+    .await;
 
     if write_result.is_err() {
         return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
@@ -319,7 +310,8 @@ async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), CliError> {
         Ok(sig) => sig,
         Err(e) => {
             return Err(CliError::ConnectionFailed(format!(
-                "Failed to setup signal handler: {}", e
+                "Failed to setup signal handler: {}",
+                e
             )));
         }
     };
@@ -384,21 +376,31 @@ async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), CliError> {
 fn is_terminal_event(event: &DaemonEvent) -> bool {
     matches!(
         event,
-        DaemonEvent::TaskCompleted { .. }
-            | DaemonEvent::TaskFailed { .. }
+        DaemonEvent::TaskCompleted { .. } | DaemonEvent::TaskFailed { .. }
     )
 }
 
 /// Handle and display a daemon event
 fn handle_event(event: &DaemonEvent) {
     match event {
-        DaemonEvent::TaskCreated { id, correlation_id: _ } => {
+        DaemonEvent::TaskCreated {
+            id,
+            correlation_id: _,
+        } => {
             println!("Task created: {}", id);
         }
-        DaemonEvent::TaskStateChanged { id, state, correlation_id: _ } => {
+        DaemonEvent::TaskStateChanged {
+            id,
+            state,
+            correlation_id: _,
+        } => {
             println!("[{}] State changed to: {}", id, state);
         }
-        DaemonEvent::TaskCompleted { id, pr_url, correlation_id: _ } => {
+        DaemonEvent::TaskCompleted {
+            id,
+            pr_url,
+            correlation_id: _,
+        } => {
             if *id == Uuid::nil() {
                 // This is a list response
                 if let Some(json) = pr_url {
@@ -411,13 +413,24 @@ fn handle_event(event: &DaemonEvent) {
                 }
             }
         }
-        DaemonEvent::TaskFailed { id, error, correlation_id: _ } => {
+        DaemonEvent::TaskFailed {
+            id,
+            error,
+            correlation_id: _,
+        } => {
             eprintln!("[{}] Task failed: {}", id, error);
         }
-        DaemonEvent::TaskProgress { id, message, correlation_id: _ } => {
+        DaemonEvent::TaskProgress {
+            id,
+            message,
+            correlation_id: _,
+        } => {
             println!("[{}] {}", id, message);
         }
-        DaemonEvent::Error { message, correlation_id: _ } => {
+        DaemonEvent::Error {
+            message,
+            correlation_id: _,
+        } => {
             eprintln!("Error: {}", message);
         }
     }
@@ -430,10 +443,7 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
     }
 
     // Connect with timeout
-    let connect_result = timeout(
-        DEFAULT_CONNECT_TIMEOUT,
-        UnixStream::connect(socket_path)
-    ).await;
+    let connect_result = timeout(DEFAULT_CONNECT_TIMEOUT, UnixStream::connect(socket_path)).await;
 
     let mut stream = match connect_result {
         Ok(Ok(stream)) => stream,
@@ -449,17 +459,15 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
     };
 
     let cmd = CliCommand::TaskList;
-    let cmd_json = serde_json::to_string(&cmd)
-        .map_err(|e| CliError::JsonParseError(e.to_string()))?;
+    let cmd_json =
+        serde_json::to_string(&cmd).map_err(|e| CliError::JsonParseError(e.to_string()))?;
 
     // Write with timeout
-    let write_result = timeout(
-        DEFAULT_REQUEST_TIMEOUT,
-        async {
-            stream.write_all(cmd_json.as_bytes()).await?;
-            stream.flush().await
-        }
-    ).await;
+    let write_result = timeout(DEFAULT_REQUEST_TIMEOUT, async {
+        stream.write_all(cmd_json.as_bytes()).await?;
+        stream.flush().await
+    })
+    .await;
 
     if write_result.is_err() {
         return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
@@ -467,16 +475,14 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
 
     // Read response with timeout
     let mut response_buf = Vec::with_capacity(65536);
-    let read_result = timeout(
-        DEFAULT_REQUEST_TIMEOUT,
-        stream.read_buf(&mut response_buf)
-    ).await;
+    let read_result = timeout(DEFAULT_REQUEST_TIMEOUT, stream.read_buf(&mut response_buf)).await;
 
     let n = match read_result {
         Ok(Ok(n)) => n,
         Ok(Err(e)) => {
             return Err(CliError::ConnectionFailed(format!(
-                "Failed to read response: {}", e
+                "Failed to read response: {}",
+                e
             )));
         }
         Err(_) => {
@@ -498,10 +504,9 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
                             println!("{}", json);
                         } else {
                             // Formatted table output
-                            let tasks: Vec<Task> = serde_json::from_str(&json)
-                                .map_err(|e| CliError::JsonParseError(format!(
-                                    "Task list: {}", e
-                                )))?;
+                            let tasks: Vec<Task> = serde_json::from_str(&json).map_err(|e| {
+                                CliError::JsonParseError(format!("Task list: {}", e))
+                            })?;
                             print_task_table(&tasks);
                         }
                     }
@@ -527,7 +532,12 @@ fn print_task_table(tasks: &[Task]) {
 
     // Table header
     println!("{:36} | {:12} | {:40}", "ID", "STATE", "DESCRIPTION");
-    println!("{} | {:12} | {}", "-".repeat(36), "-".repeat(12), "-".repeat(40));
+    println!(
+        "{} | {:12} | {}",
+        "-".repeat(36),
+        "-".repeat(12),
+        "-".repeat(40)
+    );
 
     for task in tasks {
         let description = if task.description.len() > 40 {

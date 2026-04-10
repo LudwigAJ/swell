@@ -1,6 +1,7 @@
 pub mod circuit_breaker;
 pub mod error;
 pub mod kill_switch;
+pub mod tracing_json;
 pub mod traits;
 pub mod types;
 

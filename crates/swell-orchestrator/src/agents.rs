@@ -387,7 +387,9 @@ impl GeneratorAgent {
 
             // Use LLM to decide next action if available, otherwise use simple heuristics
             let (action, action_tokens) = if let Some(llm) = &self.llm {
-                let (action_str, tokens) = self.decide_action_with_llm(&current_thought, step, llm).await?;
+                let (action_str, tokens) = self
+                    .decide_action_with_llm(&current_thought, step, llm)
+                    .await?;
                 (action_str, tokens)
             } else {
                 (self.decide_action_heuristic(&current_thought, step)?, 0u64)
@@ -458,10 +460,7 @@ impl GeneratorAgent {
             })
         });
 
-        let tool_name = action["action"]
-            .as_str()
-            .unwrap_or("shell")
-            .to_string();
+        let tool_name = action["action"].as_str().unwrap_or("shell").to_string();
         let tool_args = action["args"].clone();
 
         (tool_name, tool_args)
@@ -642,8 +641,9 @@ impl Agent for GeneratorAgent {
 
         // Execute each step in the plan using ReAct loop
         for step in &plan.steps {
-            let (step_output, step_tool_calls, step_tokens) =
-                self.execute_step_with_react(step, &context.task, workspace_path).await?;
+            let (step_output, step_tool_calls, step_tokens) = self
+                .execute_step_with_react(step, &context.task, workspace_path)
+                .await?;
             all_outputs.push(step_output);
             tool_call_results.extend(step_tool_calls);
             total_tokens += step_tokens;
@@ -1322,13 +1322,17 @@ impl ReactLoop {
 
     /// Check if no-progress doom loop is detected
     pub fn is_no_progress_doom(&self) -> bool {
-        let iterations_without_progress = self.current_iteration.saturating_sub(self.last_file_change_iteration);
-        iterations_without_progress >= self.no_progress_threshold && self.last_file_change_iteration > 0
+        let iterations_without_progress = self
+            .current_iteration
+            .saturating_sub(self.last_file_change_iteration);
+        iterations_without_progress >= self.no_progress_threshold
+            && self.last_file_change_iteration > 0
     }
 
     /// Get the number of iterations since last file change
     pub fn iterations_without_progress(&self) -> u32 {
-        self.current_iteration.saturating_sub(self.last_file_change_iteration)
+        self.current_iteration
+            .saturating_sub(self.last_file_change_iteration)
     }
 
     /// Get the last file change iteration
@@ -3693,9 +3697,7 @@ impl Agent for RefactorerAgent {
                 for opp in &all_opportunities {
                     if opp.risk_level == RiskLevel::Low && !reverted {
                         // Only apply if we have actual old_code and new_code
-                        if let (Some(old_code), Some(new_code)) =
-                            (&opp.old_code, &opp.new_code)
-                        {
+                        if let (Some(old_code), Some(new_code)) = (&opp.old_code, &opp.new_code) {
                             // Apply the refactoring via apply_refactor()
                             // First, get the original content if not already cached
                             if let Some(file_path) = opp.target_files.first() {
@@ -3706,10 +3708,7 @@ impl Agent for RefactorerAgent {
                                 }
 
                                 // Apply the refactoring
-                                match self
-                                    .apply_refactor(file_path, old_code, new_code)
-                                    .await
-                                {
+                                match self.apply_refactor(file_path, old_code, new_code).await {
                                     Ok(_) => {
                                         // Successfully applied the refactoring
                                         applied_opportunities.push(opp.description.clone());
@@ -3723,9 +3722,8 @@ impl Agent for RefactorerAgent {
                                         );
                                         // Revert any already applied changes
                                         for (path, original) in &original_contents {
-                                            let _ = self
-                                                .apply_refactor(path, new_code, original)
-                                                .await;
+                                            let _ =
+                                                self.apply_refactor(path, new_code, original).await;
                                         }
                                         reverted = true;
                                         break;
@@ -3965,7 +3963,14 @@ impl Agent for DocWriterAgent {
         let memory_context = context
             .memory_blocks
             .iter()
-            .map(|b| format!("- [{}] {}\n{}", format!("{:?}", b.block_type).to_lowercase(), b.label, b.content))
+            .map(|b| {
+                format!(
+                    "- [{}] {}\n{}",
+                    format!("{:?}", b.block_type).to_lowercase(),
+                    b.label,
+                    b.content
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -3998,8 +4003,8 @@ impl Agent for DocWriterAgent {
         let response = llm.chat(messages, None, config).await?;
 
         // Parse the response to extract documentation changes
-        let doc_response: serde_json::Value = serde_json::from_str(&response.content)
-            .map_err(|e| {
+        let doc_response: serde_json::Value =
+            serde_json::from_str(&response.content).map_err(|e| {
                 SwellError::LlmError(format!(
                     "Failed to parse doc writer response: {}. Raw content: {}",
                     e, &response.content
@@ -4551,7 +4556,10 @@ mod tests {
 
         // After 5 iterations without file changes, should_continue should return false
         assert!(!loop_state.should_continue());
-        assert!(matches!(loop_state.state, ReactLoopState::NoProgressDetected));
+        assert!(matches!(
+            loop_state.state,
+            ReactLoopState::NoProgressDetected
+        ));
     }
 
     #[tokio::test]
@@ -4586,7 +4594,10 @@ mod tests {
 
         // Should trigger no-progress doom after 5 iterations without file change
         assert!(!loop_state.should_continue());
-        assert!(matches!(loop_state.state, ReactLoopState::NoProgressDetected));
+        assert!(matches!(
+            loop_state.state,
+            ReactLoopState::NoProgressDetected
+        ));
     }
 
     #[tokio::test]
@@ -4662,7 +4673,10 @@ mod tests {
 
         // With threshold of 3, should trigger no-progress doom
         assert!(!loop_state.should_continue());
-        assert!(matches!(loop_state.state, ReactLoopState::NoProgressDetected));
+        assert!(matches!(
+            loop_state.state,
+            ReactLoopState::NoProgressDetected
+        ));
     }
 
     // ========================================================================

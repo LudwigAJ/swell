@@ -78,7 +78,10 @@ impl CheckpointManager {
     }
 
     /// Create a new CheckpointManager with custom configuration.
-    pub fn with_config(checkpoint_store: Arc<dyn CheckpointStore>, config: CheckpointManagerConfig) -> Self {
+    pub fn with_config(
+        checkpoint_store: Arc<dyn CheckpointStore>,
+        config: CheckpointManagerConfig,
+    ) -> Self {
         Self {
             checkpoint_store,
             config,
@@ -153,7 +156,11 @@ impl CheckpointManager {
         task.transition_to(new_state);
 
         // Get checkpoint count for metadata
-        let checkpoints = self.checkpoint_store.list(task.id).await.unwrap_or_default();
+        let checkpoints = self
+            .checkpoint_store
+            .list(task.id)
+            .await
+            .unwrap_or_default();
         let checkpoint_count = checkpoints.len();
 
         let metadata = CheckpointMetadata {
@@ -186,7 +193,8 @@ impl CheckpointManager {
 
         // Prune old checkpoints if configured
         if self.config.max_checkpoints_per_task > 0 {
-            if let Err(e) = self.checkpoint_store
+            if let Err(e) = self
+                .checkpoint_store
                 .prune(task_id, self.config.max_checkpoints_per_task)
                 .await
             {
@@ -348,7 +356,10 @@ mod tests {
         let store = InMemoryCheckpointStore::new();
         let manager = CheckpointManager::new(Arc::new(store));
 
-        let task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
+        let task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
 
         assert_eq!(task.state, TaskState::Created);
         assert_eq!(task.description, "Test task");
@@ -362,10 +373,16 @@ mod tests {
         let store = InMemoryCheckpointStore::new();
         let manager = CheckpointManager::new(Arc::new(store));
 
-        let mut task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
+        let mut task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
 
         // Transition Created → Enriched
-        manager.transition_with_checkpoint(&mut task, TaskState::Enriched).await.unwrap();
+        manager
+            .transition_with_checkpoint(&mut task, TaskState::Enriched)
+            .await
+            .unwrap();
 
         assert_eq!(task.state, TaskState::Enriched);
 
@@ -380,8 +397,14 @@ mod tests {
         let manager = CheckpointManager::new(Arc::new(store));
 
         // Create and transition
-        let mut task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
-        manager.transition_with_checkpoint(&mut task, TaskState::Enriched).await.unwrap();
+        let mut task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
+        manager
+            .transition_with_checkpoint(&mut task, TaskState::Enriched)
+            .await
+            .unwrap();
 
         let task_id = task.id;
 
@@ -398,11 +421,20 @@ mod tests {
         let store = InMemoryCheckpointStore::new();
         let manager = CheckpointManager::new(Arc::new(store));
 
-        let mut task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
+        let mut task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
 
         // Create multiple checkpoints through transitions
-        manager.transition_with_checkpoint(&mut task, TaskState::Enriched).await.unwrap();
-        manager.transition_with_checkpoint(&mut task, TaskState::Ready).await.unwrap();
+        manager
+            .transition_with_checkpoint(&mut task, TaskState::Enriched)
+            .await
+            .unwrap();
+        manager
+            .transition_with_checkpoint(&mut task, TaskState::Ready)
+            .await
+            .unwrap();
 
         let checkpoints = manager.list_checkpoints(task.id).await.unwrap();
         assert!(checkpoints.len() >= 2);
@@ -413,7 +445,10 @@ mod tests {
         let store = InMemoryCheckpointStore::new();
         let manager = CheckpointManager::new(Arc::new(store));
 
-        let task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
+        let task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
 
         assert!(manager.has_checkpoint(task.id).await.unwrap());
 
@@ -426,11 +461,23 @@ mod tests {
         let store = InMemoryCheckpointStore::new();
         let manager = CheckpointManager::new(Arc::new(store));
 
-        let mut task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
-        assert_eq!(manager.get_latest_state(task.id).await.unwrap(), Some(TaskState::Created));
+        let mut task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            manager.get_latest_state(task.id).await.unwrap(),
+            Some(TaskState::Created)
+        );
 
-        manager.transition_with_checkpoint(&mut task, TaskState::Enriched).await.unwrap();
-        assert_eq!(manager.get_latest_state(task.id).await.unwrap(), Some(TaskState::Enriched));
+        manager
+            .transition_with_checkpoint(&mut task, TaskState::Enriched)
+            .await
+            .unwrap();
+        assert_eq!(
+            manager.get_latest_state(task.id).await.unwrap(),
+            Some(TaskState::Enriched)
+        );
     }
 
     #[tokio::test]
@@ -456,23 +503,62 @@ mod tests {
     #[tokio::test]
     async fn test_is_valid_transition() {
         // Valid forward transitions
-        assert!(CheckpointManager::is_valid_transition(TaskState::Created, TaskState::Enriched));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Enriched, TaskState::Ready));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Ready, TaskState::Assigned));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Assigned, TaskState::Executing));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Executing, TaskState::Validating));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Validating, TaskState::Accepted));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Validating, TaskState::Rejected));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Rejected, TaskState::Ready));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Rejected, TaskState::Escalated));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Created,
+            TaskState::Enriched
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Enriched,
+            TaskState::Ready
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Ready,
+            TaskState::Assigned
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Assigned,
+            TaskState::Executing
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Executing,
+            TaskState::Validating
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Validating,
+            TaskState::Accepted
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Validating,
+            TaskState::Rejected
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Rejected,
+            TaskState::Ready
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Rejected,
+            TaskState::Escalated
+        ));
 
         // Terminal states
-        assert!(CheckpointManager::is_valid_transition(TaskState::Rejected, TaskState::Failed));
-        assert!(CheckpointManager::is_valid_transition(TaskState::Executing, TaskState::Failed));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Rejected,
+            TaskState::Failed
+        ));
+        assert!(CheckpointManager::is_valid_transition(
+            TaskState::Executing,
+            TaskState::Failed
+        ));
 
         // Invalid transitions
-        assert!(!CheckpointManager::is_valid_transition(TaskState::Created, TaskState::Accepted));
-        assert!(!CheckpointManager::is_valid_transition(TaskState::Accepted, TaskState::Executing));
+        assert!(!CheckpointManager::is_valid_transition(
+            TaskState::Created,
+            TaskState::Accepted
+        ));
+        assert!(!CheckpointManager::is_valid_transition(
+            TaskState::Accepted,
+            TaskState::Executing
+        ));
     }
 
     #[tokio::test]
@@ -480,8 +566,14 @@ mod tests {
         let store = InMemoryCheckpointStore::new();
         let manager = CheckpointManager::new(Arc::new(store));
 
-        let mut task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
-        manager.transition_with_checkpoint(&mut task, TaskState::Enriched).await.unwrap();
+        let mut task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
+        manager
+            .transition_with_checkpoint(&mut task, TaskState::Enriched)
+            .await
+            .unwrap();
 
         let history = manager.get_history(task.id).await.unwrap();
 
@@ -506,7 +598,10 @@ mod tests {
         };
         let manager = CheckpointManager::with_config(Arc::new(store), config);
 
-        let mut task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
+        let mut task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
 
         // Create many transitions
         for state in [
@@ -516,7 +611,10 @@ mod tests {
             TaskState::Executing,
             TaskState::Validating,
         ] {
-            manager.transition_with_checkpoint(&mut task, state).await.unwrap();
+            manager
+                .transition_with_checkpoint(&mut task, state)
+                .await
+                .unwrap();
         }
 
         // Should be pruned to max_checkpoints_per_task (but we keep the prune events too)
@@ -531,7 +629,10 @@ mod tests {
         let manager = CheckpointManager::new(Arc::new(store));
 
         // Create a task
-        let task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
+        let task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
 
         // Flush should complete without error
         manager.flush_pending().await.unwrap();
@@ -545,10 +646,15 @@ mod tests {
         let store = InMemoryCheckpointStore::new();
         let manager = CheckpointManager::new(Arc::new(store));
 
-        let mut task = manager.create_and_checkpoint("Test task".to_string()).await.unwrap();
+        let mut task = manager
+            .create_and_checkpoint("Test task".to_string())
+            .await
+            .unwrap();
 
         // Attempt an invalid transition: Created -> Accepted (skipping Enriched, Ready, Assigned, Executing, Validating)
-        let result = manager.transition_with_checkpoint(&mut task, TaskState::Accepted).await;
+        let result = manager
+            .transition_with_checkpoint(&mut task, TaskState::Accepted)
+            .await;
 
         // Should fail with InvalidStateTransition error
         assert!(result.is_err());

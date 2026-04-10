@@ -124,14 +124,20 @@ impl AggregatedMetrics {
 
         // Weighted averages based on task count
         let completion_rate = if total_tasks > 0 {
-            samples.iter().map(|s| s.completion_rate * s.total_tasks as f64).sum::<f64>()
+            samples
+                .iter()
+                .map(|s| s.completion_rate * s.total_tasks as f64)
+                .sum::<f64>()
                 / total_tasks as f64
         } else {
             0.0
         };
 
         let validation_pass_rate = if total_tasks > 0 {
-            samples.iter().map(|s| s.validation_pass_rate * s.total_tasks as f64).sum::<f64>()
+            samples
+                .iter()
+                .map(|s| s.validation_pass_rate * s.total_tasks as f64)
+                .sum::<f64>()
                 / total_tasks as f64
         } else {
             0.0
@@ -155,8 +161,16 @@ impl AggregatedMetrics {
             samples.iter().map(|s| s.agent_utilization).sum::<f64>() / samples.len() as f64
         };
 
-        let window_start = samples.iter().map(|s| s.timestamp).min().unwrap_or_else(Utc::now);
-        let window_end = samples.iter().map(|s| s.timestamp).max().unwrap_or_else(Utc::now);
+        let window_start = samples
+            .iter()
+            .map(|s| s.timestamp)
+            .min()
+            .unwrap_or_else(Utc::now);
+        let window_end = samples
+            .iter()
+            .map(|s| s.timestamp)
+            .max()
+            .unwrap_or_else(Utc::now);
 
         Self {
             window,
@@ -424,7 +438,9 @@ impl MetricsCollector {
             alerts.push(MetricsAlert {
                 id: Uuid::new_v4(),
                 alert_type: AlertType::ValidationFailureRateHigh,
-                severity: if validation_failure_rate > self.thresholds.max_validation_failure_rate * 2.0 {
+                severity: if validation_failure_rate
+                    > self.thresholds.max_validation_failure_rate * 2.0
+                {
                     AlertSeverity::Critical
                 } else {
                     AlertSeverity::Warning
@@ -526,7 +542,9 @@ pub fn create_metrics_collector() -> SharedMetricsCollector {
 }
 
 /// Create with custom thresholds
-pub fn create_metrics_collector_with_thresholds(thresholds: AlertThresholds) -> SharedMetricsCollector {
+pub fn create_metrics_collector_with_thresholds(
+    thresholds: AlertThresholds,
+) -> SharedMetricsCollector {
     Arc::new(RwLock::new(MetricsCollector::with_thresholds(thresholds)))
 }
 
@@ -544,14 +562,26 @@ mod tests {
         active_agents: usize,
         total_agents: usize,
     ) -> MetricSample {
-        let success_rate = if total > 0 { completed as f64 / total as f64 } else { 0.0 };
+        let success_rate = if total > 0 {
+            completed as f64 / total as f64
+        } else {
+            0.0
+        };
         let valid_rate = if completed + failed > 0 {
             completed as f64 / (completed + failed) as f64
         } else {
             0.0
         };
-        let retry_rate = if total > 0 { retries as f64 / total as f64 } else { 0.0 };
-        let cost = if total > 0 { tokens as f64 / total as f64 } else { 0.0 };
+        let retry_rate = if total > 0 {
+            retries as f64 / total as f64
+        } else {
+            0.0
+        };
+        let cost = if total > 0 {
+            tokens as f64 / total as f64
+        } else {
+            0.0
+        };
         let utilization = if total_agents > 0 {
             active_agents as f64 / total_agents as f64
         } else {
@@ -713,7 +743,9 @@ mod tests {
 
         let alerts = collector.check_thresholds(&metrics);
         assert!(!alerts.is_empty());
-        assert!(alerts.iter().any(|a| matches!(a.alert_type, AlertType::CompletionRateLow)));
+        assert!(alerts
+            .iter()
+            .any(|a| matches!(a.alert_type, AlertType::CompletionRateLow)));
     }
 
     #[test]

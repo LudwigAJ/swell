@@ -41,13 +41,13 @@ pub use confidence::{
 
 // Re-export evidence pack for use by other crates
 pub mod evidence;
+pub use evidence::sqlite_store::SqliteEvidenceStore;
 pub use evidence::{
     AiReviewEvidence, ConfidenceEvidence, CoverageEvidence, EvidenceOutcome, EvidencePack,
     EvidencePackBuilder, EvidencePackError, EvidenceStore, EvidenceStoreError, FlakinessEvidence,
     GateEvidence, InMemoryEvidenceStore, MessageCounts, ReviewComment, SecurityEvidence,
     SecurityFinding, SignalScore, TestEvidence, TestResult,
 };
-pub use evidence::sqlite_store::SqliteEvidenceStore;
 
 // Re-export flakiness detection for use by other crates
 pub mod flakiness;
@@ -319,7 +319,9 @@ impl TestGate {
             let line = line.trim();
 
             // Test name line (rust test format)
-            if line.starts_with("test ") && (line.ends_with(" ... FAILED") || line.ends_with(" ... ok")) {
+            if line.starts_with("test ")
+                && (line.ends_with(" ... FAILED") || line.ends_with(" ... ok"))
+            {
                 // Save previous failure if any
                 if let Some(name) = current_test.take() {
                     let msg = current_msg.join("\n");
@@ -361,7 +363,10 @@ impl TestGate {
             }
             // Failure location: "  --> file.rs:line:col"
             else if line.starts_with("  --> ") || line.starts_with("--> ") {
-                if let Some(path) = line.strip_prefix("  --> ").or_else(|| line.strip_prefix("--> ")) {
+                if let Some(path) = line
+                    .strip_prefix("  --> ")
+                    .or_else(|| line.strip_prefix("--> "))
+                {
                     let parts: Vec<&str> = path.split(':').collect();
                     if !parts.is_empty() {
                         current_file = Some(parts[0].to_string());
@@ -377,7 +382,9 @@ impl TestGate {
             }
             // Error/panic message lines
             else if current_test.is_some()
-                && (line.starts_with("thread '") || line.starts_with("panicked at") || line.starts_with("error"))
+                && (line.starts_with("thread '")
+                    || line.starts_with("panicked at")
+                    || line.starts_with("error"))
             {
                 current_msg.push(line.to_string());
             } else if current_test.is_some() && !line.is_empty() && !line.starts_with("test ") {
@@ -396,11 +403,8 @@ impl TestGate {
                 let is_comp = msg.contains("cannot find")
                     || msg.contains("could not compile")
                     || msg.contains("link");
-                let class = TestFailureClassification::classify(
-                    &msg,
-                    current_file.as_deref(),
-                    is_comp,
-                );
+                let class =
+                    TestFailureClassification::classify(&msg, current_file.as_deref(), is_comp);
                 output.failures.push(TestFailure {
                     name,
                     message: msg,
@@ -501,7 +505,11 @@ impl ValidationGate for TestGate {
                         if impl_defects.len() == 1 { "" } else { "s" },
                         impl_defects
                             .iter()
-                            .map(|f| format!("  - {}: {}", f.name, f.message.lines().next().unwrap_or("")))
+                            .map(|f| format!(
+                                "  - {}: {}",
+                                f.name,
+                                f.message.lines().next().unwrap_or("")
+                            ))
                             .collect::<Vec<_>>()
                             .join("\n")
                     ),
@@ -520,7 +528,11 @@ impl ValidationGate for TestGate {
                         if test_defects.len() == 1 { "" } else { "s" },
                         test_defects
                             .iter()
-                            .map(|f| format!("  - {}: {}", f.name, f.message.lines().next().unwrap_or("")))
+                            .map(|f| format!(
+                                "  - {}: {}",
+                                f.name,
+                                f.message.lines().next().unwrap_or("")
+                            ))
                             .collect::<Vec<_>>()
                             .join("\n")
                     ),
@@ -539,7 +551,11 @@ impl ValidationGate for TestGate {
                         if env_defects.len() == 1 { "" } else { "s" },
                         env_defects
                             .iter()
-                            .map(|f| format!("  - {}: {}", f.name, f.message.lines().next().unwrap_or("")))
+                            .map(|f| format!(
+                                "  - {}: {}",
+                                f.name,
+                                f.message.lines().next().unwrap_or("")
+                            ))
                             .collect::<Vec<_>>()
                             .join("\n")
                     ),
@@ -558,7 +574,11 @@ impl ValidationGate for TestGate {
                         if unknown.len() == 1 { "" } else { "s" },
                         unknown
                             .iter()
-                            .map(|f| format!("  - {}: {}", f.name, f.message.lines().next().unwrap_or("")))
+                            .map(|f| format!(
+                                "  - {}: {}",
+                                f.name,
+                                f.message.lines().next().unwrap_or("")
+                            ))
                             .collect::<Vec<_>>()
                             .join("\n")
                     ),
@@ -726,7 +746,11 @@ impl Vulnerability {
         let mut file = None;
         let mut line = None;
         if let Some(start) = result.get("start") {
-            file = start.get("filename").or_else(|| start.get("file")).and_then(|f| f.as_str()).map(String::from);
+            file = start
+                .get("filename")
+                .or_else(|| start.get("file"))
+                .and_then(|f| f.as_str())
+                .map(String::from);
             line = start.get("line").and_then(|l| l.as_u64()).map(|l| l as u32);
         }
 
@@ -844,9 +868,7 @@ impl SecurityScanResults {
 
     /// Check if there are any blocking findings
     pub fn has_blocking_findings(&self) -> bool {
-        self.findings
-            .iter()
-            .any(|f| f.severity.should_block())
+        self.findings.iter().any(|f| f.severity.should_block())
     }
 }
 
@@ -921,13 +943,13 @@ impl SecurityGate {
         workspace_path: &str,
     ) -> SecurityScanResults {
         use std::io::Result as IoResult;
-        
+
         let start = std::time::Instant::now();
         let args = scanner.scan_args(workspace_path);
         // Convert to String to satisfy 'static lifetime requirement for spawn_blocking
         let workspace_path_string = workspace_path.to_string();
 
-        let join_result: Result<IoResult<std::process::Output>, tokio::task::JoinError> = 
+        let join_result: Result<IoResult<std::process::Output>, tokio::task::JoinError> =
             task::spawn_blocking(move || {
                 Command::new(scanner.command())
                     .args(&args)
@@ -1037,10 +1059,7 @@ impl SecurityGate {
                 code: None,
                 message: format!(
                     "Security scan ({}) completed: no vulnerabilities found",
-                    results
-                        .scanner
-                        .map(|s| s.command())
-                        .unwrap_or("unknown")
+                    results.scanner.map(|s| s.command()).unwrap_or("unknown")
                 ),
                 file: None,
                 line: None,
@@ -1059,17 +1078,11 @@ impl SecurityGate {
                 .collect();
 
             if !errors.is_empty() {
-                let mut files: Vec<_> = errors
-                    .iter()
-                    .filter_map(|f| f.file.clone())
-                    .collect();
+                let mut files: Vec<_> = errors.iter().filter_map(|f| f.file.clone()).collect();
                 files.sort();
                 files.dedup();
 
-                let mut cwes: Vec<_> = errors
-                    .iter()
-                    .filter_map(|f| f.cwe.clone())
-                    .collect();
+                let mut cwes: Vec<_> = errors.iter().filter_map(|f| f.cwe.clone()).collect();
                 cwes.sort();
                 cwes.dedup();
 
@@ -1103,10 +1116,7 @@ impl SecurityGate {
                 messages.push(ValidationMessage {
                     level: ValidationLevel::Warning,
                     code: Some("SEC_WARNING".to_string()),
-                    message: format!(
-                        "Medium/Low severity security findings ({})",
-                        warnings.len()
-                    ),
+                    message: format!("Medium/Low severity security findings ({})", warnings.len()),
                     file: None,
                     line: None,
                 });
@@ -1289,7 +1299,10 @@ impl AiReviewGate {
                 Err(e) => {
                     tracing::debug!("Could not read file {}: {}", file_path, e);
                     // Continue with other files
-                    content.push_str(&format!("\n\n// ===== File: {} (not found) =====\n", file_path));
+                    content.push_str(&format!(
+                        "\n\n// ===== File: {} (not found) =====\n",
+                        file_path
+                    ));
                 }
             }
         }
@@ -1308,18 +1321,23 @@ impl AiReviewGate {
         );
 
         if let Some(desc) = task_description {
-            prompt.push_str(&format!(r#"
+            prompt.push_str(&format!(
+                r#"
 
 Task Description:
 {}
 
-"#, desc));
+"#,
+                desc
+            ));
         }
 
-        prompt.push_str(r#"
+        prompt.push_str(
+            r#"
 
 Please provide your review in the specified JSON format.
-"#);
+"#,
+        );
 
         prompt
     }
@@ -1327,16 +1345,14 @@ Please provide your review in the specified JSON format.
     /// Parse the LLM response into an AiReviewResult.
     fn parse_review_response(&self, response: &str) -> Result<AiReviewResult, SwellError> {
         // Try to extract JSON from the response
-        let json_str = self.extract_json(response)
+        let json_str = self
+            .extract_json(response)
             .ok_or_else(|| SwellError::LlmError("No JSON found in response".to_string()))?;
 
-        let json: serde_json::Value = serde_json::from_str(&json_str).map_err(|e| {
-            SwellError::LlmError(format!("Failed to parse review JSON: {}", e))
-        })?;
+        let json: serde_json::Value = serde_json::from_str(&json_str)
+            .map_err(|e| SwellError::LlmError(format!("Failed to parse review JSON: {}", e)))?;
 
-        let confidence_score = json["confidence_score"]
-            .as_f64()
-            .unwrap_or(0.5);
+        let confidence_score = json["confidence_score"].as_f64().unwrap_or(0.5);
 
         let passed = json["passed"].as_bool().unwrap_or(true);
 
@@ -1350,9 +1366,7 @@ Please provide your review in the specified JSON format.
                     _ => ValidationLevel::Info,
                 };
 
-                let line = issue["line"]
-                    .as_u64()
-                    .map(|l| l as u32);
+                let line = issue["line"].as_u64().map(|l| l as u32);
 
                 comments.push(AiReviewComment {
                     file: issue["file"].as_str().map(String::from),
@@ -1401,7 +1415,9 @@ Please provide your review in the specified JSON format.
         task_description: Option<&str>,
     ) -> Result<AiReviewResult, SwellError> {
         // Read file contents
-        let files_content = self.read_changed_files(workspace_path, changed_files).await?;
+        let files_content = self
+            .read_changed_files(workspace_path, changed_files)
+            .await?;
 
         if files_content.trim().is_empty() {
             return Ok(AiReviewResult {
@@ -1453,7 +1469,10 @@ Please provide your review in the specified JSON format.
         for comment in &result.comments {
             let code = Some(format!("AI_{}", comment.category.to_uppercase()));
             let message = if let Some(ref suggestion) = comment.suggestion {
-                format!("{}: {} (Suggestion: {})", comment.category, comment.message, suggestion)
+                format!(
+                    "{}: {} (Suggestion: {})",
+                    comment.category, comment.message, suggestion
+                )
             } else {
                 format!("{}: {}", comment.category, comment.message)
             };
@@ -1511,7 +1530,8 @@ impl ValidationGate for AiReviewGate {
                 messages: vec![ValidationMessage {
                     level: ValidationLevel::Info,
                     code: Some("AI_REVIEW_STUB".to_string()),
-                    message: "AI review gate: LLM backend not configured, skipping AI review".to_string(),
+                    message: "AI review gate: LLM backend not configured, skipping AI review"
+                        .to_string(),
                     file: None,
                     line: None,
                 }],
@@ -1532,9 +1552,7 @@ impl ValidationGate for AiReviewGate {
         let messages = self.to_validation_messages(&result);
 
         // Determine passed status based on review result and errors
-        let has_errors = messages
-            .iter()
-            .any(|m| m.level == ValidationLevel::Error);
+        let has_errors = messages.iter().any(|m| m.level == ValidationLevel::Error);
 
         let passed = result.passed && !has_errors;
 
@@ -1726,7 +1744,8 @@ mod test_gate_tests {
     #[test]
     fn test_failure_classification_impl_defect() {
         // Logic errors, null checks, index bounds
-        let msg = "thread 'main' panicked at 'index out of bounds: the len is 3 but the index is 99'";
+        let msg =
+            "thread 'main' panicked at 'index out of bounds: the len is 3 but the index is 99'";
         let class = TestFailureClassification::classify(msg, None, false);
         assert_eq!(class, TestFailureClassification::ImplementationDefect);
     }
@@ -1867,7 +1886,7 @@ mod security_gate_tests {
         let result = gate.validate(context).await;
         // Should succeed even without scanner - returns warning
         assert!(result.is_ok(), "SecurityGate.validate should succeed");
-        
+
         let outcome = result.unwrap();
         // Without a scanner, it should pass with a warning message
         assert!(outcome.passed || !outcome.messages.is_empty());
@@ -1875,22 +1894,55 @@ mod security_gate_tests {
 
     #[test]
     fn test_finding_severity_from_semgrep() {
-        assert_eq!(FindingSeverity::from_semgrep("error"), Some(FindingSeverity::Error));
-        assert_eq!(FindingSeverity::from_semgrep("warning"), Some(FindingSeverity::Warning));
-        assert_eq!(FindingSeverity::from_semgrep("warn"), Some(FindingSeverity::Warning));
-        assert_eq!(FindingSeverity::from_semgrep("info"), Some(FindingSeverity::Info));
+        assert_eq!(
+            FindingSeverity::from_semgrep("error"),
+            Some(FindingSeverity::Error)
+        );
+        assert_eq!(
+            FindingSeverity::from_semgrep("warning"),
+            Some(FindingSeverity::Warning)
+        );
+        assert_eq!(
+            FindingSeverity::from_semgrep("warn"),
+            Some(FindingSeverity::Warning)
+        );
+        assert_eq!(
+            FindingSeverity::from_semgrep("info"),
+            Some(FindingSeverity::Info)
+        );
         assert_eq!(FindingSeverity::from_semgrep("unknown"), None);
     }
 
     #[test]
     fn test_finding_severity_from_sarif() {
-        assert_eq!(FindingSeverity::from_sarif("error"), Some(FindingSeverity::Error));
-        assert_eq!(FindingSeverity::from_sarif("critical"), Some(FindingSeverity::Error));
-        assert_eq!(FindingSeverity::from_sarif("high"), Some(FindingSeverity::Error));
-        assert_eq!(FindingSeverity::from_sarif("warning"), Some(FindingSeverity::Warning));
-        assert_eq!(FindingSeverity::from_sarif("medium"), Some(FindingSeverity::Warning));
-        assert_eq!(FindingSeverity::from_sarif("note"), Some(FindingSeverity::Info));
-        assert_eq!(FindingSeverity::from_sarif("low"), Some(FindingSeverity::Info));
+        assert_eq!(
+            FindingSeverity::from_sarif("error"),
+            Some(FindingSeverity::Error)
+        );
+        assert_eq!(
+            FindingSeverity::from_sarif("critical"),
+            Some(FindingSeverity::Error)
+        );
+        assert_eq!(
+            FindingSeverity::from_sarif("high"),
+            Some(FindingSeverity::Error)
+        );
+        assert_eq!(
+            FindingSeverity::from_sarif("warning"),
+            Some(FindingSeverity::Warning)
+        );
+        assert_eq!(
+            FindingSeverity::from_sarif("medium"),
+            Some(FindingSeverity::Warning)
+        );
+        assert_eq!(
+            FindingSeverity::from_sarif("note"),
+            Some(FindingSeverity::Info)
+        );
+        assert_eq!(
+            FindingSeverity::from_sarif("low"),
+            Some(FindingSeverity::Info)
+        );
     }
 
     #[test]
@@ -1902,9 +1954,18 @@ mod security_gate_tests {
 
     #[test]
     fn test_finding_severity_to_validation_level() {
-        assert_eq!(FindingSeverity::Error.to_validation_level(), ValidationLevel::Error);
-        assert_eq!(FindingSeverity::Warning.to_validation_level(), ValidationLevel::Warning);
-        assert_eq!(FindingSeverity::Info.to_validation_level(), ValidationLevel::Info);
+        assert_eq!(
+            FindingSeverity::Error.to_validation_level(),
+            ValidationLevel::Error
+        );
+        assert_eq!(
+            FindingSeverity::Warning.to_validation_level(),
+            ValidationLevel::Warning
+        );
+        assert_eq!(
+            FindingSeverity::Info.to_validation_level(),
+            ValidationLevel::Info
+        );
     }
 
     #[test]
@@ -1972,10 +2033,10 @@ mod security_gate_tests {
     #[test]
     fn test_security_scan_results_has_blocking_findings() {
         let mut results = SecurityScanResults::default();
-        
+
         // No findings - no blocking
         assert!(!results.has_blocking_findings());
-        
+
         // Add a warning - no blocking
         results.findings.push(Vulnerability {
             id: "test-1".to_string(),
@@ -1989,7 +2050,7 @@ mod security_gate_tests {
             scanner: SecurityScannerType::Semgrep,
         });
         assert!(!results.has_blocking_findings());
-        
+
         // Add an error - blocking
         results.findings.push(Vulnerability {
             id: "test-2".to_string(),
@@ -2014,7 +2075,7 @@ mod security_gate_tests {
                 "message": "Potential XSS vulnerability"
             }
         });
-        
+
         let vuln = Vulnerability::from_semgrep(&json);
         assert!(vuln.is_some());
         let v = vuln.unwrap();
@@ -2043,7 +2104,7 @@ mod security_gate_tests {
                 }
             }
         });
-        
+
         let vuln = Vulnerability::from_semgrep(&json);
         assert!(vuln.is_some());
         let v = vuln.unwrap();
@@ -2059,7 +2120,7 @@ mod security_gate_tests {
         let json = serde_json::json!({
             "check_id": "test"
         });
-        
+
         let vuln = Vulnerability::from_semgrep(&json);
         assert!(vuln.is_none());
     }
@@ -2120,18 +2181,25 @@ mod ai_review_gate_tests {
         let outcome = result.unwrap();
         // In stub mode, it should pass with a message about no LLM backend
         assert!(outcome.passed, "Stub mode should pass");
-        assert!(!outcome.messages.is_empty(), "Should have at least one message");
-        
-        let info_msg = outcome.messages.iter().find(|m| {
-            m.message.contains("LLM backend not configured")
-        });
-        assert!(info_msg.is_some(), "Should have message about no LLM backend");
+        assert!(
+            !outcome.messages.is_empty(),
+            "Should have at least one message"
+        );
+
+        let info_msg = outcome
+            .messages
+            .iter()
+            .find(|m| m.message.contains("LLM backend not configured"));
+        assert!(
+            info_msg.is_some(),
+            "Should have message about no LLM backend"
+        );
     }
 
     #[test]
     fn test_parse_review_response_valid_json() {
         let gate = AiReviewGate::new();
-        
+
         let response = r#"{
             "confidence_score": 0.85,
             "passed": true,
@@ -2163,14 +2231,17 @@ mod ai_review_gate_tests {
         assert_eq!(review.confidence_score, 0.85);
         assert!(review.passed);
         assert_eq!(review.comments.len(), 2);
-        assert_eq!(review.summary, "Code looks good overall with minor style suggestions");
-        
+        assert_eq!(
+            review.summary,
+            "Code looks good overall with minor style suggestions"
+        );
+
         // Check first comment
         assert_eq!(review.comments[0].file, Some("src/main.rs".to_string()));
         assert_eq!(review.comments[0].line, Some(42));
         assert_eq!(review.comments[0].severity, ValidationLevel::Warning);
         assert_eq!(review.comments[0].category, "style");
-        
+
         // Check second comment (error)
         assert_eq!(review.comments[1].severity, ValidationLevel::Error);
     }
@@ -2178,7 +2249,7 @@ mod ai_review_gate_tests {
     #[test]
     fn test_parse_review_response_no_issues() {
         let gate = AiReviewGate::new();
-        
+
         let response = r#"{
             "confidence_score": 1.0,
             "passed": true,
@@ -2197,7 +2268,7 @@ mod ai_review_gate_tests {
     #[test]
     fn test_parse_review_response_invalid_json() {
         let gate = AiReviewGate::new();
-        
+
         let response = "This is not JSON at all";
         let result = gate.parse_review_response(response);
         assert!(result.is_err(), "Should fail to parse non-JSON");
@@ -2206,7 +2277,7 @@ mod ai_review_gate_tests {
     #[test]
     fn test_parse_review_response_missing_fields() {
         let gate = AiReviewGate::new();
-        
+
         // Missing required confidence_score
         let response = r#"{
             "passed": true,
@@ -2224,12 +2295,12 @@ mod ai_review_gate_tests {
     #[test]
     fn test_extract_json_with_extra_text() {
         let gate = AiReviewGate::new();
-        
+
         let response = "Here is my review:\n{\n  \"confidence_score\": 0.9,\n  \"passed\": true,\n  \"issues\": [],\n  \"summary\": \"Good\"\n}\nHope this helps!";
-        
+
         let json = gate.extract_json(response);
         assert!(json.is_some());
-        
+
         let parsed = serde_json::from_str::<serde_json::Value>(&json.unwrap());
         assert!(parsed.is_ok());
     }
@@ -2237,7 +2308,7 @@ mod ai_review_gate_tests {
     #[test]
     fn test_extract_json_no_json() {
         let gate = AiReviewGate::new();
-        
+
         let response = "This is just plain text without any JSON";
         let json = gate.extract_json(response);
         assert!(json.is_none());
@@ -2246,7 +2317,7 @@ mod ai_review_gate_tests {
     #[test]
     fn test_to_validation_messages() {
         let gate = AiReviewGate::new();
-        
+
         let result = AiReviewResult {
             confidence_score: 0.75,
             passed: true,
@@ -2272,20 +2343,20 @@ mod ai_review_gate_tests {
         };
 
         let messages = gate.to_validation_messages(&result);
-        
+
         // Should have 3 messages: 2 comments + 1 summary
         assert_eq!(messages.len(), 3);
-        
+
         // First message should be the warning
         assert_eq!(messages[0].level, ValidationLevel::Warning);
         assert_eq!(messages[0].file, Some("src/main.rs".to_string()));
         assert!(messages[0].message.contains("style"));
         assert!(messages[0].message.contains("unwrap()"));
-        
+
         // Second message should be the error
         assert_eq!(messages[1].level, ValidationLevel::Error);
         assert_eq!(messages[1].line, Some(20));
-        
+
         // Third message should be info (summary)
         assert_eq!(messages[2].level, ValidationLevel::Info);
         assert!(messages[2].message.contains("confidence"));
@@ -2295,27 +2366,25 @@ mod ai_review_gate_tests {
     #[test]
     fn test_ai_review_result_passes_without_errors() {
         let gate = AiReviewGate::new();
-        
+
         // Create a result with only warnings (no errors)
         let result = AiReviewResult {
             confidence_score: 0.8,
             passed: true,
-            comments: vec![
-                AiReviewComment {
-                    file: None,
-                    line: None,
-                    severity: ValidationLevel::Warning,
-                    category: "style".to_string(),
-                    message: "Minor style issue".to_string(),
-                    suggestion: None,
-                },
-            ],
+            comments: vec![AiReviewComment {
+                file: None,
+                line: None,
+                severity: ValidationLevel::Warning,
+                category: "style".to_string(),
+                message: "Minor style issue".to_string(),
+                suggestion: None,
+            }],
             summary: "Good code".to_string(),
         };
 
         let messages = gate.to_validation_messages(&result);
         let has_errors = messages.iter().any(|m| m.level == ValidationLevel::Error);
-        
+
         // With passed=true and no errors, validation should pass
         assert!(result.passed);
         assert!(!has_errors);
@@ -2337,7 +2406,11 @@ mod pipeline_tests {
 
     impl MockPassingGate {
         fn new(name: &'static str, order: u32, messages: Vec<ValidationMessage>) -> Self {
-            Self { name, order, messages }
+            Self {
+                name,
+                order,
+                messages,
+            }
         }
     }
 
@@ -2351,7 +2424,10 @@ mod pipeline_tests {
             self.order
         }
 
-        async fn validate(&self, _context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
+        async fn validate(
+            &self,
+            _context: ValidationContext,
+        ) -> Result<ValidationOutcome, SwellError> {
             Ok(ValidationOutcome {
                 passed: true,
                 messages: self.messages.clone(),
@@ -2369,7 +2445,11 @@ mod pipeline_tests {
 
     impl MockFailingGate {
         fn new(name: &'static str, order: u32, messages: Vec<ValidationMessage>) -> Self {
-            Self { name, order, messages }
+            Self {
+                name,
+                order,
+                messages,
+            }
         }
     }
 
@@ -2383,7 +2463,10 @@ mod pipeline_tests {
             self.order
         }
 
-        async fn validate(&self, _context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
+        async fn validate(
+            &self,
+            _context: ValidationContext,
+        ) -> Result<ValidationOutcome, SwellError> {
             Ok(ValidationOutcome {
                 passed: false,
                 messages: self.messages.clone(),
@@ -2424,7 +2507,7 @@ mod pipeline_tests {
     #[tokio::test]
     async fn test_pipeline_aggregates_messages() {
         let mut pipeline = ValidationPipeline::new();
-        
+
         // Add three gates, each with distinct messages
         pipeline.add_gate(MockPassingGate::new(
             "gate1",
@@ -2508,7 +2591,10 @@ mod pipeline_tests {
         assert!(!result.passed);
         // Messages from failing gate should be included
         assert!(!result.messages.is_empty());
-        assert!(result.messages.iter().any(|m| m.message.contains("Gate 2 failed")));
+        assert!(result
+            .messages
+            .iter()
+            .any(|m| m.message.contains("Gate 2 failed")));
     }
 
     #[tokio::test]
@@ -2538,7 +2624,7 @@ mod pipeline_tests {
     async fn test_pipeline_with_default() {
         // Test that Default trait works
         let pipeline = ValidationPipeline::default();
-        
+
         let context = create_test_context();
         let result = pipeline.run(&context).await.unwrap();
 
@@ -2609,15 +2695,13 @@ mod pipeline_tests {
         // Test ValidationOutcome structure
         let outcome = ValidationOutcome {
             passed: true,
-            messages: vec![
-                ValidationMessage {
-                    level: ValidationLevel::Info,
-                    code: Some("TEST_CODE".to_string()),
-                    message: "Test message".to_string(),
-                    file: Some("test.rs".to_string()),
-                    line: Some(42),
-                },
-            ],
+            messages: vec![ValidationMessage {
+                level: ValidationLevel::Info,
+                code: Some("TEST_CODE".to_string()),
+                message: "Test message".to_string(),
+                file: Some("test.rs".to_string()),
+                line: Some(42),
+            }],
             artifacts: vec![],
         };
 

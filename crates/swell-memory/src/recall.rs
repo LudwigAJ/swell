@@ -184,10 +184,7 @@ struct Bm25Document {
 
 impl SqliteMemoryStore {
     /// Store a conversation log entry
-    pub async fn store_conversation_log(
-        &self,
-        log: ConversationLog,
-    ) -> Result<Uuid, SwellError> {
+    pub async fn store_conversation_log(&self, log: ConversationLog) -> Result<Uuid, SwellError> {
         let metadata_str = serde_json::to_string(&log.metadata)
             .map_err(|e| SwellError::DatabaseError(e.to_string()))?;
 
@@ -251,10 +248,7 @@ impl SqliteMemoryStore {
     }
 
     /// Search conversation logs with BM25 keyword search and temporal filtering
-    pub async fn recall_search(
-        &self,
-        query: RecallQuery,
-    ) -> Result<Vec<RecallResult>, SwellError> {
+    pub async fn recall_search(&self, query: RecallQuery) -> Result<Vec<RecallResult>, SwellError> {
         // First, get all candidate logs based on temporal and filter criteria
         let candidates = self.get_candidate_logs(&query).await?;
 
@@ -277,11 +271,7 @@ impl SqliteMemoryStore {
         }
 
         // Tokenize keywords
-        let keywords: HashSet<String> = query
-            .keywords
-            .iter()
-            .flat_map(|kw| tokenize(kw))
-            .collect();
+        let keywords: HashSet<String> = query.keywords.iter().flat_map(|kw| tokenize(kw)).collect();
 
         if keywords.is_empty() {
             return Ok(Vec::new());
@@ -327,7 +317,10 @@ impl SqliteMemoryStore {
 
         // Sort by score descending, then by timestamp descending
         scored_results.sort_by(|a, b| {
-            let score_cmp = b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal);
+            let score_cmp = b
+                .score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal);
             if score_cmp != std::cmp::Ordering::Equal {
                 score_cmp
             } else {
@@ -533,7 +526,10 @@ fn calculate_document_frequencies(
 ) -> HashMap<String, f32> {
     let mut doc_freqs: HashMap<String, f32> = HashMap::new();
     for kw in keywords {
-        let df = documents.iter().filter(|d| d.terms.contains_key(kw)).count() as f32;
+        let df = documents
+            .iter()
+            .filter(|d| d.terms.contains_key(kw))
+            .count() as f32;
         doc_freqs.insert(kw.clone(), df);
     }
     doc_freqs
@@ -605,10 +601,7 @@ impl RecallService {
     }
 
     /// Search conversation logs with BM25
-    pub async fn search(
-        &self,
-        query: RecallQuery,
-    ) -> Result<Vec<RecallResult>, SwellError> {
+    pub async fn search(&self, query: RecallQuery) -> Result<Vec<RecallResult>, SwellError> {
         self.store.recall_search(query).await
     }
 
@@ -617,14 +610,13 @@ impl RecallService {
         &self,
         session_id: Uuid,
     ) -> Result<Vec<ConversationLog>, SwellError> {
-        self.store.get_conversation_logs_by_session(session_id).await
+        self.store
+            .get_conversation_logs_by_session(session_id)
+            .await
     }
 
     /// Get logs for a specific task
-    pub async fn get_task_logs(
-        &self,
-        task_id: Uuid,
-    ) -> Result<Vec<RecallResult>, SwellError> {
+    pub async fn get_task_logs(&self, task_id: Uuid) -> Result<Vec<RecallResult>, SwellError> {
         let query = RecallQuery {
             task_id: Some(task_id),
             ..Default::default()
@@ -688,9 +680,7 @@ mod tests {
     async fn test_recall_search_empty_keywords() {
         use crate::SqliteMemoryStore;
 
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         // Initialize conversation logs schema
         SqliteMemoryStore::init_conversation_logs_schema(store.pool.as_ref())
@@ -728,9 +718,7 @@ mod tests {
     async fn test_recall_search_with_keywords() {
         use crate::SqliteMemoryStore;
 
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         // Initialize conversation logs schema
         SqliteMemoryStore::init_conversation_logs_schema(store.pool.as_ref())
@@ -771,7 +759,10 @@ mod tests {
         store.store_conversation_log(log3.clone()).await.unwrap();
 
         // Debug: Check that logs are stored
-        let all_logs = store.get_conversation_logs_by_session(session_id).await.unwrap();
+        let all_logs = store
+            .get_conversation_logs_by_session(session_id)
+            .await
+            .unwrap();
         eprintln!("DEBUG: Stored {} logs", all_logs.len());
         for log in &all_logs {
             eprintln!("DEBUG: log id={}, content={}", log.id, log.content);
@@ -787,7 +778,10 @@ mod tests {
         let results = store.recall_search(query).await.unwrap();
         eprintln!("DEBUG: Got {} results", results.len());
         for r in &results {
-            eprintln!("DEBUG: result id={}, score={}, content={}", r.log.id, r.score, r.log.content);
+            eprintln!(
+                "DEBUG: result id={}, score={}, content={}",
+                r.log.id, r.score, r.log.content
+            );
         }
         assert_eq!(results.len(), 2);
 
@@ -805,9 +799,7 @@ mod tests {
         use crate::SqliteMemoryStore;
         use chrono::Duration;
 
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         // Initialize conversation logs schema
         SqliteMemoryStore::init_conversation_logs_schema(store.pool.as_ref())
@@ -862,9 +854,7 @@ mod tests {
     async fn test_recall_service() {
         use crate::SqliteMemoryStore;
 
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         // Initialize conversation logs schema
         SqliteMemoryStore::init_conversation_logs_schema(store.pool.as_ref())

@@ -45,7 +45,10 @@ impl BranchStrategyConfig {
     }
 
     /// Create config from settings.json git section
-    pub fn from_settings(branch_prefix: Option<String>, max_active_branches: Option<usize>) -> Self {
+    pub fn from_settings(
+        branch_prefix: Option<String>,
+        max_active_branches: Option<usize>,
+    ) -> Self {
         Self {
             branch_prefix: branch_prefix.unwrap_or_else(|| "agent".to_string()),
             max_active_branches: max_active_branches.unwrap_or(20),
@@ -138,7 +141,10 @@ impl BranchStrategy {
     }
 
     /// Create a new branch strategy from settings
-    pub fn from_settings(branch_prefix: Option<String>, max_active_branches: Option<usize>) -> Self {
+    pub fn from_settings(
+        branch_prefix: Option<String>,
+        max_active_branches: Option<usize>,
+    ) -> Self {
         Self {
             config: BranchStrategyConfig::from_settings(branch_prefix, max_active_branches),
             active_branches: Arc::new(RwLock::new(HashMap::new())),
@@ -205,7 +211,8 @@ impl BranchStrategy {
                 // Replace invalid branch name chars with hyphens
                 match c {
                     ' ' | '\t' | '\n' => '-',
-                    '^' | '~' | ':' | '?' | '*' | '[' | '\\' | '/' | '#' | '|' | '&' | ';' | '"' | '\'' | '<' | '>' => '-',
+                    '^' | '~' | ':' | '?' | '*' | '[' | '\\' | '/' | '#' | '|' | '&' | ';'
+                    | '"' | '\'' | '<' | '>' => '-',
                     _ => c,
                 }
             })
@@ -232,9 +239,10 @@ impl BranchStrategy {
 
     /// Check if a branch is protected (main, master, etc.)
     pub fn is_protected_branch(&self, branch_name: &str) -> bool {
-        self.config.protected_branches.iter().any(|p| {
-            branch_name == p || branch_name.starts_with(&format!("{}/", p))
-        })
+        self.config
+            .protected_branches
+            .iter()
+            .any(|p| branch_name == p || branch_name.starts_with(&format!("{}/", p)))
     }
 
     /// Check if we're at the branch limit
@@ -257,7 +265,9 @@ impl BranchStrategy {
         let base_branch = request.base_branch.as_deref().unwrap_or("main");
         if self.is_protected_branch(base_branch) {
             warn!(branch = %base_branch, "Attempted to work on protected branch");
-            return Err(BranchStrategyError::ProtectedBranch(base_branch.to_string()));
+            return Err(BranchStrategyError::ProtectedBranch(
+                base_branch.to_string(),
+            ));
         }
 
         // Generate and validate the proposed branch name
@@ -320,11 +330,15 @@ impl BranchStrategy {
 
     /// Get proposed branch name and register it (reserve slot)
     /// Use this when you intend to create the branch
-    pub async fn propose_branch(&self, request: &BranchRequest) -> Result<String, BranchStrategyError> {
+    pub async fn propose_branch(
+        &self,
+        request: &BranchRequest,
+    ) -> Result<String, BranchStrategyError> {
         self.validate(request).await?;
         let branch_name = self.generate_branch_name(request.task_id, &request.description);
         // Register to consume a slot in the limit
-        self.register_branch(branch_name.clone(), request.task_id).await;
+        self.register_branch(branch_name.clone(), request.task_id)
+            .await;
         Ok(branch_name)
     }
 
@@ -354,23 +368,25 @@ impl BranchStrategy {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            
+
             // Check if branch already exists
             if stderr.contains("already exists") || stderr.contains("A branch named") {
                 // Branch already exists, just register it
-                self.register_branch(branch_name.clone(), request.task_id).await;
+                self.register_branch(branch_name.clone(), request.task_id)
+                    .await;
                 return Ok(BranchResult {
                     branch_name,
                     task_id: request.task_id,
                     is_new: false,
                 });
             }
-            
+
             return Err(BranchStrategyError::GitFailed(stderr.to_string()));
         }
 
         // Register the new branch
-        self.register_branch(branch_name.clone(), request.task_id).await;
+        self.register_branch(branch_name.clone(), request.task_id)
+            .await;
 
         info!(
             branch = %branch_name,
@@ -394,7 +410,9 @@ impl BranchStrategy {
     ) -> Result<(), BranchStrategyError> {
         // Check protection
         if self.is_protected_branch(branch_name) {
-            return Err(BranchStrategyError::ProtectedBranch(branch_name.to_string()));
+            return Err(BranchStrategyError::ProtectedBranch(
+                branch_name.to_string(),
+            ));
         }
 
         // Execute git branch deletion
@@ -452,7 +470,7 @@ mod tests {
     async fn test_generate_branch_name() {
         let strategy = BranchStrategy::new();
         let task_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-        
+
         let name = strategy.generate_branch_name(task_id, "fix bug in auth");
         assert_eq!(name, "agent/550e8400/fix-bug-in-auth");
     }
@@ -461,22 +479,30 @@ mod tests {
     async fn test_generate_branch_name_special_chars() {
         let strategy = BranchStrategy::new();
         let task_id = Uuid::new_v4();
-        
+
         let name = strategy.generate_branch_name(task_id, "fix: auth issue #123");
-        assert_eq!(name, format!("agent/{}/fix-auth-issue-123", task_id.to_string().split('-').next().unwrap()));
-        
+        assert_eq!(
+            name,
+            format!(
+                "agent/{}/fix-auth-issue-123",
+                task_id.to_string().split('-').next().unwrap()
+            )
+        );
+
         let name2 = strategy.generate_branch_name(task_id, "auth module | refactor");
-        assert!(name2.contains("auth-module-refactor") || name2.contains("auth-module-----refactor"));
+        assert!(
+            name2.contains("auth-module-refactor") || name2.contains("auth-module-----refactor")
+        );
     }
 
     #[tokio::test]
     async fn test_is_protected_branch() {
         let strategy = BranchStrategy::new();
-        
+
         assert!(strategy.is_protected_branch("main"));
         assert!(strategy.is_protected_branch("master"));
         assert!(strategy.is_protected_branch("main/test"));
-        
+
         assert!(!strategy.is_protected_branch("agent/123/task"));
         assert!(!strategy.is_protected_branch("feature/new"));
     }
@@ -486,7 +512,7 @@ mod tests {
         assert!(BranchStrategy::is_valid_branch_name("agent/123/fix-bug"));
         assert!(BranchStrategy::is_valid_branch_name("feature-new"));
         assert!(BranchStrategy::is_valid_branch_name("bugfix_123"));
-        
+
         assert!(!BranchStrategy::is_valid_branch_name(""));
         assert!(!BranchStrategy::is_valid_branch_name(" "));
         assert!(!BranchStrategy::is_valid_branch_name("has space"));
@@ -500,9 +526,18 @@ mod tests {
     #[test]
     fn test_sanitize_description() {
         assert_eq!(BranchStrategy::sanitize_description("fix bug"), "fix-bug");
-        assert_eq!(BranchStrategy::sanitize_description("fix: auth issue"), "fix-auth-issue");
-        assert_eq!(BranchStrategy::sanitize_description("has   spaces"), "has-spaces");
-        assert_eq!(BranchStrategy::sanitize_description("special ^chars~"), "special-chars");
+        assert_eq!(
+            BranchStrategy::sanitize_description("fix: auth issue"),
+            "fix-auth-issue"
+        );
+        assert_eq!(
+            BranchStrategy::sanitize_description("has   spaces"),
+            "has-spaces"
+        );
+        assert_eq!(
+            BranchStrategy::sanitize_description("special ^chars~"),
+            "special-chars"
+        );
     }
 
     #[tokio::test]
@@ -510,14 +545,16 @@ mod tests {
         let strategy = BranchStrategy::new();
         let task_id = Uuid::new_v4();
         let branch_name = "agent/test/branch";
-        
+
         assert_eq!(strategy.active_count().await, 0);
-        
-        strategy.register_branch(branch_name.to_string(), task_id).await;
+
+        strategy
+            .register_branch(branch_name.to_string(), task_id)
+            .await;
         assert_eq!(strategy.active_count().await, 1);
         assert!(strategy.is_tracked(branch_name).await);
         assert_eq!(strategy.get_task_id(branch_name).await, Some(task_id));
-        
+
         strategy.unregister_branch(branch_name).await;
         assert_eq!(strategy.active_count().await, 0);
         assert!(!strategy.is_tracked(branch_name).await);
@@ -527,32 +564,40 @@ mod tests {
     async fn test_branch_limit() {
         let config = BranchStrategyConfig::new("test".to_string(), 2);
         let strategy = BranchStrategy::with_config(config);
-        
+
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
         let task3 = Uuid::new_v4();
-        
-        let req1 = BranchRequest::new(task1, "task 1".to_string()).with_base_branch("develop".to_string());
-        let req2 = BranchRequest::new(task2, "task 2".to_string()).with_base_branch("develop".to_string());
-        let req3 = BranchRequest::new(task3, "task 3".to_string()).with_base_branch("develop".to_string());
-        
+
+        let req1 =
+            BranchRequest::new(task1, "task 1".to_string()).with_base_branch("develop".to_string());
+        let req2 =
+            BranchRequest::new(task2, "task 2".to_string()).with_base_branch("develop".to_string());
+        let req3 =
+            BranchRequest::new(task3, "task 3".to_string()).with_base_branch("develop".to_string());
+
         // First two should succeed
         strategy.propose_branch(&req1).await.unwrap();
         strategy.propose_branch(&req2).await.unwrap();
-        
+
         // Third should fail
         let result = strategy.propose_branch(&req3).await;
-        assert!(matches!(result, Err(BranchStrategyError::BranchLimitExceeded(2, 2))));
+        assert!(matches!(
+            result,
+            Err(BranchStrategyError::BranchLimitExceeded(2, 2))
+        ));
     }
 
     #[tokio::test]
     async fn test_reset() {
         let strategy = BranchStrategy::new();
         let task_id = Uuid::new_v4();
-        
-        strategy.register_branch("test/branch".to_string(), task_id).await;
+
+        strategy
+            .register_branch("test/branch".to_string(), task_id)
+            .await;
         assert_eq!(strategy.active_count().await, 1);
-        
+
         strategy.reset().await;
         assert_eq!(strategy.active_count().await, 0);
     }
@@ -561,18 +606,23 @@ mod tests {
     async fn test_propose_branch_validates() {
         let config = BranchStrategyConfig::new("test".to_string(), 1);
         let strategy = BranchStrategy::with_config(config);
-        
+
         let task_id = Uuid::new_v4();
-        let req = BranchRequest::new(task_id, "first task".to_string()).with_base_branch("develop".to_string());
-        
+        let req = BranchRequest::new(task_id, "first task".to_string())
+            .with_base_branch("develop".to_string());
+
         // Should succeed
         let branch = strategy.propose_branch(&req).await.unwrap();
         assert!(branch.contains("first-task"));
-        
+
         // Second should fail limit check
         let task2 = Uuid::new_v4();
-        let req2 = BranchRequest::new(task2, "second task".to_string()).with_base_branch("develop".to_string());
+        let req2 = BranchRequest::new(task2, "second task".to_string())
+            .with_base_branch("develop".to_string());
         let result = strategy.propose_branch(&req2).await;
-        assert!(matches!(result, Err(BranchStrategyError::BranchLimitExceeded(1, 1))));
+        assert!(matches!(
+            result,
+            Err(BranchStrategyError::BranchLimitExceeded(1, 1))
+        ));
     }
 }

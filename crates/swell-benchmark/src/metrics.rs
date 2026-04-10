@@ -61,10 +61,22 @@ pub struct BenchmarkMetrics {
 impl BenchmarkMetrics {
     /// Create new metrics from task results
     pub fn from_results(results: Vec<TaskResult>, total_tasks: usize) -> Self {
-        let completed = results.iter().filter(|r| r.outcome == TaskOutcome::Completed).count();
-        let failed = results.iter().filter(|r| r.outcome == TaskOutcome::Failed).count();
-        let skipped = results.iter().filter(|r| r.outcome == TaskOutcome::Skipped).count();
-        let timeouts = results.iter().filter(|r| r.outcome == TaskOutcome::Timeout).count();
+        let completed = results
+            .iter()
+            .filter(|r| r.outcome == TaskOutcome::Completed)
+            .count();
+        let failed = results
+            .iter()
+            .filter(|r| r.outcome == TaskOutcome::Failed)
+            .count();
+        let skipped = results
+            .iter()
+            .filter(|r| r.outcome == TaskOutcome::Skipped)
+            .count();
+        let timeouts = results
+            .iter()
+            .filter(|r| r.outcome == TaskOutcome::Timeout)
+            .count();
         let total_duration_secs: f64 = results.iter().map(|r| r.duration_secs).sum();
         let avg_duration_secs = if results.is_empty() {
             0.0
@@ -174,8 +186,13 @@ impl BenchmarkMetrics {
         self.by_category
             .iter()
             .map(|(cat, metrics)| {
-                format!("  {}: {} completed, {} failed, {:.1}% success", 
-                    cat, metrics.completed, metrics.failed, metrics.success_rate() * 100.0)
+                format!(
+                    "  {}: {} completed, {} failed, {:.1}% success",
+                    cat,
+                    metrics.completed,
+                    metrics.failed,
+                    metrics.success_rate() * 100.0
+                )
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -189,8 +206,13 @@ impl BenchmarkMetrics {
         self.by_difficulty
             .iter()
             .map(|(diff, metrics)| {
-                format!("  {}: {} completed, {} failed, {:.1}% success",
-                    diff, metrics.completed, metrics.failed, metrics.success_rate() * 100.0)
+                format!(
+                    "  {}: {} completed, {} failed, {:.1}% success",
+                    diff,
+                    metrics.completed,
+                    metrics.failed,
+                    metrics.success_rate() * 100.0
+                )
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -333,9 +355,24 @@ mod tests {
     #[test]
     fn test_benchmark_metrics_all_success() {
         let results = vec![
-            TaskResult::success(TaskId("task1".to_string()), TaskCategory::BugFix, TaskDifficulty::Low, 10.0),
-            TaskResult::success(TaskId("task2".to_string()), TaskCategory::Feature, TaskDifficulty::Medium, 15.0),
-            TaskResult::success(TaskId("task3".to_string()), TaskCategory::Refactoring, TaskDifficulty::High, 20.0),
+            TaskResult::success(
+                TaskId("task1".to_string()),
+                TaskCategory::BugFix,
+                TaskDifficulty::Low,
+                10.0,
+            ),
+            TaskResult::success(
+                TaskId("task2".to_string()),
+                TaskCategory::Feature,
+                TaskDifficulty::Medium,
+                15.0,
+            ),
+            TaskResult::success(
+                TaskId("task3".to_string()),
+                TaskCategory::Refactoring,
+                TaskDifficulty::High,
+                20.0,
+            ),
         ];
 
         let metrics = BenchmarkMetrics::from_results(results, 3);
@@ -351,9 +388,25 @@ mod tests {
     #[test]
     fn test_benchmark_metrics_mixed() {
         let results = vec![
-            TaskResult::success(TaskId("task1".to_string()), TaskCategory::BugFix, TaskDifficulty::Low, 10.0),
-            TaskResult::failed(TaskId("task2".to_string()), TaskCategory::Feature, TaskDifficulty::Medium, 5.0, "Error"),
-            TaskResult::success(TaskId("task3".to_string()), TaskCategory::Test, TaskDifficulty::VeryHigh, 20.0),
+            TaskResult::success(
+                TaskId("task1".to_string()),
+                TaskCategory::BugFix,
+                TaskDifficulty::Low,
+                10.0,
+            ),
+            TaskResult::failed(
+                TaskId("task2".to_string()),
+                TaskCategory::Feature,
+                TaskDifficulty::Medium,
+                5.0,
+                "Error",
+            ),
+            TaskResult::success(
+                TaskId("task3".to_string()),
+                TaskCategory::Test,
+                TaskDifficulty::VeryHigh,
+                20.0,
+            ),
         ];
 
         let metrics = BenchmarkMetrics::from_results(results, 5);
@@ -383,12 +436,28 @@ mod tests {
     fn test_category_metrics() {
         let mut metrics = CategoryMetrics::default();
 
-        metrics.record(&TaskResult::success(TaskId("t1".to_string()), TaskCategory::BugFix, TaskDifficulty::Low, 10.0));
-        metrics.record(&TaskResult::success(TaskId("t2".to_string()), TaskCategory::BugFix, TaskDifficulty::Medium, 10.0));
-        metrics.record(&TaskResult::failed(TaskId("t3".to_string()), TaskCategory::BugFix, TaskDifficulty::High, 10.0, "err"));
+        metrics.record(&TaskResult::success(
+            TaskId("t1".to_string()),
+            TaskCategory::BugFix,
+            TaskDifficulty::Low,
+            10.0,
+        ));
+        metrics.record(&TaskResult::success(
+            TaskId("t2".to_string()),
+            TaskCategory::BugFix,
+            TaskDifficulty::Medium,
+            10.0,
+        ));
+        metrics.record(&TaskResult::failed(
+            TaskId("t3".to_string()),
+            TaskCategory::BugFix,
+            TaskDifficulty::High,
+            10.0,
+            "err",
+        ));
 
         assert_eq!(metrics.completed, 2);
         assert_eq!(metrics.failed, 1);
-        assert!((metrics.success_rate() - 2.0/3.0).abs() < 0.001);
+        assert!((metrics.success_rate() - 2.0 / 3.0).abs() < 0.001);
     }
 }

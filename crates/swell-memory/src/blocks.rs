@@ -7,7 +7,9 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use uuid::Uuid;
 
-pub use swell_core::{AgentContext, MemoryBlock, MemoryBlockType, MemoryEntry, MemoryStore, SwellError};
+pub use swell_core::{
+    AgentContext, MemoryBlock, MemoryBlockType, MemoryEntry, MemoryStore, SwellError,
+};
 
 /// Memory block labels for well-known blocks
 pub mod labels {
@@ -61,10 +63,8 @@ impl MemoryBlockLoader for DefaultBlockLoader {
 
         // Load Project block (architecture, conventions)
         // Find the project block that matches the repository scope
-        let project_entries = store
-            .get_by_type(MemoryBlockType::Project)
-            .await?;
-        
+        let project_entries = store.get_by_type(MemoryBlockType::Project).await?;
+
         // Find the project block that matches the repository scope
         for entry in &project_entries {
             if let Some(repo_value) = entry.metadata.get("repository") {
@@ -88,9 +88,7 @@ impl MemoryBlockLoader for DefaultBlockLoader {
 
         // Load Task block (context)
         if let Some(tid) = task_id {
-            let task_entries = store
-                .get_by_label(format!("task:{}", tid))
-                .await?;
+            let task_entries = store.get_by_label(format!("task:{}", tid)).await?;
             if !task_entries.is_empty() {
                 blocks.task = Some(task_entries.into_iter().next().unwrap());
             }
@@ -306,9 +304,7 @@ mod tests {
     async fn test_context_assembler_with_empty_store() {
         use crate::SqliteMemoryStore;
 
-        let store: SqliteMemoryStore = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store: SqliteMemoryStore = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
         let assembler = ContextAssembler::with_default_loader();
 
         let task = swell_core::Task::new("Test task".to_string());
@@ -332,16 +328,10 @@ mod tests {
     async fn test_load_blocks_with_stored_entries() {
         use crate::SqliteMemoryStore;
 
-        let store: SqliteMemoryStore = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store: SqliteMemoryStore = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
         // Store a project block
-        let project = create_project_block(
-            "test-repo",
-            "Simple architecture",
-            "Rust conventions",
-        );
+        let project = create_project_block("test-repo", "Simple architecture", "Rust conventions");
         store.store(project.clone()).await.unwrap();
 
         // Store a user block
@@ -382,10 +372,8 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let db_path = temp_dir.join(format!("test_blocks_{}.db", Uuid::new_v4()));
         let db_url = format!("sqlite:{}?mode=rwc", db_path.display());
-        
-        let store: SqliteMemoryStore = SqliteMemoryStore::create(&db_url)
-            .await
-            .unwrap();
+
+        let store: SqliteMemoryStore = SqliteMemoryStore::create(&db_url).await.unwrap();
 
         // Create the task first to get its actual ID
         let task = swell_core::Task::new("Test".to_string());
@@ -417,7 +405,12 @@ mod tests {
             .unwrap();
 
         // Should have 3 memory blocks assembled
-        assert_eq!(context.memory_blocks.len(), 3, "Expected 3 blocks, got {}", context.memory_blocks.len());
+        assert_eq!(
+            context.memory_blocks.len(),
+            3,
+            "Expected 3 blocks, got {}",
+            context.memory_blocks.len()
+        );
         assert_eq!(context.session_id, session_id);
         assert_eq!(context.workspace_path, Some("/workspace".to_string()));
 

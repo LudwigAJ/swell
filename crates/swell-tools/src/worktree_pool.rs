@@ -197,10 +197,7 @@ impl WorktreePool {
             worktrees.push(worktree);
         }
 
-        info!(
-            created = worktrees.len(),
-            "Worktree pool initialized"
-        );
+        info!(created = worktrees.len(), "Worktree pool initialized");
 
         Ok(())
     }
@@ -214,7 +211,13 @@ impl WorktreePool {
 
         // Create worktree using git worktree add
         let result = tokio::process::Command::new("git")
-            .args(["worktree", "add", "-b", &format!("worktree/{}/{}", self.config.prefix, id), &path_str])
+            .args([
+                "worktree",
+                "add",
+                "-b",
+                &format!("worktree/{}/{}", self.config.prefix, id),
+                &path_str,
+            ])
             .current_dir(&self.config.base_repo)
             .output()
             .await;
@@ -252,14 +255,20 @@ impl WorktreePool {
     }
 
     /// Allocate a worktree to an agent for a specific task
-    pub async fn allocate(&self, agent_id: AgentId, task_id: Uuid) -> Result<WorktreeAllocation, SwellError> {
+    pub async fn allocate(
+        &self,
+        agent_id: AgentId,
+        task_id: Uuid,
+    ) -> Result<WorktreeAllocation, SwellError> {
         // Find an available worktree
         let worktree_id = {
             let mut worktrees = self.worktrees.write().await;
             let available = worktrees
                 .iter_mut()
                 .find(|w| w.is_available())
-                .ok_or_else(|| SwellError::ToolExecutionFailed("No available worktrees in pool".to_string()))?;
+                .ok_or_else(|| {
+                    SwellError::ToolExecutionFailed("No available worktrees in pool".to_string())
+                })?;
 
             available.allocate(agent_id, task_id);
             available.id
@@ -271,11 +280,14 @@ impl WorktreePool {
             worktrees.iter().find(|w| w.id == worktree_id).cloned()
         };
 
-        let worktree = worktree.ok_or_else(|| SwellError::ToolExecutionFailed("Worktree not found".to_string()))?;
+        let worktree = worktree
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Worktree not found".to_string()))?;
 
         // Create allocation record
-        let allocation = WorktreeAllocation::new(&worktree, agent_id, task_id)
-            .ok_or_else(|| SwellError::ToolExecutionFailed("Worktree missing branch".to_string()))?;
+        let allocation =
+            WorktreeAllocation::new(&worktree, agent_id, task_id).ok_or_else(|| {
+                SwellError::ToolExecutionFailed("Worktree missing branch".to_string())
+            })?;
 
         // Store allocation
         {
@@ -305,7 +317,10 @@ impl WorktreePool {
         if let Some(allocation) = allocation {
             // Release the worktree back to the pool
             let mut worktrees = self.worktrees.write().await;
-            if let Some(worktree) = worktrees.iter_mut().find(|w| w.id == allocation.worktree_id) {
+            if let Some(worktree) = worktrees
+                .iter_mut()
+                .find(|w| w.id == allocation.worktree_id)
+            {
                 worktree.release();
             }
 
@@ -313,7 +328,10 @@ impl WorktreePool {
             self.cleanup_worktree(&allocation).await?;
 
             // Mark worktree as not ready after cleanup since it no longer exists
-            if let Some(worktree) = worktrees.iter_mut().find(|w| w.id == allocation.worktree_id) {
+            if let Some(worktree) = worktrees
+                .iter_mut()
+                .find(|w| w.id == allocation.worktree_id)
+            {
                 worktree.ready = false;
             }
 

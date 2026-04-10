@@ -43,7 +43,12 @@ pub struct EventLogEntry {
 
 impl EventLogEntry {
     /// Create a new event log entry
-    fn new(sequence: u64, correlation_id: CorrelationId, task_id: Option<Uuid>, event: DaemonEvent) -> Self {
+    fn new(
+        sequence: u64,
+        correlation_id: CorrelationId,
+        task_id: Option<Uuid>,
+        event: DaemonEvent,
+    ) -> Self {
         Self {
             sequence,
             timestamp: Utc::now(),
@@ -75,7 +80,12 @@ impl ImmutableEventLog {
 
     /// Record a new event in the log.
     /// This operation is append-only - existing entries cannot be modified.
-    fn record(&mut self, correlation_id: CorrelationId, task_id: Option<Uuid>, event: DaemonEvent) -> EventLogEntry {
+    fn record(
+        &mut self,
+        correlation_id: CorrelationId,
+        task_id: Option<Uuid>,
+        event: DaemonEvent,
+    ) -> EventLogEntry {
         let entry = EventLogEntry::new(self.next_sequence, correlation_id, task_id, event);
         self.entries.push(entry.clone());
         self.next_sequence += 1;
@@ -105,7 +115,11 @@ impl ImmutableEventLog {
 
     /// Get events for a specific task ID since a given sequence number (exclusive).
     /// Returns events with sequence > given_sequence for the specified task.
-    pub fn get_events_since_for_task(&self, task_id: Uuid, since_sequence: u64) -> Vec<&EventLogEntry> {
+    pub fn get_events_since_for_task(
+        &self,
+        task_id: Uuid,
+        since_sequence: u64,
+    ) -> Vec<&EventLogEntry> {
         self.entries
             .iter()
             .filter(|e| e.task_id == Some(task_id) && e.sequence > since_sequence)
@@ -299,7 +313,10 @@ impl EventEmitter {
     }
 
     /// Get all events for a correlation ID
-    pub async fn get_events_by_correlation_id(&self, correlation_id: CorrelationId) -> Vec<DaemonEvent> {
+    pub async fn get_events_by_correlation_id(
+        &self,
+        correlation_id: CorrelationId,
+    ) -> Vec<DaemonEvent> {
         let log = self.log.read().await;
         log.get_by_correlation_id(correlation_id)
             .into_iter()
@@ -319,10 +336,7 @@ impl EventEmitter {
     /// Get all events in the log
     pub async fn get_all_events(&self) -> Vec<DaemonEvent> {
         let log = self.log.read().await;
-        log.get_all()
-            .iter()
-            .map(|e| e.event.clone())
-            .collect()
+        log.get_all().iter().map(|e| e.event.clone()).collect()
     }
 
     /// Get the total number of events emitted
@@ -333,7 +347,11 @@ impl EventEmitter {
 
     /// Get events for a specific task since a given sequence number.
     /// Returns events with sequence > since_sequence for the specified task.
-    pub async fn get_events_since_for_task(&self, task_id: Uuid, since_sequence: u64) -> Vec<DaemonEvent> {
+    pub async fn get_events_since_for_task(
+        &self,
+        task_id: Uuid,
+        since_sequence: u64,
+    ) -> Vec<DaemonEvent> {
         let log = self.log.read().await;
         log.get_events_since_for_task(task_id, since_sequence)
             .into_iter()
@@ -557,7 +575,9 @@ mod tests {
         // Emit some events
         let task = Task::new("Test".to_string());
         emitter.emit_task_created(&task).await;
-        emitter.emit_error("Test error".to_string(), EventEmitter::new_correlation_id()).await;
+        emitter
+            .emit_error("Test error".to_string(), EventEmitter::new_correlation_id())
+            .await;
 
         let all = emitter.get_all_events().await;
         assert_eq!(all.len(), 2);
@@ -626,13 +646,19 @@ mod tests {
         let emitter = EventEmitter::new();
         assert_eq!(emitter.event_count().await, 0);
 
-        emitter.emit_error("Error 1".to_string(), EventEmitter::new_correlation_id()).await;
+        emitter
+            .emit_error("Error 1".to_string(), EventEmitter::new_correlation_id())
+            .await;
         assert_eq!(emitter.event_count().await, 1);
 
-        emitter.emit_error("Error 2".to_string(), EventEmitter::new_correlation_id()).await;
+        emitter
+            .emit_error("Error 2".to_string(), EventEmitter::new_correlation_id())
+            .await;
         assert_eq!(emitter.event_count().await, 2);
 
-        emitter.emit_error("Error 3".to_string(), EventEmitter::new_correlation_id()).await;
+        emitter
+            .emit_error("Error 3".to_string(), EventEmitter::new_correlation_id())
+            .await;
         assert_eq!(emitter.event_count().await, 3);
     }
 
@@ -641,7 +667,9 @@ mod tests {
         let emitter = EventEmitter::new();
         let before = Utc::now();
 
-        emitter.emit_error("Test".to_string(), EventEmitter::new_correlation_id()).await;
+        emitter
+            .emit_error("Test".to_string(), EventEmitter::new_correlation_id())
+            .await;
 
         let after = Utc::now();
 

@@ -192,40 +192,48 @@ mod tests {
     async fn test_fullauto_never_needs_approval() {
         let controller = AutonomyController::new();
 
-        assert!(!controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::High,
-                swell_core::AutonomyLevel::FullAuto
-            )
-            .await);
-        assert!(!controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::Low,
-                swell_core::AutonomyLevel::FullAuto
-            )
-            .await);
+        assert!(
+            !controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::High,
+                    swell_core::AutonomyLevel::FullAuto
+                )
+                .await
+        );
+        assert!(
+            !controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::Low,
+                    swell_core::AutonomyLevel::FullAuto
+                )
+                .await
+        );
     }
 
     #[tokio::test]
     async fn test_supervised_always_needs_approval() {
         let controller = AutonomyController::new();
 
-        assert!(controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::High,
-                swell_core::AutonomyLevel::Supervised
-            )
-            .await);
-        assert!(controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::Low,
-                swell_core::AutonomyLevel::Supervised
-            )
-            .await);
+        assert!(
+            controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::High,
+                    swell_core::AutonomyLevel::Supervised
+                )
+                .await
+        );
+        assert!(
+            controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::Low,
+                    swell_core::AutonomyLevel::Supervised
+                )
+                .await
+        );
     }
 
     #[tokio::test]
@@ -233,20 +241,24 @@ mod tests {
         let controller = AutonomyController::new();
 
         // L2 Guided: steps auto-execute after plan approval
-        assert!(!controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::High,
-                swell_core::AutonomyLevel::Guided
-            )
-            .await);
-        assert!(!controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::Low,
-                swell_core::AutonomyLevel::Guided
-            )
-            .await);
+        assert!(
+            !controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::High,
+                    swell_core::AutonomyLevel::Guided
+                )
+                .await
+        );
+        assert!(
+            !controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::Low,
+                    swell_core::AutonomyLevel::Guided
+                )
+                .await
+        );
     }
 
     #[tokio::test]
@@ -254,27 +266,33 @@ mod tests {
         let controller = AutonomyController::new();
 
         // L3 Autonomous: only high-risk needs approval
-        assert!(controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::High,
-                swell_core::AutonomyLevel::Autonomous
-            )
-            .await);
-        assert!(!controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::Medium,
-                swell_core::AutonomyLevel::Autonomous
-            )
-            .await);
-        assert!(!controller
-            .needs_approval(
-                Uuid::new_v4(),
-                swell_core::RiskLevel::Low,
-                swell_core::AutonomyLevel::Autonomous
-            )
-            .await);
+        assert!(
+            controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::High,
+                    swell_core::AutonomyLevel::Autonomous
+                )
+                .await
+        );
+        assert!(
+            !controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::Medium,
+                    swell_core::AutonomyLevel::Autonomous
+                )
+                .await
+        );
+        assert!(
+            !controller
+                .needs_approval(
+                    Uuid::new_v4(),
+                    swell_core::RiskLevel::Low,
+                    swell_core::AutonomyLevel::Autonomous
+                )
+                .await
+        );
     }
 
     #[tokio::test]
@@ -282,20 +300,28 @@ mod tests {
         let controller = AutonomyController::new();
 
         // L1 and L2 need plan approval
-        assert!(controller
-            .needs_plan_approval(swell_core::AutonomyLevel::Supervised)
-            .await);
-        assert!(controller
-            .needs_plan_approval(swell_core::AutonomyLevel::Guided)
-            .await);
+        assert!(
+            controller
+                .needs_plan_approval(swell_core::AutonomyLevel::Supervised)
+                .await
+        );
+        assert!(
+            controller
+                .needs_plan_approval(swell_core::AutonomyLevel::Guided)
+                .await
+        );
 
         // L3 and L4 don't need plan approval
-        assert!(!controller
-            .needs_plan_approval(swell_core::AutonomyLevel::Autonomous)
-            .await);
-        assert!(!controller
-            .needs_plan_approval(swell_core::AutonomyLevel::FullAuto)
-            .await);
+        assert!(
+            !controller
+                .needs_plan_approval(swell_core::AutonomyLevel::Autonomous)
+                .await
+        );
+        assert!(
+            !controller
+                .needs_plan_approval(swell_core::AutonomyLevel::FullAuto)
+                .await
+        );
     }
 
     #[tokio::test]
@@ -396,16 +422,19 @@ mod tests {
         assert!(!swell_core::AutonomyLevel::FullAuto.needs_plan_approval());
 
         // Test needs_step_approval
-        assert!(swell_core::AutonomyLevel::Supervised
-            .needs_step_approval(swell_core::RiskLevel::Low));
-        assert!(!swell_core::AutonomyLevel::Guided
-            .needs_step_approval(swell_core::RiskLevel::Low));
-        assert!(!swell_core::AutonomyLevel::Autonomous
-            .needs_step_approval(swell_core::RiskLevel::Low));
-        assert!(swell_core::AutonomyLevel::Autonomous
-            .needs_step_approval(swell_core::RiskLevel::High));
-        assert!(!swell_core::AutonomyLevel::FullAuto
-            .needs_step_approval(swell_core::RiskLevel::High));
+        assert!(
+            swell_core::AutonomyLevel::Supervised.needs_step_approval(swell_core::RiskLevel::Low)
+        );
+        assert!(!swell_core::AutonomyLevel::Guided.needs_step_approval(swell_core::RiskLevel::Low));
+        assert!(
+            !swell_core::AutonomyLevel::Autonomous.needs_step_approval(swell_core::RiskLevel::Low)
+        );
+        assert!(
+            swell_core::AutonomyLevel::Autonomous.needs_step_approval(swell_core::RiskLevel::High)
+        );
+        assert!(
+            !swell_core::AutonomyLevel::FullAuto.needs_step_approval(swell_core::RiskLevel::High)
+        );
 
         // Test needs_validation_approval
         assert!(swell_core::AutonomyLevel::Supervised.needs_validation_approval());

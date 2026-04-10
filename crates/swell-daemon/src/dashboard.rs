@@ -16,7 +16,7 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, State, Query,
+        Path, Query, State,
     },
     http::StatusCode,
     response::{Json, Response},
@@ -73,11 +73,14 @@ impl DashboardState {
         cost.last_updated = Utc::now();
 
         // Update per-model breakdown
-        let entry = cost.by_model.entry(model.to_string()).or_insert_with(|| ModelCost {
-            model: model.to_string(),
-            tokens: 0,
-            estimated_cost_usd: 0.0,
-        });
+        let entry = cost
+            .by_model
+            .entry(model.to_string())
+            .or_insert_with(|| ModelCost {
+                model: model.to_string(),
+                tokens: 0,
+                estimated_cost_usd: 0.0,
+            });
         entry.tokens += tokens_used;
         // Rough estimate: $3.5/1M tokens for Claude 3.5 Sonnet
         entry.estimated_cost_usd = entry.tokens as f64 * 3.5 / 1_000_000.0;
@@ -87,13 +90,16 @@ impl DashboardState {
     /// Register an agent
     pub async fn register_agent(&self, id: Uuid, role: AgentRole, model: String) {
         let mut agents = self.agents.write().await;
-        agents.insert(id, AgentInfo {
+        agents.insert(
             id,
-            role,
-            model,
-            current_task: None,
-            registered_at: Utc::now(),
-        });
+            AgentInfo {
+                id,
+                role,
+                model,
+                current_task: None,
+                registered_at: Utc::now(),
+            },
+        );
     }
 
     /// Update agent's current task
@@ -136,23 +142,49 @@ pub struct AgentInfo {
 #[serde(tag = "type", content = "payload")]
 pub enum DashboardEvent {
     /// A task was created
-    TaskCreated { id: Uuid, description: String, correlation_id: Uuid },
+    TaskCreated {
+        id: Uuid,
+        description: String,
+        correlation_id: Uuid,
+    },
     /// Task state changed
-    TaskStateChanged { id: Uuid, state: TaskState, correlation_id: Uuid },
+    TaskStateChanged {
+        id: Uuid,
+        state: TaskState,
+        correlation_id: Uuid,
+    },
     /// Task progress update
-    TaskProgress { id: Uuid, message: String, correlation_id: Uuid },
+    TaskProgress {
+        id: Uuid,
+        message: String,
+        correlation_id: Uuid,
+    },
     /// Task completed
-    TaskCompleted { id: Uuid, pr_url: Option<String>, correlation_id: Uuid },
+    TaskCompleted {
+        id: Uuid,
+        pr_url: Option<String>,
+        correlation_id: Uuid,
+    },
     /// Task failed
-    TaskFailed { id: Uuid, error: String, correlation_id: Uuid },
+    TaskFailed {
+        id: Uuid,
+        error: String,
+        correlation_id: Uuid,
+    },
     /// Agent registered
     AgentRegistered { id: Uuid, role: String },
     /// Agent task assigned
     AgentTaskAssigned { agent_id: Uuid, task_id: Uuid },
     /// Cost update
-    CostUpdated { total_tokens: u64, estimated_cost_usd: f64 },
+    CostUpdated {
+        total_tokens: u64,
+        estimated_cost_usd: f64,
+    },
     /// Error occurred
-    Error { message: String, correlation_id: Uuid },
+    Error {
+        message: String,
+        correlation_id: Uuid,
+    },
 }
 
 impl From<DaemonEvent> for DashboardEvent {
@@ -165,21 +197,49 @@ impl From<DaemonEvent> for DashboardEvent {
                     correlation_id,
                 }
             }
-            DaemonEvent::TaskStateChanged { id, state, correlation_id } => {
-                DashboardEvent::TaskStateChanged { id, state, correlation_id }
-            }
-            DaemonEvent::TaskProgress { id, message, correlation_id } => {
-                DashboardEvent::TaskProgress { id, message, correlation_id }
-            }
-            DaemonEvent::TaskCompleted { id, pr_url, correlation_id } => {
-                DashboardEvent::TaskCompleted { id, pr_url, correlation_id }
-            }
-            DaemonEvent::TaskFailed { id, error, correlation_id } => {
-                DashboardEvent::TaskFailed { id, error, correlation_id }
-            }
-            DaemonEvent::Error { message, correlation_id } => {
-                DashboardEvent::Error { message, correlation_id }
-            }
+            DaemonEvent::TaskStateChanged {
+                id,
+                state,
+                correlation_id,
+            } => DashboardEvent::TaskStateChanged {
+                id,
+                state,
+                correlation_id,
+            },
+            DaemonEvent::TaskProgress {
+                id,
+                message,
+                correlation_id,
+            } => DashboardEvent::TaskProgress {
+                id,
+                message,
+                correlation_id,
+            },
+            DaemonEvent::TaskCompleted {
+                id,
+                pr_url,
+                correlation_id,
+            } => DashboardEvent::TaskCompleted {
+                id,
+                pr_url,
+                correlation_id,
+            },
+            DaemonEvent::TaskFailed {
+                id,
+                error,
+                correlation_id,
+            } => DashboardEvent::TaskFailed {
+                id,
+                error,
+                correlation_id,
+            },
+            DaemonEvent::Error {
+                message,
+                correlation_id,
+            } => DashboardEvent::Error {
+                message,
+                correlation_id,
+            },
         }
     }
 }
@@ -206,7 +266,10 @@ async fn list_tasks(
     drop(orchestrator);
 
     let filtered: Vec<Task> = if let Some(state_filter) = query.state {
-        tasks.into_iter().filter(|t| t.state == state_filter).collect()
+        tasks
+            .into_iter()
+            .filter(|t| t.state == state_filter)
+            .collect()
     } else {
         tasks
     };
@@ -229,7 +292,7 @@ async fn get_task(
     let orchestrator = orch_arc.lock().await;
     let result = orchestrator.get_task(task_id).await;
     drop(orchestrator);
-    
+
     match result {
         Ok(task) => Ok(Json(task)),
         Err(_) => Err(StatusCode::NOT_FOUND),
@@ -237,17 +300,13 @@ async fn get_task(
 }
 
 /// GET /api/agents - List all registered agents
-async fn list_agents(
-    State(state): State<AppState>,
-) -> Json<Vec<AgentInfo>> {
+async fn list_agents(State(state): State<AppState>) -> Json<Vec<AgentInfo>> {
     let agents = state.dashboard.agents.read().await;
     Json(agents.values().cloned().collect())
 }
 
 /// GET /api/cost - Get cost information
-async fn get_cost(
-    State(state): State<AppState>,
-) -> Json<CostState> {
+async fn get_cost(State(state): State<AppState>) -> Json<CostState> {
     let cost = state.dashboard.cost_state.read().await;
     Json(cost.clone())
 }
@@ -280,10 +339,7 @@ async fn health_check() -> &'static str {
 // ============================================================================
 
 /// WebSocket connection handler
-async fn websocket_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> Response {
+async fn websocket_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
     let dashboard = Arc::clone(&state.dashboard);
     ws.on_upgrade(|socket| websocket_stream(socket, dashboard))
 }
@@ -298,7 +354,11 @@ async fn websocket_stream(socket: WebSocket, dashboard: Arc<DashboardState>) {
         "type": "Connected",
         "message": "Dashboard WebSocket connected"
     });
-    if sender.send(Message::Text(welcome.to_string())).await.is_err() {
+    if sender
+        .send(Message::Text(welcome.to_string()))
+        .await
+        .is_err()
+    {
         return;
     }
 
@@ -363,10 +423,7 @@ pub async fn start_dashboard_server(
     let dashboard = Arc::new(dashboard_state);
 
     // Create shared state combining daemon and dashboard
-    let app_state = AppState {
-        daemon,
-        dashboard,
-    };
+    let app_state = AppState { daemon, dashboard };
 
     let app = Router::new()
         .route("/api/tasks", get(list_tasks))
@@ -381,7 +438,11 @@ pub async fn start_dashboard_server(
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
 
-    tracing::info!(port = port, "Dashboard API server listening on http://localhost:{}", port);
+    tracing::info!(
+        port = port,
+        "Dashboard API server listening on http://localhost:{}",
+        port
+    );
 
     let service = axum::serve(listener, app);
 
@@ -462,7 +523,9 @@ mod tests {
         let state = create_test_dashboard_state();
         let agent_id = Uuid::new_v4();
 
-        state.register_agent(agent_id, AgentRole::Planner, "claude-sonnet-4".to_string()).await;
+        state
+            .register_agent(agent_id, AgentRole::Planner, "claude-sonnet-4".to_string())
+            .await;
 
         let agents = state.agents.read().await;
         assert!(agents.contains_key(&agent_id));
@@ -485,7 +548,11 @@ mod tests {
         let dashboard_event: DashboardEvent = daemon_event.into();
 
         match dashboard_event {
-            DashboardEvent::TaskStateChanged { id, state, correlation_id: cid } => {
+            DashboardEvent::TaskStateChanged {
+                id,
+                state,
+                correlation_id: cid,
+            } => {
                 assert_eq!(id, task_id);
                 assert_eq!(state, TaskState::Executing);
                 assert_eq!(cid, correlation_id);

@@ -100,7 +100,7 @@ impl BacklogItem {
             source: BacklogSource::FailureDerived,
             affected_files,
             priority_score: 4, // Failures are high priority
-            approved: true,     // Auto-approved
+            approved: true,    // Auto-approved
             task_id: None,
             original_task_id: Some(original_task_id),
             failure_signal: Some(failure_signal),
@@ -110,14 +110,18 @@ impl BacklogItem {
     }
 
     /// Create a new backlog item from a spec gap
-    pub fn from_spec_gap(spec_id: Uuid, gap_description: String, affected_files: Vec<String>) -> Self {
+    pub fn from_spec_gap(
+        spec_id: Uuid,
+        gap_description: String,
+        affected_files: Vec<String>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             description: gap_description,
             source: BacklogSource::SpecGap,
             affected_files,
             priority_score: 3, // Spec gaps are medium priority
-            approved: false,    // Requires approval
+            approved: false,   // Requires approval
             task_id: None,
             original_task_id: None,
             failure_signal: None,
@@ -256,7 +260,11 @@ impl WorkBacklog {
     }
 
     /// Add a plan task
-    pub fn add_plan_task(&mut self, description: String, affected_files: Vec<String>) -> Result<Uuid, SwellError> {
+    pub fn add_plan_task(
+        &mut self,
+        description: String,
+        affected_files: Vec<String>,
+    ) -> Result<Uuid, SwellError> {
         let item = BacklogItem::plan_task(description, affected_files);
         self.add_item(item)
     }
@@ -269,7 +277,10 @@ impl WorkBacklog {
         affected_files: Vec<String>,
     ) -> Result<Uuid, SwellError> {
         // Check if we've hit the cap (3 per original task)
-        let current_count = *self.failure_derived_counts.get(&original_task_id).unwrap_or(&0);
+        let current_count = *self
+            .failure_derived_counts
+            .get(&original_task_id)
+            .unwrap_or(&0);
         if current_count >= 3 {
             warn!(
                 original_task_id = %original_task_id,
@@ -282,13 +293,16 @@ impl WorkBacklog {
 
         let item = BacklogItem::from_failure(original_task_id, failure_signal, affected_files);
         let item_id = item.id;
-        
+
         // Add the item first
         self.add_item(item)?;
-        
+
         // Only increment AFTER successful add
-        *self.failure_derived_counts.entry(original_task_id).or_insert(0) += 1;
-        
+        *self
+            .failure_derived_counts
+            .entry(original_task_id)
+            .or_insert(0) += 1;
+
         Ok(item_id)
     }
 
@@ -361,12 +375,12 @@ impl WorkBacklog {
     }
 
     /// Find a duplicate item in the backlog
-    /// 
+    ///
     /// Items are considered duplicates if EITHER:
     /// - They have significant file overlap (50%+ of files in common), OR
     /// - Their descriptions are very similar (85%+ similar using Levenshtein)
     ///   AND the new item is NOT failure-derived
-    /// 
+    ///
     /// Failure-derived tasks are exempt from description similarity checks
     /// to allow multiple fixes for different errors from the same original task.
     fn find_duplicate(&self, item: &BacklogItem) -> Option<Uuid> {
@@ -426,11 +440,8 @@ impl WorkBacklog {
 
     /// Get all approved items sorted by priority
     pub fn get_approved_items(&self) -> Vec<&BacklogItem> {
-        let mut approved: Vec<&BacklogItem> = self
-            .items
-            .iter()
-            .filter(|item| item.approved)
-            .collect();
+        let mut approved: Vec<&BacklogItem> =
+            self.items.iter().filter(|item| item.approved).collect();
 
         // Sort by source priority then by priority score
         approved.sort_by(|a, b| {
@@ -457,12 +468,16 @@ impl WorkBacklog {
 
     /// Get item by ID
     pub fn get_item(&self, id: Uuid) -> Option<&BacklogItem> {
-        self.item_index.get(&id).and_then(|idx| self.items.get(*idx))
+        self.item_index
+            .get(&id)
+            .and_then(|idx| self.items.get(*idx))
     }
 
     /// Get item by ID (mutable)
     pub fn get_item_mut(&mut self, id: Uuid) -> Option<&mut BacklogItem> {
-        self.item_index.get(&id).and_then(|idx| self.items.get_mut(*idx))
+        self.item_index
+            .get(&id)
+            .and_then(|idx| self.items.get_mut(*idx))
     }
 
     /// Approve an item
@@ -476,16 +491,19 @@ impl WorkBacklog {
 
     /// Reject an item
     pub fn remove_item(&mut self, id: Uuid) -> Result<(), SwellError> {
-        let idx = self.item_index.remove(&id).ok_or(SwellError::TaskNotFound(id))?;
+        let idx = self
+            .item_index
+            .remove(&id)
+            .ok_or(SwellError::TaskNotFound(id))?;
         let item = self.items.remove(idx);
-        
+
         // Update indices for all items after the removed one
         for (i, item) in self.items.iter().enumerate() {
             self.item_index.insert(item.id, i);
         }
-        
+
         self.approved_items.remove(&id);
-        
+
         // If it was failure-derived, decrement the counter
         if let Some(original_id) = item.original_task_id {
             if let Some(count) = self.failure_derived_counts.get_mut(&original_id) {
@@ -515,17 +533,17 @@ impl WorkBacklog {
     }
 
     /// Apply decay function - raise approval threshold as run progresses
-    /// 
+    ///
     /// This increases the auto-approve threshold based on run progress.
     /// After 80% completion, even failure-derived tasks may need approval
     /// if they involve files outside the original plan scope.
     pub fn apply_decay(&mut self, completion_ratio: f32) {
         let base_threshold = self.priority_config.auto_approve_threshold;
-        
+
         // Raise threshold as we progress (0.0 -> 1.0 maps to 0 -> +2)
         let additional_threshold = (completion_ratio * 2.0) as u32;
         let new_threshold = base_threshold + additional_threshold.min(2);
-        
+
         if new_threshold > base_threshold {
             debug!(
                 completion_ratio = %completion_ratio,
@@ -533,7 +551,7 @@ impl WorkBacklog {
                 new_threshold = new_threshold,
                 "Applying decay function to approval threshold"
             );
-            
+
             // Re-evaluate non-approved items with new threshold
             for item in &mut self.items {
                 if !item.approved && item.priority_score >= new_threshold {
@@ -546,20 +564,20 @@ impl WorkBacklog {
                     );
                 }
             }
-            
+
             self.priority_config.auto_approve_threshold = new_threshold;
         }
     }
 
     /// Get backlog statistics
     pub fn stats(&self) -> BacklogStats {
-        let by_source = self.items.iter().fold(
-            std::collections::HashMap::new(),
-            |mut acc, item| {
-                *acc.entry(item.source).or_insert(0) += 1;
-                acc
-            },
-        );
+        let by_source =
+            self.items
+                .iter()
+                .fold(std::collections::HashMap::new(), |mut acc, item| {
+                    *acc.entry(item.source).or_insert(0) += 1;
+                    acc
+                });
 
         BacklogStats {
             total_items: self.items.len(),
@@ -611,7 +629,11 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 
     for i in 1..=len1 {
         for j in 1..=len2 {
-            let cost = if s1_chars[i - 1] == s2_chars[j - 1] { 0 } else { 1 };
+            let cost = if s1_chars[i - 1] == s2_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             matrix[i][j] = std::cmp::min(
                 std::cmp::min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1),
                 matrix[i - 1][j - 1] + cost,
@@ -697,7 +719,7 @@ mod tests {
     fn test_add_failure_derived() {
         let mut backlog = WorkBacklog::new();
         let original_id = Uuid::new_v4();
-        
+
         let result = backlog.add_failure_derived(
             original_id,
             "Type error".to_string(),
@@ -712,12 +734,18 @@ mod tests {
     fn test_failure_derived_cap() {
         let mut backlog = WorkBacklog::new();
         let original_id = Uuid::new_v4();
-        
+
         // Add 3 failure-derived tasks
-        assert!(backlog.add_failure_derived(original_id, "Error 1".to_string(), vec![]).is_ok());
-        assert!(backlog.add_failure_derived(original_id, "Error 2".to_string(), vec![]).is_ok());
-        assert!(backlog.add_failure_derived(original_id, "Error 3".to_string(), vec![]).is_ok());
-        
+        assert!(backlog
+            .add_failure_derived(original_id, "Error 1".to_string(), vec![])
+            .is_ok());
+        assert!(backlog
+            .add_failure_derived(original_id, "Error 2".to_string(), vec![])
+            .is_ok());
+        assert!(backlog
+            .add_failure_derived(original_id, "Error 3".to_string(), vec![])
+            .is_ok());
+
         // 4th should fail
         let result = backlog.add_failure_derived(original_id, "Error 4".to_string(), vec![]);
         assert!(result.is_err());
@@ -728,7 +756,7 @@ mod tests {
     fn test_add_spec_gap_not_auto_approved() {
         let mut backlog = WorkBacklog::new();
         let spec_id = Uuid::new_v4();
-        
+
         let result = backlog.add_spec_gap(
             spec_id,
             "Missing feature".to_string(),
@@ -742,12 +770,10 @@ mod tests {
     #[test]
     fn test_approve_item() {
         let mut backlog = WorkBacklog::new();
-        let id = backlog.add_spec_gap(
-            Uuid::new_v4(),
-            "Missing feature".to_string(),
-            vec![],
-        ).unwrap();
-        
+        let id = backlog
+            .add_spec_gap(Uuid::new_v4(), "Missing feature".to_string(), vec![])
+            .unwrap();
+
         assert_eq!(backlog.approved_count(), 0);
         backlog.approve_item(id).unwrap();
         assert_eq!(backlog.approved_count(), 1);
@@ -758,7 +784,7 @@ mod tests {
     fn test_remove_item() {
         let mut backlog = WorkBacklog::new();
         let id = backlog.add_plan_task("Task".to_string(), vec![]).unwrap();
-        
+
         assert_eq!(backlog.len(), 1);
         backlog.remove_item(id).unwrap();
         assert_eq!(backlog.len(), 0);
@@ -767,26 +793,28 @@ mod tests {
     #[test]
     fn test_deduplication_by_file_overlap() {
         let mut backlog = WorkBacklog::new();
-        
+
         // Add first task
-        backlog.add_plan_task(
-            "Implement feature X".to_string(),
-            vec!["src/x.rs".to_string(), "src/y.rs".to_string()],
-        ).unwrap();
-        
+        backlog
+            .add_plan_task(
+                "Implement feature X".to_string(),
+                vec!["src/x.rs".to_string(), "src/y.rs".to_string()],
+            )
+            .unwrap();
+
         // Try to add duplicate with SAME description but same files
         // This should be caught by description similarity since files are identical
         let result = backlog.add_plan_task(
-            "Implement feature X".to_string(),  // Exact same description
+            "Implement feature X".to_string(), // Exact same description
             vec!["src/x.rs".to_string(), "src/y.rs".to_string()],
         );
         assert!(result.is_err()); // Should be rejected as duplicate (same desc + same files)
-        
+
         // But if we add a very different description with different files
         // it should be accepted (no description similarity, no file overlap)
         let result2 = backlog.add_plan_task(
             "Completely different task with other files".to_string(),
-            vec!["src/other.rs".to_string()],  // Different files
+            vec!["src/other.rs".to_string()], // Different files
         );
         assert!(result2.is_ok()); // Different files AND very different description
     }
@@ -794,13 +822,15 @@ mod tests {
     #[test]
     fn test_deduplication_by_description() {
         let mut backlog = WorkBacklog::new();
-        
+
         // Add first task with unique description
-        backlog.add_plan_task(
-            "Implement feature X with custom authentication".to_string(),
-            vec!["src/auth.rs".to_string()],
-        ).unwrap();
-        
+        backlog
+            .add_plan_task(
+                "Implement feature X with custom authentication".to_string(),
+                vec!["src/auth.rs".to_string()],
+            )
+            .unwrap();
+
         // Try to add similar description
         let result = backlog.add_plan_task(
             "Implement feature X with custom authentication mechanism".to_string(),
@@ -814,12 +844,22 @@ mod tests {
     #[test]
     fn test_get_approved_items_sorted_by_priority() {
         let mut backlog = WorkBacklog::new();
-        
+
         // Add items in random order
-        backlog.add_improvement("Low priority".to_string(), vec![]).unwrap();
-        backlog.add_plan_task("High priority plan".to_string(), vec![]).unwrap();
-        backlog.add_spec_gap(Uuid::new_v4(), "Medium priority spec gap".to_string(), vec![]).unwrap();
-        
+        backlog
+            .add_improvement("Low priority".to_string(), vec![])
+            .unwrap();
+        backlog
+            .add_plan_task("High priority plan".to_string(), vec![])
+            .unwrap();
+        backlog
+            .add_spec_gap(
+                Uuid::new_v4(),
+                "Medium priority spec gap".to_string(),
+                vec![],
+            )
+            .unwrap();
+
         let approved = backlog.get_approved_items();
         // Plan tasks should come first (highest source priority)
         assert_eq!(approved[0].source, BacklogSource::Plan);
@@ -833,11 +873,11 @@ mod tests {
             DeduplicationConfig::default(),
             3, // Small max for testing
         );
-        
+
         backlog.add_plan_task("Task 1".to_string(), vec![]).unwrap();
         backlog.add_plan_task("Task 2".to_string(), vec![]).unwrap();
         backlog.add_plan_task("Task 3".to_string(), vec![]).unwrap();
-        
+
         // Should be at capacity
         let result = backlog.add_plan_task("Task 4".to_string(), vec![]);
         assert!(result.is_err());
@@ -846,19 +886,21 @@ mod tests {
     #[test]
     fn test_decay_function() {
         let mut backlog = WorkBacklog::new();
-        
+
         // Add a spec-gap item with priority 3 (threshold is 3 by default)
-        backlog.add_spec_gap(Uuid::new_v4(), "Medium priority".to_string(), vec![]).unwrap();
+        backlog
+            .add_spec_gap(Uuid::new_v4(), "Medium priority".to_string(), vec![])
+            .unwrap();
         assert_eq!(backlog.approved_count(), 0); // Not auto-approved
-        
+
         // Apply decay at 0% completion - should still not approve
         backlog.apply_decay(0.0);
         assert_eq!(backlog.approved_count(), 0);
-        
+
         // Apply decay at 50% completion - threshold raised to 4
         backlog.apply_decay(0.5);
         assert_eq!(backlog.approved_count(), 0); // Still not enough
-        
+
         // Apply decay at 100% completion - threshold raised to 5
         backlog.apply_decay(1.0);
         // At threshold 5, priority 3 still doesn't make it
@@ -868,11 +910,17 @@ mod tests {
     #[test]
     fn test_stats() {
         let mut backlog = WorkBacklog::new();
-        
-        backlog.add_plan_task("Plan task".to_string(), vec![]).unwrap();
-        backlog.add_failure_derived(Uuid::new_v4(), "Failure".to_string(), vec![]).unwrap();
-        backlog.add_spec_gap(Uuid::new_v4(), "Spec gap".to_string(), vec![]).unwrap();
-        
+
+        backlog
+            .add_plan_task("Plan task".to_string(), vec![])
+            .unwrap();
+        backlog
+            .add_failure_derived(Uuid::new_v4(), "Failure".to_string(), vec![])
+            .unwrap();
+        backlog
+            .add_spec_gap(Uuid::new_v4(), "Spec gap".to_string(), vec![])
+            .unwrap();
+
         let stats = backlog.stats();
         assert_eq!(stats.total_items, 3);
         assert_eq!(stats.approved_items, 2); // Plan and FailureDerived
@@ -907,9 +955,15 @@ mod tests {
 
     #[test]
     fn test_source_priority_order() {
-        assert!(BacklogSource::Plan.priority_rank() < BacklogSource::FailureDerived.priority_rank());
-        assert!(BacklogSource::FailureDerived.priority_rank() < BacklogSource::SpecGap.priority_rank());
-        assert!(BacklogSource::SpecGap.priority_rank() < BacklogSource::Improvement.priority_rank());
+        assert!(
+            BacklogSource::Plan.priority_rank() < BacklogSource::FailureDerived.priority_rank()
+        );
+        assert!(
+            BacklogSource::FailureDerived.priority_rank() < BacklogSource::SpecGap.priority_rank()
+        );
+        assert!(
+            BacklogSource::SpecGap.priority_rank() < BacklogSource::Improvement.priority_rank()
+        );
     }
 
     #[test]

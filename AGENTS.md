@@ -337,27 +337,45 @@ These come with SWELL but can be replaced or extended:
 | `code-review` | Review checklist, clippy, security |
 | `refactoring` | Safe refactoring patterns, strangler fig |
 
-## Critical Missing Features (v2 Roadmap)
+## v2 Roadmap (Based on Research Documents)
 
-Based on the research documents, the following are planned for future versions:
+These features are planned based on detailed specifications in `plan/research_documents/`:
 
 ### Knowledge Graph
-Property graph with typed nodes and edges for code structure analysis.
+Property graph with typed nodes and edges for code structure.
+- Nodes: File, Module, Class, Function, Variable
+- Edges: CALLS, INHERITS_FROM, IMPORTS, DEPENDS_ON
+- Reference: `Memory and Learning Architecture.md`
 
 ### Vector Search
 LanceDB integration with code embeddings for semantic search.
+- Voyage Code-3 embeddings (97.3% MRR)
+- Semantic code chunking via Tree-sitter
+- Reference: `Technical Architecture and Roadmap Spec.md`
 
 ### Tree-sitter AST Parsing
 AST-based code analysis for dependency tracking and chunking.
+- Semantic boundaries: functions, classes, methods
+- Code-test graph building
+- Reference: All research documents
 
 ### Firecracker Sandbox
 MicroVM-based isolation for production workloads.
+- <125ms startup, <5 MiB memory overhead
+- Hardware virtualization isolation
+- Reference: `Tools and Runtime Control Spec.md`
 
 ### OpenTelemetry Integration
 Full OTel traces with GenAI semantic conventions.
+- `gen_ai.*` attributes
+- Langfuse export for observability
+- Reference: `Tools and Runtime Control Spec.md`
 
 ### Hierarchical Agents
 Feature Lead sub-orchestrators for large-scale projects.
+- Dynamic spawning (max 3 levels)
+- Planner-Worker pattern
+- Reference: `Orchestrator and Execution Design Spec.md`
 
 ## Testing Guidelines
 

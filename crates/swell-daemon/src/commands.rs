@@ -4,9 +4,9 @@
 //! and translates them into appropriate daemon events.
 
 use crate::events::EventEmitter;
+use std::sync::Arc;
 use swell_core::{CliCommand, DaemonEvent, TaskState};
 use swell_orchestrator::Orchestrator;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -166,8 +166,8 @@ pub fn event_to_json(event: &DaemonEvent) -> Result<String, String> {
 mod tests {
     use super::*;
     use crate::events::EventEmitter;
-    use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
     use std::sync::Arc;
+    use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
     use tokio::sync::Mutex;
 
     fn create_test_plan(task_id: Uuid) -> Plan {
@@ -383,7 +383,10 @@ mod tests {
                 let json = pr_url.unwrap();
                 assert_eq!(json, "[]");
             }
-            other => panic!("Expected TaskCompleted event with nil UUID, got: {:?}", other),
+            other => panic!(
+                "Expected TaskCompleted event with nil UUID, got: {:?}",
+                other
+            ),
         }
     }
 
@@ -611,7 +614,10 @@ mod tests {
         let event = handle_command(command, orch, Arc::clone(&emitter)).await;
 
         match event {
-            DaemonEvent::Error { message, correlation_id } => {
+            DaemonEvent::Error {
+                message,
+                correlation_id,
+            } => {
                 assert!(!message.is_empty());
                 assert!(correlation_id != Uuid::nil());
             }
@@ -648,7 +654,10 @@ mod tests {
     #[tokio::test]
     async fn test_parse_task_watch_command() {
         let task_id = Uuid::new_v4();
-        let json = format!(r#"{{"type":"TaskWatch","payload":{{"task_id":"{}"}}}}"#, task_id);
+        let json = format!(
+            r#"{{"type":"TaskWatch","payload":{{"task_id":"{}"}}}}"#,
+            task_id
+        );
         let command = parse_command(&json).unwrap();
 
         match command {
@@ -669,7 +678,10 @@ mod tests {
         let command = parse_command(&json).unwrap();
 
         match command {
-            CliCommand::TaskReject { task_id: id, reason } => {
+            CliCommand::TaskReject {
+                task_id: id,
+                reason,
+            } => {
                 assert_eq!(id, task_id);
                 assert_eq!(reason, "test reason");
             }

@@ -239,19 +239,20 @@ impl EvidenceSummary {
         md.push_str("## Validation Evidence\n\n");
 
         // Overall status
-        let status_emoji = if self.overall_passed {
-            "✅"
+        let status_emoji = if self.overall_passed { "✅" } else { "❌" };
+        let status_text = if self.overall_passed {
+            "PASSED"
         } else {
-            "❌"
+            "FAILED"
         };
-        let status_text = if self.overall_passed { "PASSED" } else { "FAILED" };
-        md.push_str(&format!("**Overall: {} {}**\n\n", status_emoji, status_text));
+        md.push_str(&format!(
+            "**Overall: {} {}**\n\n",
+            status_emoji, status_text
+        ));
 
         // Test results
         md.push_str("### Tests\n\n");
-        md.push_str(
-            "| Passed | Failed | Skipped |\n|--------|--------|---------|\n",
-        );
+        md.push_str("| Passed | Failed | Skipped |\n|--------|--------|---------|\n");
         md.push_str(&format!(
             "| {} | {} | {} |\n\n",
             self.tests_passed, self.tests_failed, self.tests_skipped
@@ -261,7 +262,11 @@ impl EvidenceSummary {
         md.push_str("### Checks\n\n");
         md.push_str(&format!(
             "- **Lint**: {}\n",
-            if self.lint_passed { "✅ Passed" } else { "❌ Failed" }
+            if self.lint_passed {
+                "✅ Passed"
+            } else {
+                "❌ Failed"
+            }
         ));
         md.push_str(&format!(
             "- **Security**: {}\n",
@@ -427,7 +432,11 @@ impl PrCreator {
     }
 
     /// Get the full diff for the branch
-    pub async fn get_full_diff(&self, cwd: &Path, base_branch: &str) -> Result<String, PrCreationError> {
+    pub async fn get_full_diff(
+        &self,
+        cwd: &Path,
+        base_branch: &str,
+    ) -> Result<String, PrCreationError> {
         let output = tokio::process::Command::new("git")
             .args(["diff", &format!("{}..HEAD", base_branch)])
             .current_dir(cwd)
@@ -708,7 +717,11 @@ impl PrCreator {
             is_draft: false,
             branch_name: current_branch,
             base_branch: base_branch.to_string(),
-            labels_applied: metadata.labels.iter().map(|l| l.as_str().to_string()).collect(),
+            labels_applied: metadata
+                .labels
+                .iter()
+                .map(|l| l.as_str().to_string())
+                .collect(),
             error: Some(format!(
                 "gh CLI not available. Instructions:\n\n{}",
                 instructions
@@ -760,10 +773,7 @@ impl PrCreator {
         let mut template = String::new();
 
         // Title suggestion
-        template.push_str(&format!(
-            "## Suggested Title\n{}\n\n",
-            metadata.pr_title()
-        ));
+        template.push_str(&format!("## Suggested Title\n{}\n\n", metadata.pr_title()));
 
         // Description placeholder
         template.push_str("## Description\n\n[Describe the changes and their rationale]\n\n");
@@ -780,7 +790,9 @@ impl PrCreator {
 
         // Evidence placeholder
         if self.config.require_validation {
-            template.push_str("## Validation Evidence\n\n[Validation results will be appended here]\n\n");
+            template.push_str(
+                "## Validation Evidence\n\n[Validation results will be appended here]\n\n",
+            );
         }
 
         // Labels suggestion
@@ -851,7 +863,10 @@ mod tests {
         assert_eq!(PrLabel::TypeFeature.as_str(), "type:feature");
         assert_eq!(PrLabel::TypeBugfix.as_str(), "type:bugfix");
         assert_eq!(PrLabel::StatusDraft.as_str(), "status:draft");
-        assert_eq!(PrLabel::Milestone("v1".to_string()).as_str(), "milestone:v1");
+        assert_eq!(
+            PrLabel::Milestone("v1".to_string()).as_str(),
+            "milestone:v1"
+        );
     }
 
     #[test]

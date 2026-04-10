@@ -248,7 +248,8 @@ impl TrajectoryAnalyzer {
                     name: seq.clone(),
                     frequency: count,
                     examples: vec![seq],
-                    confidence: (count as f64 / (trajectory.tool_calls.len() as f64 - 1.0)).min(1.0),
+                    confidence: (count as f64 / (trajectory.tool_calls.len() as f64 - 1.0))
+                        .min(1.0),
                 });
             }
         }
@@ -335,7 +336,11 @@ pub struct SkillExtractor {
 }
 
 impl SkillExtractor {
-    pub fn new(store: SqliteMemoryStore, config: ExtractionConfig, workspace_path: PathBuf) -> Self {
+    pub fn new(
+        store: SqliteMemoryStore,
+        config: ExtractionConfig,
+        workspace_path: PathBuf,
+    ) -> Self {
         Self {
             store,
             config,
@@ -356,7 +361,10 @@ impl SkillExtractor {
         let mut errors = Vec::new();
 
         // Convert patterns to skills
-        for pattern in patterns.into_iter().take(self.config.max_skills_per_trajectory) {
+        for pattern in patterns
+            .into_iter()
+            .take(self.config.max_skills_per_trajectory)
+        {
             if pattern.confidence < self.config.min_confidence {
                 continue;
             }
@@ -476,11 +484,7 @@ impl SkillExtractor {
                         current_step = Some((
                             idx,
                             desc.to_string(),
-                            if file.is_empty() {
-                                vec![]
-                            } else {
-                                vec![file]
-                            },
+                            if file.is_empty() { vec![] } else { vec![file] },
                             vec![tool_call.tool_name.clone()],
                         ));
                     }
@@ -497,11 +501,7 @@ impl SkillExtractor {
                     current_step = Some((
                         idx,
                         desc.to_string(),
-                        if file.is_empty() {
-                            vec![]
-                        } else {
-                            vec![file]
-                        },
+                        if file.is_empty() { vec![] } else { vec![file] },
                         vec![tool_call.tool_name.clone()],
                     ));
                 }
@@ -652,7 +652,8 @@ impl SkillExtractor {
         let mut matched_skills: Vec<(Skill, f64)> = Vec::new();
 
         for skill in all_skills {
-            let similarity = self.calculate_similarity(&task_lower, &skill.task_pattern.to_lowercase());
+            let similarity =
+                self.calculate_similarity(&task_lower, &skill.task_pattern.to_lowercase());
             if similarity > 0.3 {
                 matched_skills.push((skill, similarity));
             }
@@ -694,9 +695,19 @@ impl SkillExtractor {
 
         // Update version (increment patch)
         let version_parts: Vec<&str> = skill.version.split('.').collect();
-        let major = version_parts.first().and_then(|s| s.parse::<u32>().ok()).unwrap_or(1);
-        let minor = version_parts.get(1).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
-        let patch = version_parts.get(2).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0) + 1;
+        let major = version_parts
+            .first()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(1);
+        let minor = version_parts
+            .get(1)
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        let patch = version_parts
+            .get(2)
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0)
+            + 1;
         let new_version = format!("{}.{}.{}", major, minor, patch);
 
         // Create updated skill
@@ -710,16 +721,18 @@ impl SkillExtractor {
 
         // Store updated skill
         let skills_dir = self.workspace_path.join(&self.config.store_path);
-        let filename = format!("{}.v{}.json", updated_skill.name.replace(' ', "_"), updated_skill.version);
+        let filename = format!(
+            "{}.v{}.json",
+            updated_skill.name.replace(' ', "_"),
+            updated_skill.version
+        );
         let filepath = skills_dir.join(&filename);
 
-        let json = serde_json::to_string_pretty(&updated_skill).map_err(|e| {
-            SwellError::DatabaseError(format!("Failed to serialize skill: {}", e))
-        })?;
+        let json = serde_json::to_string_pretty(&updated_skill)
+            .map_err(|e| SwellError::DatabaseError(format!("Failed to serialize skill: {}", e)))?;
 
-        fs::write(&filepath, json).map_err(|e| {
-            SwellError::DatabaseError(format!("Failed to write skill file: {}", e))
-        })?;
+        fs::write(&filepath, json)
+            .map_err(|e| SwellError::DatabaseError(format!("Failed to write skill file: {}", e)))?;
 
         Ok(updated_skill)
     }
@@ -741,7 +754,11 @@ impl SkillExtractionService {
         }
     }
 
-    pub fn with_config(store: SqliteMemoryStore, config: ExtractionConfig, workspace_path: PathBuf) -> Self {
+    pub fn with_config(
+        store: SqliteMemoryStore,
+        config: ExtractionConfig,
+        workspace_path: PathBuf,
+    ) -> Self {
         Self {
             store,
             config,
@@ -780,7 +797,10 @@ impl SkillExtractionService {
     }
 
     /// Find skills relevant to a task description
-    pub async fn find_skills_for_task(&self, task_description: &str) -> Result<Vec<Skill>, SwellError> {
+    pub async fn find_skills_for_task(
+        &self,
+        task_description: &str,
+    ) -> Result<Vec<Skill>, SwellError> {
         let extractor = SkillExtractor::new(
             self.store.clone(),
             self.config.clone(),
@@ -790,7 +810,11 @@ impl SkillExtractionService {
     }
 
     /// Update an existing skill with new trajectory data
-    pub async fn update_skill(&self, skill_id: Uuid, trajectory: TrajectoryData) -> Result<Skill, SwellError> {
+    pub async fn update_skill(
+        &self,
+        skill_id: Uuid,
+        trajectory: TrajectoryData,
+    ) -> Result<Skill, SwellError> {
         let extractor = SkillExtractor::new(
             self.store.clone(),
             self.config.clone(),
@@ -814,7 +838,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_skill_creation() {
-        let skill = Skill::new("test_skill".to_string(), "Implement a test feature".to_string());
+        let skill = Skill::new(
+            "test_skill".to_string(),
+            "Implement a test feature".to_string(),
+        );
         assert_eq!(skill.name, "test_skill");
         assert_eq!(skill.task_pattern, "Implement a test feature");
         assert_eq!(skill.version, "1.0.0");
@@ -882,15 +909,10 @@ mod tests {
     async fn test_skill_extractor_similarity() {
         use crate::SqliteMemoryStore;
 
-        let store = SqliteMemoryStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
-        let extractor = SkillExtractor::new(
-            store,
-            ExtractionConfig::default(),
-            std::env::temp_dir(),
-        );
+        let extractor =
+            SkillExtractor::new(store, ExtractionConfig::default(), std::env::temp_dir());
 
         // Test similarity calculation
         let sim1 = extractor.calculate_similarity("add feature", "add new feature");

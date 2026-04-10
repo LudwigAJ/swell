@@ -32,6 +32,11 @@ pub use agents::{
     SystemPromptBuilder, SystemPromptConfig, TestPattern, TestSpec, TestWriterAgent,
     DEFAULT_REACT_MAX_ITERATIONS,
 };
+pub use alerts::{
+    create_alert_manager, create_alert_manager_with_config, Alert, AlertCategory, AlertManager,
+    AlertManagerConfig, ConsecutiveFailureConfig, CostThresholdConfig, LoopDetectionConfig,
+    LoopDetectionState, PolicyViolationConfig, SharedAlertManager,
+};
 pub use autonomy::{ApprovalDecision, ApprovalRequest, AutonomyController};
 pub use backlog::{
     BacklogItem, BacklogSource, BacklogStats, DeduplicationConfig, PriorityScoringConfig,
@@ -39,6 +44,11 @@ pub use backlog::{
 };
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use execution::ExecutionController;
+pub use metrics::{
+    create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
+    AlertSeverity, AlertThresholds, AlertType, MetricSample, MetricsAlert, MetricsCollector,
+    MetricsWindow, OrchestratorMetrics, SharedMetricsCollector,
+};
 pub use policy::{
     action, PolicyAction, PolicyCondition, PolicyDecision, PolicyEffect, PolicyEngine, PolicyFile,
     PolicyRule,
@@ -48,21 +58,12 @@ pub use scheduler::{
 };
 pub use state_machine::TaskStateMachine;
 pub use task_graph::TaskGraph;
-pub use metrics::{
-    AggregatedMetrics, AlertSeverity, AlertThresholds, AlertType, MetricsAlert, MetricsCollector,
-    MetricsWindow, MetricSample, OrchestratorMetrics, SharedMetricsCollector,
-    create_metrics_collector, create_metrics_collector_with_thresholds,
-};
-pub use alerts::{
-    Alert, AlertCategory, AlertManager, AlertManagerConfig, ConsecutiveFailureConfig,
-    CostThresholdConfig, LoopDetectionConfig, LoopDetectionState,
-    PolicyViolationConfig, SharedAlertManager, create_alert_manager,
-    create_alert_manager_with_config,
-};
 
 use std::sync::Arc;
-use swell_core::{AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult};
-use swell_state::{CheckpointManager, traits::in_memory::InMemoryCheckpointStore};
+use swell_core::{
+    AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult,
+};
+use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
 use tokio::sync::{mpsc, RwLock};
 use tracing::{info, warn};
 use uuid::Uuid;

@@ -326,7 +326,10 @@ impl FlakinessHistory {
 
     /// Get runs for a specific test
     pub fn get_runs(&self, test_name: &str) -> &[TestRun] {
-        self.runs.get(test_name).map(|v| v.as_slice()).unwrap_or(&[])
+        self.runs
+            .get(test_name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get the number of runs for a specific test

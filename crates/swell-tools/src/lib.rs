@@ -26,12 +26,12 @@ pub use commit_strategy::{
     CommitMetadata, CommitRequest, CommitResult, CommitStrategy, CommitStrategyError,
 };
 pub use conflict_resolution::{
-    ConflictDetectionResult, ConflictHunk, ConflictInfo, ConflictResolver,
-    ConflictResolverConfig, ConflictResolutionError, FileOwner, ResolutionResult, ResolutionStrategy,
+    ConflictDetectionResult, ConflictHunk, ConflictInfo, ConflictResolutionError, ConflictResolver,
+    ConflictResolverConfig, FileOwner, ResolutionResult, ResolutionStrategy,
 };
 pub use executor::ToolExecutor;
 pub use pr_creation::{
-    EvidenceSummary, PrCreator, PrCreatorConfig, PrCreationError, PrLabel, PrMetadata, PrResult,
+    EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
 };
 pub use registry::{ToolRegistration, ToolRegistry};
 pub use worktree_pool::{WorktreeAllocation, WorktreePool, WorktreePoolConfig};

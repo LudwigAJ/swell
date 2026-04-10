@@ -143,7 +143,12 @@ pub struct TaskResult {
 
 impl TaskResult {
     /// Create a successful task result
-    pub fn success(task_id: TaskId, category: super::task::TaskCategory, difficulty: super::task::TaskDifficulty, duration_secs: f64) -> Self {
+    pub fn success(
+        task_id: TaskId,
+        category: super::task::TaskCategory,
+        difficulty: super::task::TaskDifficulty,
+        duration_secs: f64,
+    ) -> Self {
         Self {
             task_id,
             category,
@@ -157,7 +162,13 @@ impl TaskResult {
     }
 
     /// Create a failed task result
-    pub fn failed(task_id: TaskId, category: super::task::TaskCategory, difficulty: super::task::TaskDifficulty, duration_secs: f64, notes: impl Into<String>) -> Self {
+    pub fn failed(
+        task_id: TaskId,
+        category: super::task::TaskCategory,
+        difficulty: super::task::TaskDifficulty,
+        duration_secs: f64,
+        notes: impl Into<String>,
+    ) -> Self {
         Self {
             task_id,
             category,
@@ -171,7 +182,12 @@ impl TaskResult {
     }
 
     /// Create a skipped task result
-    pub fn skipped(task_id: TaskId, category: super::task::TaskCategory, difficulty: super::task::TaskDifficulty, reason: impl Into<String>) -> Self {
+    pub fn skipped(
+        task_id: TaskId,
+        category: super::task::TaskCategory,
+        difficulty: super::task::TaskDifficulty,
+        reason: impl Into<String>,
+    ) -> Self {
         Self {
             task_id,
             category,
@@ -215,7 +231,7 @@ mod tests {
             TaskId("test".to_string()),
             TaskCategory::BugFix,
             TaskDifficulty::Low,
-            10.5
+            10.5,
         );
 
         assert_eq!(result.outcome, TaskOutcome::Completed);

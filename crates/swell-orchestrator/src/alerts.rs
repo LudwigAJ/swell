@@ -381,7 +381,8 @@ impl AlertManager {
                     "Loop iterations ({}) approaching maximum ({})",
                     state.iterations, config.max_iterations_critical
                 ),
-                "Consider reviewing the loop logic. Task may be taking too long to converge.".to_string(),
+                "Consider reviewing the loop logic. Task may be taking too long to converge."
+                    .to_string(),
                 state.iterations as f64,
                 config.max_iterations_critical as f64,
             )
@@ -399,7 +400,8 @@ impl AlertManager {
                     "Loop reached maximum iterations ({}) without converging",
                     state.iterations
                 ),
-                "Task should be transitioned to failed state and potential retry initiated.".to_string(),
+                "Task should be transitioned to failed state and potential retry initiated."
+                    .to_string(),
                 state.iterations as f64,
                 config.max_iterations_critical as f64,
             )
@@ -669,7 +671,8 @@ impl AlertManager {
             AlertType::ValidationFailureRateHigh, // Reusing this alert type
             AlertSeverity::Warning,
             format!("Policy violation: {} - {}", action_type, reason),
-            "Review the policy rules and ensure the action complies with configured policies.".to_string(),
+            "Review the policy rules and ensure the action complies with configured policies."
+                .to_string(),
             1.0,
             0.0,
         )
@@ -854,12 +857,8 @@ mod tests {
     fn test_policy_violation() {
         let mut manager = AlertManager::new();
 
-        let alert = manager.record_policy_violation(
-            "rm -rf /",
-            "Destructive command denied",
-            None,
-            None,
-        );
+        let alert =
+            manager.record_policy_violation("rm -rf /", "Destructive command denied", None, None);
 
         assert!(alert.is_some());
         let alert = alert.unwrap();

@@ -26,9 +26,7 @@
 //! ```
 
 use std::sync::Arc;
-use swell_core::{
-    LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition, SwellError,
-};
+use swell_core::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition, SwellError};
 
 /// Task types that determine model selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -50,11 +48,11 @@ impl TaskType {
     /// Returns the default cost weight for this task type (0.0 to 1.0, higher = more expensive OK)
     pub fn cost_tolerance(&self) -> f64 {
         match self {
-            TaskType::Fast => 0.2,      // Prefer cheapest
-            TaskType::Default => 0.5,   // Balanced
+            TaskType::Fast => 0.2,     // Prefer cheapest
+            TaskType::Default => 0.5,  // Balanced
             TaskType::Review => 0.6,   // Some cost OK
-            TaskType::Coding => 0.7,    // Good quality worth extra cost
-            TaskType::Planning => 0.9,  // Complex reasoning worth premium
+            TaskType::Coding => 0.7,   // Good quality worth extra cost
+            TaskType::Planning => 0.9, // Complex reasoning worth premium
         }
     }
 
@@ -213,7 +211,11 @@ impl ModelRouter {
             let model_name = candidate.model_name.clone();
             tracing::debug!(model = %model_name, task_type = ?task_type, "Trying model");
 
-            match candidate.backend.chat(messages.clone(), tools.clone(), config.clone()).await {
+            match candidate
+                .backend
+                .chat(messages.clone(), tools.clone(), config.clone())
+                .await
+            {
                 Ok(response) => {
                     tracing::info!(model = %model_name, task_type = ?task_type, tokens = %response.usage.total_tokens, "Model route succeeded");
                     return Ok(response);
@@ -225,9 +227,8 @@ impl ModelRouter {
             }
         }
 
-        Err(last_error.unwrap_or_else(|| {
-            SwellError::ConfigError("No routes available".to_string())
-        }))
+        Err(last_error
+            .unwrap_or_else(|| SwellError::ConfigError("No routes available".to_string())))
     }
 
     /// Get all candidate routes for a task type in order of preference
@@ -246,18 +247,22 @@ impl ModelRouter {
         for fallback_type in fallback_types {
             if let Some(route_config) = self.routes.get(&fallback_type) {
                 // Only add if not already present
-                if !candidates.iter().any(|c| c.model_name == route_config.primary.model_name) {
+                if !candidates
+                    .iter()
+                    .any(|c| c.model_name == route_config.primary.model_name)
+                {
                     candidates.push(route_config.primary.clone());
-                    candidates.extend(
-                        route_config.fallbacks.iter().cloned()
-                    );
+                    candidates.extend(route_config.fallbacks.iter().cloned());
                 }
             }
         }
 
         // Add global default fallbacks
         for default in &self.default_fallbacks {
-            if !candidates.iter().any(|c| c.model_name == default.model_name) {
+            if !candidates
+                .iter()
+                .any(|c| c.model_name == default.model_name)
+            {
                 candidates.push(default.clone());
             }
         }
@@ -268,13 +273,13 @@ impl ModelRouter {
     /// Check if a backend is healthy for a given task type
     pub async fn health_check(&self, task_type: TaskType) -> bool {
         let candidates = self.get_candidates(task_type);
-        
+
         for candidate in candidates {
             if candidate.backend.health_check().await {
                 return true;
             }
         }
-        
+
         false
     }
 
@@ -327,9 +332,15 @@ impl ModelRouterBuilder {
         use crate::AnthropicBackend;
 
         // Coding route: Sonnet primary, Opus fallback
-        let sonnet = Arc::new(AnthropicBackend::new("claude-sonnet-4-20250514", sonnet_api_key.clone()));
-        let opus = Arc::new(AnthropicBackend::new("claude-opus-4-5", opus_api_key.clone()));
-        
+        let sonnet = Arc::new(AnthropicBackend::new(
+            "claude-sonnet-4-20250514",
+            sonnet_api_key.clone(),
+        ));
+        let opus = Arc::new(AnthropicBackend::new(
+            "claude-opus-4-5",
+            opus_api_key.clone(),
+        ));
+
         self.router.register(
             TaskType::Coding,
             "claude-sonnet-4-20250514",
@@ -346,7 +357,10 @@ impl ModelRouterBuilder {
         );
 
         // Fast route: Haiku primary, Sonnet fallback
-        let haiku = Arc::new(AnthropicBackend::new("claude-haiku-4-20250514", haiku_api_key.clone()));
+        let haiku = Arc::new(AnthropicBackend::new(
+            "claude-haiku-4-20250514",
+            haiku_api_key.clone(),
+        ));
         self.router.register(
             TaskType::Fast,
             "claude-haiku-4-20250514",
@@ -374,11 +388,7 @@ impl ModelRouterBuilder {
     }
 
     /// Build the router with OpenAI model routing
-    pub fn with_openai_defaults(
-        mut self,
-        gpt_4_api_key: String,
-        gpt_35_api_key: String,
-    ) -> Self {
+    pub fn with_openai_defaults(mut self, gpt_4_api_key: String, gpt_35_api_key: String) -> Self {
         use crate::OpenAIBackend;
 
         // GPT-4 for coding and planning
@@ -394,12 +404,8 @@ impl ModelRouterBuilder {
         );
 
         // Planning: GPT-4
-        self.router.register(
-            TaskType::Planning,
-            "gpt-4-turbo",
-            gpt_4.clone(),
-            vec![],
-        );
+        self.router
+            .register(TaskType::Planning, "gpt-4-turbo", gpt_4.clone(), vec![]);
 
         // Fast: GPT-3.5 primary
         self.router.register(
@@ -410,12 +416,8 @@ impl ModelRouterBuilder {
         );
 
         // Review: GPT-4
-        self.router.register(
-            TaskType::Review,
-            "gpt-4-turbo",
-            gpt_4.clone(),
-            vec![],
-        );
+        self.router
+            .register(TaskType::Review, "gpt-4-turbo", gpt_4.clone(), vec![]);
 
         // Default: GPT-3.5
         self.router.register(
@@ -477,8 +479,7 @@ impl CostOptimizer {
 
     /// Check if we're in warning zone
     pub fn is_warning(&self) -> bool {
-        self.spending_ratio() >= self.warning_threshold 
-            && self.spending_ratio() < 1.0
+        self.spending_ratio() >= self.warning_threshold && self.spending_ratio() < 1.0
     }
 
     /// Check if we've exceeded budget
@@ -489,12 +490,12 @@ impl CostOptimizer {
     /// Suggest whether to use cheaper models based on spending
     pub fn should_use_cheaper(&self, task_type: TaskType) -> bool {
         let ratio = self.spending_ratio();
-        
+
         // If we're over 75% budget, prefer cheaper models for non-critical tasks
         if ratio >= 0.75 {
             return task_type != TaskType::Planning; // Planning still needs quality
         }
-        
+
         // If we're over 50% and it's a fast task, use cheap
         if ratio >= 0.5 && task_type == TaskType::Fast {
             return true;
@@ -525,10 +526,10 @@ mod tests {
     #[tokio::test]
     async fn test_basic_routing() {
         let mut router = ModelRouter::new();
-        
+
         let sonnet = create_mock_backend("claude-sonnet");
         let haiku = create_mock_backend("claude-haiku");
-        
+
         router.register(
             TaskType::Coding,
             "claude-sonnet",
@@ -547,17 +548,20 @@ mod tests {
             stop_sequences: None,
         };
 
-        let response = router.route(TaskType::Coding, messages, None, config).await.unwrap();
+        let response = router
+            .route(TaskType::Coding, messages, None, config)
+            .await
+            .unwrap();
         assert!(response.content.contains("claude-sonnet"));
     }
 
     #[tokio::test]
     async fn test_fallback_chain() {
         let mut router = ModelRouter::new();
-        
+
         let failing = create_failing_mock("failing-model");
         let fallback = create_mock_backend("fallback-model");
-        
+
         router.register(
             TaskType::Fast,
             "failing-model",
@@ -576,32 +580,25 @@ mod tests {
             stop_sequences: None,
         };
 
-        let response = router.route(TaskType::Fast, messages, None, config).await.unwrap();
+        let response = router
+            .route(TaskType::Fast, messages, None, config)
+            .await
+            .unwrap();
         assert!(response.content.contains("fallback-model"));
     }
 
     #[tokio::test]
     async fn test_task_type_fallback() {
         let mut router = ModelRouter::new();
-        
+
         let fast_backend = create_mock_backend("haiku-model");
         let default_backend = create_mock_backend("default-model");
-        
+
         // Only register Default, not Fast
-        router.register(
-            TaskType::Default,
-            "default-model",
-            default_backend,
-            vec![],
-        );
+        router.register(TaskType::Default, "default-model", default_backend, vec![]);
 
         // Fast should fall back to Default route
-        router.register(
-            TaskType::Fast,
-            "haiku-model",
-            fast_backend,
-            vec![],
-        );
+        router.register(TaskType::Fast, "haiku-model", fast_backend, vec![]);
 
         let messages = vec![LlmMessage {
             role: crate::LlmRole::User,
@@ -615,26 +612,24 @@ mod tests {
         };
 
         // Should work with Fast backend
-        let response = router.route(TaskType::Fast, messages.clone(), None, config.clone()).await.unwrap();
+        let response = router
+            .route(TaskType::Fast, messages.clone(), None, config.clone())
+            .await
+            .unwrap();
         assert!(response.content.contains("haiku-model"));
     }
 
     #[tokio::test]
     async fn test_global_fallback() {
         let mut router = ModelRouter::new();
-        
+
         let failing = create_failing_mock("primary-failing");
         let global_fallback = create_mock_backend("global-fallback");
-        
+
         router.add_default_fallback(ModelRoute::new("global-fallback", global_fallback));
-        
+
         // Register for a task type but primary fails
-        router.register(
-            TaskType::Coding,
-            "primary-failing",
-            failing,
-            vec![],
-        );
+        router.register(TaskType::Coding, "primary-failing", failing, vec![]);
 
         let messages = vec![LlmMessage {
             role: crate::LlmRole::User,
@@ -647,7 +642,10 @@ mod tests {
             stop_sequences: None,
         };
 
-        let response = router.route(TaskType::Coding, messages, None, config).await.unwrap();
+        let response = router
+            .route(TaskType::Coding, messages, None, config)
+            .await
+            .unwrap();
         assert!(response.content.contains("global-fallback"));
     }
 
@@ -655,12 +653,9 @@ mod tests {
     async fn test_health_check() {
         let healthy = create_mock_backend("healthy-model");
         let mut builder = ModelRouterBuilder::new();
-        builder.router.register(
-            TaskType::Coding,
-            "healthy-model",
-            healthy,
-            vec![],
-        );
+        builder
+            .router
+            .register(TaskType::Coding, "healthy-model", healthy, vec![]);
         let router = builder.build();
         assert!(router.health_check(TaskType::Coding).await);
     }
@@ -668,16 +663,16 @@ mod tests {
     #[tokio::test]
     async fn test_cost_optimizer() {
         let mut optimizer = CostOptimizer::new(10000);
-        
+
         optimizer.record_usage(1000, 500);
         assert!(!optimizer.is_warning());
         assert!(!optimizer.is_exceeded());
         assert_eq!(optimizer.spending_ratio(), 0.15);
-        
+
         optimizer.record_usage(5000, 2000);
         assert!(optimizer.is_warning());
         assert!(!optimizer.is_exceeded());
-        
+
         // Fast tasks should use cheaper when over threshold
         assert!(optimizer.should_use_cheaper(TaskType::Fast));
         // Planning should still use quality even when over budget
@@ -696,13 +691,8 @@ mod tests {
     async fn test_primary_model() {
         let mut router = ModelRouter::new();
         let backend = create_mock_backend("test-model");
-        
-        router.register(
-            TaskType::Coding,
-            "test-model",
-            backend,
-            vec![],
-        );
+
+        router.register(TaskType::Coding, "test-model", backend, vec![]);
 
         assert_eq!(router.primary_model(TaskType::Coding), Some("test-model"));
         assert_eq!(router.primary_model(TaskType::Fast), None);
@@ -712,7 +702,7 @@ mod tests {
     async fn test_router_builder() {
         let builder = ModelRouterBuilder::new();
         let router = builder.build();
-        
+
         // Empty builder should have no routes
         assert!(router.primary_model(TaskType::Coding).is_none());
     }

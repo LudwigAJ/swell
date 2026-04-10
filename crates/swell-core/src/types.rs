@@ -53,7 +53,7 @@ impl AutonomyLevel {
             AutonomyLevel::Supervised => true, // Every action needs approval
             AutonomyLevel::Guided => false,    // Only plan approval needed, steps auto-execute
             AutonomyLevel::Autonomous => risk_level == RiskLevel::High, // Only high-risk needs approval
-            AutonomyLevel::FullAuto => false, // No approvals needed
+            AutonomyLevel::FullAuto => false,                           // No approvals needed
         }
     }
 

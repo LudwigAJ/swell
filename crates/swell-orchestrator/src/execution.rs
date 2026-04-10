@@ -5,9 +5,7 @@ use crate::{GeneratorAgent, Orchestrator, MAX_CONCURRENT_AGENTS};
 use futures::stream::{self, StreamExt};
 use std::sync::Arc;
 use swell_core::traits::Agent;
-use swell_core::{
-    AgentContext, AgentResult, SwellError, ValidationResult,
-};
+use swell_core::{AgentContext, AgentResult, SwellError, ValidationResult};
 use tracing::info;
 use uuid::Uuid;
 

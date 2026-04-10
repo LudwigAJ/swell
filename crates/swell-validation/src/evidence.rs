@@ -525,7 +525,7 @@ impl EvidencePack {
 // ============================================================================
 
 /// Trait for storing and retrieving evidence packs immutably.
-/// 
+///
 /// Evidence packs, once stored, cannot be modified - they represent
 /// a point-in-time snapshot of validation results for audit purposes.
 #[async_trait]
@@ -581,9 +581,7 @@ impl std::error::Error for EvidenceStoreError {}
 impl From<EvidenceStoreError> for crate::SwellError {
     fn from(err: EvidenceStoreError) -> Self {
         match err {
-            EvidenceStoreError::NotFound(_) => {
-                crate::SwellError::TaskNotFound(uuid::Uuid::nil())
-            }
+            EvidenceStoreError::NotFound(_) => crate::SwellError::TaskNotFound(uuid::Uuid::nil()),
             EvidenceStoreError::StorageError(_) => {
                 crate::SwellError::DatabaseError(err.to_string())
             }
@@ -599,7 +597,7 @@ mod mem_store {
     use super::*;
 
     /// In-memory evidence store for testing.
-    /// 
+    ///
     /// Note: This store is NOT truly immutable - it allows deletion
     /// for test cleanup purposes. In production, use SqliteEvidenceStore.
     #[derive(Debug, Default)]
@@ -635,10 +633,7 @@ mod mem_store {
             // Update task index
             {
                 let mut by_task = self.by_task.write().unwrap();
-                by_task
-                    .entry(task_id)
-                    .or_default()
-                    .push(id);
+                by_task.entry(task_id).or_default().push(id);
             }
 
             Ok(id)
@@ -669,7 +664,10 @@ mod mem_store {
             Ok(packs)
         }
 
-        async fn get_latest(&self, task_id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError> {
+        async fn get_latest(
+            &self,
+            task_id: Uuid,
+        ) -> Result<Option<EvidencePack>, EvidenceStoreError> {
             let packs = self.get_by_task_id(task_id).await?;
             Ok(packs.into_iter().next())
         }
@@ -699,7 +697,7 @@ pub mod sqlite_store {
     use super::*;
 
     /// SQLite-based evidence store for production use.
-    /// 
+    ///
     /// Stores evidence packs immutably - once stored, evidence cannot be
     /// modified or deleted through this interface.
     #[derive(Debug, Clone)]
@@ -710,10 +708,7 @@ pub mod sqlite_store {
     impl SqliteEvidenceStore {
         /// Create a new SQLite evidence store with the given database path
         pub async fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, EvidenceStoreError> {
-            let database_url = format!(
-                "sqlite:{}?mode=rwc",
-                db_path.as_ref().display()
-            );
+            let database_url = format!("sqlite:{}?mode=rwc", db_path.as_ref().display());
 
             let pool = sqlx::sqlite::SqlitePoolOptions::new()
                 .max_connections(1)
@@ -735,9 +730,7 @@ pub mod sqlite_store {
         }
 
         /// Create using a connection string (e.g., "sqlite::memory:")
-        pub async fn from_connection_string(
-            conn_str: &str,
-        ) -> Result<Self, EvidenceStoreError> {
+        pub async fn from_connection_string(conn_str: &str) -> Result<Self, EvidenceStoreError> {
             let pool = sqlx::sqlite::SqlitePoolOptions::new()
                 .max_connections(1)
                 .connect(conn_str)
@@ -810,13 +803,12 @@ pub mod sqlite_store {
         async fn get(&self, id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError> {
             let id_str = id.to_string();
 
-            let row: Option<(String,)> = sqlx::query_as(
-                r#"SELECT data FROM evidence_packs WHERE id = ?"#,
-            )
-            .bind(&id_str)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+            let row: Option<(String,)> =
+                sqlx::query_as(r#"SELECT data FROM evidence_packs WHERE id = ?"#)
+                    .bind(&id_str)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
 
             match row {
                 Some((data,)) => {
@@ -856,7 +848,10 @@ pub mod sqlite_store {
             Ok(packs)
         }
 
-        async fn get_latest(&self, task_id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError> {
+        async fn get_latest(
+            &self,
+            task_id: Uuid,
+        ) -> Result<Option<EvidencePack>, EvidenceStoreError> {
             let task_id_str = task_id.to_string();
 
             let row: Option<(String,)> = sqlx::query_as(
@@ -904,13 +899,12 @@ pub mod sqlite_store {
         async fn count(&self, task_id: Uuid) -> Result<usize, EvidenceStoreError> {
             let task_id_str = task_id.to_string();
 
-            let row: (i64,) = sqlx::query_as(
-                r#"SELECT COUNT(*) FROM evidence_packs WHERE task_id = ?"#,
-            )
-            .bind(&task_id_str)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+            let row: (i64,) =
+                sqlx::query_as(r#"SELECT COUNT(*) FROM evidence_packs WHERE task_id = ?"#)
+                    .bind(&task_id_str)
+                    .fetch_one(&self.pool)
+                    .await
+                    .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
 
             Ok(row.0 as usize)
         }
@@ -918,13 +912,11 @@ pub mod sqlite_store {
         async fn exists(&self, id: Uuid) -> Result<bool, EvidenceStoreError> {
             let id_str = id.to_string();
 
-            let row: (i64,) = sqlx::query_as(
-                r#"SELECT COUNT(*) FROM evidence_packs WHERE id = ?"#,
-            )
-            .bind(&id_str)
-            .fetch_one(&self.pool)
-            .await
-            .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
+            let row: (i64,) = sqlx::query_as(r#"SELECT COUNT(*) FROM evidence_packs WHERE id = ?"#)
+                .bind(&id_str)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| EvidenceStoreError::StorageError(e.to_string()))?;
 
             Ok(row.0 > 0)
         }
@@ -1218,7 +1210,7 @@ mod evidence_store_tests {
         // Note: In a true immutable store, we couldn't do modifications
         // but for testing purposes, we demonstrate the retrieval works
         assert_eq!(retrieved.outcome, EvidenceOutcome::Passed);
-        
+
         // In a real immutable store, we would NOT be able to update
         // For now, the InMemory store allows this, but SqliteEvidenceStore
         // would prevent modifications (no UPDATE query exists)
@@ -1230,7 +1222,7 @@ mod evidence_store_tests {
         let store = SqliteEvidenceStore::from_connection_string("sqlite::memory:")
             .await
             .unwrap();
-        
+
         let task_id = Uuid::new_v4();
         let evidence = create_test_evidence(task_id, true);
         let id = evidence.id;
@@ -1266,13 +1258,13 @@ mod evidence_store_tests {
         let store = SqliteEvidenceStore::from_connection_string("sqlite::memory:")
             .await
             .unwrap();
-        
+
         let task_id = Uuid::new_v4();
 
         // Store multiple evidences
         let evidence1 = create_test_evidence(task_id, true);
         let evidence2 = create_test_evidence(task_id, false);
-        
+
         let id1 = evidence1.id;
         let id2 = evidence2.id;
 
@@ -1300,7 +1292,7 @@ mod evidence_store_tests {
         let store = SqliteEvidenceStore::from_connection_string("sqlite::memory:")
             .await
             .unwrap();
-        
+
         let result = store.get(Uuid::new_v4()).await.unwrap();
         assert!(result.is_none());
     }
@@ -1311,7 +1303,7 @@ mod evidence_store_tests {
         let store = SqliteEvidenceStore::from_connection_string("sqlite::memory:")
             .await
             .unwrap();
-        
+
         let task_id = Uuid::new_v4();
         let evidence = create_test_evidence(task_id, true);
         let id = evidence.id;

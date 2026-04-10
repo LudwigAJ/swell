@@ -214,11 +214,7 @@ impl ConflictResolver {
     }
 
     /// Register an owner with file patterns (glob matching)
-    pub async fn register_owner_pattern(
-        &self,
-        owner_id: impl Into<String>,
-        patterns: Vec<String>,
-    ) {
+    pub async fn register_owner_pattern(&self, owner_id: impl Into<String>, patterns: Vec<String>) {
         let mut patterns_map = self.owner_patterns.write().await;
         patterns_map.insert(owner_id.into(), patterns);
     }
@@ -250,7 +246,10 @@ impl ConflictResolver {
     }
 
     /// Detect conflicts in a file
-    pub async fn detect_conflicts(&self, file_path: &Path) -> Result<ConflictDetectionResult, ConflictResolutionError> {
+    pub async fn detect_conflicts(
+        &self,
+        file_path: &Path,
+    ) -> Result<ConflictDetectionResult, ConflictResolutionError> {
         let content = tokio::fs::read_to_string(file_path)
             .await
             .map_err(|e| ConflictResolutionError::IoError(e.to_string()))?;
@@ -259,14 +258,20 @@ impl ConflictResolver {
     }
 
     /// Parse conflicts from file content
-    fn parse_conflicts(&self, content: &str, file_path: Option<&Path>) -> Result<ConflictDetectionResult, ConflictResolutionError> {
+    fn parse_conflicts(
+        &self,
+        content: &str,
+        file_path: Option<&Path>,
+    ) -> Result<ConflictDetectionResult, ConflictResolutionError> {
         let mut conflicting_files = Vec::new();
         let mut conflict_details: HashMap<PathBuf, Vec<ConflictHunk>> = HashMap::new();
         let mut total_hunks = 0;
         let lines: Vec<&str> = content.lines().collect();
 
         // Use provided file_path or default to "unknown"
-        let effective_file_path = file_path.map(PathBuf::from).unwrap_or_else(|| PathBuf::from("unknown"));
+        let effective_file_path = file_path
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("unknown"));
 
         let mut in_conflict = false;
         let mut hunk_start = 0;
@@ -335,7 +340,10 @@ impl ConflictResolver {
     }
 
     /// Detect conflicts using git diff
-    pub async fn detect_conflicts_with_git(&self, cwd: &Path) -> Result<ConflictDetectionResult, ConflictResolutionError> {
+    pub async fn detect_conflicts_with_git(
+        &self,
+        cwd: &Path,
+    ) -> Result<ConflictDetectionResult, ConflictResolutionError> {
         let output = tokio::process::Command::new("git")
             .args(["diff", "--name-only", "--diff-filter=U"])
             .current_dir(cwd)
@@ -410,13 +418,15 @@ impl ConflictResolver {
                 "ours"
             } else {
                 "theirs"
-            }.to_string()
+            }
+            .to_string()
         };
 
         debug!(file = %file_path.display(), owner = %resolved_owner, "Resolving conflicts with owner-based strategy");
 
         // Resolve based on owner preference
-        let (resolved_content, strategy) = self.apply_owner_resolution(&content, &resolved_owner)?;
+        let (resolved_content, strategy) =
+            self.apply_owner_resolution(&content, &resolved_owner)?;
 
         let result = ResolutionResult {
             success: true,
@@ -577,7 +587,10 @@ impl ConflictResolver {
     }
 
     /// Try to semantically merge a conflict hunk
-    fn try_semantic_merge(&self, hunk: &ConflictHunk) -> Result<SemanticMergeResult, ConflictResolutionError> {
+    fn try_semantic_merge(
+        &self,
+        hunk: &ConflictHunk,
+    ) -> Result<SemanticMergeResult, ConflictResolutionError> {
         // Simplified semantic merge:
         // - If ours and theirs differ only in comments/whitespace, merge
         // - If they add different code to same function, keep both
@@ -742,7 +755,10 @@ impl ConflictResolver {
     }
 
     /// Get list of untracked/unresolved conflicts using git status
-    pub async fn get_unresolved_conflicts(&self, cwd: &Path) -> Result<Vec<PathBuf>, ConflictResolutionError> {
+    pub async fn get_unresolved_conflicts(
+        &self,
+        cwd: &Path,
+    ) -> Result<Vec<PathBuf>, ConflictResolutionError> {
         let output = tokio::process::Command::new("git")
             .args(["diff", "--name-only", "--diff-filter=U"])
             .current_dir(cwd)
@@ -760,12 +776,19 @@ impl ConflictResolver {
     }
 
     /// Stage resolved files (mark as resolved in git)
-    pub async fn stage_resolved(&self, cwd: &Path, files: &[PathBuf]) -> Result<(), ConflictResolutionError> {
+    pub async fn stage_resolved(
+        &self,
+        cwd: &Path,
+        files: &[PathBuf],
+    ) -> Result<(), ConflictResolutionError> {
         if files.is_empty() {
             return Ok(());
         }
 
-        let file_args: Vec<String> = files.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        let file_args: Vec<String> = files
+            .iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect();
 
         let output = tokio::process::Command::new("git")
             .args(["add", "--"])
@@ -890,13 +913,15 @@ fn new_feature() {
 fn shared_function() {
     println!("unchanged");
 }
-"#.to_string()
+"#
+        .to_string()
     }
 
     #[tokio::test]
     async fn test_conflict_resolver_new() {
         let resolver = ConflictResolver::new();
-        assert!(!resolver.config().semantic_merge || resolver.config().semantic_merge); // default is true
+        assert!(!resolver.config().semantic_merge || resolver.config().semantic_merge);
+        // default is true
     }
 
     #[tokio::test]
@@ -1102,14 +1127,18 @@ fn shared_function() {
         let file_path = dir.path().join("test.rs");
 
         // Write conflicted content
-        tokio::fs::write(&file_path, create_conflicted_content()).await.unwrap();
+        tokio::fs::write(&file_path, create_conflicted_content())
+            .await
+            .unwrap();
 
         let resolver = ConflictResolver::new();
         let needs = resolver.needs_resolution(&file_path).await;
         assert!(needs);
 
         // Write clean content
-        tokio::fs::write(&file_path, "fn clean() {}\n").await.unwrap();
+        tokio::fs::write(&file_path, "fn clean() {}\n")
+            .await
+            .unwrap();
         let needs = resolver.needs_resolution(&file_path).await;
         assert!(!needs);
     }

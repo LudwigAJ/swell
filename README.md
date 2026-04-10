@@ -259,15 +259,22 @@ SWELL supports configurable autonomy levels:
 - [x] Memory system with SQLite
 - [x] CLI + Daemon architecture
 - [x] Benchmark suite
+- [x] MCP client protocol (stdio transport)
 
 ### v2 (Planned)
-- [ ] Knowledge Graph for code structure
-- [ ] Vector search with code embeddings
-- [ ] Tree-sitter AST parsing
-- [ ] Firecracker microVM sandbox
-- [ ] OpenTelemetry integration
-- [ ] Feature Lead sub-orchestrators
-- [ ] MCP protocol full implementation
+Based on research documents in `plan/research_documents/`:
+
+| Feature | Purpose | Reference |
+|---------|---------|-----------|
+| Knowledge Graph | Property graph with typed nodes/edges for code structure | Memory Architecture spec |
+| Vector Search | LanceDB integration with code embeddings | Technical Architecture spec |
+| Tree-sitter AST | Semantic code chunking, dependency analysis | All specs |
+| Firecracker Sandbox | MicroVM isolation (<125ms boot) | Tools Runtime spec |
+| OpenTelemetry | GenAI semantic conventions, Langfuse export | All specs |
+| Feature Lead Agents | Hierarchical sub-orchestrators | Orchestrator spec |
+| Cross-encoder Reranking | BGE-reranker for retrieval quality | Memory spec |
+
+See `plan/research_documents/` for detailed specifications.
 
 ## License
 
