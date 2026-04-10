@@ -9,8 +9,10 @@
 //! - [`WorktreeIsolation`] - per-worktree environment isolation with separate PATH, env vars
 //! - [`CommitStrategy`] - atomic commits with metadata trailers
 //! - [`PrCreator`] - PR creation with metadata, evidence, and labels
+//! - Cedar policy engine for formally verifiable tool access control
 
 pub mod branch_strategy;
+pub mod cedar_policy;
 pub mod commit_strategy;
 pub mod conflict_resolution;
 pub mod credential_proxy;
@@ -33,6 +35,11 @@ pub use auto_masking::{
 };
 pub use branch_strategy::{
     BranchRequest, BranchResult, BranchStrategy, BranchStrategyConfig, BranchStrategyError,
+};
+pub use cedar_policy::{
+    CedarDecision, CedarError, CedarPolicyBridge, CedarPolicyEngine, CedarRiskLevel,
+    PolicyValidationError, PolicyValidationResult, PolicyValidator, ToolAuthorizationRequest,
+    ToolOperation,
 };
 pub use commit_strategy::{
     CommitMetadata, CommitRequest, CommitResult, CommitStrategy, CommitStrategyError,
