@@ -6,7 +6,11 @@ SWELL has two skill directories:
 - **`.factory/skills/`** - Core skills for agent operation
 - **`.swell/skills/`** - User-extensible skills following Agent Skills standard
 
-### Core Skills (`.factory/skills/`)
+### Orchestrator Skills (`.factory/skills/` - Droid/factoryd infrastructure)
+
+**IMPORTANT:** `.factory/` is NOT part of SWELL. It is Droid/factoryd infrastructure. SWELL must NEVER rely on `.factory/`. The only config place for SWELL is `.swell/`.
+
+These skills are for the orchestrator/workers to use when building SWELL, not for SWELL itself.
 
 | Skill | Description | When to Use |
 |-------|-------------|-------------|
