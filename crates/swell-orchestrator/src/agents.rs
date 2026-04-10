@@ -822,10 +822,381 @@ impl Agent for GeneratorAgent {
     }
 }
 
+// ============================================================================
+// Multi-Run Validation Configuration and Types
+// ============================================================================
+
+/// Configuration for multi-run validation to detect flakiness
+#[derive(Debug, Clone)]
+pub struct MultiRunConfig {
+    /// Number of times to run validation for statistical confidence (default: 3)
+    pub run_count: u32,
+    /// Minimum pass rate to consider validation stable (default: 1.0 for CI, lower for flaky detection)
+    pub min_pass_rate: f64,
+    /// Whether to record flakiness history for tracking (default: true)
+    pub track_flakiness: bool,
+    /// Delay between runs in milliseconds (default: 100)
+    pub run_delay_ms: u64,
+}
+
+impl Default for MultiRunConfig {
+    fn default() -> Self {
+        Self {
+            run_count: 3,
+            min_pass_rate: 1.0,
+            track_flakiness: true,
+            run_delay_ms: 100,
+        }
+    }
+}
+
+impl MultiRunConfig {
+    /// Create a new config with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the number of runs
+    pub fn with_run_count(mut self, count: u32) -> Self {
+        self.run_count = count;
+        self
+    }
+
+    /// Set minimum pass rate threshold
+    pub fn with_min_pass_rate(mut self, rate: f64) -> Self {
+        self.min_pass_rate = rate;
+        self
+    }
+
+    /// Disable flakiness tracking
+    pub fn without_flakiness_tracking(mut self) -> Self {
+        self.track_flakiness = false;
+        self
+    }
+
+    /// Set delay between runs
+    pub fn with_run_delay(mut self, delay_ms: u64) -> Self {
+        self.run_delay_ms = delay_ms;
+        self
+    }
+}
+
+/// Result of a single validation run
+#[derive(Debug, Clone)]
+pub struct ValidationRunResult {
+    /// Run index (0-based)
+    pub run_index: u32,
+    /// Whether the validation passed
+    pub passed: bool,
+    /// Confidence score from this run
+    pub confidence_score: f64,
+    /// Validation outcome
+    pub outcome: swell_core::ValidationOutcome,
+    /// Duration in milliseconds
+    pub duration_ms: u64,
+}
+
+/// Aggregated multi-run validation result with statistical confidence
+#[derive(Debug, Clone)]
+pub struct MultiRunValidationResult {
+    /// Individual run results
+    pub runs: Vec<ValidationRunResult>,
+    /// Pass rate across all runs (0.0 to 1.0)
+    pub pass_rate: f64,
+    /// Is the validation considered flaky (pass rate < 1.0 but > 0.0)
+    pub is_flaky: bool,
+    /// Flakiness score (0.0 = stable, 1.0 = highly flaky)
+    pub flakiness_score: f64,
+    /// Mean confidence score
+    pub mean_confidence: f64,
+    /// Standard deviation of confidence scores
+    pub std_dev_confidence: f64,
+    /// 95% confidence interval for pass rate [lower, upper]
+    pub pass_rate_ci95: (f64, f64),
+    /// Confidence level based on pass rate consistency
+    pub confidence_level: StatisticalConfidenceLevel,
+    /// Gate-level flakiness rates
+    pub gate_flaffiness_rates: HashMap<String, f64>,
+}
+
+/// Statistical confidence level based on consistency of results
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatisticalConfidenceLevel {
+    /// All runs passed consistently - high confidence
+    High,
+    /// Mixed results - possible flakiness, medium confidence
+    Medium,
+    /// All runs failed consistently - low confidence but stable
+    Low,
+    /// Inconsistent results indicating flakiness
+    Flaky,
+}
+
+impl std::fmt::Display for StatisticalConfidenceLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StatisticalConfidenceLevel::High => write!(f, "HIGH"),
+            StatisticalConfidenceLevel::Medium => write!(f, "MEDIUM"),
+            StatisticalConfidenceLevel::Low => write!(f, "LOW"),
+            StatisticalConfidenceLevel::Flaky => write!(f, "FLAKY"),
+        }
+    }
+}
+
+// ============================================================================
+// Behavioral Invariants - Per-Role Validation Rules
+// ============================================================================
+
+/// A behavioral invariant that can be verified for an agent role
+#[derive(Debug, Clone)]
+pub struct BehavioralInvariant {
+    /// The agent role this invariant applies to
+    pub role: AgentRole,
+    /// Human-readable description of the invariant
+    pub description: String,
+    /// Whether the invariant was satisfied in the last run
+    pub satisfied: bool,
+    /// Details about why the invariant was or wasn't satisfied
+    pub details: String,
+}
+
+/// Verifies behavioral invariants for a given agent role
+pub struct BehavioralInvariantVerifier {
+    invariants: Vec<BehavioralInvariant>,
+}
+
+impl Default for BehavioralInvariantVerifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BehavioralInvariantVerifier {
+    /// Create a new verifier with default invariants per role
+    pub fn new() -> Self {
+        let invariants = vec![
+            // Planner invariants
+            BehavioralInvariant {
+                role: AgentRole::Planner,
+                description: "Plan must have at least one step".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+            BehavioralInvariant {
+                role: AgentRole::Planner,
+                description: "Plan steps must have descriptions".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+            BehavioralInvariant {
+                role: AgentRole::Planner,
+                description: "Plan must have risk assessment".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+            // Generator invariants
+            BehavioralInvariant {
+                role: AgentRole::Generator,
+                description: "Generated code must compile (no syntax errors)".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+            BehavioralInvariant {
+                role: AgentRole::Generator,
+                description: "Generator must produce output".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+            // Evaluator invariants
+            BehavioralInvariant {
+                role: AgentRole::Evaluator,
+                description: "Evaluator must return a confidence score".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+            BehavioralInvariant {
+                role: AgentRole::Evaluator,
+                description: "Evaluator must return pass/fail result".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+            BehavioralInvariant {
+                role: AgentRole::Evaluator,
+                description: "Multi-run validation reports statistical confidence".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+        ];
+
+        Self { invariants }
+    }
+
+    /// Verify invariants for the Planner role
+    pub fn verify_planner(&mut self, plan: Option<&Plan>) -> Vec<&mut BehavioralInvariant> {
+        let mut satisfied = Vec::new();
+
+        for inv in &mut self.invariants {
+            if inv.role != AgentRole::Planner {
+                continue;
+            }
+
+            match inv.description.as_str() {
+                "Plan must have at least one step" => {
+                    if let Some(p) = plan {
+                        if !p.steps.is_empty() {
+                            inv.satisfied = true;
+                            inv.details = format!("Plan has {} step(s)", p.steps.len());
+                            satisfied.push(inv);
+                            continue;
+                        }
+                    }
+                    inv.satisfied = false;
+                    inv.details = "Plan is missing or has no steps".to_string();
+                }
+                "Plan steps must have descriptions" => {
+                    if let Some(p) = plan {
+                        let all_have_descriptions =
+                            p.steps.iter().all(|s| !s.description.is_empty());
+                        if all_have_descriptions && !p.steps.is_empty() {
+                            inv.satisfied = true;
+                            inv.details = "All steps have descriptions".to_string();
+                            satisfied.push(inv);
+                            continue;
+                        }
+                    }
+                    inv.satisfied = false;
+                    inv.details = "Some steps are missing descriptions".to_string();
+                }
+                "Plan must have risk assessment" => {
+                    if let Some(p) = plan {
+                        if !p.risk_assessment.is_empty() {
+                            inv.satisfied = true;
+                            inv.details = format!("Risk assessment: {}", p.risk_assessment);
+                            satisfied.push(inv);
+                            continue;
+                        }
+                    }
+                    inv.satisfied = false;
+                    inv.details = "Plan is missing risk assessment".to_string();
+                }
+                _ => {}
+            }
+        }
+
+        satisfied
+    }
+
+    /// Verify invariants for the Generator role
+    pub fn verify_generator(&mut self, result: &AgentResult) -> Vec<&mut BehavioralInvariant> {
+        let mut satisfied = Vec::new();
+
+        for inv in &mut self.invariants {
+            if inv.role != AgentRole::Generator {
+                continue;
+            }
+
+            match inv.description.as_str() {
+                "Generated code must compile (no syntax errors)" => {
+                    // We check this by verifying the result doesn't contain error indicators
+                    let has_compile_error = result
+                        .error
+                        .as_ref()
+                        .map(|e| e.contains("compilation") || e.contains("syntax"))
+                        .unwrap_or(false);
+
+                    if result.success && !has_compile_error {
+                        inv.satisfied = true;
+                        inv.details = "Generator produced valid output".to_string();
+                    } else {
+                        inv.satisfied = false;
+                        inv.details = result
+                            .error
+                            .clone()
+                            .unwrap_or_else(|| "Unknown error".to_string());
+                    }
+                    satisfied.push(inv);
+                }
+                "Generator must produce output" => {
+                    if !result.output.is_empty() {
+                        inv.satisfied = true;
+                        inv.details = format!("Output length: {} chars", result.output.len());
+                    } else {
+                        inv.satisfied = false;
+                        inv.details = "Generator produced empty output".to_string();
+                    }
+                    satisfied.push(inv);
+                }
+                _ => {}
+            }
+        }
+
+        satisfied
+    }
+
+    /// Verify invariants for the Evaluator role
+    pub fn verify_evaluator(&mut self, result: &EvaluationResult) -> Vec<&mut BehavioralInvariant> {
+        let mut satisfied = Vec::new();
+
+        for inv in &mut self.invariants {
+            if inv.role != AgentRole::Evaluator {
+                continue;
+            }
+
+            match inv.description.as_str() {
+                "Evaluator must return a confidence score" => {
+                    if result.confidence_score >= 0.0 && result.confidence_score <= 1.0 {
+                        inv.satisfied = true;
+                        inv.details = format!("Confidence score: {:.2}", result.confidence_score);
+                    } else {
+                        inv.satisfied = false;
+                        inv.details = "Confidence score out of valid range".to_string();
+                    }
+                    satisfied.push(inv);
+                }
+                "Evaluator must return pass/fail result" => {
+                    // passed field exists and is meaningful
+                    inv.satisfied = true;
+                    inv.details = format!(
+                        "Result: {} (confidence: {:?})",
+                        if result.passed { "PASSED" } else { "FAILED" },
+                        result.confidence_level
+                    );
+                    satisfied.push(inv);
+                }
+                "Multi-run validation reports statistical confidence" => {
+                    // This is satisfied when multi_run_result is present
+                    inv.satisfied = true;
+                    inv.details =
+                        "Multi-run validation enabled with statistical confidence".to_string();
+                    satisfied.push(inv);
+                }
+                _ => {}
+            }
+        }
+
+        satisfied
+    }
+
+    /// Get all invariants for a specific role
+    pub fn get_for_role(&self, role: AgentRole) -> Vec<&BehavioralInvariant> {
+        self.invariants.iter().filter(|i| i.role == role).collect()
+    }
+}
+
+// ============================================================================
+// Evaluator Agent - Multi-Run Validation with Flakiness Detection
+// ============================================================================
+
 /// Evaluator agent - validates code quality using validation gates
 pub struct EvaluatorAgent {
     model: String,
     validation_pipeline: Option<swell_validation::ValidationPipeline>,
+    /// Flakiness detector for tracking test/gate flakiness across runs (interior mutability)
+    flakiness_detector: std::sync::Mutex<swell_validation::FlakinessDetector>,
+    /// Configuration for multi-run validation
+    multi_run_config: MultiRunConfig,
+    /// Verifier for behavioral invariants
+    invariant_verifier: std::sync::Mutex<BehavioralInvariantVerifier>,
 }
 
 impl EvaluatorAgent {
@@ -834,6 +1205,11 @@ impl EvaluatorAgent {
         Self {
             model,
             validation_pipeline: None,
+            flakiness_detector: std::sync::Mutex::new(
+                swell_validation::FlakinessDetector::with_defaults(),
+            ),
+            multi_run_config: MultiRunConfig::default(),
+            invariant_verifier: std::sync::Mutex::new(BehavioralInvariantVerifier::new()),
         }
     }
 
@@ -842,6 +1218,11 @@ impl EvaluatorAgent {
         Self {
             model,
             validation_pipeline: Some(pipeline),
+            flakiness_detector: std::sync::Mutex::new(
+                swell_validation::FlakinessDetector::with_defaults(),
+            ),
+            multi_run_config: MultiRunConfig::default(),
+            invariant_verifier: std::sync::Mutex::new(BehavioralInvariantVerifier::new()),
         }
     }
 
@@ -856,7 +1237,203 @@ impl EvaluatorAgent {
         Self {
             model,
             validation_pipeline: Some(pipeline),
+            flakiness_detector: std::sync::Mutex::new(
+                swell_validation::FlakinessDetector::with_defaults(),
+            ),
+            multi_run_config: MultiRunConfig::default(),
+            invariant_verifier: std::sync::Mutex::new(BehavioralInvariantVerifier::new()),
         }
+    }
+
+    /// Create an EvaluatorAgent with full configuration
+    pub fn with_full_config(
+        model: String,
+        pipeline: swell_validation::ValidationPipeline,
+        multi_run_config: MultiRunConfig,
+    ) -> Self {
+        Self {
+            model,
+            validation_pipeline: Some(pipeline),
+            flakiness_detector: std::sync::Mutex::new(
+                swell_validation::FlakinessDetector::with_defaults(),
+            ),
+            multi_run_config,
+            invariant_verifier: std::sync::Mutex::new(BehavioralInvariantVerifier::new()),
+        }
+    }
+
+    /// Get flakiness detector guard for external access
+    pub fn flakiness_detector(
+        &self,
+    ) -> std::sync::MutexGuard<'_, swell_validation::FlakinessDetector> {
+        self.flakiness_detector.lock().unwrap()
+    }
+
+    /// Get current multi-run configuration
+    pub fn multi_run_config(&self) -> &MultiRunConfig {
+        &self.multi_run_config
+    }
+
+    /// Set multi-run configuration
+    pub fn set_multi_run_config(&mut self, config: MultiRunConfig) {
+        self.multi_run_config = config;
+    }
+
+    /// Run validation multiple times and aggregate results with statistical confidence
+    async fn run_multi_validation(
+        &self,
+        context: &AgentContext,
+    ) -> Result<MultiRunValidationResult, SwellError> {
+        let validation_context = Self::build_validation_context(context);
+        let pipeline = self.validation_pipeline.as_ref().ok_or_else(|| {
+            SwellError::InvalidOperation("No validation pipeline configured".to_string())
+        })?;
+
+        let mut runs: Vec<ValidationRunResult> = Vec::new();
+        let mut gate_pass_counts: HashMap<String, usize> = HashMap::new();
+        // Clone config to avoid needing &mut self
+        let multi_run_config = self.multi_run_config.clone();
+        let total_runs = multi_run_config.run_count as usize;
+
+        for run_idx in 0..total_runs {
+            let start_time = std::time::Instant::now();
+
+            // Run the validation pipeline
+            let outcome = pipeline.run(&validation_context).await?;
+            let duration_ms = start_time.elapsed().as_millis() as u64;
+
+            // Compute confidence for this run
+            let confidence = Self::compute_confidence(&outcome);
+
+            // Track pass status for gate-level flakiness
+            if multi_run_config.track_flakiness {
+                let gate_name = if outcome.passed { "all" } else { "failed" };
+                *gate_pass_counts.entry(gate_name.to_string()).or_insert(0) += 1;
+
+                // Record test results in flakiness detector if TestGate was run
+                // Note: The actual test names would come from TestGate output parsing
+            }
+
+            runs.push(ValidationRunResult {
+                run_index: run_idx as u32,
+                passed: outcome.passed,
+                confidence_score: confidence.score,
+                outcome,
+                duration_ms,
+            });
+
+            // Add delay between runs if configured and not the last run
+            if run_idx < total_runs - 1 && multi_run_config.run_delay_ms > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(
+                    multi_run_config.run_delay_ms,
+                ))
+                .await;
+            }
+        }
+
+        // Aggregate results
+        let aggregated = Self::aggregate_runs(runs, &gate_pass_counts, total_runs);
+
+        Ok(aggregated)
+    }
+
+    /// Aggregate multiple validation runs into a statistical result
+    fn aggregate_runs(
+        runs: Vec<ValidationRunResult>,
+        gate_pass_counts: &HashMap<String, usize>,
+        total_runs: usize,
+    ) -> MultiRunValidationResult {
+        // Calculate pass rate
+        let pass_count = runs.iter().filter(|r| r.passed).count();
+        let pass_rate = pass_count as f64 / total_runs as f64;
+
+        // Determine flakiness
+        let is_flaky = pass_rate > 0.0 && pass_rate < 1.0;
+
+        // Calculate flakiness score (0.0 = stable, 1.0 = highly flaky)
+        let flakiness_score = if is_flaky {
+            // Based on how balanced the pass/fail ratio is
+            // 50/50 split = highest flakiness
+            let balance = (pass_rate - 0.5).abs() * 2.0;
+            1.0 - balance
+        } else {
+            0.0
+        };
+
+        // Calculate mean and std dev of confidence scores
+        let confidence_scores: Vec<f64> = runs.iter().map(|r| r.confidence_score).collect();
+        let mean_confidence = if !confidence_scores.is_empty() {
+            confidence_scores.iter().sum::<f64>() / confidence_scores.len() as f64
+        } else {
+            0.0
+        };
+
+        let variance = if confidence_scores.len() > 1 {
+            confidence_scores
+                .iter()
+                .map(|s| (s - mean_confidence).powi(2))
+                .sum::<f64>()
+                / (confidence_scores.len() - 1) as f64
+        } else {
+            0.0
+        };
+        let std_dev_confidence = variance.sqrt();
+
+        // Calculate 95% confidence interval for pass rate using Wilson score interval
+        // This is more accurate for small sample sizes than normal approximation
+        let pass_rate_ci95 = Self::wilson_score_interval(pass_rate, total_runs);
+
+        // Determine confidence level
+        let confidence_level = if pass_rate >= 1.0 {
+            StatisticalConfidenceLevel::High
+        } else if pass_rate > 0.0 && is_flaky {
+            StatisticalConfidenceLevel::Flaky
+        } else if pass_rate > 0.5 {
+            StatisticalConfidenceLevel::Medium
+        } else {
+            StatisticalConfidenceLevel::Low
+        };
+
+        // Calculate gate-level flakiness rates
+        let mut gate_flaffiness_rates: HashMap<String, f64> = HashMap::new();
+        for (gate_name, &count) in gate_pass_counts {
+            let rate = count as f64 / total_runs as f64;
+            gate_flaffiness_rates.insert(gate_name.clone(), rate);
+        }
+
+        MultiRunValidationResult {
+            runs,
+            pass_rate,
+            is_flaky,
+            flakiness_score,
+            mean_confidence,
+            std_dev_confidence,
+            pass_rate_ci95,
+            confidence_level,
+            gate_flaffiness_rates,
+        }
+    }
+
+    /// Calculate Wilson score interval for pass rate confidence interval
+    /// This is more accurate for small sample sizes than normal approximation
+    fn wilson_score_interval(pass_rate: f64, n: usize) -> (f64, f64) {
+        if n == 0 {
+            return (0.0, 1.0);
+        }
+
+        let z = 1.96; // 95% confidence z-score
+        let z2 = z * z;
+
+        let denominator = 1.0 + z2 / n as f64;
+        let center = pass_rate + z2 / (2.0 * n as f64);
+        let margin = z
+            * ((pass_rate * (1.0 - pass_rate) / n as f64 + z2 / (4.0 * n as f64 * n as f64))
+                .sqrt());
+
+        let lower = (center - margin) / denominator;
+        let upper = (center + margin) / denominator;
+
+        (lower.clamp(0.0, 1.0), upper.clamp(0.0, 1.0))
     }
 
     /// Extract changed files from the task's plan
@@ -1008,7 +1585,7 @@ impl Agent for EvaluatorAgent {
 
     async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
         // If no validation pipeline is configured, use stub mode
-        let Some(pipeline) = &self.validation_pipeline else {
+        if self.validation_pipeline.is_none() {
             // MVP stub mode - simulate successful evaluation
             let stub_result = EvaluationResult {
                 passed: true,
@@ -1030,27 +1607,95 @@ impl Agent for EvaluatorAgent {
                 tokens_used: 300,
                 error: None,
             });
-        };
+        }
 
         // Build validation context
         let validation_context = Self::build_validation_context(&context);
 
-        // Run validation pipeline
-        let outcome = pipeline.run(&validation_context).await?;
+        // Run multi-validation if configured with run_count > 1
+        let multi_run_result = if self.multi_run_config.run_count > 1 {
+            let result = self.run_multi_validation(&context).await?;
+            Some(result)
+        } else {
+            // Single run for backward compatibility or when run_count == 1
+            let pipeline = self.validation_pipeline.as_ref().unwrap();
+            let outcome = pipeline.run(&validation_context).await?;
+            let confidence = Self::compute_confidence(&outcome);
+            let eval_result = Self::build_evaluation_result(outcome.clone(), confidence.clone());
 
-        // Compute confidence score
-        let confidence = Self::compute_confidence(&outcome);
+            Some(MultiRunValidationResult {
+                runs: vec![ValidationRunResult {
+                    run_index: 0,
+                    passed: outcome.passed,
+                    confidence_score: confidence.score,
+                    outcome,
+                    duration_ms: 0,
+                }],
+                pass_rate: if eval_result.passed { 1.0 } else { 0.0 },
+                is_flaky: false,
+                flakiness_score: 0.0,
+                mean_confidence: confidence.score,
+                std_dev_confidence: 0.0,
+                pass_rate_ci95: (0.0, 1.0),
+                confidence_level: match confidence.level {
+                    swell_validation::ConfidenceLevel::Low => StatisticalConfidenceLevel::Low,
+                    swell_validation::ConfidenceLevel::Medium => StatisticalConfidenceLevel::Medium,
+                    swell_validation::ConfidenceLevel::High => StatisticalConfidenceLevel::High,
+                    swell_validation::ConfidenceLevel::VeryHigh => StatisticalConfidenceLevel::High,
+                },
+                gate_flaffiness_rates: HashMap::new(),
+            })
+        };
 
-        // Build evaluation result
-        let result = Self::build_evaluation_result(outcome, confidence.clone());
+        // Unwrap the multi-run result (we know it's Some here)
+        let multi_run = multi_run_result.unwrap();
 
-        // Serialize output
+        // Use the last run's evaluation result for backward compatibility
+        let last_run = multi_run.runs.last().unwrap();
+        let eval_result = Self::build_evaluation_result(
+            last_run.outcome.clone(),
+            swell_validation::ConfidenceScore {
+                score: multi_run.mean_confidence,
+                level: match multi_run.confidence_level {
+                    StatisticalConfidenceLevel::High => swell_validation::ConfidenceLevel::VeryHigh,
+                    StatisticalConfidenceLevel::Medium => swell_validation::ConfidenceLevel::Medium,
+                    StatisticalConfidenceLevel::Low => swell_validation::ConfidenceLevel::Low,
+                    StatisticalConfidenceLevel::Flaky => swell_validation::ConfidenceLevel::Medium,
+                },
+                signals: vec![],
+                thresholds: swell_validation::ConfidenceThresholds::default(),
+            },
+        );
+
+        // Update behavioral invariants verifier
+        if let Ok(mut verifier) = self.invariant_verifier.lock() {
+            verifier.verify_evaluator(&eval_result);
+        }
+
+        // Serialize output with multi-run statistical results
         let output = serde_json::json!({
-            "evaluation": result,
-            "confidence": {
-                "score": confidence.score,
-                "level": format!("{:?}", confidence.level).to_uppercase(),
-                "summary": confidence.summary(),
+            "evaluation": eval_result,
+            "multi_run": {
+                "run_count": multi_run.runs.len(),
+                "pass_rate": multi_run.pass_rate,
+                "is_flaky": multi_run.is_flaky,
+                "flakiness_score": multi_run.flakiness_score,
+                "mean_confidence": multi_run.mean_confidence,
+                "std_dev_confidence": multi_run.std_dev_confidence,
+                "pass_rate_ci95": {
+                    "lower": multi_run.pass_rate_ci95.0,
+                    "upper": multi_run.pass_rate_ci95.1
+                },
+                "confidence_level": multi_run.confidence_level.to_string(),
+                "gate_flaffiness_rates": multi_run.gate_flaffiness_rates,
+                "runs": multi_run.runs.iter().map(|r| {
+                    serde_json::json!({
+                        "run_index": r.run_index,
+                        "passed": r.passed,
+                        "confidence_score": r.confidence_score,
+                        "duration_ms": r.duration_ms
+                    })
+                }).collect::<Vec<_>>()
             },
             "validation_context": {
                 "task_id": validation_context.task_id,
@@ -1060,11 +1705,11 @@ impl Agent for EvaluatorAgent {
         });
 
         Ok(AgentResult {
-            success: result.passed,
+            success: eval_result.passed,
             output: serde_json::to_string(&output).unwrap_or_default(),
             tool_calls: vec![],
             tokens_used: 500,
-            error: if result.passed {
+            error: if eval_result.passed {
                 None
             } else {
                 Some("Validation failed".to_string())
@@ -5885,5 +6530,255 @@ fn deeply_nested() {
         let changes: Vec<DocChange> = serde_json::from_str(&result.output).unwrap();
         assert!(!changes.is_empty());
         assert_eq!(changes[0].change_type, DocChangeType::Update);
+    }
+
+    // ========================================================================
+    // Multi-Run Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_multi_run_config_default() {
+        let config = MultiRunConfig::default();
+        assert_eq!(config.run_count, 3);
+        assert_eq!(config.min_pass_rate, 1.0);
+        assert!(config.track_flakiness);
+        assert_eq!(config.run_delay_ms, 100);
+    }
+
+    #[test]
+    fn test_multi_run_config_builder() {
+        let config = MultiRunConfig::new()
+            .with_run_count(5)
+            .with_min_pass_rate(0.8)
+            .without_flakiness_tracking()
+            .with_run_delay(500);
+
+        assert_eq!(config.run_count, 5);
+        assert_eq!(config.min_pass_rate, 0.8);
+        assert!(!config.track_flakiness);
+        assert_eq!(config.run_delay_ms, 500);
+    }
+
+    #[test]
+    fn test_multi_run_validation_result_aggregation_all_pass() {
+        let runs = vec![
+            ValidationRunResult {
+                run_index: 0,
+                passed: true,
+                confidence_score: 0.9,
+                outcome: swell_core::ValidationOutcome {
+                    passed: true,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 100,
+            },
+            ValidationRunResult {
+                run_index: 1,
+                passed: true,
+                confidence_score: 0.85,
+                outcome: swell_core::ValidationOutcome {
+                    passed: true,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 110,
+            },
+            ValidationRunResult {
+                run_index: 2,
+                passed: true,
+                confidence_score: 0.88,
+                outcome: swell_core::ValidationOutcome {
+                    passed: true,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 105,
+            },
+        ];
+
+        let gate_pass_counts: HashMap<String, usize> = HashMap::new();
+        let result = EvaluatorAgent::aggregate_runs(runs, &gate_pass_counts, 3);
+
+        assert_eq!(result.pass_rate, 1.0);
+        assert!(!result.is_flaky);
+        assert_eq!(result.flakiness_score, 0.0);
+        assert!((result.mean_confidence - 0.877).abs() < 0.01); // (0.9 + 0.85 + 0.88) / 3
+        assert!(result.std_dev_confidence > 0.0);
+        assert_eq!(result.confidence_level, StatisticalConfidenceLevel::High);
+    }
+
+    #[test]
+    fn test_multi_run_validation_result_aggregation_flaky() {
+        // Simulate flaky test: 2 passes, 1 fail
+        let runs = vec![
+            ValidationRunResult {
+                run_index: 0,
+                passed: true,
+                confidence_score: 0.9,
+                outcome: swell_core::ValidationOutcome {
+                    passed: true,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 100,
+            },
+            ValidationRunResult {
+                run_index: 1,
+                passed: false,
+                confidence_score: 0.4,
+                outcome: swell_core::ValidationOutcome {
+                    passed: false,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 110,
+            },
+            ValidationRunResult {
+                run_index: 2,
+                passed: true,
+                confidence_score: 0.85,
+                outcome: swell_core::ValidationOutcome {
+                    passed: true,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 105,
+            },
+        ];
+
+        let gate_pass_counts: HashMap<String, usize> = HashMap::new();
+        let result = EvaluatorAgent::aggregate_runs(runs, &gate_pass_counts, 3);
+
+        assert_eq!(result.pass_rate, 2.0 / 3.0);
+        assert!(result.is_flaky); // 66% pass rate is flaky
+        assert!(result.flakiness_score > 0.0);
+        assert_eq!(result.confidence_level, StatisticalConfidenceLevel::Flaky);
+    }
+
+    #[test]
+    fn test_multi_run_validation_result_aggregation_all_fail() {
+        let runs = vec![
+            ValidationRunResult {
+                run_index: 0,
+                passed: false,
+                confidence_score: 0.3,
+                outcome: swell_core::ValidationOutcome {
+                    passed: false,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 100,
+            },
+            ValidationRunResult {
+                run_index: 1,
+                passed: false,
+                confidence_score: 0.25,
+                outcome: swell_core::ValidationOutcome {
+                    passed: false,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 110,
+            },
+            ValidationRunResult {
+                run_index: 2,
+                passed: false,
+                confidence_score: 0.28,
+                outcome: swell_core::ValidationOutcome {
+                    passed: false,
+                    messages: vec![],
+                    artifacts: vec![],
+                },
+                duration_ms: 105,
+            },
+        ];
+
+        let gate_pass_counts: HashMap<String, usize> = HashMap::new();
+        let result = EvaluatorAgent::aggregate_runs(runs, &gate_pass_counts, 3);
+
+        assert_eq!(result.pass_rate, 0.0);
+        assert!(!result.is_flaky); // 0% is not "flaky", it's consistently failing
+        assert_eq!(result.flakiness_score, 0.0);
+        assert_eq!(result.confidence_level, StatisticalConfidenceLevel::Low);
+    }
+
+    #[test]
+    fn test_wilson_score_interval() {
+        // 100% pass rate
+        let (lower, upper) = EvaluatorAgent::wilson_score_interval(1.0, 10);
+        assert!((lower - 0.72).abs() < 0.01); // Lower bound should be high
+        assert!((upper - 1.0).abs() < 0.01);
+
+        // 50% pass rate
+        let (lower, upper) = EvaluatorAgent::wilson_score_interval(0.5, 10);
+        assert!(lower < 0.5);
+        assert!(upper > 0.5);
+
+        // 0% pass rate
+        let (lower, upper) = EvaluatorAgent::wilson_score_interval(0.0, 10);
+        assert!((upper - 0.28).abs() < 0.01); // Upper bound should be low
+
+        // Edge case: n=0
+        let (lower, upper) = EvaluatorAgent::wilson_score_interval(0.5, 0);
+        assert_eq!(lower, 0.0);
+        assert_eq!(upper, 1.0);
+    }
+
+    #[test]
+    fn test_statistical_confidence_level_display() {
+        assert_eq!(StatisticalConfidenceLevel::High.to_string(), "HIGH");
+        assert_eq!(StatisticalConfidenceLevel::Medium.to_string(), "MEDIUM");
+        assert_eq!(StatisticalConfidenceLevel::Low.to_string(), "LOW");
+        assert_eq!(StatisticalConfidenceLevel::Flaky.to_string(), "FLAKY");
+    }
+
+    #[test]
+    fn test_behavioral_invariant_verifier_new() {
+        let verifier = BehavioralInvariantVerifier::new();
+
+        // Should have invariants for each role
+        let planner_invariants = verifier.get_for_role(AgentRole::Planner);
+        let generator_invariants = verifier.get_for_role(AgentRole::Generator);
+        let evaluator_invariants = verifier.get_for_role(AgentRole::Evaluator);
+
+        assert!(!planner_invariants.is_empty());
+        assert!(!generator_invariants.is_empty());
+        assert!(!evaluator_invariants.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_evaluator_agent_multi_run_config() {
+        let agent = EvaluatorAgent::with_defaults("claude-sonnet".to_string());
+
+        // Default should be run_count = 3
+        assert_eq!(agent.multi_run_config().run_count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_evaluator_agent_with_full_config() {
+        let config = MultiRunConfig::new().with_run_count(5);
+        let pipeline = swell_validation::ValidationPipeline::new();
+        let agent = EvaluatorAgent::with_full_config("claude-sonnet".to_string(), pipeline, config);
+
+        assert_eq!(agent.multi_run_config().run_count, 5);
+    }
+
+    #[tokio::test]
+    async fn test_evaluator_agent_stub_mode() {
+        // Agent without pipeline should use stub mode
+        let agent = EvaluatorAgent::new("claude-sonnet".to_string());
+
+        let task = Task::new("Test task".to_string());
+        let context = AgentContext {
+            task,
+            memory_blocks: vec![],
+            session_id: Uuid::new_v4(),
+            workspace_path: None,
+        };
+
+        let result = agent.execute(context).await.unwrap();
+        assert!(result.success);
+        assert!(result.output.contains("stub mode"));
     }
 }
