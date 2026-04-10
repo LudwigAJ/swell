@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 2,
+  "round": 3,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -8,95 +8,26 @@
     "lint": { "passed": true, "command": "cargo fmt --all -- --check", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 26,
-    "passed": 18,
-    "failed": 8,
-    "failedFeatures": [
-      "memory-pattern-learning",
-      "mem-scoping",
-      "mem-deprecation",
-      "mem-decay-function",
-      "mem-triple-stream-retrieval",
-      "mem-provenance-tracking",
-      "mem-event-log-jsonl",
-      "fix-memory-blocking-issues"
-    ]
+    "total": 5,
+    "passed": 4,
+    "failed": 1,
+    "failedFeatures": ["memory-pattern-learning"]
   },
   "blockingIssues": [
     {
-      "featureId": "fix-memory-blocking-issues",
+      "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Fix feature was NEVER actually implemented. Despite having status 'in_progress' in features.json, no worker transcript or handoff exists for this feature. All 7 original blocking issues remain unfixed."
+      "description": "Convention parsing broken (line 1143): String slice indices incorrect - uses [3..] instead of [4..] for '- **' prefix, causing stored conventions to be unparsable. The name extraction `trimmed[3..colon_pos]` incorrectly includes the second asterisk."
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Convention parsing broken (line 1147): String slice indices incorrect - uses [3..] instead of [4..] for '- **' prefix, causing stored conventions to be unparsable"
+      "description": "Confidence calculation bug (line 955): Uses sum of all pattern frequencies instead of per-pattern frequency. `frequency_map.values().sum()` inflates confidence scores incorrectly."
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Confidence calculation bug (line 1125): Uses sum of all pattern frequencies instead of per-pattern frequency, incorrectly inflating confidence scores"
-    },
-    {
-      "featureId": "memory-pattern-learning",
-      "severity": "blocking",
-      "description": "Anti-pattern retrieval unimplemented (line 1199): get_anti_patterns_for_error is a stub returning empty vec - anti-patterns are extracted but cannot be retrieved"
-    },
-    {
-      "featureId": "mem-scoping",
-      "severity": "blocking",
-      "description": "update() doesn't preserve scoping fields (line 634): UPDATE query omits repository, language, task_type columns - entries lose scoping metadata on update"
-    },
-    {
-      "featureId": "mem-scoping",
-      "severity": "blocking",
-      "description": "get_by_type() has no repository filter (line 786): Returns entries from ALL repositories, violating cross-repo isolation"
-    },
-    {
-      "featureId": "mem-scoping",
-      "severity": "blocking",
-      "description": "get_by_label() has no repository filter (line 803): Returns entries from ALL repositories, violating cross-repo isolation"
-    },
-    {
-      "featureId": "mem-deprecation",
-      "severity": "blocking",
-      "description": "MemoryEntry lacks confidence field (traits.rs:196): Feature requires 'confidence <0.3 as deprecated' but MemoryEntry has no confidence field"
-    },
-    {
-      "featureId": "mem-deprecation",
-      "severity": "blocking",
-      "description": "MemoryEntry lacks superseded_by field (traits.rs:196): Feature requires 'superseded_by link' but field doesn't exist"
-    },
-    {
-      "featureId": "mem-deprecation",
-      "severity": "blocking",
-      "description": "No integration into memory system: Deprecation module is standalone utility never called by SqliteMemoryStore"
-    },
-    {
-      "featureId": "mem-decay-function",
-      "severity": "blocking",
-      "description": "decay_rate_for_block_type() will panic (line 96): Should return Option<DecayRate> instead of DecayRate - unknown variants cause runtime panic"
-    },
-    {
-      "featureId": "mem-triple-stream-retrieval",
-      "severity": "blocking",
-      "description": "BM25 search generates random UUIDs (line 620): Uses Uuid::new_v4() instead of actual entry_id from RecallResult, breaking RRF fusion"
-    },
-    {
-      "featureId": "mem-provenance-tracking",
-      "severity": "blocking",
-      "description": "search() doesn't filter by source_episode_id (line 725): Field exists in MemoryQuery but is never checked - 'Query memories by provenance' requirement unmet"
-    },
-    {
-      "featureId": "mem-provenance-tracking",
-      "severity": "blocking",
-      "description": "Claimed tests don't exist (line 809): Handoff claims 4 provenance tests were added but grep finds none"
-    },
-    {
-      "featureId": "mem-event-log-jsonl",
-      "severity": "blocking",
-      "description": "Serialization errors silently dropped (lines 176,203,221,238,257): unwrap_or_default() creates empty {} instead of propagating errors - data loss for error events"
+      "description": "Anti-pattern retrieval unimplemented (line 1175): get_anti_patterns_for_error is a stub returning empty vec - anti-patterns are extracted but cannot be retrieved."
     }
   ],
   "appliedUpdates": [],
@@ -120,15 +51,11 @@
       "isSystemic": true
     }
   ],
-  "rejectedObservations": [
-    {
-      "observation": "Skills stored in '.skills' but project standard is '.swell/skills/'",
-      "reason": "Already documented in memory-skill-extraction review as non-blocking - feature description specifies '.skills' so implementation matches spec"
-    },
-    {
-      "observation": "Rust skill should be renamed to rust-worker",
-      "reason": "Skill naming is not a blocker - 'Rust' skill exists and workers correctly fall back to it"
-    }
-  ],
-  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json"
+  "rejectedObservations": [],
+  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json",
+  "notes": {
+    "fixFeatureNeverImplemented": "The fix-memory-blocking-issues feature was never implemented. Despite round 2 synthesis identifying blocking issues in memory-pattern-learning, no fix feature was created or executed. The issues remain unfixed in the current codebase.",
+    "otherFailedFeaturesStillPending": "The following features with blocking issues from round 2 are still 'pending' (not completed): mem-scoping, mem-deprecation, mem-decay-function, mem-triple-stream-retrieval, mem-provenance-tracking, mem-event-log-jsonl. These cannot be reviewed until they are implemented.",
+    "round3Changes": "Round 3 re-reviewed all 5 completed features. memory-pattern-learning remains the only completed feature with blocking issues. All other completed features (sqlite-store, memory-blocks, recall, skill-extraction) pass review."
+  }
 }
