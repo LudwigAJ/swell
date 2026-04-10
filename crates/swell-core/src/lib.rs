@@ -11,7 +11,8 @@ pub mod traits;
 pub mod types;
 
 pub use events::{
-    ObservableEvent, Outcome, SpanId, ToolInvocation, TraceId,
+    AgentSessionId, CrossTaskCorrelationId, EventStore, ObservableEvent, Outcome, RequestId,
+    SpanId, ToolInvocation, TraceId,
 };
 pub use trace_waterfall::{
     SpanAttribute, SpanAttributeValue, SpanKind, ToTraceSpan, ToolSpanDetails, TraceSpan,

@@ -546,6 +546,7 @@ mod tests {
         let agent_id = Uuid::new_v4();
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
+        let root_trace_id = trace_id.clone();
 
         let tool_invocation = tool_name.map(|name| {
             ToolInvocation::new(
@@ -556,10 +557,16 @@ mod tests {
             )
         });
 
+        use crate::events::{AgentSessionId, CrossTaskCorrelationId, RequestId};
+
         ObservableEvent {
             trace_id,
             span_id,
             parent_span_id,
+            root_trace_id,
+            cross_task_correlation_id: CrossTaskCorrelationId::new(),
+            agent_session_id: AgentSessionId::new(),
+            request_id: RequestId::new(),
             agent_id,
             session_id,
             task_id,
