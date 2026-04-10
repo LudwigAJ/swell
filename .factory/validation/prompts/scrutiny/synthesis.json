@@ -1,6 +1,6 @@
 {
   "milestone": "prompts",
-  "round": 4,
+  "round": 5,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -29,10 +29,11 @@
     }
   },
   "reviewsSummary": {
-    "total": 0,
-    "passed": 0,
-    "failed": 0,
-    "notes": "No new features reviewed in round 4. All features in milestone 'prompts' remain pending (not completed). The fix-prompts-multi-run-validation feature (which should address round 1 blocking issues) is still pending. Previous round 1-3 blocking issues still apply."
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "failedFeatures": ["prompts-multi-run-validation"],
+    "notes": "Reviews completed in prior rounds. 3 features pass: audit-hash-chained-log, prompts-quality-improvement, prompts-structured-handoffs. 1 feature fails with blocking issues: prompts-multi-run-validation. The fix-prompts-multi-run-validation feature is still pending."
   },
   "blockingIssues": [
     {
