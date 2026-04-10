@@ -6,11 +6,16 @@ pub mod kill_switch;
 pub mod langfuse;
 pub mod opentelemetry;
 pub mod tracing_json;
+pub mod trace_waterfall;
 pub mod traits;
 pub mod types;
 
 pub use events::{
     ObservableEvent, Outcome, SpanId, ToolInvocation, TraceId,
+};
+pub use trace_waterfall::{
+    SpanAttribute, SpanAttributeValue, SpanKind, ToTraceSpan, ToolSpanDetails, TraceSpan,
+    TraceSummary, TraceWaterfall, TraceWaterfallBuilder,
 };
 pub use audit::{
     verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,
