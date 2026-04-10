@@ -77,6 +77,15 @@ pub use decay::{
     environmental_decay_rate, procedural_decay_rate, DecayRate, DecayedScore,
 };
 
+// Deprecation module - Mark memories with confidence <0.3 as deprecated with superseded_by link
+pub mod deprecation;
+
+pub use deprecation::{
+    apply_confidence_deprecation, check_deprecation, deprecation_score, should_be_deprecated,
+    DeprecationCheckResult, DeprecationInfo, DeprecationReason, DeprecationRecommendation,
+    DEPRECATION_CONFIDENCE_THRESHOLD,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
