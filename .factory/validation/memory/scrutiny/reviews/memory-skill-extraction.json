@@ -1,44 +1,50 @@
 {
   "featureId": "memory-skill-extraction",
-  "reviewedAt": "2026-04-10T00:00:00.000Z",
+  "reviewedAt": "2026-04-10T12:25:00Z",
   "commitId": "723e11b",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "The skill extraction feature is implemented correctly with all expected behaviors: analyzes successful task trajectories, extracts reusable patterns, and stores versioned skills in the .skills directory. Code is well-structured with proper separation of concerns (TrajectoryAnalyzer, SkillExtractor, SkillExtractionService). 8 unit tests cover core functionality. No blocking issues found.",
+    "summary": "Implementation adds skill_extraction module with TrajectoryAnalyzer and SkillExtractor. Core structures (Skill, SkillStep, TrajectoryData, ExtractionConfig) are implemented correctly with proper serialization. However, there is a CRITICAL mismatch: skills are stored in `.skills` directory but AGENTS.md and architecture docs specify skills should be in `.swell/skills/` for user extensibility. This violates the intended data flow where extracted skills should be discoverable by the Agent Skills standard.",
     "issues": [
       {
         "file": "crates/swell-memory/src/skill_extraction.rs",
-        "line": 136,
-        "severity": "non_blocking",
-        "description": "TrajectoryAnalyzer has #[allow(dead_code)] because the `store` field is never used in the `analyze()` method - only `config` is referenced. The store field should either be removed or the analyzer should actually use it."
+        "line": 107,
+        "severity": "blocking",
+        "description": "Skills stored in `.skills` directory but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. The ExtractionConfig defaults store_path to `.skills` which does not match the documented skill discovery path. Extracted skills will not be discoverable by the system's skill discovery mechanism."
       },
       {
         "file": "crates/swell-memory/src/skill_extraction.rs",
-        "line": 93,
+        "line": 139,
+        "severity": "blocking",
+        "description": "TrajectoryAnalyzer has #[allow(dead_code)] attribute suggesting the struct is not fully integrated into the system. While it is used internally by SkillExtractor, the public API (SkillExtractionService) does not expose its analysis capabilities directly, and the analyzer's store field is never used for database lookups - it appears the analyzer was intended to query historical trajectory data from the database but currently only processes the input trajectory in memory."
+      },
+      {
+        "file": "crates/swell-memory/src/skill_extraction.rs",
+        "line": 407,
         "severity": "non_blocking",
-        "description": "ExtractionConfig.store_path defaults to '.skills' but AGENTS.md specifies '.swell/skills/' as the project convention for skills directory. This is a convention gap - the feature description says '.skills' which matches implementation, but project standard is '.swell/skills/'."
+        "description": "SkillExtractor::build_skill_steps takes _pattern parameter but never uses it (underscore prefix indicates intentional unused parameter). The pattern information is not used when building skill steps, which seems like missed functionality - patterns should inform step grouping but current implementation just groups all tool calls."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "conventions",
-      "observation": "Worker stored skills in '.skills' directory (default in ExtractionConfig) but AGENTS.md specifies '.swell/skills/' as the skills directory location. The skill directory structure in AGENTS.md shows '.swell/skills/rust-coding/SKILL.md' pattern.",
-      "evidence": "ExtractionConfig.store_path defaults to '.skills' (line 93), but AGENTS.md states '.swell/skills/ # User-extensible - add skills here!' and shows directory structure .swell/skills/rust-coding/SKILL.md"
+      "observation": "The implementation uses `.skills` as the store path but project documentation (AGENTS.md, plan/Autonomous Coding Engine.md) specifies `.swell/skills/` as the user-extensible skill directory. This is a convention mismatch between code and documentation.",
+      "evidence": "ExtractionConfig::default() sets store_path to '.skills' but AGENTS.md line ~210 states 'Users can add new skills to .swell/skills/ - no code changes needed. SWELL discovers skills at startup.'"
     },
     {
       "area": "skills",
-      "observation": "The handoff does not include skillFeedback section, making it unclear if the worker followed the Rust skill's procedures. The transcript skeleton shows the worker used 'mission-worker-base' and 'Rust' skills but no feedback on deviations was recorded.",
-      "evidence": "Handoff file at 2026-04-09T16-57-19-100Z__memory-skill-extraction__804ea3e6-0e82-4721-80ed-5db9fbc3c77e.json lacks skillFeedback object"
+      "observation": "The worker used the 'Rust' skill (from .factory/skills/) but the AGENTS.md explicitly states '.factory/ is NOT part of SWELL. The only config place for SWELL is .swell/'. This is a skill source mismatch - the worker used infrastructure skills instead of SWELL's own skill system.",
+      "evidence": "Transcript shows '## Tool: Skill\n{ \"skill\": \"Rust\" }' but AGENTS.md states '.factory/skills/ are for the orchestrator/workers to use when building SWELL, not for SWELL itself' and 'The only config place for SWELL is .swell/'."
     },
     {
       "area": "knowledge",
-      "observation": "The validation-contract.md VAL-SKILLS-* rules (lines 201-225) define how skills should be discovered from .swell/skills/ directory with SKILL.md files. Worker did not align skill extraction output format with these validation requirements.",
-      "evidence": "VAL-SKILLS-001: 'Skills are discovered from .swell/skills/ directory by scanning for SKILL.md files' but skill_extraction.rs stores JSON files in .skills/"
+      "observation": "The skill extraction feature extracts skills to JSON files, but there's no evidence the system has a corresponding skill loading/discovery mechanism at startup that reads from `.swell/skills/`. The existing skills in `.swell/skills/` (rust-coding, test-writing, code-review, refactoring) appear to be manually created stubs, not generated by the skill_extraction module.",
+      "evidence": "ls .swell/skills shows rust-coding/, test-writing/, code-review/, refactoring/ directories with SKILL.md files. The skill_extraction module writes JSON files to .skills/ (not .swell/skills/), suggesting a disconnect between skill extraction and skill discovery."
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature implementation is complete and functional. Code passes build and 8 unit tests. Non-blocking issues: (1) TrajectoryAnalyzer has unused `store` field requiring dead_code allowance, (2) skills stored in '.skills' but project convention is '.swell/skills/'. These are minor issues that don't prevent the feature from functioning as described."
+  "summary": "Feature implementation is functionally complete with 8 passing tests, but FAILS review due to critical architectural mismatch: skills are extracted to `.skills` directory but the system's skill discovery mechanism expects them in `.swell/skills/`. This means extracted skills are not discoverable by SWELL's Agent Skills standard. Additionally, the TrajectoryAnalyzer appears incomplete with dead_code annotation and unused store field. The feature works as a standalone module but does not integrate with the documented skill discovery lifecycle."
 }

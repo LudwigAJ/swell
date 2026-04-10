@@ -1,34 +1,65 @@
 {
   "featureId": "memory-pattern-learning",
-  "reviewedAt": "2026-04-10T12:35:00Z",
-  "commitId": "40b2b23",
-  "transcriptSkeletonReviewed": false,
+  "reviewedAt": "2026-04-10T09:30:00Z",
+  "commitId": "536231e",
+  "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "All three blocking issues from prior review are still present in the codebase. The code has not been fixed.",
+    "summary": "Re-run review confirming all 3 prior blocking issues remain unfixed. Git log shows no commits addressing these bugs. Recent commits (provenance tracking, staleness detection, scoping, promotion thresholds) are unrelated to the blocking issues.",
     "issues": [
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
         "line": 955,
         "severity": "blocking",
-        "description": "Confidence calculation bug: uses sum of all pattern frequencies (`frequency_map.values().sum()`) instead of per-pattern frequency. Should be `*frequency_map.get(&final_pattern.name).unwrap_or(&1)` to correctly calculate confidence as pattern_frequency / total_observations."
+        "description": "Confidence calculation passes sum of all pattern frequencies as denominator instead of actual total rejection count. In deduplicate_anti_patterns: `final_pattern.update_confidence(frequency_map.values().sum())` - this sums ALL pattern frequencies (e.g., if patterns X:3, Y:5, Z:2, sum=10) but total_rejections should be the actual number of rejection events (which is the length of the original patterns list before deduplication). This causes incorrect confidence values."
       },
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
-        "line": 1143,
+        "line": 1145,
         "severity": "blocking",
-        "description": "Convention parsing broken: String slice index uses [3..] instead of [4..] for parsing '- **' prefix. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. The name starts at index 4, not 3. Should be `trimmed[4..colon_pos]`."
+        "description": "Convention parsing uses wrong string slice index [3..] instead of [4..]. For line '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. So `trimmed[3..colon_pos]` extracts '*name' not 'name'. Should be `trimmed[4..colon_pos]` to correctly skip '- **' prefix."
       },
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
-        "line": 1175,
+        "line": 1173,
         "severity": "blocking",
-        "description": "Anti-pattern retrieval unimplemented: `get_anti_patterns_for_error` is a stub that returns empty vec. The error_type parameter is unused (assigned to `_`), and the function always returns `Ok(Vec::new())`. This makes the anti-pattern retrieval functionality completely non-functional."
+        "description": "get_anti_patterns_for_error is an unimplemented stub that always returns empty vec with comment 'For MVP, return empty'. This function is supposed to retrieve anti-patterns for a given error type but does nothing. Code relying on this will always receive an empty result."
       }
     ]
   },
-  "sharedStateObservations": [],
-  "addressesFailureFrom": null,
-  "summary": "FAIL - All three blocking issues from prior review remain unfixed. (1) Line 955: confidence calculation still uses sum of all frequencies instead of per-pattern frequency. (2) Line 1143: convention parsing still uses wrong string slice index [3..] instead of [4..]. (3) Line 1175: `get_anti_patterns_for_error` still returns empty vec - the stub was not implemented."
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The convention parsing in parse_conventions_from_content expects a specific markdown format with '### TypeName' headers and '- **name**: description' bullet points. This internal format is not documented in AGENTS.md or elsewhere in shared state.",
+      "evidence": "Lines 1128-1146 show the parsing expects: '### ConventionType' headers followed by '- **name**: description' bullets. No documentation exists for this format."
+    },
+    {
+      "area": "skills",
+      "observation": "The transcript shows the worker invoked 'Rust' skill instead of a specific pattern-learning or anti-pattern-extraction skill. No skill exists for teaching anti-pattern extraction methodology.",
+      "evidence": "Transcript skeleton shows: 'Skill: Rust' was invoked. No anti-pattern or pattern-learning specific skill was used."
+    }
+  ],
+  "addressesFailureFrom": ".factory/validation/memory/scrutiny/reviews/memory-pattern-learning.json",
+  "priorBlockingIssuesFixed": false,
+  "priorBlockingIssuesStatus": [
+    {
+      "issue": "Line 955: confidence calculation uses sum of all pattern frequencies",
+      "status": "NOT FIXED",
+      "evidence": "git log shows no relevant commits. Line 955 still contains `final_pattern.update_confidence(frequency_map.values().sum());`"
+    },
+    {
+      "issue": "Line 1145: convention parsing uses wrong string slice index [3..] instead of [4..]",
+      "status": "NOT FIXED",
+      "evidence": "git log shows no relevant commits. Line 1145 still contains `let name = trimmed[3..colon_pos].trim().to_string();`"
+    },
+    {
+      "issue": "Line 1173: get_anti_patterns_for_error is unimplemented stub",
+      "status": "NOT FIXED",
+      "evidence": "git log shows no relevant commits. Lines 1173-1176 still return `Ok(Vec::new())` with 'For MVP, return empty' comment"
+    }
+  ],
+  "fixAdequate": false,
+  "fixAnalysis": "This is a re-run confirmation - no fix was applied. Git log shows recent commits (3e08435, 0241792, 103568b, 37b8f4a) added unrelated features. None addressed the 3 blocking issues. All 3 bugs remain present in current HEAD.",
+  "summary": "Re-run review confirming all 3 prior blocking issues remain unfixed. Issue 1: confidence denominator is sum of frequencies not total rejections. Issue 2: convention name parsing uses wrong slice index [3..] extracting '*name' instead of 'name'. Issue 3: get_anti_patterns_for_error is an unimplemented stub returning empty vec. No fix was applied - recent commits are unrelated."
 }

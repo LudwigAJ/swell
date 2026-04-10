@@ -1,23 +1,11 @@
 {
   "milestone": "memory",
-  "round": 4,
+  "round": 5,
   "status": "fail",
   "validatorsRun": {
-    "test": {
-      "passed": true,
-      "command": "cargo test --workspace",
-      "exitCode": 0
-    },
-    "typecheck": {
-      "passed": true,
-      "command": "cargo clippy --workspace -- -D warnings",
-      "exitCode": 0
-    },
-    "lint": {
-      "passed": true,
-      "command": "cargo clippy --workspace",
-      "exitCode": 0
-    }
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
     "total": 5,
@@ -32,27 +20,32 @@
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Skills are stored in `.skills` directory but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. The ExtractionConfig defaults store_path to `.skills` which does not match the documented skill discovery path. Extracted skills will not be discoverable by the system's skill discovery mechanism."
+      "description": "Line 107: ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. Extracted skills will not be discoverable by the system's skill discovery mechanism. STILL NOT FIXED since round 1.",
+      "evidence": "crates/swell-memory/src/skill_extraction.rs line 125: store_path: \".skills\".to_string()"
     },
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "TrajectoryAnalyzer has #[allow(dead_code)] and its store field is never used for database lookups. The analyzer appears designed to query historical trajectory data but currently only processes input in memory."
+      "description": "Line 139: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. The analyzer only processes input trajectory in memory without querying historical data. STILL NOT FIXED since round 1.",
+      "evidence": "crates/swell-memory/src/skill_extraction.rs line 139: #[allow(dead_code)] on TrajectoryAnalyzer struct"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (`frequency_map.values().sum()`) as denominator instead of per-pattern frequency. NOT FIXED from round 1."
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. NOT FIXED since round 1.",
+      "evidence": "crates/swell-memory/src/pattern_learning.rs line 955: final_pattern.update_confidence(frequency_map.values().sum())"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. NOT FIXED from round 1."
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. NOT FIXED since round 1.",
+      "evidence": "crates/swell-memory/src/pattern_learning.rs line 1145: let name = trimmed[3..colon_pos].trim().to_string();"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. NOT FIXED from round 1."
+      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. NOT FIXED since round 1.",
+      "evidence": "crates/swell-memory/src/pattern_learning.rs lines 1173-1176: Ok(Vec::new()) with 'For MVP, return empty' comment"
     }
   ],
   "appliedUpdates": [],
@@ -71,11 +64,11 @@
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "The memory-pattern-learning feature has three bugs that have persisted through multiple rounds: (1) confidence calculation uses wrong denominator, (2) convention parsing uses wrong string slice index, (3) anti-pattern retrieval is unimplemented stub. These need explicit fixes.",
-      "evidence": "All 3 issues marked 'NOT FIXED from round 1' in reviews. pattern_learning.rs lines 955, 1145, 1173 still contain the bugs.",
+      "suggestion": "The memory-pattern-learning feature has three bugs that have persisted through multiple rounds: (1) confidence calculation uses wrong denominator, (2) convention parsing uses wrong string slice index, (3) anti-pattern retrieval is unimplemented stub. These need explicit fixes. This issue has been flagged in rounds 1-5 without resolution.",
+      "evidence": "All 3 issues marked 'NOT FIXED' in every round since round 1. pattern_learning.rs lines 955, 1145, 1173 still contain the bugs.",
       "isSystemic": false
     }
   ],
   "rejectedObservations": [],
-  "previousRound": "1f4c211"
+  "previousRound": "d566806"
 }
