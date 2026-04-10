@@ -15,6 +15,7 @@ pub mod conflict_resolution;
 pub mod executor;
 pub mod hybrid;
 pub mod mcp;
+pub mod os_sandbox;
 pub mod pr_creation;
 pub mod registry;
 pub mod tools;
@@ -34,6 +35,11 @@ pub use executor::ToolExecutor;
 pub use hybrid::{
     ExecutorInput, HybridConfig, HybridExecutor, LocalExecutor, RemoteExecutor, RiskClass,
     ToolExecutorTrait,
+};
+pub use os_sandbox::{
+    detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox, FilesystemPermission,
+    LandlockSandbox, NetworkPolicy, OsSandbox, OsSandboxConfig, PlatformSandbox,
+    SandboxAvailability, SandboxType, SeatbeltSandbox,
 };
 pub use pr_creation::{
     EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
