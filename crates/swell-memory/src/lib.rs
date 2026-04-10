@@ -118,6 +118,13 @@ pub use staleness::{
     DEFAULT_STALENESS_WINDOW_DAYS,
 };
 
+// Version rollback module - Version history tracking and rollback capability for memory entries
+pub mod version_rollback;
+
+pub use version_rollback::{
+    MemoryVersion, RollbackAuditEntry, RollbackResult,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
@@ -246,6 +253,71 @@ impl SqliteMemoryStore {
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_convlogs_timestamp ON conversation_logs(timestamp)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        // Initialize memory_versions schema for version history tracking
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS memory_versions (
+                id TEXT PRIMARY KEY,
+                memory_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                metadata TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                reason TEXT
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_version_memory_id ON memory_versions(memory_id)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_version_number ON memory_versions(memory_id, version)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        // Initialize rollback_audit_log schema for rollback audit trail
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS rollback_audit_log (
+                id TEXT PRIMARY KEY,
+                memory_id TEXT NOT NULL,
+                from_version INTEGER NOT NULL,
+                to_version INTEGER NOT NULL,
+                timestamp TEXT NOT NULL,
+                triggered_by TEXT NOT NULL,
+                reason TEXT
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_audit_memory_id ON rollback_audit_log(memory_id)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON rollback_audit_log(timestamp)",
         )
         .execute(pool)
         .await
