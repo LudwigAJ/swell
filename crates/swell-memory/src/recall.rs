@@ -331,11 +331,11 @@ impl SqliteMemoryStore {
         // Filter out zero-score results (documents that don't contain any keywords)
         scored_results.retain(|r| r.score > 0.0);
 
-        // Apply pagination
-        scored_results.truncate(query.limit);
-        if query.offset > 0 && query.offset < scored_results.len() {
+        // Apply pagination: skip first, then truncate
+        if query.offset > 0 {
             scored_results = scored_results.into_iter().skip(query.offset).collect();
         }
+        scored_results.truncate(query.limit);
 
         Ok(scored_results)
     }
