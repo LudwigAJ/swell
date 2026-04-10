@@ -160,6 +160,35 @@ pub struct ToolOutput {
     pub error: Option<String>,
 }
 
+/// Behavioral hints for tool execution classification.
+///
+/// These hints help the system understand tool behavior for:
+/// - Retry logic (idempotent tools are safe to retry)
+/// - Risk assessment (destructive tools need extra caution)
+/// - State tracking (read-only tools don't modify state)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ToolBehavioralHints {
+    /// Tool does not modify any state (filesystem, git, etc.)
+    /// Read-only tools are safe to execute for exploration.
+    pub read_only_hint: bool,
+    /// Tool permanently destroys or overwrites data.
+    /// Destructive tools should require explicit confirmation.
+    pub destructive_hint: bool,
+    /// Tool is safe to retry if execution fails.
+    /// Idempotent tools produce the same result regardless of repetitions.
+    pub idempotent_hint: bool,
+}
+
+impl Default for ToolBehavioralHints {
+    fn default() -> Self {
+        Self {
+            read_only_hint: false,
+            destructive_hint: false,
+            idempotent_hint: true, // Default to safe to retry
+        }
+    }
+}
+
 /// A tool that can be executed by agents
 #[async_trait]
 pub trait Tool: Send + Sync {
@@ -177,6 +206,15 @@ pub trait Tool: Send + Sync {
 
     /// Permission tier required
     fn permission_tier(&self) -> crate::PermissionTier;
+
+    /// Behavioral hints for execution classification.
+    ///
+    /// - `read_only_hint`: Tool doesn't modify state
+    /// - `destructive_hint`: Tool permanently changes data
+    /// - `idempotent_hint`: Safe to retry on failure
+    fn behavioral_hints(&self) -> ToolBehavioralHints {
+        ToolBehavioralHints::default()
+    }
 
     /// Execute the tool
     async fn execute(&self, arguments: serde_json::Value) -> Result<ToolOutput, SwellError>;

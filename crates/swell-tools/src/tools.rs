@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use swell_core::traits::Tool;
 use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
+use swell_core::traits::ToolBehavioralHints;
 use tempfile::NamedTempFile;
 use tokio::fs as tokio_fs;
 use tokio::time::{timeout, Duration};
@@ -70,6 +71,13 @@ impl Tool for ReadFileTool {
     }
     fn permission_tier(&self) -> PermissionTier {
         PermissionTier::Auto
+    }
+    fn behavioral_hints(&self) -> ToolBehavioralHints {
+        ToolBehavioralHints {
+            read_only_hint: true,
+            destructive_hint: false,
+            idempotent_hint: true,
+        }
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -166,6 +174,13 @@ impl Tool for WriteFileTool {
     }
     fn permission_tier(&self) -> PermissionTier {
         PermissionTier::Ask
+    }
+    fn behavioral_hints(&self) -> ToolBehavioralHints {
+        ToolBehavioralHints {
+            read_only_hint: false,
+            destructive_hint: false, // Uses atomic write, preserves original on failure
+            idempotent_hint: true,
+        }
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -284,6 +299,13 @@ impl Tool for ShellTool {
     }
     fn permission_tier(&self) -> PermissionTier {
         PermissionTier::Deny
+    }
+    fn behavioral_hints(&self) -> ToolBehavioralHints {
+        ToolBehavioralHints {
+            read_only_hint: false,
+            destructive_hint: true, // Can execute arbitrary commands including destructive ones
+            idempotent_hint: false, // Depends on the command being executed
+        }
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -556,6 +578,13 @@ impl Tool for GitTool {
     fn permission_tier(&self) -> PermissionTier {
         PermissionTier::Ask
     }
+    fn behavioral_hints(&self) -> ToolBehavioralHints {
+        ToolBehavioralHints {
+            read_only_hint: false,
+            destructive_hint: false, // commit/branch operations are recoverable
+            idempotent_hint: false, // status/diff are idempotent, but commit/branch are not
+        }
+    }
 
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -752,6 +781,13 @@ impl Tool for FileEditTool {
     }
     fn permission_tier(&self) -> PermissionTier {
         PermissionTier::Ask
+    }
+    fn behavioral_hints(&self) -> ToolBehavioralHints {
+        ToolBehavioralHints {
+            read_only_hint: false,
+            destructive_hint: false, // Atomic write preserves original on failure
+            idempotent_hint: true, // Same edit can be retried
+        }
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -1028,6 +1064,13 @@ impl Tool for SearchTool {
     }
     fn permission_tier(&self) -> PermissionTier {
         PermissionTier::Auto
+    }
+    fn behavioral_hints(&self) -> ToolBehavioralHints {
+        ToolBehavioralHints {
+            read_only_hint: true, // All search operations are read-only
+            destructive_hint: false,
+            idempotent_hint: true,
+        }
     }
 
     fn input_schema(&self) -> serde_json::Value {
@@ -1390,5 +1433,63 @@ mod tests {
             .unwrap();
 
         assert!(result.success);
+    }
+
+    // =============================================================================
+    // Tool Behavioral Hint Annotation Tests
+    // =============================================================================
+
+    #[tokio::test]
+    async fn test_read_file_annotations() {
+        let tool = ReadFileTool::new();
+        let hints = tool.behavioral_hints();
+        assert!(hints.read_only_hint, "ReadFileTool should be read-only");
+        assert!(!hints.destructive_hint, "ReadFileTool should not be destructive");
+        assert!(hints.idempotent_hint, "ReadFileTool should be idempotent");
+    }
+
+    #[tokio::test]
+    async fn test_write_file_annotations() {
+        let tool = WriteFileTool::new();
+        let hints = tool.behavioral_hints();
+        assert!(!hints.read_only_hint, "WriteFileTool should modify state");
+        assert!(!hints.destructive_hint, "WriteFileTool uses atomic write and preserves original on failure");
+        assert!(hints.idempotent_hint, "WriteFileTool should be idempotent");
+    }
+
+    #[tokio::test]
+    async fn test_shell_annotations() {
+        let tool = ShellTool::new();
+        let hints = tool.behavioral_hints();
+        assert!(!hints.read_only_hint, "ShellTool can execute arbitrary commands");
+        assert!(hints.destructive_hint, "ShellTool can be destructive");
+        assert!(!hints.idempotent_hint, "ShellTool idempotency depends on the command");
+    }
+
+    #[tokio::test]
+    async fn test_git_annotations() {
+        let tool = GitTool::new();
+        let hints = tool.behavioral_hints();
+        assert!(!hints.read_only_hint, "GitTool modifies git state");
+        assert!(!hints.destructive_hint, "GitTool operations are generally recoverable");
+        assert!(!hints.idempotent_hint, "GitTool commit/branch are not idempotent");
+    }
+
+    #[tokio::test]
+    async fn test_file_edit_annotations() {
+        let tool = FileEditTool::new();
+        let hints = tool.behavioral_hints();
+        assert!(!hints.read_only_hint, "FileEditTool modifies files");
+        assert!(!hints.destructive_hint, "FileEditTool preserves original on failure");
+        assert!(hints.idempotent_hint, "FileEditTool should be idempotent");
+    }
+
+    #[tokio::test]
+    async fn test_search_annotations() {
+        let tool = SearchTool::new();
+        let hints = tool.behavioral_hints();
+        assert!(hints.read_only_hint, "SearchTool should be read-only");
+        assert!(!hints.destructive_hint, "SearchTool should not be destructive");
+        assert!(hints.idempotent_hint, "SearchTool should be idempotent");
     }
 }
