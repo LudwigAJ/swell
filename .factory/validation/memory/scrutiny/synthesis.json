@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -8,9 +8,9 @@
     "lint": { "passed": true, "command": "cargo fmt --all -- --check", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 25,
+    "total": 26,
     "passed": 18,
-    "failed": 7,
+    "failed": 8,
     "failedFeatures": [
       "memory-pattern-learning",
       "mem-scoping",
@@ -18,14 +18,20 @@
       "mem-decay-function",
       "mem-triple-stream-retrieval",
       "mem-provenance-tracking",
-      "mem-event-log-jsonl"
+      "mem-event-log-jsonl",
+      "fix-memory-blocking-issues"
     ]
   },
   "blockingIssues": [
     {
+      "featureId": "fix-memory-blocking-issues",
+      "severity": "blocking",
+      "description": "Fix feature was NEVER actually implemented. Despite having status 'in_progress' in features.json, no worker transcript or handoff exists for this feature. All 7 original blocking issues remain unfixed."
+    },
+    {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Convention parsing broken (line 1182): String slice indices incorrect - uses [3..] instead of [4..] for '- **' prefix, causing stored conventions to be unparsable"
+      "description": "Convention parsing broken (line 1147): String slice indices incorrect - uses [3..] instead of [4..] for '- **' prefix, causing stored conventions to be unparsable"
     },
     {
       "featureId": "memory-pattern-learning",
@@ -124,5 +130,5 @@
       "reason": "Skill naming is not a blocker - 'Rust' skill exists and workers correctly fall back to it"
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json"
 }
