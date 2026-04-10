@@ -19,8 +19,8 @@
 //! - Anthropic: $3.75/M input tokens, $15/M output tokens (Claude 3.5 Sonnet)
 //! - OpenAI: Varies by model (GPT-4o: $5/M input, $15/M output)
 
-use opentelemetry::trace::{Span, SpanKind, Status, Tracer};
-use opentelemetry::{Key, KeyValue};
+use opentelemetry::trace::{Span, SpanKind, Status};
+use opentelemetry::KeyValue;
 use std::time::Instant;
 
 /// GenAI semantic convention attribute keys
@@ -201,89 +201,94 @@ impl Default for LatencyTracker {
 }
 
 /// Builder for creating GenAI spans with proper attributes
-pub struct GenAiSpanBuilder<'a> {
-    tracer: &'a dyn Tracer,
-    operation_name: &'a str,
+#[allow(dead_code)]
+pub struct GenAiSpanBuilder {
+    operation_name: String,
     provider: LlmProvider,
     model: String,
 }
 
-impl<'a> GenAiSpanBuilder<'a> {
+impl GenAiSpanBuilder {
     /// Create a new builder for a GenAI span
     pub fn new(
-        tracer: &'a impl Tracer,
-        operation_name: &'a str,
+        operation_name: &str,
         provider: LlmProvider,
         model: &str,
     ) -> Self {
         Self {
-            tracer,
-            operation_name,
+            operation_name: operation_name.to_string(),
             provider,
             model: model.to_string(),
         }
     }
 
     /// Start the span with all required GenAI attributes
-    pub fn start_span(self) -> impl Span {
-        let span = self
-            .tracer
-            .build(self.operation_name)
-            .with_kind(SpanKind::Client)
-            .with_attribute(KeyValue::new(gen_ai::OPERATION_NAME, self.operation_name.to_string()))
-            .with_attribute(KeyValue::new(gen_ai::PROVIDER_NAME, self.provider.as_str().to_string()))
-            .with_attribute(KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()));
+    pub fn start_span(
+        operation_name: String,
+        provider: LlmProvider,
+        model: String,
+        tracer: &opentelemetry::global::BoxedTracer,
+    ) -> opentelemetry::global::BoxedSpan {
+        use opentelemetry::trace::Tracer;
 
-        span
+        let mut span_builder = tracer.span_builder(operation_name.clone());
+        span_builder.span_kind = Some(SpanKind::Client);
+        span_builder.attributes = Some(vec![
+            KeyValue::new(gen_ai::OPERATION_NAME, operation_name),
+            KeyValue::new(gen_ai::PROVIDER_NAME, provider.as_str().to_string()),
+            KeyValue::new(gen_ai::REQUEST_MODEL, model),
+        ]);
+
+        tracer.build(span_builder)
     }
 }
 
 /// Extension trait for adding GenAI attributes to spans
 pub trait GenAiSpanExt {
     /// Record prompt tokens
-    fn record_prompt_tokens(&self, tokens: u64);
+    fn record_prompt_tokens(&mut self, tokens: u64);
 
     /// Record completion tokens
-    fn record_completion_tokens(&self, tokens: u64);
+    fn record_completion_tokens(&mut self, tokens: u64);
 
     /// Record the response model (may differ from request model)
-    fn record_response_model(&self, model: &str);
+    fn record_response_model(&mut self, model: &str);
 
     /// Record cost in USD
-    fn record_cost_usd(&self, cost: f64);
+    fn record_cost_usd(&mut self, cost: f64);
 
     /// Record latency in milliseconds
-    fn record_latency_ms(&self, latency_ms: u64);
+    fn record_latency_ms(&mut self, latency_ms: u64);
 
-    /// Record an error on the span
-    fn record_error(&self, error: &str);
+    /// Record an error on the span (for GenAI-specific errors)
+    fn record_genai_error(&mut self, error: &str);
 }
 
 impl<T: Span> GenAiSpanExt for T {
-    fn record_prompt_tokens(&self, tokens: u64) {
+    fn record_prompt_tokens(&mut self, tokens: u64) {
         self.set_attribute(KeyValue::new(gen_ai::USAGE_INPUT_TOKENS, tokens as i64));
     }
 
-    fn record_completion_tokens(&self, tokens: u64) {
+    fn record_completion_tokens(&mut self, tokens: u64) {
         self.set_attribute(KeyValue::new(gen_ai::USAGE_OUTPUT_TOKENS, tokens as i64));
     }
 
-    fn record_response_model(&self, model: &str) {
+    fn record_response_model(&mut self, model: &str) {
         self.set_attribute(KeyValue::new(gen_ai::RESPONSE_MODEL, model.to_string()));
     }
 
-    fn record_cost_usd(&self, cost: f64) {
+    fn record_cost_usd(&mut self, cost: f64) {
         // Use a custom attribute for cost since it's not standardized yet
         self.set_attribute(KeyValue::new("cost.usd", cost));
     }
 
-    fn record_latency_ms(&self, latency_ms: u64) {
+    fn record_latency_ms(&mut self, latency_ms: u64) {
         // Use a custom attribute for latency since it's not standardized yet
         self.set_attribute(KeyValue::new("latency_ms", latency_ms as i64));
     }
 
-    fn record_error(&self, error: &str) {
-        self.set_status(Status::error(error));
+    fn record_genai_error(&mut self, error: &str) {
+        self.set_status(Status::error(error.to_string()));
     }
 }
 

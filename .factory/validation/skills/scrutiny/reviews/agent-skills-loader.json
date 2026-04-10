@@ -1,0 +1,34 @@
+{
+  "featureId": "agent-skills-loader",
+  "reviewedAt": "2026-04-10T04:05:00Z",
+  "commitId": null,
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": false,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation is complete and all 18 tests pass, but the swell-skills crate is not committed to git (untracked). The handoff claims commitId '530c9cf' but that commit only moves mission files - the actual implementation code is uncommitted.",
+    "issues": [
+      {
+        "file": "crates/swell-skills/",
+        "line": 0,
+        "severity": "blocking",
+        "description": "The entire swell-skills crate is untracked (not committed to git). Code exists only locally. This means the implementation is not persisted in the repository and would be lost."
+      },
+      {
+        "file": "features.json verificationSteps",
+        "line": 0,
+        "severity": "non_blocking",
+        "description": "Verification step specifies 'cargo test -p swell-core -- skills' but the actual tests are in swell-skills crate. Worker correctly ran 'cargo test -p swell-skills' which is the right approach."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The verification step in features.json specifies the wrong test command. It says 'cargo test -p swell-core -- skills' but the skills implementation is in its own crate (swell-skills), not in swell-core. The worker's actual verification was correct.",
+      "evidence": "features.json verificationSteps[1]: 'cargo test -p swell-core -- skills' vs actual: 'cargo test -p swell-skills'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The Agent Skills loader implementation is functionally complete with 18 passing tests covering discovery, parsing, catalog, progressive disclosure, and keyword matching. However, the implementation is NOT committed to git - the entire swell-skills crate directory is untracked. The handoff's commitId (530c9cf) refers to a different commit about moving mission files. This is a blocking issue: the feature code must be committed to be considered complete."
+}

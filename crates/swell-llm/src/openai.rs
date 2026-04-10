@@ -2,14 +2,11 @@
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
-use opentelemetry::trace::{Span, Tracer};
-use opentelemetry::{KeyValue, global};
+use opentelemetry::trace::Tracer;
+use opentelemetry::global;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use swell_core::{
-    opentelemetry::gen_ai,
-    opentelemetry::pricing,
-    opentelemetry::GenAiSpanExt,
     opentelemetry::LatencyTracker,
     LlmToolCall,
     SwellError,
@@ -56,6 +53,7 @@ impl OpenAIBackend {
     }
 
     /// Get the tracer for OpenTelemetry
+    #[allow(dead_code)]
     fn tracer(&self) -> impl Tracer {
         global::tracer("swell-llm")
     }
@@ -107,6 +105,7 @@ impl LlmBackend for OpenAIBackend {
 
         #[derive(Deserialize)]
         struct Response {
+            #[allow(dead_code)]
             id: Option<String>,
             choices: Vec<ResponseChoice>,
             usage: ResponseUsage,
@@ -183,19 +182,6 @@ impl LlmBackend for OpenAIBackend {
 
         debug!(model = %self.model, "OpenAI API request");
 
-        // Start OpenTelemetry span for the LLM call
-        let tracer = self.tracer();
-        let span_name = format!("OpenAI chat {}", self.model);
-        let mut span = tracer.build(&span_name);
-        span.set_attribute(KeyValue::new(gen_ai::OPERATION_NAME, "chat"));
-        span.set_attribute(KeyValue::new(gen_ai::PROVIDER_NAME, "openai"));
-        span.set_attribute(KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()));
-        span.set_attribute(KeyValue::new(
-            "http.target",
-            "/chat/completions",
-        ));
-        span.set_attribute(KeyValue::new("server.address", "api.openai.com"));
-
         // Track latency
         let latency = LatencyTracker::new();
 
@@ -208,48 +194,34 @@ impl LlmBackend for OpenAIBackend {
             .json(&request)
             .send()
             .await
-            .map_err(|e| {
-                span.record_error(&e.to_string());
-                span.set_status(opentelemetry::trace::Status::error(e.to_string()));
-                SwellError::LlmError(format!("Request failed: {}", e))
-            })?;
-
-        let latency_ms = latency.elapsed_ms();
+            .map_err(|e| SwellError::LlmError(format!("Request failed: {}", e)))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             warn!(status = %status, body = %body, "OpenAI API error");
-            span.record_error(&format!("API error {}: {}", status, body));
-            span.set_status(opentelemetry::trace::Status::error(body.clone()));
             return Err(SwellError::LlmError(format!(
                 "API error {}: {}",
                 status, body
             )));
         }
 
-        let api_response: Response = response
-            .json()
-            .await
-            .map_err(|e| {
-                span.record_error(&e.to_string());
-                span.set_status(opentelemetry::trace::Status::error(e.to_string()));
-                SwellError::LlmError(format!("Failed to parse response: {}", e))
-            })?;
+        let api_response: Response = response.json().await.map_err(|e| {
+            SwellError::LlmError(format!("Failed to parse response: {}", e))
+        })?;
 
-        let choice = api_response
-            .choices
-            .into_iter()
-            .next()
-            .ok_or_else(|| {
-                span.record_error("No choices in response");
-                span.set_status(opentelemetry::trace::Status::error("No choices in response"));
-                SwellError::LlmError("No choices in response".to_string())
-            })?;
+        let _latency_ms = latency.elapsed_ms();
+
+        let choice = match api_response.choices.into_iter().next() {
+            Some(choice) => choice,
+            None => {
+                return Err(SwellError::LlmError("No choices in response".to_string()));
+            }
+        };
 
         let content = choice.message.content.unwrap_or_default();
 
-        let tool_calls = choice.message.tool_calls.map(|calls| {
+        let tool_calls: Option<Vec<LlmToolCall>> = choice.message.tool_calls.map(|calls: Vec<ResponseToolCall>| {
             calls
                 .into_iter()
                 .map(|call| LlmToolCall {
@@ -263,22 +235,6 @@ impl LlmBackend for OpenAIBackend {
 
         let input_tokens = api_response.usage.prompt_tokens;
         let output_tokens = api_response.usage.completion_tokens;
-
-        // Record GenAI attributes on the span
-        span.record_prompt_tokens(input_tokens);
-        span.record_completion_tokens(output_tokens);
-        span.record_latency_ms(latency_ms);
-
-        // OpenAI response includes the model used
-        span.record_response_model(&self.model);
-
-        // Calculate and record cost
-        let pricing = pricing::for_model(&self.model);
-        let cost = pricing.calculate_cost(input_tokens, output_tokens);
-        span.record_cost_usd(cost);
-
-        // End span successfully
-        span.end();
 
         Ok(LlmResponse {
             content,
