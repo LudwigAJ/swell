@@ -1,6 +1,6 @@
 ---
 name: rust-coding
-description: Write idiomatic Rust code following best practices. Use when implementing features, fixing bugs, or modifying Rust code. Covers ownership, lifetimes, error handling with anyhow/thiserror, async with Tokio, and workspace management.
+description: Write idiomatic Rust code following best practices. Use when implementing features in Rust, fixing bugs, modifying code, writing async code with Tokio, handling errors with anyhow or thiserror, working with ownership and lifetimes, or managing cargo workspaces. Keywords: Rust, cargo, async, tokio, ownership, borrow, lifetime, error handling, workspace, crate.
 ---
 
 # Rust Coding Skill

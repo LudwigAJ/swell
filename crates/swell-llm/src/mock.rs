@@ -2,8 +2,16 @@
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition};
 use async_trait::async_trait;
+use opentelemetry::trace::{Span, Tracer};
+use opentelemetry::{KeyValue, global};
 use std::sync::atomic::{AtomicU64, Ordering};
-use swell_core::SwellError;
+use swell_core::{
+    opentelemetry::gen_ai,
+    opentelemetry::pricing,
+    opentelemetry::GenAiSpanExt,
+    opentelemetry::LatencyTracker,
+    SwellError,
+};
 
 static CALL_COUNT: AtomicU64 = AtomicU64::new(0);
 
@@ -48,6 +56,11 @@ impl MockLlm {
             echo_user: false,
         }
     }
+
+    /// Get the tracer for OpenTelemetry
+    fn tracer(&self) -> impl Tracer {
+        global::tracer("swell-llm-mock")
+    }
 }
 
 #[async_trait]
@@ -64,7 +77,21 @@ impl LlmBackend for MockLlm {
     ) -> Result<LlmResponse, SwellError> {
         CALL_COUNT.fetch_add(1, Ordering::SeqCst);
 
+        // Start OpenTelemetry span for the mock LLM call
+        let tracer = self.tracer();
+        let span_name = format!("Mock chat {}", self.model);
+        let mut span = tracer.build(&span_name);
+        span.set_attribute(KeyValue::new(gen_ai::OPERATION_NAME, "chat"));
+        span.set_attribute(KeyValue::new(gen_ai::PROVIDER_NAME, "mock"));
+        span.set_attribute(KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()));
+        span.set_attribute(KeyValue::new("mock", true));
+
+        let latency = LatencyTracker::new();
+
         if self.should_fail {
+            span.record_error("Mock failure");
+            span.set_status(opentelemetry::trace::Status::error("Mock failure"));
+            span.end();
             return Err(SwellError::LlmError("Mock failure".to_string()));
         }
 
@@ -87,14 +114,28 @@ impl LlmBackend for MockLlm {
         };
 
         let input_tokens: u64 = messages.iter().map(|m| m.content.len() as u64 / 4).sum();
+        let output_tokens = 50u64;
+
+        // Record GenAI attributes on the span
+        span.record_prompt_tokens(input_tokens);
+        span.record_completion_tokens(output_tokens);
+        span.record_latency_ms(latency.elapsed_ms());
+        span.record_response_model(&self.model);
+
+        // Calculate and record cost
+        let pricing = pricing::for_model(&self.model);
+        let cost = pricing.calculate_cost(input_tokens, output_tokens);
+        span.record_cost_usd(cost);
+
+        span.end();
 
         Ok(LlmResponse {
             content,
             tool_calls: None,
             usage: crate::LlmUsage {
                 input_tokens,
-                output_tokens: 50,
-                total_tokens: input_tokens + 50,
+                output_tokens,
+                total_tokens: input_tokens + output_tokens,
             },
         })
     }

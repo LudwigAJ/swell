@@ -16,5 +16,11 @@ chrono.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 
+# OpenTelemetry for GenAI observability
+opentelemetry = { version = "0.26", features = ["trace"] }
+opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.16", optional = true }
+tracing-opentelemetry = "0.28"
+
 [dev-dependencies]
 tokio-test.workspace = true

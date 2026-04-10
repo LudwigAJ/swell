@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review Rust code for correctness, style, performance, and security. Use when reviewing PRs, performing code reviews, or pre-commit checks. Covers clippy lints, Rust idioms, common pitfalls, and security considerations.
+description: Review Rust code for correctness, style, performance, and security. Use when reviewing pull requests, performing code reviews, pre-commit checks, or evaluating clippy lints. Checks ownership, borrowing, error handling, concurrency, memory safety. Keywords: review, PR, clippy, lint, security, performance, correctness.
 ---
 
 # Code Review Skill

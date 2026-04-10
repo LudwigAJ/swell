@@ -1,6 +1,6 @@
 ---
 name: refactoring
-description: Refactor existing Rust code while preserving behavior. Use when improving code structure, extracting functions, or reducing duplication. Follows Martin Fowler patterns, strangler fig for migrations, and确保测试 first.
+description: Refactor existing Rust code while preserving behavior. Use when improving code structure, extracting functions, reducing duplication, introducing builders, or applying Martin Fowler patterns. Strangler fig for migrations. Keywords: refactor, extract, restructure, builder pattern, Martin Fowler, migration.
 ---
 
 # Refactoring Skill

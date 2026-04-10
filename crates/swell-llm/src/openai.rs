@@ -1,10 +1,19 @@
-//! OpenAI API backend (also handles Azure OpenAI).
+//! OpenAI API backend with OpenTelemetry instrumentation.
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
+use opentelemetry::trace::{Span, Tracer};
+use opentelemetry::{KeyValue, global};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use swell_core::{LlmToolCall, SwellError};
+use swell_core::{
+    opentelemetry::gen_ai,
+    opentelemetry::pricing,
+    opentelemetry::GenAiSpanExt,
+    opentelemetry::LatencyTracker,
+    LlmToolCall,
+    SwellError,
+};
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
@@ -44,6 +53,11 @@ impl OpenAIBackend {
             LlmRole::User => "user",
             LlmRole::Assistant => "assistant",
         }
+    }
+
+    /// Get the tracer for OpenTelemetry
+    fn tracer(&self) -> impl Tracer {
+        global::tracer("swell-llm")
     }
 }
 
@@ -93,6 +107,7 @@ impl LlmBackend for OpenAIBackend {
 
         #[derive(Deserialize)]
         struct Response {
+            id: Option<String>,
             choices: Vec<ResponseChoice>,
             usage: ResponseUsage,
         }
@@ -168,6 +183,22 @@ impl LlmBackend for OpenAIBackend {
 
         debug!(model = %self.model, "OpenAI API request");
 
+        // Start OpenTelemetry span for the LLM call
+        let tracer = self.tracer();
+        let span_name = format!("OpenAI chat {}", self.model);
+        let mut span = tracer.build(&span_name);
+        span.set_attribute(KeyValue::new(gen_ai::OPERATION_NAME, "chat"));
+        span.set_attribute(KeyValue::new(gen_ai::PROVIDER_NAME, "openai"));
+        span.set_attribute(KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()));
+        span.set_attribute(KeyValue::new(
+            "http.target",
+            "/chat/completions",
+        ));
+        span.set_attribute(KeyValue::new("server.address", "api.openai.com"));
+
+        // Track latency
+        let latency = LatencyTracker::new();
+
         let url = format!("{}/chat/completions", self.base_url);
         let response = self
             .client
@@ -177,12 +208,20 @@ impl LlmBackend for OpenAIBackend {
             .json(&request)
             .send()
             .await
-            .map_err(|e| SwellError::LlmError(format!("Request failed: {}", e)))?;
+            .map_err(|e| {
+                span.record_error(&e.to_string());
+                span.set_status(opentelemetry::trace::Status::error(e.to_string()));
+                SwellError::LlmError(format!("Request failed: {}", e))
+            })?;
+
+        let latency_ms = latency.elapsed_ms();
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             warn!(status = %status, body = %body, "OpenAI API error");
+            span.record_error(&format!("API error {}: {}", status, body));
+            span.set_status(opentelemetry::trace::Status::error(body.clone()));
             return Err(SwellError::LlmError(format!(
                 "API error {}: {}",
                 status, body
@@ -192,13 +231,21 @@ impl LlmBackend for OpenAIBackend {
         let api_response: Response = response
             .json()
             .await
-            .map_err(|e| SwellError::LlmError(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| {
+                span.record_error(&e.to_string());
+                span.set_status(opentelemetry::trace::Status::error(e.to_string()));
+                SwellError::LlmError(format!("Failed to parse response: {}", e))
+            })?;
 
         let choice = api_response
             .choices
             .into_iter()
             .next()
-            .ok_or_else(|| SwellError::LlmError("No choices in response".to_string()))?;
+            .ok_or_else(|| {
+                span.record_error("No choices in response");
+                span.set_status(opentelemetry::trace::Status::error("No choices in response"));
+                SwellError::LlmError("No choices in response".to_string())
+            })?;
 
         let content = choice.message.content.unwrap_or_default();
 
@@ -214,12 +261,31 @@ impl LlmBackend for OpenAIBackend {
                 .collect()
         });
 
+        let input_tokens = api_response.usage.prompt_tokens;
+        let output_tokens = api_response.usage.completion_tokens;
+
+        // Record GenAI attributes on the span
+        span.record_prompt_tokens(input_tokens);
+        span.record_completion_tokens(output_tokens);
+        span.record_latency_ms(latency_ms);
+
+        // OpenAI response includes the model used
+        span.record_response_model(&self.model);
+
+        // Calculate and record cost
+        let pricing = pricing::for_model(&self.model);
+        let cost = pricing.calculate_cost(input_tokens, output_tokens);
+        span.record_cost_usd(cost);
+
+        // End span successfully
+        span.end();
+
         Ok(LlmResponse {
             content,
             tool_calls,
             usage: LlmUsage {
-                input_tokens: api_response.usage.prompt_tokens,
-                output_tokens: api_response.usage.completion_tokens,
+                input_tokens,
+                output_tokens,
                 total_tokens: api_response.usage.total_tokens,
             },
         })
@@ -240,14 +306,14 @@ impl LlmBackend for OpenAIBackend {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn test_backend_model_name() {
+    #[test]
+    fn test_backend_model_name() {
         let backend = OpenAIBackend::new("gpt-4-turbo", "fake-key").unwrap();
         assert_eq!(backend.model(), "gpt-4-turbo");
     }
 
-    #[tokio::test]
-    async fn test_role_conversion() {
+    #[test]
+    fn test_role_conversion() {
         assert_eq!(OpenAIBackend::convert_role(LlmRole::System), "system");
         assert_eq!(OpenAIBackend::convert_role(LlmRole::User), "user");
         assert_eq!(OpenAIBackend::convert_role(LlmRole::Assistant), "assistant");

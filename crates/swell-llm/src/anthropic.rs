@@ -1,10 +1,19 @@
-//! Anthropic Claude API backend.
+//! Anthropic Claude API backend with OpenTelemetry instrumentation.
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
+use opentelemetry::trace::{Span, Tracer};
+use opentelemetry::{KeyValue, global};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use swell_core::{LlmToolCall, SwellError};
+use swell_core::{
+    opentelemetry::gen_ai,
+    opentelemetry::pricing,
+    opentelemetry::GenAiSpanExt,
+    opentelemetry::LatencyTracker,
+    LlmToolCall,
+    SwellError,
+};
 use tracing::{debug, warn};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -31,6 +40,11 @@ impl AnthropicBackend {
             LlmRole::User => "user",
             LlmRole::Assistant => "assistant",
         }
+    }
+
+    /// Get the tracer for OpenTelemetry
+    fn tracer(&self) -> impl Tracer {
+        global::tracer("swell-llm")
     }
 }
 
@@ -75,6 +89,10 @@ impl LlmBackend for AnthropicBackend {
         struct Response {
             content: Vec<ResponseContent>,
             usage: ResponseUsage,
+            #[serde(default)]
+            id: Option<String>,
+            #[serde(default)]
+            model: Option<String>,
         }
 
         #[derive(Deserialize)]
@@ -126,6 +144,19 @@ impl LlmBackend for AnthropicBackend {
 
         debug!(model = %self.model, "Anthropic API request");
 
+        // Start OpenTelemetry span for the LLM call
+        let tracer = self.tracer();
+        let span_name = format!("Anthropic chat {}", self.model);
+        let mut span = tracer.build(&span_name);
+        span.set_attribute(KeyValue::new(gen_ai::OPERATION_NAME, "chat"));
+        span.set_attribute(KeyValue::new(gen_ai::PROVIDER_NAME, "anthropic"));
+        span.set_attribute(KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()));
+        span.set_attribute(KeyValue::new("http.target", "/v1/messages"));
+        span.set_attribute(KeyValue::new("server.address", "api.anthropic.com"));
+
+        // Track latency
+        let latency = LatencyTracker::new();
+
         let response = self
             .client
             .post(ANTHROPIC_API_URL)
@@ -135,12 +166,20 @@ impl LlmBackend for AnthropicBackend {
             .json(&request)
             .send()
             .await
-            .map_err(|e| SwellError::LlmError(format!("Request failed: {}", e)))?;
+            .map_err(|e| {
+                span.record_error(&e.to_string());
+                span.set_status(opentelemetry::trace::Status::error(e.to_string()));
+                SwellError::LlmError(format!("Request failed: {}", e))
+            })?;
+
+        let latency_ms = latency.elapsed_ms();
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             warn!(status = %status, body = %body, "Anthropic API error");
+            span.record_error(&format!("API error {}: {}", status, body));
+            span.set_status(opentelemetry::trace::Status::error(body.clone()));
             return Err(SwellError::LlmError(format!(
                 "API error {}: {}",
                 status, body
@@ -150,7 +189,11 @@ impl LlmBackend for AnthropicBackend {
         let api_response: Response = response
             .json()
             .await
-            .map_err(|e| SwellError::LlmError(format!("Failed to parse response: {}", e)))?;
+            .map_err(|e| {
+                span.record_error(&e.to_string());
+                span.set_status(opentelemetry::trace::Status::error(e.to_string()));
+                SwellError::LlmError(format!("Failed to parse response: {}", e))
+            })?;
 
         let mut content = String::new();
         let mut tool_calls = Vec::new();
@@ -170,6 +213,26 @@ impl LlmBackend for AnthropicBackend {
             }
         }
 
+        // Record GenAI attributes on the span
+        let input_tokens = api_response.usage.input_tokens;
+        let output_tokens = api_response.usage.output_tokens;
+        span.record_prompt_tokens(input_tokens);
+        span.record_completion_tokens(output_tokens);
+        span.record_latency_ms(latency_ms);
+
+        // Record the actual model used (may differ from request)
+        if let Some(response_model) = api_response.model {
+            span.record_response_model(&response_model);
+        }
+
+        // Calculate and record cost
+        let pricing = pricing::for_model(&self.model);
+        let cost = pricing.calculate_cost(input_tokens, output_tokens);
+        span.record_cost_usd(cost);
+
+        // End span successfully
+        span.end();
+
         Ok(LlmResponse {
             content,
             tool_calls: if tool_calls.is_empty() {
@@ -178,9 +241,9 @@ impl LlmBackend for AnthropicBackend {
                 Some(tool_calls)
             },
             usage: LlmUsage {
-                input_tokens: api_response.usage.input_tokens,
-                output_tokens: api_response.usage.output_tokens,
-                total_tokens: api_response.usage.input_tokens + api_response.usage.output_tokens,
+                input_tokens,
+                output_tokens,
+                total_tokens: input_tokens + output_tokens,
             },
         })
     }
@@ -196,14 +259,14 @@ mod tests {
     use super::*;
     use crate::LlmRole;
 
-    #[tokio::test]
-    async fn test_backend_model_name() {
+    #[test]
+    fn test_backend_model_name() {
         let backend = AnthropicBackend::new("claude-opus-4-5", "fake-key");
         assert_eq!(backend.model(), "claude-opus-4-5");
     }
 
-    #[tokio::test]
-    async fn test_role_conversion() {
+    #[test]
+    fn test_role_conversion() {
         assert_eq!(AnthropicBackend::convert_role(LlmRole::System), "system");
         assert_eq!(AnthropicBackend::convert_role(LlmRole::User), "user");
         assert_eq!(

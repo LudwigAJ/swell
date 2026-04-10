@@ -1,6 +1,6 @@
 ---
 name: test-writing
-description: Write comprehensive tests for Rust code. Use when adding tests, improving test coverage, or fixing failing tests. Covers unit tests, integration tests, mocking, async testing, and property-based testing.
+description: Write comprehensive tests for Rust code. Use when adding tests, improving test coverage, fixing failing tests, writing unit tests, integration tests, async tests with tokio::test, mocking external dependencies, or property-based testing. Keywords: test, testing, mock, async test, tokio::test, unit test, integration test, property-based, proptest.
 ---
 
 # Test Writing Skill
