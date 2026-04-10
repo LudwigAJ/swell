@@ -228,30 +228,45 @@ Multi-backend LLM support:
 
 ## MCP Protocol Integration
 
-SWELL uses the Model Context Protocol (MCP) to integrate with external tools and servers. MCP uses JSON-RPC 2.0 over stdio for communication.
+SWELL acts as an **MCP Client** - it connects to and consumes tools from external MCP servers. The servers (not SWELL) implement the actual AST/code intelligence logic.
+
+### Architecture
+
+```
+SWELL (MCP Client)           External MCP Servers
+      │                              │
+      ├── connect ──────────────────►│ mcp-server-tree-sitter
+      │                               │   └── AST parsing, symbol extraction
+      ├── connect ──────────────────►│ eslint/mcp
+      │                               │   └── JavaScript/TypeScript linting  
+      ├── connect ──────────────────►│ mcp-language-server + rust-analyzer
+      │                               │   └── Rust code intelligence
+      │                               │
+      │◄── capabilities negotiation ──│
+      │◄── tools/list ───────────────│
+      │◄── tools/call ───────────────│
+```
 
 ### MCP Client Implementation
 
-The MCP client is in `swell-tools/src/mcp.rs` and implements:
+The MCP client in `swell-tools/src/mcp.rs` follows the standard protocol:
 
 - **Transport**: JSON-RPC 2.0 over stdio (subprocess)
-- **Discovery**: `tools/list` for finding available tools
-- **Invocation**: `tools/call` for executing tools
-- **Deferred Loading**: Lazy tool loading for performance
+- **Startup**: `initialize` → capabilities → `notifications/initialized`
+- **Discovery**: `tools/list` to discover available tools
+- **Invocation**: `tools/call` to execute tools
 
-### MCP Server Integration
+### Capability Negotiation
 
-SWELL integrates with these MCP servers:
+At startup, SWELL and each MCP server negotiate:
+- Protocol version
+- Supported capabilities (tools, resources, prompts, etc.)
 
-| Server | Purpose | Tools Available |
-|--------|---------|----------------|
-| `mcp-server-tree-sitter` | AST parsing, code analysis | `get_ast`, `run_query`, `find_usage`, `analyze_project` |
-| `mcp-language-server` + `rust-analyzer` | Rust code intelligence | `definition`, `references`, `diagnostics`, `hover` |
-| `mcp-language-server` + `clangd` | C/C++ intelligence | `definition`, `references`, `diagnostics` |
+SWELL does NOT hardcode specific tools - it discovers what's available at runtime.
 
 ### MCP Configuration
 
-Configure MCP servers in `.swell/mcp_servers.json`:
+Configure external MCP servers in `.swell/mcp_servers.json`:
 
 ```json
 {
@@ -260,53 +275,18 @@ Configure MCP servers in `.swell/mcp_servers.json`:
       "name": "tree-sitter",
       "command": "python3",
       "args": ["-m", "mcp_server_tree_sitter"],
-      "env": {
-        "MCP_TS_CACHE_MAX_SIZE_MB": "256"
-      }
+      "env": {}
     },
     {
-      "name": "rust-analyzer",
-      "command": "mcp-language-server",
-      "args": ["--lsp", "rust-analyzer"]
+      "name": "rust-analyzer", 
+      "command": "npx",
+      "args": ["-y", "mcp-language-server", "--lsp", "rust-analyzer"]
     }
   ]
 }
 ```
 
-### MCP Tool Schema
-
-MCP tools use JSON Schema for input validation:
-
-```json
-{
-  "name": "tool_name",
-  "description": "What this tool does",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "param_name": {
-        "type": "string",
-        "description": "Parameter description"
-      }
-    },
-    "required": ["param_name"]
-  }
-}
-```
-
-### Using MCP Tools in Agents
-
-```rust
-use swell_tools::mcp::{McpClient, McpManager};
-
-// Connect to a server
-let manager = McpManager::new();
-manager.add_server("tree-sitter".into(), "python3 -m mcp_server_tree_sitter".into()).await?;
-
-// List and call tools
-let tools = manager.list_all_tools().await;
-let result = client.call_tool("get_ast", json!({"path": "src/main.rs"})).await?;
-```
+SWELL will connect to each server, negotiate capabilities, and expose whatever tools the server provides.
 
 ## Critical Missing Features (v2 Roadmap)
 
