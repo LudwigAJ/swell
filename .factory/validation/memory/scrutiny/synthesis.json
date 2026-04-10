@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 12,
+  "round": 13,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -8,8 +8,8 @@
     "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 5,
-    "passed": 3,
+    "total": 2,
+    "passed": 0,
     "failed": 2,
     "failedFeatures": [
       "memory-skill-extraction",
@@ -20,31 +20,31 @@
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 107 (now ~125 in current): ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. STILL NOT FIXED since round 1 (now round 12).",
+      "description": "Line 125: ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. STILL NOT FIXED since round 1 (now round 13).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs: ExtractionConfig::default() sets store_path: \".skills\".to_string()"
     },
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 139 (now ~142): TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. STILL NOT FIXED since round 1 (now round 12).",
+      "description": "Line 142: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. STILL NOT FIXED since round 1 (now round 13).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs: #[allow(dead_code)] on TrajectoryAnalyzer struct"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 12).",
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 13).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs: final_pattern.update_confidence(frequency_map.values().sum())"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 12).",
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 13).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs: let name = trimmed[3..colon_pos].trim().to_string();"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 12).",
+      "description": "Line 1170: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 13).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs: Ok(Vec::new()) with 'For MVP, return empty' comment"
     }
   ],
@@ -52,8 +52,8 @@
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "CRITICAL: 5 blocking issues have persisted for 12 rounds without resolution across 2 features (memory-skill-extraction, memory-pattern-learning). These are well-identified, localized bugs with exact line numbers. The orchestrator should create HIGH-PRIORITY dedicated fix features for each blocking issue that get auto-assigned. The current approach of re-running scrutiny on the same features without focused fixes has failed for 12 consecutive rounds.",
-      "evidence": "All 5 issues marked 'STILL NOT FIXED since round 1' with file:line evidence. No code changes made to address these issues across 12 rounds.",
+      "suggestion": "CRITICAL: 5 blocking issues have persisted for 13 rounds without resolution across 2 features (memory-skill-extraction, memory-pattern-learning). These are well-identified, localized bugs with exact line numbers. The orchestrator should create HIGH-PRIORITY dedicated fix features for each blocking issue that get auto-assigned. The current approach of re-running scrutiny on the same features without focused fixes has failed for 13 consecutive rounds.",
+      "evidence": "All 5 issues marked 'STILL NOT FIXED since round 1' with file:line evidence. No code changes made to address these issues across 13 rounds.",
       "isSystemic": true
     },
     {
@@ -69,8 +69,6 @@
       "isSystemic": true
     }
   ],
-  "rejectedObservations": [
-    { "observation": ".factory/services.yaml missing - ENOENT on read", "reason": "The file exists at .factory/services.yaml. Workers may have been looking in the wrong directory." }
-  ],
-  "previousRound": "e82e30a"
+  "rejectedObservations": [],
+  "previousRound": "7fa434d"
 }
