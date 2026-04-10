@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod circuit_breaker;
+pub mod cost_tracking;
 pub mod error;
 pub mod events;
 pub mod kill_switch;
@@ -21,6 +22,10 @@ pub use trace_waterfall::{
 pub use audit::{
     verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,
     ChainVerificationResult, GENESIS_HASH,
+};
+pub use cost_tracking::{
+    BudgetAlert, BudgetAlertType, CostBudget, CostRecord, CostSummary, CostTracker,
+    CostTrackerError, ModelBreakdown, ModelCostInfo,
 };
 pub use error::SwellError;
 pub use kill_switch::{
