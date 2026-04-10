@@ -1,0 +1,5017 @@
+{
+  "features": [
+    {
+      "id": "agent-skills-loader",
+      "description": "Implement Agent Skills loader following agentskills.io standard. Skills are directories with SKILL.md containing YAML frontmatter (name, description) plus optional scripts/, references/, assets/ directories. This enables model-driven skill discovery and activation.",
+      "skillName": "Rust",
+      "preconditions": [
+        "swell-core complete"
+      ],
+      "expectedBehavior": [
+        "Discovery: Scan .swell/skills/ and optionally ~/.swell/skills/ for SKILL.md files",
+        "Parsing: Extract YAML frontmatter (name, description) from each SKILL.md",
+        "Lenient validation: Accept skills with missing optional fields (allow other frontmatter)",
+        "Catalog: Build catalog with name, description, location for each skill",
+        "Progressive disclosure: Tier 1 (name+description ~50-100 tokens) at startup, Tier 2 (full SKILL.md body) on activation",
+        "On-demand resources: Load scripts/, references/, assets/ when explicitly requested",
+        "Model-driven activation: LLM reads catalog, matches skills to tasks using description keywords",
+        "Skills discoverable by description keywords (e.g., 'rust', 'async', 'tokio' for rust-coding)"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- skills",
+        "Verify skill catalog includes all skills with name+description",
+        "Verify full content loaded only on activation",
+        "Verify scripts/references/assets loaded on demand"
+      ],
+      "fulfills": [
+        "VAL-SKILLS-001",
+        "VAL-SKILLS-002",
+        "VAL-SKILLS-003",
+        "VAL-SKILLS-004",
+        "VAL-SKILLS-005",
+        "VAL-SKILLS-006",
+        "VAL-SKILLS-007",
+        "VAL-SKILLS-008"
+      ],
+      "milestone": "skills",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "prompts-quality-improvement",
+      "description": "Refactor all SWELL agent prompts following prompt-engineering-expert skill principles. Add XML-wrapped sections, few-shot examples, chain-of-thought requests, and explicit anti-patterns constraints. Also incorporate agentic-coding (contract-first), task-development-workflow (TDD enforcement), and agent-team-orchestration (structured handoffs) principles into prompts.",
+      "skillName": "Rust",
+      "preconditions": [
+        "swell-orchestrator complete"
+      ],
+      "expectedBehavior": [
+        "All agent prompts use XML-wrapped sections: <role>, <task>, <context>, <constraints>, <output_format>",
+        "Few-shot examples added to PlannerAgent (1-3 plan examples), GeneratorAgent (1-3 code examples), EvaluatorAgent (1-3 evaluation examples)",
+        "Chain-of-thought requests in all prompts: 'Think step-by-step before output'",
+        "Anti-patterns constraints: 'Do NOT: hallucinate, assume file contents, skip validation, leave TODOs'",
+        "PlannerAgent includes problem framing phase with clarification questions when requirements ambiguous",
+        "GeneratorAgent enforces TDD: 'write test -> verify fail -> implement -> verify pass -> commit'",
+        "Structured handoffs between agents: include 'what done, where artifacts, how verify, known issues, what's next'",
+        "Success criteria explicit in each prompt: 'Output must include...'",
+        "Context condensation: trigger compaction at 75% token utilization"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- prompts",
+        "Review agents.rs to verify XML sections present",
+        "Review agents.rs to verify few-shot examples added",
+        "Review agents.rs to verify chain-of-thought requests",
+        "Review agents.rs to verify anti-patterns constraints"
+      ],
+      "fulfills": [],
+      "milestone": "prompts",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "prompts-multi-run-validation",
+      "description": "Implement multi-run validation following agent-evaluation skill principles. Run validation gates multiple times to detect flakiness, compute statistical confidence, and track behavioral invariants per agent role.",
+      "skillName": "Rust",
+      "preconditions": [
+        "swell-validation complete",
+        "swell-orchestrator complete"
+      ],
+      "expectedBehavior": [
+        "EvaluatorAgent runs validation 3x by default for statistical confidence",
+        "FlakinessDetector integrated into EvaluatorAgent workflow",
+        "Behavioral invariants defined per agent role (Planner: plan has steps, Generator: code compiles, Evaluator: returns score)",
+        "Track flakiness rate per validation gate",
+        "Report statistical confidence in evaluation results"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- evaluation",
+        "Verify multi-run produces confidence scores"
+      ],
+      "fulfills": [],
+      "milestone": "prompts",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "prompts-structured-handoffs",
+      "description": "Implement structured handoffs between agents following agent-team-orchestration skill. Each agent-to-agent handoff includes: what was done, where artifacts are, how to verify, known issues, what's next.",
+      "skillName": "Rust",
+      "preconditions": [
+        "swell-orchestrator complete"
+      ],
+      "expectedBehavior": [
+        "GeneratorAgent -> EvaluatorAgent handoff includes structured format",
+        "PlannerAgent -> GeneratorAgent handoff includes structured format",
+        "Handoff includes 'what done, where artifacts, how verify, known issues, what's next'",
+        "Agent comments at start/blocker/handoff/completion states"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- handoff"
+      ],
+      "fulfills": [],
+      "milestone": "prompts",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "audit-hash-chained-log",
+      "description": "Implement hash-chained audit trail following agent-audit-trail skill. Every tool call, external write, decision, and state transition is logged with sha256 hash chaining for tamper detection. EU AI Act Article 12 compliance.",
+      "skillName": "Rust",
+      "preconditions": [
+        "swell-core events complete"
+      ],
+      "expectedBehavior": [
+        "NDJSON file at audit/swell-actions.ndjson",
+        "sha256 hash chain linking entries (prev_hash -> hash)",
+        "Log tool-call events with actor, target, arguments, result, duration",
+        "Log external-write events when agents modify files",
+        "Log decision events when agents make significant choices",
+        "Log state transitions (task state changes, mode switches)",
+        "Chain integrity verification function"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- audit"
+      ],
+      "fulfills": [],
+      "milestone": "prompts",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "observability-opentelemetry",
+      "description": "OpenTelemetry integration with GenAI semantic conventions (model, tokens, provider, latency, cost attributes).",
+      "skillName": "Rust",
+      "preconditions": [
+        "Structured JSON logging complete"
+      ],
+      "expectedBehavior": [
+        "Spans follow GenAI conventions",
+        "model attribute with model name",
+        "tokens.prompt and tokens.completion",
+        "provider attribute",
+        "latency_ms attribute",
+        "cost.usd attribute"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- opentelemetry"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "observability-event-schema",
+      "description": "Event schema: trace_id, span_id, parent_span_id, agent_id, session_id, task_id, tool_invocation, timestamp, outcome.",
+      "skillName": "Rust",
+      "preconditions": [
+        "OpenTelemetry integration complete"
+      ],
+      "expectedBehavior": [
+        "All events include trace_id",
+        "parent_span_id for hierarchy",
+        "agent_id identifies source",
+        "session_id groups events",
+        "task_id tracks work",
+        "tool_invocation records tool use",
+        "outcome field (success/failure/error)"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- event_schema"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "observability-audit-trail",
+      "description": "Immutable append-only event log with cryptographic chaining.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Event schema complete"
+      ],
+      "expectedBehavior": [
+        "Events appended immutably",
+        "Previous hash included in each event",
+        "Chain integrity verifiable",
+        "No modification of past events",
+        "Tampering detection"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- audit_trail"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "observability-langfuse-export",
+      "description": "Export traces to Langfuse for analysis.",
+      "skillName": "Rust",
+      "preconditions": [
+        "OpenTelemetry integration complete"
+      ],
+      "expectedBehavior": [
+        "Traces exported to Langfuse",
+        "Compatible with Langfuse SDK",
+        "Generation usage tracked",
+        "Cost data exported",
+        "User feedback loop"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- langfuse"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "observability-trace-waterfall",
+      "description": "Trace waterfall view data for task/agent execution.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Event schema complete"
+      ],
+      "expectedBehavior": [
+        "Hierarchical span structure",
+        "Start/end timestamps per span",
+        "Parent-child relationships",
+        "Tool duration breakdown",
+        "Agent decision points marked"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- trace_waterfall"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "observability-correlation-ids",
+      "description": "Correlation IDs linking events across tasks/agents.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Event schema complete"
+      ],
+      "expectedBehavior": [
+        "root_trace_id propagated",
+        "cross_task_correlation_id for multi-task flows",
+        "agent_session_id per agent",
+        "request_id for API calls",
+        "Events queryable by correlation ID"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- correlation_ids"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "observability-cost-tracking",
+      "description": "Real-time cost tracking per task and run.",
+      "skillName": "Rust",
+      "preconditions": [
+        "OpenTelemetry integration complete"
+      ],
+      "expectedBehavior": [
+        "Cost computed per LLM call",
+        "Aggregated per task",
+        "Aggregated per run",
+        "Budget alerts at thresholds",
+        "Cost breakdown by model"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- cost_tracking"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "observability-operator-intervention",
+      "description": "Pause/resume, scope modification, instruction injection APIs.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Daemon API complete"
+      ],
+      "expectedBehavior": [
+        "pause_task() suspends execution",
+        "resume_task() continues",
+        "inject_instruction() adds mid-task instructions",
+        "modify_scope() changes task boundaries",
+        "APIs accessible via CLI and socket"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon -- operator_intervention"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-event-log-jsonl",
+      "description": "Append-only JSONL event log with schema versioning for immutable audit trail.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Events appended in JSONL format",
+        "Schema version tracked per entry",
+        "Replay capability for debugging"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- event_log"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-episodic-memory",
+      "description": "Immutable timestamped events: tool_invocation, decision, observation, error, outcome stored as episodic memories.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Captures tool invocations with timestamps",
+        "Records agent decisions and reasoning",
+        "Stores observations and outcomes immutably"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- episodic"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-semantic-memory",
+      "description": "Facts, entities, and relationships stored as graph nodes for semantic knowledge representation.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Entities stored as nodes with types",
+        "Relationships stored as typed edges",
+        "Query by entity or relationship type"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- semantic"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-procedural-memory",
+      "description": "Strategies, procedures, and action patterns stored with Beta posterior distribution for confidence scoring.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Procedures stored with effectiveness scores",
+        "Beta posterior tracks belief distribution",
+        "Procedures retrievable by context similarity"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- procedural"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-operator-feedback",
+      "description": "Pattern learning from CLAUDE.md and AGENTS.md files with higher trust weight than agent self-learning.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Parses operator-provided guidance files",
+        "Higher confidence weight than learned patterns",
+        "Sync on project configuration changes"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- operator_feedback"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-meta-cognitive",
+      "description": "Self-knowledge: best model per task type, prompting strategies, and learned heuristics for task execution.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Tracks model performance by task type",
+        "Stores effective prompting strategies",
+        "Recommends model/strategy per new task"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- meta_cognitive"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-confidence-bayesian",
+      "description": "Alpha/Beta posterior tracking with 0.3-0.6-0.8 threshold zones for confidence level determination.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Bayesian posterior updated per observation",
+        "Thresholds: <0.3 deprecated, 0.3-0.6 uncertain, 0.6-0.8 probable, >0.8 confident",
+        "Confidence level queryable per memory"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- bayesian"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-decay-function",
+      "description": "Time-based decay: procedural memories decay slowly, environmental medium, buffer memories fast.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Procedural decay: 0.99^(days since last reinforcement)",
+        "Environmental decay: 0.95^(days)",
+        "Buffer decay: 0.90^(days)",
+        "Decay affects retrieval probability"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- decay"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-promotion-threshold",
+      "description": "Pattern promotion: ≥5 confirmations with confidence >0.6. Rule promotion: ≥10 confirmations with confidence >0.8.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Patterns tracked with confirmation count",
+        "Promotion when thresholds met",
+        "Promoted patterns get higher retrieval rank"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- promotion"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-deprecation",
+      "description": "Mark memories with confidence <0.3 as deprecated with superseded_by link to replacement knowledge.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Automatic deprecation when confidence drops",
+        "superseded_by link to replacement",
+        "Deprecated memories queryable but marked"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- deprecation"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-scoping",
+      "description": "Mandatory repository scope, optional language and task-type filters for memory operations.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Repository scope required for all memory operations",
+        "Language and task-type optional filters",
+        "Cross-repo memories isolated by default"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- scoping"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-similarity-check",
+      "description": "Reject memories within cosine distance 0.15 of existing memories to prevent duplication.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Compute embedding similarity before storage",
+        "Reject if cosine distance < 0.85 (similarity > 0.15)",
+        "Existing memory returned as match"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- similarity"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-staleness-detection",
+      "description": "Invalidate memories that have not been reinforced within configured time windows.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Track last_reinforcement timestamp",
+        "Invalidate after staleness window",
+        "Stale memories excluded from retrieval"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- staleness"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-golden-sample-testing",
+      "description": "Validate learned procedures against test cases before auto-application in future tasks.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Extracted procedures run against golden samples",
+        "Pass required before pattern promotion",
+        "Failed procedures flagged for review"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- golden_sample"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-contrastive-learning",
+      "description": "Success/failure trajectory analysis to learn from both positive and negative outcomes.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Analyze successful task trajectories",
+        "Analyze failed task trajectories",
+        "Contrastive loss trains embedding model"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- contrastive"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-version-rollback",
+      "description": "Revert knowledge to prior state by rolling back memory to previous version.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Version history maintained per memory",
+        "Rollback to specific version supported",
+        "Audit trail of rollbacks kept"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- rollback"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-triple-stream-retrieval",
+      "description": "Vector + BM25 + graph traversal with Reciprocal Rank Fusion for hybrid retrieval.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Dense vector search component",
+        "BM25 keyword search component",
+        "Graph traversal for relationship-based retrieval",
+        "RRF fusion combines rankings"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- triple_stream"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-cross-encoder-rerank",
+      "description": "BGE-reranker for cross-encoder reranking of top retrieved candidates.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Take top-N candidates from retriever",
+        "Cross-encoder reranking with BGE",
+        "Final ranking maximizes relevance"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- rerank"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-conflict-resolution",
+      "description": "Detect contradictory memories and resolve using configurable resolution rules.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Detect contradictory memories",
+        "Apply resolution rules (newer wins, higher confidence wins, etc.)",
+        "Log conflict resolution decisions"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- conflict"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mem-provenance-tracking",
+      "description": "Link learned facts to source episodes for full traceability of knowledge origin.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Track source episode ID per memory",
+        "Store evidence and context from source",
+        "Query memories by provenance"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- provenance"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-hybrid-execution",
+      "description": "LocalExecutor + RemoteExecutor with risk-based routing to appropriate execution environment.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "LocalExecutor for low-risk operations",
+        "RemoteExecutor for sandboxed operations",
+        "Risk classification routes to correct executor"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- hybrid"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-firecracker-sandbox",
+      "description": "Firecracker microVM sandbox with <125ms startup time for secure code execution.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Firecracker microVM provisioned per task",
+        "Startup time < 125ms",
+        "Isolation via hardware virtualization"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- firecracker"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-gvisor-support",
+      "description": "gVisor alternative sandbox backend for containerized tool execution.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "gVisor runsc runtime integration",
+        "Usernamespace isolation",
+        "Syscall filtering"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- gvisor"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-os-sandbox",
+      "description": "OS-level sandboxing via Bubblewrap (Linux), Seatbelt (macOS), Landlock (Linux kernel).",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Platform-specific sandbox implementation",
+        "Filesystem restrictions",
+        "Network access control"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- os_sandbox"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-worktree-isolation",
+      "description": "Per-worktree environment isolation with separate PATH, env vars, and filesystem view.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Each worktree has isolated environment",
+        "PATH includes worktree-local bin",
+        "Environment variables scoped per worktree"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- worktree_isolation"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-credential-proxy",
+      "description": "External credential proxy so API keys and secrets never enter sandbox environment.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Credential proxy outside sandbox boundary",
+        "Tools request credentials via proxy",
+        "Secrets never exposed to sandbox"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- credential_proxy"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-vault-integration",
+      "description": "HashiCorp Vault integration for dynamic secrets and credential rotation.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Vault client integration",
+        "Dynamic secret generation",
+        "Automatic credential rotation"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- vault"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-network-egress",
+      "description": "Default-deny outbound network with allowlist for required external services.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "All outbound blocked by default",
+        "Allowlist defines permitted destinations",
+        "DNS-based and IP-based restrictions"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- egress"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-secret-scanning",
+      "description": "Gitleaks and ggshield pre-commit hooks for secret detection in changes.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Pre-commit hook integration",
+        "Scan staged changes for secrets",
+        "Block commit if secrets detected"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- secret_scanning"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-auto-masking",
+      "description": "Auto-redact secret patterns in tool output to prevent credential leakage.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Pattern-based secret detection",
+        "Replacement with [REDACTED] markers",
+        "Configurable patterns per secret type"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- auto_masking"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-mcp-deferred-loading",
+      "description": "Progressive disclosure for large tool libraries with lazy loading on first access.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Tool registry loaded progressively",
+        "Category-level lazy loading",
+        "On-demand tool loading"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- deferred_loading"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-tool-annotations",
+      "description": "Tool metadata: readOnlyHint, destructiveHint, idempotentHint for behavioral classification.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Tools annotated with behavioral hints",
+        "readOnlyHint: tool doesn't modify state",
+        "destructiveHint: tool permanently changes data",
+        "idempotentHint: safe to retry"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- annotations"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-cedar-policy",
+      "description": "Cedar permission system with formally verifiable policies for tool access control.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Cedar policy engine integration",
+        "Tool access authorization",
+        "Formal verification of policy correctness"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- cedar"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-opa-policy",
+      "description": "Open Policy Agent for infrastructure-level policy enforcement.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "OPA rego policy integration",
+        "Infrastructure-level access control",
+        "Policy as code approach"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- opa"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-external-killswitch",
+      "description": "Redis-based kill switch outside agent runtime for emergency stop capability.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Kill signal stored in Redis",
+        "Agent polls kill switch periodically",
+        "Immediate halt on kill signal"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- killswitch"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-resource-limits",
+      "description": "Resource limits: max turns, wall-clock time, tokens, cost, and failures per session.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Max turns limit per session",
+        "Wall-clock timeout enforcement",
+        "Token and cost caps",
+        "Failure threshold tracking"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- resource_limits"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-loop-detection",
+      "description": "Loop detection: same-tool retry, oscillation, and re-planning loop identification.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Detect same-tool repeated retries",
+        "Identify oscillation patterns",
+        "Detect re-planning loops",
+        "Trigger intervention on loop detection"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- loop_detection"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-posttooluse-hooks",
+      "description": "Auto-run linters and formatters after file edit operations.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Post-edit hook triggering",
+        "Automatic linting execution",
+        "Format enforcement"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- posttool_hooks"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-multi-signal-validation",
+      "description": "Multi-signal validation: tests + lint + types + static analysis + LLM review + spec conformance.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Aggregate validation signals",
+        "Signal weighting and combination",
+        "Overall validation outcome"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- multi_signal"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "tools-self-healing-ci",
+      "description": "Autonomous CI failure fixing by analyzing failures and proposing corrections.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "CI failure analysis",
+        "Root cause identification",
+        "Automated fix proposal and application"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- self_healing_ci"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-test-planning-engine",
+      "description": "Extract acceptance criteria from specs and diffs with risk scoring for test selection.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Parse acceptance criteria from specs",
+        "Extract criteria from diff context",
+        "Risk scoring per test case"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- test_planning"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-test-generator",
+      "description": "Generate unit, integration, and property-based tests from acceptance criteria.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Unit test generation from criteria",
+        "Integration test generation",
+        "Property-based test generation"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- test_generator"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-test-executor-staged",
+      "description": "Stage 0-4 execution: instant, unit, integration, comprehensive with progressive rigor.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Stage 0: Instant validation",
+        "Stage 1: Unit tests",
+        "Stage 2: Integration tests",
+        "Stage 3-4: Comprehensive validation"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- staged"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-flakiness-retry",
+      "description": "Differential coverage analysis, test quarantine, and 3x retry for flaky tests.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Flaky test detection via history",
+        "Quarantine pool for unstable tests",
+        "3x retry with majority voting"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- flakiness_retry"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-result-interpreter",
+      "description": "5-category failure taxonomy with confidence scoring for test result analysis.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Category: implementation bug, test bug, environment issue, flaky, unclear",
+        "Confidence score per classification",
+        "Action recommendations per category"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- result_interpreter"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-traceability-store",
+      "description": "Bidirectional links: Goal→Criteria→Tests→Results→Evidence for full traceability.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Goal linked to acceptance criteria",
+        "Criteria linked to test cases",
+        "Tests linked to execution results",
+        "Results linked to evidence artifacts"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- traceability"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-predictive-selection",
+      "description": "ML-based test selection per change for intelligent test prioritization (V2).",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Predictive model for test selection",
+        "Change impact analysis",
+        "Optimal test subset selection"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- predictive_selection"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-autonomous-coverage",
+      "description": "Mutation testing and static analysis to auto-generate tests for coverage gaps (V2).",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Mutation testing execution",
+        "Static analysis coverage detection",
+        "Auto-generate tests for gaps"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- autonomous_coverage"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-self-improving-tests",
+      "description": "Track test value metrics and retire low-value tests that cost more than they provide (V2).",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Test value tracking over time",
+        "Cost/benefit analysis per test",
+        "Automatic low-value test retirement"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- self_improving"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-calibrated-confidence",
+      "description": "Train model against post-merge defect rates for calibrated validation confidence (V2).",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Track post-merge defect rates",
+        "Calibrate confidence scoring",
+        "Validation pass prediction"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- calibrated_confidence"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "val-multi-agent-test-roles",
+      "description": "Multi-agent test roles: Planner, Generator, Healer, Reviewer for collaborative testing (V2).",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Planner agent for test strategy",
+        "Generator agent for test creation",
+        "Healer agent for fixing broken tests",
+        "Reviewer agent for quality assessment"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- multi_agent"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-autonomy-levels",
+      "description": "L1-Supervised, L2-Guided, L3-Autonomous, L4-FullAuto autonomy levels for task execution.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "L1: every action requires approval",
+        "L2: plan approved, execute auto",
+        "L3: minimal guidance needed",
+        "L4: fully autonomous operation"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- autonomy_levels"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-policy-gates-yaml",
+      "description": "YAML policy evaluation with deny-first semantics for task and agent operations.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "YAML policy loading",
+        "Deny-first evaluation semantics",
+        "Policy enforcement on operations"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- policy_gates"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-retry-policy",
+      "description": "Retry policy: 2 retries same agent, 3rd retry different model, 4+ escalation to human.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "First 2 retries with same agent",
+        "3rd retry switches model",
+        "4+ triggers human escalation"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- retry_policy"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-feature-leads",
+      "description": "Sub-orchestrators for tasks exceeding 15 steps to manage complexity.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Sub-orchestrator spawned for complex tasks",
+        "Delegation of task segments",
+        "Coordination between orchestrators"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- feature_leads"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-task-board",
+      "description": "Persistent task board with state, assigned agent, time spent, and token cost tracking.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Task state persistence",
+        "Agent assignment tracking",
+        "Time and cost accounting per task"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- task_board"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-follow-up-generator",
+      "description": "Generate follow-up tasks from task completion and acceptance criteria.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Analyze completed tasks",
+        "Extract follow-up opportunities",
+        "Generate new task proposals"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- followup"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-gap-analyzer",
+      "description": "Compare specification to codebase to identify missing requirements.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Parse specification requirements",
+        "Compare to implemented features",
+        "Report gaps and missing items"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- gap_analyzer"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-novelty-check",
+      "description": "Reject duplicate tasks by similarity scoring and file overlap analysis.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Compute task similarity",
+        "Analyze file overlap",
+        "Reject duplicate tasks"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- novelty"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-value-scorer",
+      "description": "Score tasks 1-5 on spec alignment and blocking impact for prioritization.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Spec alignment scoring",
+        "Blocking impact scoring",
+        "Combined priority score"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- value_scorer"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-decay-function",
+      "description": "Raise approval threshold as run progresses to enforce increasingly strict validation.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Track runtime progress",
+        "Increase approval threshold over time",
+        "Stricter validation as task continues"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- decay"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-hard-limits",
+      "description": "Hard limits: max tasks (100), max time (8h), max cost, max failures (10).",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Task count limit enforcement",
+        "Wall-clock time limit",
+        "Cost ceiling enforcement",
+        "Failure count threshold"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- hard_limits"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-soft-limits",
+      "description": "Soft limits: warnings at threshold, no-progress detection with configurable timeouts.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Warning alerts at thresholds",
+        "No-progress detection",
+        "Configurable timeout values"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- soft_limits"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-session-hygiene",
+      "description": "60-minute checkpoint interval with progress evaluation for long-running sessions.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "60-minute checkpoint frequency",
+        "Progress evaluation at checkpoint",
+        "Session state persistence"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- session_hygiene"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-frozen-spec",
+      "description": "Immutable spec reference that cannot be modified once task execution begins.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Spec snapshot on task start",
+        "Immutable reference during execution",
+        "Original spec preserved for audit"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- frozen_spec"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-stopping-conditions",
+      "description": "Stopping conditions: all tasks accepted, stop command received, hard limit breached.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "All tasks accepted check",
+        "Stop command handling",
+        "Hard limit breach detection"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- stopping"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-worker-pool",
+      "description": "Bounded worker pool with 3-5 workers controlled by semaphore for concurrency management.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Worker pool size bounds",
+        "Semaphore-controlled concurrency",
+        "Worker lifecycle management"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- worker_pool"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-file-locks",
+      "description": "Logical file locks to prevent concurrent edits to the same file across agents.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Logical lock per file path",
+        "Conflict detection",
+        "Lock release on completion"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- file_locks"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-subagent-spawn",
+      "description": "Spawn sub-agents with 2-level maximum depth to prevent runaway agent trees.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Sub-agent spawning capability",
+        "Max depth enforcement (2 levels)",
+        "Hierarchical agent management"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- subagent"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-model-fallback",
+      "description": "Model fallback chain: Sonnet → GPT-4o → Haiku for graceful degradation.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Primary model (Sonnet) usage",
+        "Fallback to GPT-4o on failure",
+        "Final fallback to Haiku"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- model_fallback"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-idempotent-actions",
+      "description": "All actions designed to be safe for retry with idempotent semantics.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Idempotent action design",
+        "Safe retry semantics",
+        "Deduplication handling"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- idempotent"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-backlog-aggregation",
+      "description": "Backlog aggregation from 4 sources: plan tasks, failure-derived, spec-gap, improvements.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Aggregate from planning tasks",
+        "Aggregate from failure analysis",
+        "Aggregate from spec gaps",
+        "Aggregate from improvement suggestions"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- backlog"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-feature-flag-rollback",
+      "description": "Feature flag infrastructure for instant rollback of problematic changes.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Feature flag management",
+        "Instant flag-based rollback",
+        "Gradual rollout support"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- feature_flag"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-stacked-prs",
+      "description": "Stacked PRs with small incremental changes under 200 lines per PR.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "PR stack management",
+        "Size limits per PR",
+        "Dependency tracking between PRs"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- stacked_prs"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-risk-tiered-merge",
+      "description": "Risk-tiered merge: auto-merge, auto-merge+AI-review, human-review based on risk level.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Low-risk: auto-merge",
+        "Medium-risk: auto-merge with AI review",
+        "High-risk: human review required"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- tiered_merge"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-merge-queue",
+      "description": "GitHub merge queue or Mergify integration for atomic stacked PR merges.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Merge queue integration",
+        "Atomic stacked PR merging",
+        "Queue management"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- merge_queue"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "obs-opentelemetry-genai",
+      "description": "OpenTelemetry with GenAI semantic conventions for model, tokens, latency, cost attributes.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "GenAI semantic conventions compliance",
+        "model attribute with model name",
+        "tokens.prompt and tokens.completion",
+        "provider, latency_ms, cost.usd attributes"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- otel_genai"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "obs-audit-chain",
+      "description": "Cryptographic chaining of events for tamper evidence and audit integrity.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Previous event hash included",
+        "Chain integrity verification",
+        "Tampering detection capability"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- audit_chain"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "obs-langfuse-export",
+      "description": "Export traces to Langfuse for analysis and observability dashboard.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Langfuse SDK integration",
+        "Trace export capability",
+        "Generation and cost tracking"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- langfuse_export"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "obs-trace-waterfall",
+      "description": "Hierarchical span structure with tool duration breakdown for trace visualization.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Hierarchical span relationships",
+        "Start/end timestamps per span",
+        "Tool duration breakdown",
+        "Agent decision point marking"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- trace_waterfall"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "obs-cost-breakdown",
+      "description": "Per-model cost aggregation with detailed breakdown of LLM expenses.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Cost per model tracking",
+        "Aggregation by task and run",
+        "Cost breakdown visualization"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- cost_breakdown"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "obs-operator-pause-resume",
+      "description": "pause_task() and resume_task() APIs for operator intervention in running tasks.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "pause_task() suspends execution",
+        "resume_task() continues execution",
+        "State preserved during pause"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon -- pause_resume"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "obs-inject-instruction",
+      "description": "Mid-task instruction injection API for operator guidance during execution.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Inject instruction into running task",
+        "Instruction execution prioritized",
+        "Result fed back to agent"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon -- inject_instruction"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "obs-modify-scope",
+      "description": "Task boundary modification API for adding/removing files from task scope.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Add files to task scope",
+        "Remove files from task scope",
+        "Scope modification tracking"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon -- modify_scope"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mcp-protocol-full",
+      "description": "Full MCP (Model Context Protocol) implementation with tool annotations, outputSchema support, and dynamic tool discovery.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MCP client in swell-tools complete"
+      ],
+      "expectedBehavior": [
+        "Tool annotations: readOnlyHint, destructiveHint, idempotentHint",
+        "outputSchema support for typed results",
+        "Dynamic tool discovery via notifications/tools/list_changed",
+        "Capability negotiation during handshake"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- mcp"
+      ],
+      "fulfills": [
+        "VAL-MCP-001"
+      ],
+      "milestone": "mcp",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mcp-tool-annotations",
+      "description": "MCP tool metadata annotations for behavioral classification: readOnlyHint, destructiveHint, idempotentHint.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MCP protocol base complete"
+      ],
+      "expectedBehavior": [
+        "All tools have behavioral hint annotations",
+        "Automatic risk classification based on hints",
+        "Policy engine uses hints for permission decisions"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- tool_annotation"
+      ],
+      "fulfills": [],
+      "milestone": "mcp",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "treesitter-ast-parsing",
+      "description": "Tree-sitter AST parsing for semantic code chunking and dependency analysis across 66+ languages.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Tree-sitter bindings available"
+      ],
+      "expectedBehavior": [
+        "AST parsing for Rust, Python, TypeScript, Go, etc.",
+        "Code chunking at function/class/method boundaries",
+        "Dependency extraction from imports and calls",
+        "Syntax-aware indexing for memory retrieval"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- treesitter"
+      ],
+      "fulfills": [],
+      "milestone": "ast",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "ast-dependency-graph",
+      "description": "AST-based dependency graph construction with typed nodes and edges.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Tree-sitter AST parsing complete"
+      ],
+      "expectedBehavior": [
+        "Nodes: File, Module, Class, Function, Variable, Test",
+        "Edges: CALLS, INHERITS_FROM, IMPORTS, DEPENDS_ON, TESTS",
+        "Graph query API for dependency analysis",
+        "Impact analysis for code changes"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- dependency_graph"
+      ],
+      "fulfills": [],
+      "milestone": "ast",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "knowledge-graph",
+      "description": "Property graph knowledge base with typed nodes and edges for code structure representation.",
+      "skillName": "Rust",
+      "preconditions": [
+        "AST dependency graph complete"
+      ],
+      "expectedBehavior": [
+        "Graph database with nodes and edges",
+        "Query interface for dependency lookups",
+        "Path finding between code elements",
+        "Cross-reference analysis"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- knowledge_graph"
+      ],
+      "fulfills": [],
+      "milestone": "knowledge",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "vector-search",
+      "description": "Vector search with code embeddings for semantic memory retrieval.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Knowledge graph complete"
+      ],
+      "expectedBehavior": [
+        "Code embedding generation",
+        "Vector similarity search",
+        "Hybrid retrieval (vector + keyword + graph)",
+        "Cross-encoder reranking"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- vector_search"
+      ],
+      "fulfills": [],
+      "milestone": "knowledge",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "opentelemetry-full",
+      "description": "Full OpenTelemetry integration with GenAI semantic conventions.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Tracing setup complete"
+      ],
+      "expectedBehavior": [
+        "Spans with gen_ai.* attributes",
+        "model, tokens.prompt, tokens.completion",
+        "provider, latency_ms, cost.usd",
+        "Trace export to OTLP endpoint"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- opentelemetry"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "firecracker-sandbox",
+      "description": "Firecracker microVM sandbox with <125ms startup for secure code execution.",
+      "skillName": "Rust",
+      "preconditions": [
+        "KVM access available"
+      ],
+      "expectedBehavior": [
+        "Firecracker microVM provisioning",
+        "Startup time < 125ms",
+        "Hardware virtualization isolation",
+        "Per-task VM lifecycle"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-sandbox -- firecracker"
+      ],
+      "fulfills": [],
+      "milestone": "sandbox",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "context-pipeline",
+      "description": "Tiered context assembly pipeline: active file, open/recent, vector search, graph-expanded, conversation history.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Knowledge graph complete",
+        "Vector search complete"
+      ],
+      "expectedBehavior": [
+        "Tier scoring and truncation",
+        "Token budget enforcement",
+        "Context window optimization",
+        "Auto-compaction on threshold"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- context_pipeline"
+      ],
+      "fulfills": [],
+      "milestone": "context",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mcp-treesitter-integration",
+      "description": "Integrate with mcp-server-tree-sitter for AST-based code analysis via MCP protocol.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MCP client in swell-tools complete",
+        "Python 3.8+ with tree-sitter installed"
+      ],
+      "expectedBehavior": [
+        "SWELL can spawn mcp-server-tree-sitter as subprocess",
+        "Tool discovery via tools/list works",
+        "AST tools: get_ast, get_node_at_position, run_query",
+        "Symbol tools: get_symbols, find_usage",
+        "Analysis tools: analyze_project, get_dependencies, analyze_complexity"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools -- mcp_treesitter",
+        "Verify tree-sitter server can be started and tools discovered"
+      ],
+      "fulfills": [],
+      "milestone": "mcp",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mcp-lsp-integration",
+      "description": "Integrate with mcp-language-server + LSP servers (rust-analyzer, clangd) for language intelligence.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MCP client in swell-tools complete"
+      ],
+      "expectedBehavior": [
+        "Bridge MCP to LSP via mcp-language-server",
+        "Rust intelligence via rust-analyzer: definitions, references, hover, diagnostics",
+        "C/C++ intelligence via clangd",
+        "Symbol rename across project",
+        "Workspace diagnostics"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools -- mcp_lsp",
+        "Verify LSP tools discoverable and callable"
+      ],
+      "fulfills": [],
+      "milestone": "mcp",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mcp-server-config",
+      "description": "MCP server configuration system for .swell/mcp_servers.json with server definitions.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MCP client complete"
+      ],
+      "expectedBehavior": [
+        "JSON config file for MCP server definitions",
+        "Server name, command, arguments, environment variables",
+        "Lazy server startup (only when tools needed)",
+        "Server health checks and reconnection"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools -- mcp_config"
+      ],
+      "fulfills": [],
+      "milestone": "mcp",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "ast-dependency-analysis",
+      "description": "Use MCP tree-sitter tools to build dependency graph: functions call X, X imports Y, Y defines Z.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MCP tree-sitter integration complete"
+      ],
+      "expectedBehavior": [
+        "Parse source files to AST",
+        "Extract import/crate declarations",
+        "Build call graph between functions",
+        "Answer queries: 'what depends on X?', 'what does Y call?'"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-core -- ast_dependency"
+      ],
+      "fulfills": [],
+      "milestone": "ast",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "code-impact-analysis",
+      "description": "Use LSP references and tree-sitter analysis to determine impact of proposed changes.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MCP LSP integration complete"
+      ],
+      "expectedBehavior": [
+        "Find all usages of a symbol",
+        "Calculate impact radius (direct, indirect, transitive)",
+        "Estimate test coverage impact",
+        "Suggest affected files for review"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-core -- impact_analysis"
+      ],
+      "fulfills": [],
+      "milestone": "ast",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "context-window-optimization",
+      "description": "Use AST analysis to intelligently chunk context: relevant imports, called functions, called-by functions.",
+      "skillName": "Rust",
+      "preconditions": [
+        "AST dependency analysis complete"
+      ],
+      "expectedBehavior": [
+        "Chunk code at function/class boundaries",
+        "Score chunks by relevance to current task",
+        "Prioritize called functions and their dependencies",
+        "Stay within token budget via intelligent truncation"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-orchestrator -- context_chunking"
+      ],
+      "fulfills": [],
+      "milestone": "context",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-state-machine",
+      "description": "Complete TaskStateMachine with all 10 states (Created→Enriched→Ready→Assigned→Executing→Validating→Accepted/Rejected→Failed/Escalated). Invalid transition protection, plan attachment, iteration tracking, escalation after 3 failures.",
+      "skillName": "Rust",
+      "preconditions": [
+        "swell-core types defined"
+      ],
+      "expectedBehavior": [
+        "All 10 states transitions work",
+        "Invalid transitions return SwellError",
+        "Plan attachment verified",
+        "Iteration count increments on rejection",
+        "Escalation after 3 failures"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- state_machine"
+      ],
+      "fulfills": [
+        "VAL-ORCH-001",
+        "VAL-ORCH-002",
+        "VAL-ORCH-003"
+      ],
+      "milestone": "orchestration",
+      "status": "completed",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-agent-pool",
+      "description": "AgentPool with register/reserve/release/available_count. Thread-safe with proper locking. MAX_CONCURRENT_AGENTS = 6 enforced.",
+      "skillName": "Rust",
+      "preconditions": [
+        "AgentPool struct exists"
+      ],
+      "expectedBehavior": [
+        "register() creates agent",
+        "reserve() assigns to task",
+        "release() returns to pool",
+        "available_count() per role"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- agent_pool"
+      ],
+      "fulfills": [
+        "VAL-ORCH-004"
+      ],
+      "milestone": "orchestration",
+      "status": "completed",
+      "workerSessionIds": []
+    },
+    {
+      "id": "orch-execution-controller",
+      "description": "ExecutionController for Planner→Generator→Evaluator pipeline. execute_task and execute_batch with concurrency limits.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Orchestrator complete"
+      ],
+      "expectedBehavior": [
+        "execute_task runs full pipeline",
+        "execute_batch handles concurrent tasks",
+        "MAX_CONCURRENT enforced"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- execution"
+      ],
+      "fulfills": [
+        "VAL-CROSS-003"
+      ],
+      "milestone": "orchestration",
+      "status": "completed",
+      "workerSessionIds": [
+        "617b42db-1c4b-48bb-84bf-279ac01a10c6"
+      ]
+    },
+    {
+      "id": "orch-orchestrator-api",
+      "description": "Complete Orchestrator with create_task, get_task, register_agent, assign_task, release_agent, start_task, start_validation, complete_task. Event emission.",
+      "skillName": "Rust",
+      "preconditions": [
+        "TaskStateMachine and AgentPool complete"
+      ],
+      "expectedBehavior": [
+        "All public methods work",
+        "Events emitted on state changes"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator"
+      ],
+      "fulfills": [
+        "VAL-ORCH-005",
+        "VAL-CROSS-001"
+      ],
+      "milestone": "orchestration",
+      "status": "completed",
+      "workerSessionIds": [
+        "59f52d95-7f51-4725-92df-94f1868e4469",
+        "5c6d0b8e-4c48-4c2d-88ef-00bc0b1c94c3"
+      ]
+    },
+    {
+      "id": "orch-task-graph",
+      "description": "Task DAG for dependency tracking. Topological sort for execution ordering. Circular dependency detection.",
+      "skillName": "Rust",
+      "preconditions": [
+        "TaskStateMachine complete"
+      ],
+      "expectedBehavior": [
+        "Tasks track dependencies",
+        "Execution respects dependency order",
+        "Circular deps detected and rejected"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- task_graph"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "completed",
+      "workerSessionIds": [
+        "db5352d4-0735-4173-98a2-ac6a2169a96f"
+      ]
+    },
+    {
+      "id": "orch-policy-engine",
+      "description": "Policy engine evaluating YAML-defined policies against agent actions. Deny-first evaluation semantics.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Orchestrator basic API complete"
+      ],
+      "expectedBehavior": [
+        "Policy rules loaded from YAML",
+        "Actions evaluated against policies",
+        "Deny-first semantics"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- policy"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "completed",
+      "workerSessionIds": [
+        "983afa83-ff02-499a-9ecf-600530bc9d2a"
+      ]
+    },
+    {
+      "id": "orch-scheduler-queue",
+      "description": "Scheduler managing ready queue, task assignment by priority. Configurable max concurrent workers (default: 6, max: 7).",
+      "skillName": "Rust",
+      "preconditions": [
+        "Task graph complete"
+      ],
+      "expectedBehavior": [
+        "Priority-based queue",
+        "Max workers enforced",
+        "Fair scheduling"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- scheduler"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "completed",
+      "workerSessionIds": [
+        "58ee50cd-a1d2-4d32-95e0-e2dbadfa717a"
+      ]
+    },
+    {
+      "id": "orch-drift-detector",
+      "description": "Drift detector comparing modified files against plan. Flags >30% drift from estimated_files.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Task graph and execution complete"
+      ],
+      "expectedBehavior": [
+        "Compares actual vs planned files",
+        "Flags excessive drift",
+        "Reports drift percentage"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- drift"
+      ],
+      "fulfills": [],
+      "milestone": "orchestration",
+      "status": "completed",
+      "workerSessionIds": [
+        "bd970caf-e930-4347-a61f-4e24f3b600b8"
+      ]
+    },
+    {
+      "id": "agents-planner-agent",
+      "description": "PlannerAgent with LLM calls to generate structured plans. Reads codebase context, outputs Plan with steps, risk_assessment, estimated_tokens.",
+      "skillName": "Rust",
+      "preconditions": [
+        "AnthropicBackend implemented"
+      ],
+      "expectedBehavior": [
+        "Planner receives AgentContext",
+        "Calls LLM with system prompt",
+        "Outputs parseable Plan JSON"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- planner"
+      ],
+      "fulfills": [
+        "VAL-AGENTS-001",
+        "VAL-AGENTS-004"
+      ],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "fa141f90-0c7b-4b58-8974-2a49643921fa",
+        "a73eaa26-db34-4e56-8ef5-fcfe75036090"
+      ]
+    },
+    {
+      "id": "agents-generator-agent",
+      "description": "GeneratorAgent implementing ReAct loop. Takes Plan steps, uses tools to read/write files, produce code changes.",
+      "skillName": "Rust",
+      "preconditions": [
+        "PlannerAgent works",
+        "Tools implemented"
+      ],
+      "expectedBehavior": [
+        "Generator receives step",
+        "Uses file tools for changes",
+        "ReAct: think→act→observe→repeat"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- generator"
+      ],
+      "fulfills": [
+        "VAL-AGENTS-002"
+      ],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "650f4a42-c09d-40a4-b5a5-f12696317965",
+        "34edc18c-e2d4-4e8f-be5e-7c2d9ab83230"
+      ]
+    },
+    {
+      "id": "agents-evaluator-agent",
+      "description": "EvaluatorAgent validating generated code. Runs validation gates, checks sprint contracts, outputs evaluation result with confidence.",
+      "skillName": "Rust",
+      "preconditions": [
+        "GeneratorAgent works",
+        "Validation gates implemented"
+      ],
+      "expectedBehavior": [
+        "Evaluator receives changed files + task",
+        "Runs validation pipeline",
+        "Outputs pass/fail with confidence"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- evaluator"
+      ],
+      "fulfills": [
+        "VAL-AGENTS-003"
+      ],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "b75c36bf-4537-4ab7-82c9-6292885c7985"
+      ]
+    },
+    {
+      "id": "agents-coder-agent",
+      "description": "CoderAgent for implementing code changes. Narrowly scoped prompts, file editing with diff-based modifications.",
+      "skillName": "Rust",
+      "preconditions": [
+        "GeneratorAgent base complete"
+      ],
+      "expectedBehavior": [
+        "Receives specific implementation tasks",
+        "Produces file changes with diffs",
+        "Self-validates output"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- coder"
+      ],
+      "fulfills": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "e08ad4f9-fefd-478f-9c82-8c1881422afa"
+      ]
+    },
+    {
+      "id": "agents-test-writer-agent",
+      "description": "TestWriterAgent generating tests from acceptance criteria. Uses repository test patterns as templates.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CoderAgent works"
+      ],
+      "expectedBehavior": [
+        "Generates tests from Given/When/Then",
+        "Uses existing test patterns",
+        "Coverage mapped to requirements"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- test_writer"
+      ],
+      "fulfills": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "cd2ef179-13ba-46ee-a7d1-df15d893be4c"
+      ]
+    },
+    {
+      "id": "agents-reviewer-agent",
+      "description": "ReviewerAgent for semantic code review. Checks style, complexity, regressions, conventions.",
+      "skillName": "Rust",
+      "preconditions": [
+        "EvaluatorAgent base works"
+      ],
+      "expectedBehavior": [
+        "Reviews code quality",
+        "Checks convention adherence",
+        "Flags potential issues"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- reviewer"
+      ],
+      "fulfills": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "45f6e39d-d2e5-4cdb-b243-a10a1f2f1061"
+      ]
+    },
+    {
+      "id": "agents-refactorer-agent",
+      "description": "RefactorerAgent for code restructuring. Preserves behavior while improving structure.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ReviewerAgent works"
+      ],
+      "expectedBehavior": [
+        "Identifies refactoring opportunities",
+        "Preserves external behavior",
+        "Validates after refactor"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- refactorer"
+      ],
+      "fulfills": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "52753302-865e-45ca-98bf-bb61c4156777"
+      ]
+    },
+    {
+      "id": "agents-doc-writer-agent",
+      "description": "DocWriterAgent for documentation generation. Generates/modifies docs from code changes.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CoderAgent works"
+      ],
+      "expectedBehavior": [
+        "Generates API docs",
+        "Updates READMEs",
+        "Follows project doc conventions"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- doc_writer"
+      ],
+      "fulfills": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "0de91646-637d-453b-a251-b9108f70770d"
+      ]
+    },
+    {
+      "id": "agents-system-prompt-builder",
+      "description": "SystemPromptBuilder assembling agent context from project config, conventions, memory blocks, task context.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Memory blocks implemented"
+      ],
+      "expectedBehavior": [
+        "Builds comprehensive system prompts",
+        "Includes project context",
+        "Dynamic per-task context"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- prompt"
+      ],
+      "fulfills": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "717e837c-338c-4fdf-b3f5-e42f63cd7e2d"
+      ]
+    },
+    {
+      "id": "agents-react-loop",
+      "description": "ReAct loop implementation (Think→Act→Observe→Repeat) for agent tool use with reflection on failures.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Agent trait implemented"
+      ],
+      "expectedBehavior": [
+        "Implements think-act-observe cycle",
+        "Reflection on failures",
+        "Max iterations enforced"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- react"
+      ],
+      "fulfills": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "3543ecfa-5e08-4955-9f47-c320473e2e3b"
+      ]
+    },
+    {
+      "id": "agents-context-condensation",
+      "description": "Context condensation at 75% window utilization. Auto-compact to prevent overflow.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ReAct loop implemented"
+      ],
+      "expectedBehavior": [
+        "Monitors context usage",
+        "Condenses at threshold",
+        "Preserves critical state"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- context"
+      ],
+      "fulfills": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "80c83202-1a0f-4226-817d-7b871a1d056a"
+      ]
+    },
+    {
+      "id": "fix-coder-agent-llm",
+      "description": "Fix CoderAgent: Integrate LLM backend in execute() to generate actual code instead of using format string fallback. The llm field exists but is not used.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CoderAgent exists with llm field"
+      ],
+      "expectedBehavior": [
+        "CoderAgent.execute() uses LLM backend for code generation",
+        "Falls back to heuristic only when LLM unavailable",
+        "Generates proper diff-based modifications"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- coder"
+      ],
+      "fulfills": [],
+      "milestone": "agents-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "2d5ca767-a7a8-480a-b6e7-cefa8ae938a9"
+      ]
+    },
+    {
+      "id": "fix-refactorer-validation",
+      "description": "Fix RefactorerAgent: Implement post-refactor validation to verify behavior is preserved after refactoring. Current implementation identifies opportunities but never validates after refactoring.",
+      "skillName": "Rust",
+      "preconditions": [
+        "RefactorerAgent exists"
+      ],
+      "expectedBehavior": [
+        "Runs validation after applying refactor",
+        "Compares behavior before/after using tests",
+        "Reverts if behavior changed"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- refactorer"
+      ],
+      "fulfills": [],
+      "milestone": "agents-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "297f27c3-df50-4092-9477-ddc49d0a6b95"
+      ]
+    },
+    {
+      "id": "fix-refactorer-apply",
+      "description": "Fix RefactorerAgent: Wire apply_refactor() into execute(), run validation before AND after refactoring, integrate revert logic when validation fails. Current issues: (1) execute() never calls apply_refactor(), (2) before_passed hardcoded to true, (3) reverted hardcoded to false.",
+      "skillName": "Rust",
+      "preconditions": [
+        "RefactorerAgent exists with validation_pipeline field"
+      ],
+      "expectedBehavior": [
+        "execute() calls apply_refactor() before validation",
+        "before_passed captures actual test result before refactor",
+        "reverted set correctly when validation fails after refactor"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- refactorer"
+      ],
+      "fulfills": [],
+      "milestone": "agents-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "44327842-5324-42bd-8434-e382e7c4d09d"
+      ]
+    },
+    {
+      "id": "fix-refactorer-call-apply",
+      "description": "Fix RefactorerAgent: Call apply_refactor() in execute() for refactoring opportunities. Currently apply_refactor() method exists but is never invoked - it's dead code. Must actually invoke the method to apply refactored code.",
+      "skillName": "Rust",
+      "preconditions": [
+        "RefactorerAgent exists with apply_refactor() method"
+      ],
+      "expectedBehavior": [
+        "execute() calls apply_refactor() for identified opportunities",
+        "Actual code changes are generated and applied",
+        "No more simulated-only refactoring with comments"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- refactorer"
+      ],
+      "fulfills": [],
+      "milestone": "agents-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "7d7e8c85-5493-49b4-b7fc-72cc002e8e80"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-agents-fix",
+      "description": "Scrutiny validation for milestone \"agents-fix\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"agents-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "agents-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "08a9a65a-1f61-474a-bcf6-29425ef25126",
+        "3d492f62-ed02-46fb-9d1b-10a7543b14a5",
+        "5fd25709-3322-4e71-b862-bd50f7a40c6a",
+        "9ac5a07e-9328-4b4f-bfa9-be4b36e6c701",
+        "d637b245-aa41-4b88-88e5-fc36b60197c0"
+      ]
+    },
+    {
+      "id": "fix-daemon-socket-bug",
+      "description": "Fix daemon socket reading bug in server.rs: vec![0u8; 4096] pre-initializes buffer causing tokio read_buf() to read 0 bytes. Fix: change to Vec::with_capacity(4096). This blocks CLI and daemon assertions.",
+      "skillName": "Rust",
+      "preconditions": [
+        "swell-daemon crate exists"
+      ],
+      "expectedBehavior": [
+        "Socket reads actual data instead of 0 bytes",
+        "CLI commands work correctly",
+        "Daemon responds to commands"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon"
+      ],
+      "fulfills": [],
+      "milestone": "daemon-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "0ebecccb-32e2-4bbb-a4ce-cd06fa1967b9"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-daemon-fix",
+      "description": "Scrutiny validation for milestone \"daemon-fix\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"daemon-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "daemon-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "5cf0a0e2-d647-4c0c-bc6b-2457de47d9c8",
+        "0a6c0388-0277-4b3f-ad80-eb92a6dcfbe3",
+        "5d6740bf-8022-4d6c-b30f-95b14904624f"
+      ]
+    },
+    {
+      "id": "fix-cli-socket-bug",
+      "description": "Fix CLI client socket reading bug in swell-cli/src/main.rs: vec![0u8; 65536] pre-initializes buffer causing read_buf() to return 0 bytes. Same fix as daemon - change to Vec::with_capacity(65536). Blocks VAL-CLI-001 through VAL-CLI-004.",
+      "skillName": "Rust",
+      "preconditions": [
+        "swell-cli crate exists"
+      ],
+      "expectedBehavior": [
+        "CLI reads actual data from socket",
+        "JSON responses parsed correctly",
+        "CLI commands work end-to-end"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-cli"
+      ],
+      "fulfills": [],
+      "milestone": "cli-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "15276d13-eb0c-4d9b-a015-faf3800881a6"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-cli-fix",
+      "description": "Scrutiny validation for milestone \"cli-fix\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"cli-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "cli-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "ed3b5407-5942-432f-8d0d-d39bdb1166e5"
+      ]
+    },
+    {
+      "id": "user-testing-validator-cli-fix",
+      "description": "User testing validation for milestone \"cli-fix\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"cli-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "cli-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "db922328-9701-4838-8af1-60f24985e29c"
+      ]
+    },
+    {
+      "id": "user-testing-validator-daemon-fix",
+      "description": "User testing validation for milestone \"daemon-fix\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"daemon-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "daemon-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "bbee6f83-29d9-457e-86dd-e2f40cc573a8",
+        "6d940dec-3544-4661-897e-52fd848d1fa1"
+      ]
+    },
+    {
+      "id": "user-testing-validator-agents-fix",
+      "description": "User testing validation for milestone \"agents-fix\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"agents-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "agents-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "d9cf57a6-419e-4e93-92e1-50758c9b81fa",
+        "b9607135-732c-46e5-b1c1-75caaa800551"
+      ]
+    },
+    {
+      "id": "fix-generator-tool-results",
+      "description": "Fix agents-generator-agent: tool_call_results in AgentResult are never populated even when ReAct loop executes. total_tokens is always 0u64. Must extract ReactStep.action from each step and populate AgentResult.tool_call_results. Capture token usage from LLM.chat calls.",
+      "skillName": "Rust",
+      "preconditions": [
+        "GeneratorAgent exists with ReAct loop"
+      ],
+      "expectedBehavior": [
+        "tool_call_results populated with actual tool calls",
+        "total_tokens reflects actual LLM usage",
+        "AgentResult contains complete execution trace"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- generator"
+      ],
+      "fulfills": [],
+      "milestone": "agents-round2-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "8b1b4cac-caa1-46de-9db6-6f15512687da"
+      ]
+    },
+    {
+      "id": "fix-doc-writer-llm",
+      "description": "Fix agents-doc-writer-agent: DocWriterAgent.execute() is a stub returning hardcoded values. Must implement actual LLM-based documentation generation by calling llm.chat() with the built prompt.",
+      "skillName": "Rust",
+      "preconditions": [
+        "DocWriterAgent exists with stub execute()"
+      ],
+      "expectedBehavior": [
+        "Executes LLM call to generate documentation",
+        "Returns actual DocChange with generated content",
+        "Uses system prompt from prompts/doc_writer.md"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- doc_writer"
+      ],
+      "fulfills": [],
+      "milestone": "agents-round2-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "350f0edf-55f9-4d30-b3c7-1befb7354db3"
+      ]
+    },
+    {
+      "id": "fix-context-condensation-impl",
+      "description": "Fix agents-context-condensation: Implementation needed. Worker verified pre-existing code incorrectly. Must implement ContextCondensation struct with: needs_condensation() at 75% threshold, condense() method with priority-based preservation, utilization() calculation.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ContextCondensation struct defined"
+      ],
+      "expectedBehavior": [
+        "needs_condensation() returns true at 75% utilization",
+        "condense() preserves high-priority context items",
+        "utilization() calculates correct percentage"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- context"
+      ],
+      "fulfills": [],
+      "milestone": "agents-round2-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "84f2b87d-73e9-466d-a75a-cd560b9c088d"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-agents-round2-fix",
+      "description": "Scrutiny validation for milestone \"agents-round2-fix\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"agents-round2-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "agents-round2-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "a37f0e97-bc24-4b7b-9681-a9b37a781443"
+      ]
+    },
+    {
+      "id": "user-testing-validator-agents-round2-fix",
+      "description": "User testing validation for milestone \"agents-round2-fix\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"agents-round2-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "agents-round2-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "69cd3aa0-294c-4f73-9b3c-e2263ad3d0b7"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-agents",
+      "description": "Scrutiny validation for milestone \"agents\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"agents\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "bd66013e-1d02-44a1-a784-a96c4965385f",
+        "f020398c-b699-4d63-af57-284874017ec2",
+        "6c3b7a9c-4bf0-442b-97bc-acef00b3fe89"
+      ]
+    },
+    {
+      "id": "user-testing-validator-agents",
+      "description": "User testing validation for milestone \"agents\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"agents\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "agents",
+      "status": "completed",
+      "workerSessionIds": [
+        "98ea4eb2-c940-47ee-83c5-f1f19c1e2ff7"
+      ]
+    },
+    {
+      "id": "tools-file-read",
+      "description": "FileReadTool reading file contents with path validation. Respects workspace boundaries.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Tool trait defined"
+      ],
+      "expectedBehavior": [
+        "Reads file contents",
+        "Path validation",
+        "Returns structured output"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- file"
+      ],
+      "fulfills": [
+        "VAL-TOOLS-001"
+      ],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "3568689c-a36f-4c22-9f8c-1749e7ca32d5"
+      ]
+    },
+    {
+      "id": "tools-file-write",
+      "description": "FileWriteTool creating/overwriting files. Atomic writes with rollback on failure.",
+      "skillName": "Rust",
+      "preconditions": [
+        "FileReadTool complete"
+      ],
+      "expectedBehavior": [
+        "Creates/overwrites files",
+        "Atomic operations",
+        "Rollback on failure"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- file_write"
+      ],
+      "fulfills": [
+        "VAL-TOOLS-002"
+      ],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "d31ec6c7-257b-4d5c-8a58-50675401cd25"
+      ]
+    },
+    {
+      "id": "tools-file-edit",
+      "description": "FileEditTool for diff-based modifications. Shows diffs before/after, requires confirmation in pair mode.",
+      "skillName": "Rust",
+      "preconditions": [
+        "FileWriteTool complete"
+      ],
+      "expectedBehavior": [
+        "Applies targeted edits",
+        "Produces readable diffs",
+        "Supports undo"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- file_edit"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "3493f19c-e7ce-4dfc-b1fb-30286b755fbc"
+      ]
+    },
+    {
+      "id": "tools-shell-exec",
+      "description": "ShellTool executing commands. Captures stdout/stderr, returns exit code. Respects timeout.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Tool trait defined"
+      ],
+      "expectedBehavior": [
+        "Executes with args",
+        "Returns stdout/stderr/exit code",
+        "Timeout enforced"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- shell"
+      ],
+      "fulfills": [
+        "VAL-TOOLS-003"
+      ],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "d51905e5-cfa3-4b4c-88c9-6869d7cdb782"
+      ]
+    },
+    {
+      "id": "tools-git-ops",
+      "description": "GitTool with git_status, git_diff, git_log, git_commit. Branch naming: agent/<task-id>/<description>.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ShellTool available"
+      ],
+      "expectedBehavior": [
+        "status/diff/log/commit work",
+        "Branch naming convention",
+        "Commit metadata trailers"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- git"
+      ],
+      "fulfills": [
+        "VAL-TOOLS-004"
+      ],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "78b2dc45-a7ef-4ab8-b1f5-ac5d095adf21"
+      ]
+    },
+    {
+      "id": "tools-search",
+      "description": "SearchTool with grep, glob, symbol_search. Codebase navigation and pattern matching.",
+      "skillName": "Rust",
+      "preconditions": [
+        "FileReadTool complete"
+      ],
+      "expectedBehavior": [
+        "grep finds patterns",
+        "glob matches files",
+        "symbol_search finds definitions"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- search"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "b4d0e99b-335e-4ca2-a6ee-f391bb5bf862"
+      ]
+    },
+    {
+      "id": "tools-registry",
+      "description": "ToolRegistry with register/get/list. MCP-compatible schemas, tool discovery.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Tool implementations done"
+      ],
+      "expectedBehavior": [
+        "register() adds tools",
+        "get() by name",
+        "list() all tools"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- registry"
+      ],
+      "fulfills": [
+        "VAL-TOOLS-005"
+      ],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "edf653d0-2916-4d0f-bfdb-56f0b08b7e4d"
+      ]
+    },
+    {
+      "id": "tools-mcp-client",
+      "description": "MCP client for external tool servers. JSON-RPC over stdio, tool discovery, deferred loading.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ToolRegistry complete"
+      ],
+      "expectedBehavior": [
+        "Connects to MCP servers",
+        "Discovers tools",
+        "Executes remote tools"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- mcp"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "51bf6b11-c804-4725-b838-d25ab59bd005",
+        "c266f89b-0793-4331-bc06-6ffb0e1b68b0"
+      ]
+    },
+    {
+      "id": "tools-permission-tiers",
+      "description": "Permission tier system: Auto (approve), Ask (confirm), Deny (block). Risk classification per tool.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ToolRegistry complete"
+      ],
+      "expectedBehavior": [
+        "Risk levels per tool",
+        "Auto-approve low risk",
+        "Ask confirmation for medium",
+        "Block high risk"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- permissions"
+      ],
+      "fulfills": [],
+      "milestone": "tools",
+      "status": "completed",
+      "workerSessionIds": [
+        "6b75f5f9-ca53-41e5-9a59-c666de2e402c"
+      ]
+    },
+    {
+      "id": "llm-anthropic-backend",
+      "description": "AnthropicBackend with full chat() implementation. Tool support, streaming, error handling.",
+      "skillName": "Rust",
+      "preconditions": [
+        "AnthropicBackend struct exists"
+      ],
+      "expectedBehavior": [
+        "Sends to Anthropic API",
+        "Returns LlmResponse with tool_calls",
+        "health_check() works"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-llm -- anthropic"
+      ],
+      "fulfills": [
+        "VAL-LLM-001"
+      ],
+      "milestone": "llm",
+      "status": "completed",
+      "workerSessionIds": [
+        "84131199-57a8-4593-8886-2a5abbde0a33"
+      ]
+    },
+    {
+      "id": "llm-openai-backend",
+      "description": "OpenAIBackend with full chat() implementation for GPT models.",
+      "skillName": "Rust",
+      "preconditions": [
+        "OpenAIBackend struct exists"
+      ],
+      "expectedBehavior": [
+        "Sends to OpenAI API",
+        "Returns LlmResponse",
+        "health_check() works"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-llm -- openai"
+      ],
+      "fulfills": [
+        "VAL-LLM-002"
+      ],
+      "milestone": "llm",
+      "status": "completed",
+      "workerSessionIds": [
+        "4a3bba3b-a50d-473c-a929-fe89291b994a"
+      ]
+    },
+    {
+      "id": "llm-mock-backend",
+      "description": "MockLlm for testing. Predictable responses, configurable, failure simulation.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MockLlm implemented"
+      ],
+      "expectedBehavior": [
+        "Returns predictable responses",
+        "Custom response support",
+        "Failure simulation"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-llm -- mock"
+      ],
+      "fulfills": [
+        "VAL-LLM-003"
+      ],
+      "milestone": "llm",
+      "status": "completed",
+      "workerSessionIds": [
+        "d0e9472f-fab2-4e33-bb3b-0ef818a7d117"
+      ]
+    },
+    {
+      "id": "llm-model-router",
+      "description": "Model router selecting appropriate model per task type. Sonnet for coding, Opus for planning, Haiku for fast tasks.",
+      "skillName": "Rust",
+      "preconditions": [
+        "LLM backends complete"
+      ],
+      "expectedBehavior": [
+        "Routes by task type",
+        "Fallback chain",
+        "Cost optimization"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-llm -- router"
+      ],
+      "fulfills": [],
+      "milestone": "llm",
+      "status": "completed",
+      "workerSessionIds": [
+        "b8fe1f93-cce5-4609-9bbb-08e828458aed"
+      ]
+    },
+    {
+      "id": "llm-health-check",
+      "description": "LLM health check system. Per-backend health monitoring, fallback on failure.",
+      "skillName": "Rust",
+      "preconditions": [
+        "All backends implemented"
+      ],
+      "expectedBehavior": [
+        "health_check per backend",
+        "Automatic fallback",
+        "Status reporting"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-llm -- health"
+      ],
+      "fulfills": [
+        "VAL-LLM-004"
+      ],
+      "milestone": "llm",
+      "status": "completed",
+      "workerSessionIds": [
+        "3c55daba-22fe-4442-bb21-1135ec2cfbc2"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-llm",
+      "description": "Scrutiny validation for milestone \"llm\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"llm\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "llm",
+      "status": "completed",
+      "workerSessionIds": [
+        "6e33a619-5845-4278-89ef-2174e7321828"
+      ]
+    },
+    {
+      "id": "user-testing-validator-llm",
+      "description": "User testing validation for milestone \"llm\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"llm\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "llm",
+      "status": "completed",
+      "workerSessionIds": [
+        "f29c2f2a-16de-4ec3-8957-8faae7bcf483"
+      ]
+    },
+    {
+      "id": "validation-lint-gate",
+      "description": "LintGate running clippy/rustfmt. Parses output for errors/warnings, returns ValidationOutcome.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ValidationGate trait defined"
+      ],
+      "expectedBehavior": [
+        "Runs cargo clippy",
+        "Parses output",
+        "Returns passed=false on errors"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- lint"
+      ],
+      "fulfills": [
+        "VAL-VALIDATION-001"
+      ],
+      "milestone": "validation",
+      "status": "completed",
+      "workerSessionIds": [
+        "35eced99-c078-4dbd-b256-c2ff676c7c77"
+      ]
+    },
+    {
+      "id": "validation-test-gate",
+      "description": "TestGate running cargo test. Maps failures to implementation/test/environment defects.",
+      "skillName": "Rust",
+      "preconditions": [
+        "LintGate complete"
+      ],
+      "expectedBehavior": [
+        "Runs cargo test",
+        "Parses results",
+        "Classification of failures"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- test_gate"
+      ],
+      "fulfills": [
+        "VAL-VALIDATION-002"
+      ],
+      "milestone": "validation",
+      "status": "completed",
+      "workerSessionIds": [
+        "ef054e1c-dc3d-4580-bfec-df04c71e4e1c"
+      ]
+    },
+    {
+      "id": "validation-security-gate",
+      "description": "SecurityGate running Semgrep/CodeQL. SAST scanning, vulnerability detection.",
+      "skillName": "Rust",
+      "preconditions": [
+        "TestGate complete"
+      ],
+      "expectedBehavior": [
+        "Runs security scanner",
+        "Detects vulnerabilities",
+        "Blocks critical findings"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- security"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "completed",
+      "workerSessionIds": [
+        "5cd5ca98-8bb6-430b-b362-4a41af1fed47"
+      ]
+    },
+    {
+      "id": "validation-ai-review-gate",
+      "description": "AiReviewGate with Evaluator agent for AI-powered code review. Confidence scoring.",
+      "skillName": "Rust",
+      "preconditions": [
+        "SecurityGate stub complete"
+      ],
+      "expectedBehavior": [
+        "AI reviews code",
+        "Confidence score",
+        "Structured feedback"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- ai_review"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "completed",
+      "workerSessionIds": [
+        "9d7fc3f0-d760-4df4-93f4-5dd1cb57a07f"
+      ]
+    },
+    {
+      "id": "validation-pipeline",
+      "description": "ValidationPipeline running gates in order. Aggregates results, overall pass requires all pass.",
+      "skillName": "Rust",
+      "preconditions": [
+        "LintGate, TestGate implemented"
+      ],
+      "expectedBehavior": [
+        "Runs gates in order",
+        "Aggregates messages",
+        "Overall passed=true only if all pass"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- pipeline"
+      ],
+      "fulfills": [
+        "VAL-VALIDATION-003",
+        "VAL-VALIDATION-004"
+      ],
+      "milestone": "validation",
+      "status": "completed",
+      "workerSessionIds": [
+        "7af9d2f2-5d30-4885-af0a-612e3ec708be"
+      ]
+    },
+    {
+      "id": "validation-confidence-scorer",
+      "description": "Confidence scoring from multiple signals. Coverage, mutation score, static analysis.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ValidationPipeline complete"
+      ],
+      "expectedBehavior": [
+        "Aggregates signals",
+        "Computes 0-1 score",
+        "Thresholds for auto-merge"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- confidence"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "completed",
+      "workerSessionIds": [
+        "de2ae964-1eec-4333-9a4d-f40859b2ee4a"
+      ]
+    },
+    {
+      "id": "validation-flakiness-detector",
+      "description": "Flakiness detection using historical patterns. DeFlaker approach, quarantine pool.",
+      "skillName": "Rust",
+      "preconditions": [
+        "TestGate complete"
+      ],
+      "expectedBehavior": [
+        "Detects flaky tests",
+        "Historical tracking",
+        "Quarantine mechanism"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- flakiness"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "completed",
+      "workerSessionIds": [
+        "ffc00e9f-17f1-4b02-a217-9f4c6ad1cdca"
+      ]
+    },
+    {
+      "id": "validation-evidence-pack",
+      "description": "Evidence pack generation with test results, coverage, validation signals for PR review.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Confidence scorer complete"
+      ],
+      "expectedBehavior": [
+        "Bundles evidence",
+        "Stores immutably",
+        "Retrievable for audit"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-validation -- evidence"
+      ],
+      "fulfills": [],
+      "milestone": "validation",
+      "status": "completed",
+      "workerSessionIds": [
+        "bf317276-701a-493a-991f-314315871431"
+      ]
+    },
+    {
+      "id": "state-sqlite-checkpoint",
+      "description": "SqliteCheckpointStore with save/load/list/load_latest. Task state persistence across restarts.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CheckpointStore trait defined"
+      ],
+      "expectedBehavior": [
+        "Saves to SQLite",
+        "Loads by ID",
+        "Lists by task_id",
+        "Survives restart"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-state -- sqlite"
+      ],
+      "fulfills": [
+        "VAL-STATE-001",
+        "VAL-STATE-003",
+        "VAL-CROSS-002"
+      ],
+      "milestone": "state",
+      "status": "completed",
+      "workerSessionIds": [
+        "d4829f64-7773-479b-a00b-8ea26f55d5f0"
+      ]
+    },
+    {
+      "id": "state-inmemory",
+      "description": "InMemoryCheckpointStore for tests. No database required.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CheckpointStore trait defined"
+      ],
+      "expectedBehavior": [
+        "In-memory storage",
+        "Works in tests",
+        "Fast operations"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-state -- in_memory"
+      ],
+      "fulfills": [
+        "VAL-STATE-002"
+      ],
+      "milestone": "state",
+      "status": "completed",
+      "workerSessionIds": [
+        "ba48b13b-a5f5-4e18-bf22-beb2f8338161"
+      ]
+    },
+    {
+      "id": "state-postgres-checkpoint",
+      "description": "PostgresCheckpointStore for production. Event-sourced schema, append-only events.",
+      "skillName": "Rust",
+      "preconditions": [
+        "SqliteCheckpointStore complete"
+      ],
+      "expectedBehavior": [
+        "PostgreSQL storage",
+        "Event sourcing",
+        "Materialized views"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-state -- postgres"
+      ],
+      "fulfills": [],
+      "milestone": "state",
+      "status": "completed",
+      "workerSessionIds": [
+        "d2e0d5eb-8d9d-401d-85ae-89f4d3857696"
+      ]
+    },
+    {
+      "id": "state-checkpoint-manager",
+      "description": "CheckpointManager persisting at every state transition. Agent checkpointing after each tool call.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Checkpoint stores implemented"
+      ],
+      "expectedBehavior": [
+        "Auto-checkpoints transitions",
+        "Resume from crash",
+        "Idempotent operations"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-state -- manager"
+      ],
+      "fulfills": [],
+      "milestone": "state",
+      "status": "completed",
+      "workerSessionIds": [
+        "e82e4097-044b-427d-bb5a-e4b152da1df0"
+      ]
+    },
+    {
+      "id": "fix-checkpoint-valid-transition",
+      "description": "Fix state-checkpoint-manager: transition_with_checkpoint must call is_valid_transition before performing state transition. Currently allows invalid transitions to be checkpointed.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CheckpointManager exists with transition_with_checkpoint"
+      ],
+      "expectedBehavior": [
+        "Validates transition before checkpoint",
+        "Returns error for invalid transitions",
+        "Only valid transitions are persisted"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-state -- checkpoint"
+      ],
+      "fulfills": [],
+      "milestone": "state-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "7cc3ce63-6747-4f89-8ab1-347552611c3d"
+      ]
+    },
+    {
+      "id": "fix-checkpoint-orchestrator-integration",
+      "description": "Fix state-checkpoint-manager: Integrate CheckpointManager into orchestrator for agent checkpointing after each tool call. Currently CheckpointManager is not connected to the execution loop.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CheckpointManager implemented",
+        "Orchestrator execution loop exists"
+      ],
+      "expectedBehavior": [
+        "CheckpointManager integrated into execution loop",
+        "Checkpoints created after each tool call",
+        "Crash recovery works via restore()"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-state -- checkpoint"
+      ],
+      "fulfills": [],
+      "milestone": "state-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "8a8fcf00-10d6-4f42-8562-6a5b34e2138b"
+      ]
+    },
+    {
+      "id": "fix-orchestrator-checkpoint-wiring",
+      "description": "Fix orchestrator-checkpoint integration: GeneratorAgent must receive orchestrator's checkpoint manager. Orchestrator has checkpoint_manager field and with_checkpoint_manager() method, but they are never connected. Wire in execute_task flow so GeneratorAgent receives checkpoint manager and checkpoints after each tool call.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Orchestrator has checkpoint_manager field",
+        "GeneratorAgent has with_checkpoint_manager() method"
+      ],
+      "expectedBehavior": [
+        "GeneratorAgent receives orchestrator's checkpoint manager",
+        "execute_task() calls with_checkpoint_manager()",
+        "Checkpoints created after each tool call"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator"
+      ],
+      "fulfills": [],
+      "milestone": "state-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "df5234e4-5075-4854-a9a0-ffaffa6bd736"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-state-fix",
+      "description": "Scrutiny validation for milestone \"state-fix\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"state-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "state-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "6a59c8ef-7773-4730-997b-4d89af48a709",
+        "b3132759-42c0-47d2-a653-071679c9da19",
+        "8c6d1e4a-16fe-45e0-88db-e63197f7b95f"
+      ]
+    },
+    {
+      "id": "user-testing-validator-state-fix",
+      "description": "User testing validation for milestone \"state-fix\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"state-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "state-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "2a557fa4-816d-42a8-9aaa-642806cffc10"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-state",
+      "description": "Scrutiny validation for milestone \"state\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"state\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "state",
+      "status": "completed",
+      "workerSessionIds": [
+        "bcdd8fc5-e3b3-4e6f-992f-a363312dbabc",
+        "cd42105e-59b3-4436-b84a-cfae3acb191f"
+      ]
+    },
+    {
+      "id": "user-testing-validator-state",
+      "description": "User testing validation for milestone \"state\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"state\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "state",
+      "status": "completed",
+      "workerSessionIds": [
+        "f777eb98-8067-4064-9d83-5d99988dfb37"
+      ]
+    },
+    {
+      "id": "memory-sqlite-store",
+      "description": "SqliteMemoryStore with CRUD, search, type/label filtering. Memory block persistence.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MemoryStore trait defined"
+      ],
+      "expectedBehavior": [
+        "store/get/update/delete work",
+        "search() finds entries",
+        "type/label filtering"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory"
+      ],
+      "fulfills": [
+        "VAL-MEMORY-001",
+        "VAL-MEMORY-002",
+        "VAL-MEMORY-003",
+        "VAL-MEMORY-004"
+      ],
+      "milestone": "memory",
+      "status": "completed",
+      "workerSessionIds": [
+        "82abe069-e163-44cb-957d-c74b6fc15569"
+      ]
+    },
+    {
+      "id": "memory-memory-blocks",
+      "description": "Memory blocks: Project (architecture, conventions), User (preferences), Task (context). Auto-loaded per agent.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MemoryStore implemented"
+      ],
+      "expectedBehavior": [
+        "Project/User/Task blocks",
+        "Auto-loading",
+        "Context assembly"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- blocks"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "completed",
+      "workerSessionIds": [
+        "c536b248-9872-4ee5-ad54-cbd594d0cf62"
+      ]
+    },
+    {
+      "id": "memory-recall",
+      "description": "Recall memory with searchable conversation logs. BM25 keyword search over structured logs.",
+      "skillName": "Rust",
+      "preconditions": [
+        "MemoryStore complete"
+      ],
+      "expectedBehavior": [
+        "Logs agent interactions",
+        "Keyword search",
+        "Temporal queries"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- recall"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "completed",
+      "workerSessionIds": [
+        "78c4575d-20c7-4b88-97f9-6d0242dd1871",
+        "68472750-8f8b-4721-8f22-5ac691b7ea27"
+      ]
+    },
+    {
+      "id": "memory-skill-extraction",
+      "description": "Skill extraction from successful task trajectories. Stores reusable procedures in .skills directory.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Recall memory working"
+      ],
+      "expectedBehavior": [
+        "Analyzes successful tasks",
+        "Extracts reusable patterns",
+        "Stores as versioned skills"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- skill_extraction"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "completed",
+      "workerSessionIds": [
+        "804ea3e6-0e82-4721-80ed-5db9fbc3c77e"
+      ]
+    },
+    {
+      "id": "memory-pattern-learning",
+      "description": "Pattern learning from PR feedback. Observes rejection patterns, extracts anti-patterns.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Skill extraction working"
+      ],
+      "expectedBehavior": [
+        "Learns from feedback",
+        "Extracts conventions",
+        "Updates memory blocks"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-memory -- pattern_learning"
+      ],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "completed",
+      "workerSessionIds": [
+        "055a55fb-e55e-4c00-b77d-380c43d0ed4e"
+      ]
+    },
+    {
+      "id": "safety-cost-guard",
+      "description": "CostGuard tracking token usage. Per-task limits, warning at 75%, hard stop at 100%.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CostGuard struct defined"
+      ],
+      "expectedBehavior": [
+        "Tracks spent tokens",
+        "Warning threshold at 75%",
+        "Hard stop at 100%"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- CostGuard"
+      ],
+      "fulfills": [
+        "VAL-SAFETY-001"
+      ],
+      "milestone": "safety",
+      "status": "completed",
+      "workerSessionIds": [
+        "d4b6e0b4-11c2-47f9-839a-3a4101893bfe"
+      ]
+    },
+    {
+      "id": "safety-doom-loop",
+      "description": "Doom loop detection. Max iterations (default: 15), no-progress detection (5 iters no file changes).",
+      "skillName": "Rust",
+      "preconditions": [
+        "TaskStateMachine iteration tracking"
+      ],
+      "expectedBehavior": [
+        "Detects repeated failures",
+        "No-progress detection",
+        "Triggers escalation"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- doom"
+      ],
+      "fulfills": [
+        "VAL-SAFETY-002"
+      ],
+      "milestone": "safety",
+      "status": "completed",
+      "workerSessionIds": [
+        "5d094cfb-16fe-411d-8b9e-684b43dcbe18"
+      ]
+    },
+    {
+      "id": "safety-kill-switch",
+      "description": "Kill switch system: Full Stop, Network Kill, Scope Block, Throttle. External Redis/flag verification.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Safety basics working"
+      ],
+      "expectedBehavior": [
+        "Multiple kill levels",
+        "External verification",
+        "Immediate effect"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- kill_switch"
+      ],
+      "fulfills": [],
+      "milestone": "safety",
+      "status": "completed",
+      "workerSessionIds": [
+        "c585eb0a-6cf2-45fb-a2b9-6c36f1c15d2a"
+      ]
+    },
+    {
+      "id": "safety-circuit-breaker",
+      "description": "Circuit breaker for failure handling. Closed/Open/Half-Open states, automatic recovery.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Kill switch implemented"
+      ],
+      "expectedBehavior": [
+        "Failure threshold tracking",
+        "Circuit state machine",
+        "Auto-recovery"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- circuit_breaker"
+      ],
+      "fulfills": [],
+      "milestone": "safety",
+      "status": "completed",
+      "workerSessionIds": [
+        "15a8cb33-03d0-4478-8127-6be7a4db3d21"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-safety",
+      "description": "Scrutiny validation for milestone \"safety\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"safety\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "safety",
+      "status": "completed",
+      "workerSessionIds": [
+        "77224795-e334-4c39-b288-ff891469c053"
+      ]
+    },
+    {
+      "id": "user-testing-validator-safety",
+      "description": "User testing validation for milestone \"safety\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"safety\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "safety",
+      "status": "completed",
+      "workerSessionIds": [
+        "7f5a057c-30bc-4050-86af-0b4e8de8a34d"
+      ]
+    },
+    {
+      "id": "git-worktree-pool",
+      "description": "Worktree pool manager. Pre-provisioned worktrees per agent. Cleanup after task completion.",
+      "skillName": "Rust",
+      "preconditions": [
+        "GitTool implemented"
+      ],
+      "expectedBehavior": [
+        "Pool of worktrees",
+        "Allocation per agent",
+        "Cleanup on completion"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- worktree"
+      ],
+      "fulfills": [],
+      "milestone": "git",
+      "status": "completed",
+      "workerSessionIds": [
+        "e0b85663-7f79-479f-b66c-c6f824fece30"
+      ]
+    },
+    {
+      "id": "git-branch-strategy",
+      "description": "Branch strategy: agent/<task-id>/<description>. Never work on main. Branch limit (20 per run).",
+      "skillName": "Rust",
+      "preconditions": [
+        "Worktree pool working"
+      ],
+      "expectedBehavior": [
+        "Deterministic naming",
+        "Main protection",
+        "Limit enforcement"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- branch"
+      ],
+      "fulfills": [],
+      "milestone": "git",
+      "status": "completed",
+      "workerSessionIds": [
+        "d4a37af0-c286-413d-afc8-bdc002143c67"
+      ]
+    },
+    {
+      "id": "git-commit-strategy",
+      "description": "Commit strategy: small frequent commits, imperative mood, metadata trailers (Generated-by, Task-id, Model).",
+      "skillName": "Rust",
+      "preconditions": [
+        "Branch strategy working"
+      ],
+      "expectedBehavior": [
+        "Atomic commits",
+        "Metadata trailers",
+        "Traceable provenance"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- commit"
+      ],
+      "fulfills": [],
+      "milestone": "git",
+      "status": "completed",
+      "workerSessionIds": [
+        "f4f3f01a-4ed2-496b-bee7-8d92a47d3001"
+      ]
+    },
+    {
+      "id": "git-conflict-resolution",
+      "description": "Merge conflict resolution. One-file-one-owner enforcement, semantic understanding.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Commit strategy working"
+      ],
+      "expectedBehavior": [
+        "Detects conflicts",
+        "Owner-based resolution",
+        "Semantic merge"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- conflict"
+      ],
+      "fulfills": [],
+      "milestone": "git",
+      "status": "completed",
+      "workerSessionIds": [
+        "5e0582a3-1d11-4d9e-822f-62d187dadad4"
+      ]
+    },
+    {
+      "id": "git-pr-creation",
+      "description": "PR creation with diff, task description, validation results, evidence pack.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Conflict resolution working"
+      ],
+      "expectedBehavior": [
+        "Creates PR with metadata",
+        "Includes evidence",
+        "Labels for tracking"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-tools -- pr"
+      ],
+      "fulfills": [],
+      "milestone": "git",
+      "status": "completed",
+      "workerSessionIds": [
+        "6d601bd5-df79-43c6-a476-94b9624aecdd"
+      ]
+    },
+    {
+      "id": "fix-git-worktree-ready-flag",
+      "description": "Fix git-worktree-pool: In release(), after cleanup_worktree() removes the physical worktree, the ready flag must be set to false so is_available() returns false for deleted worktrees.",
+      "skillName": "Rust",
+      "preconditions": [
+        "WorktreePool exists with release() method"
+      ],
+      "expectedBehavior": [
+        "worktree.ready set to false after cleanup",
+        "is_available() returns false for deleted worktrees"
+      ],
+      "verificationSteps": [
+        "cargo build -p swell-tools",
+        "cargo test -p swell-tools -- worktree"
+      ],
+      "fulfills": [],
+      "milestone": "git-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "5d56e25a-e516-4f12-bc09-e3977d532fd3"
+      ]
+    },
+    {
+      "id": "fix-git-branch-protection",
+      "description": "Fix git-branch-strategy: Line 207 - protection logic checks if description contains 'main' instead of protecting the base branch directly. Must reject if base_branch is protected.",
+      "skillName": "Rust",
+      "preconditions": [
+        "BranchStrategy exists"
+      ],
+      "expectedBehavior": [
+        "base_branch protection enforced",
+        "main/master branches blocked unconditionally"
+      ],
+      "verificationSteps": [
+        "cargo build -p swell-tools",
+        "cargo test -p swell-tools -- branch"
+      ],
+      "fulfills": [],
+      "milestone": "git-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "93ccf049-95f6-4076-98e3-307e8ec8d547"
+      ]
+    },
+    {
+      "id": "fix-git-conflict-owner",
+      "description": "Fix git-conflict-resolution: apply_owner_resolution() ignores owner_id parameter - must implement owner-based resolution. Also fix: simple_resolve() has inverted logic (keeps theirs when prefer_ours=true), parse_conflicts() uses 'unknown' as file keys.",
+      "skillName": "Rust",
+      "preconditions": [
+        "ConflictResolver exists with apply_owner_resolution()"
+      ],
+      "expectedBehavior": [
+        "owner-based resolution implemented",
+        "simple_resolve() keeps ours when prefer_ours=true",
+        "parse_conflicts() extracts file paths"
+      ],
+      "verificationSteps": [
+        "cargo build -p swell-tools",
+        "cargo test -p swell-tools -- conflict"
+      ],
+      "fulfills": [],
+      "milestone": "git-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "0d832851-ad4d-497d-9375-7809b638f751"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-git-fix",
+      "description": "Scrutiny validation for milestone \"git-fix\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"git-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "git-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "78b7510f-772c-4237-8274-5adc93f97d58"
+      ]
+    },
+    {
+      "id": "user-testing-validator-git-fix",
+      "description": "User testing validation for milestone \"git-fix\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"git-fix\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "git-fix",
+      "status": "completed",
+      "workerSessionIds": [
+        "6faf34ba-b417-49e1-96f3-07568df4342c"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-git",
+      "description": "Scrutiny validation for milestone \"git\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"git\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "git",
+      "status": "completed",
+      "workerSessionIds": [
+        "f92069ad-9b94-4b59-a920-cbaaa025e497",
+        "7352cab8-96f0-43f4-b358-95525ea45df6"
+      ]
+    },
+    {
+      "id": "user-testing-validator-git",
+      "description": "User testing validation for milestone \"git\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"git\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "git",
+      "status": "completed",
+      "workerSessionIds": [
+        "15b33050-d285-4bf4-91bd-66744df5ec78"
+      ]
+    },
+    {
+      "id": "daemon-unix-socket",
+      "description": "Unix socket server accepting CLI connections. JSON command/response protocol.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Orchestrator complete"
+      ],
+      "expectedBehavior": [
+        "Socket accepts connections",
+        "JSON parsing",
+        "Event emission"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon"
+      ],
+      "fulfills": [
+        "VAL-DAEMON-001"
+      ],
+      "milestone": "daemon",
+      "status": "completed",
+      "workerSessionIds": [
+        "8ff305d8-2215-4b8f-b17f-42fa04217ef4"
+      ]
+    },
+    {
+      "id": "daemon-graceful-shutdown",
+      "description": "Graceful shutdown on SIGTERM. Complete in-flight tasks, clean resource release.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Unix socket working"
+      ],
+      "expectedBehavior": [
+        "Handles SIGTERM",
+        "Completes tasks",
+        "No zombie processes"
+      ],
+      "verificationSteps": [
+        "Manual daemon restart test"
+      ],
+      "fulfills": [
+        "VAL-DAEMON-002"
+      ],
+      "milestone": "daemon",
+      "status": "completed",
+      "workerSessionIds": [
+        "71da504e-745d-4001-ab27-4846543c489a"
+      ]
+    },
+    {
+      "id": "daemon-command-handler",
+      "description": "Command handler for TaskCreate, TaskApprove, TaskReject, TaskCancel, TaskList, TaskWatch.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Unix socket working"
+      ],
+      "expectedBehavior": [
+        "Parses commands",
+        "Returns events",
+        "Error handling"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon -- commands"
+      ],
+      "fulfills": [
+        "VAL-DAEMON-003"
+      ],
+      "milestone": "daemon",
+      "status": "completed",
+      "workerSessionIds": [
+        "91a788c2-e391-4b3d-9302-45569d740940"
+      ]
+    },
+    {
+      "id": "daemon-event-emitter",
+      "description": "Event emitter for task lifecycle: TaskCreated, TaskStateChanged, TaskProgress, TaskCompleted, TaskFailed.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Command handler working"
+      ],
+      "expectedBehavior": [
+        "Emits structured events",
+        "Correlation IDs",
+        "Immutable log"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon -- events"
+      ],
+      "fulfills": [],
+      "milestone": "daemon",
+      "status": "completed",
+      "workerSessionIds": [
+        "46b2be39-516b-4f5c-a544-66b8a780256a"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-daemon",
+      "description": "Scrutiny validation for milestone \"daemon\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"daemon\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "daemon",
+      "status": "completed",
+      "workerSessionIds": [
+        "7d2dd19f-bcba-4074-89c0-55bbe98e5b94"
+      ]
+    },
+    {
+      "id": "user-testing-validator-daemon",
+      "description": "User testing validation for milestone \"daemon\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"daemon\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "daemon",
+      "status": "completed",
+      "workerSessionIds": [
+        "73a7e68a-d188-44dd-ba59-8d34ff35f2ff"
+      ]
+    },
+    {
+      "id": "cli-task-create",
+      "description": "swell task <description> - Create new task via daemon socket.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Daemon working"
+      ],
+      "expectedBehavior": [
+        "Sends TaskCreate",
+        "Returns task ID",
+        "Confirmation output"
+      ],
+      "verificationSteps": [
+        "Manual: swell task \"test\""
+      ],
+      "fulfills": [
+        "VAL-CLI-001"
+      ],
+      "milestone": "cli",
+      "status": "completed",
+      "workerSessionIds": [
+        "7328cf73-b2ed-47dd-9084-16d0239934af"
+      ]
+    },
+    {
+      "id": "cli-task-list",
+      "description": "swell list - List all tasks with states.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Daemon working"
+      ],
+      "expectedBehavior": [
+        "Shows all tasks",
+        "State display",
+        "JSON or formatted"
+      ],
+      "verificationSteps": [
+        "Manual: swell list"
+      ],
+      "fulfills": [
+        "VAL-CLI-002"
+      ],
+      "milestone": "cli",
+      "status": "completed",
+      "workerSessionIds": [
+        "e9e6e099-55c2-4d78-8067-e68a1b2dcd5e"
+      ]
+    },
+    {
+      "id": "cli-task-watch",
+      "description": "swell watch <task-id> - Watch task progress with streaming updates.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Daemon event emitter working"
+      ],
+      "expectedBehavior": [
+        "Streams updates",
+        "Real-time display",
+        "Cancel on interrupt"
+      ],
+      "verificationSteps": [
+        "Manual: swell watch <id>"
+      ],
+      "fulfills": [
+        "VAL-CLI-003"
+      ],
+      "milestone": "cli",
+      "status": "completed",
+      "workerSessionIds": [
+        "7d144cba-a161-45e4-a769-ffd2d7de777b"
+      ]
+    },
+    {
+      "id": "cli-task-approve-cancel",
+      "description": "swell approve/cancel <task-id> - Approve plans or cancel tasks.",
+      "skillName": "Rust",
+      "preconditions": [
+        "CLI task commands working"
+      ],
+      "expectedBehavior": [
+        "Approve transitions task",
+        "Cancel stops task",
+        "Confirmation"
+      ],
+      "verificationSteps": [
+        "Manual: swell approve/cancel"
+      ],
+      "fulfills": [
+        "VAL-CLI-004"
+      ],
+      "milestone": "cli",
+      "status": "completed",
+      "workerSessionIds": [
+        "c0df2769-cdc3-4528-bc71-23ff5200e661"
+      ]
+    },
+    {
+      "id": "cli-error-handling",
+      "description": "CLI error handling: connection errors, timeout, invalid commands, structured error display.",
+      "skillName": "Rust",
+      "preconditions": [
+        "All CLI commands working"
+      ],
+      "expectedBehavior": [
+        "Graceful error handling",
+        "User-friendly messages",
+        "Exit codes"
+      ],
+      "verificationSteps": [
+        "Manual: test error cases"
+      ],
+      "fulfills": [],
+      "milestone": "cli",
+      "status": "completed",
+      "workerSessionIds": [
+        "2d519bcf-3e01-43af-915f-08d28b4205ad"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-cli",
+      "description": "Scrutiny validation for milestone \"cli\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"cli\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "cli",
+      "status": "completed",
+      "workerSessionIds": [
+        "66127b2f-9d90-4105-a418-f735498ecede"
+      ]
+    },
+    {
+      "id": "user-testing-validator-cli",
+      "description": "User testing validation for milestone \"cli\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"cli\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "cli",
+      "status": "completed",
+      "workerSessionIds": [
+        "3e56438d-70d4-4104-a7e3-ac2d666d5166"
+      ]
+    },
+    {
+      "id": "autonomy-levels",
+      "description": "Autonomy levels: L1-Supervised, L2-Guided (default), L3-Autonomous, L4-Full Auto. Per-task configuration.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Orchestrator complete"
+      ],
+      "expectedBehavior": [
+        "L1: every action approved",
+        "L2: plan approved, execute auto",
+        "L3/L4: decreasing approval"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- autonomy"
+      ],
+      "fulfills": [],
+      "milestone": "autonomy",
+      "status": "completed",
+      "workerSessionIds": [
+        "1ab116eb-3d7c-4846-bf15-9f05d46293ee"
+      ]
+    },
+    {
+      "id": "work-backlog",
+      "description": "Work backlog from 4 sources: plan tasks, failure-derived, spec-gap, improvement suggestions.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Orchestrator API complete"
+      ],
+      "expectedBehavior": [
+        "Aggregates sources",
+        "Priority scoring",
+        "Deduplication"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- backlog"
+      ],
+      "fulfills": [],
+      "milestone": "autonomy",
+      "status": "completed",
+      "workerSessionIds": [
+        "e5cac55e-6588-4897-add1-1b89e3deec0b"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-autonomy",
+      "description": "Scrutiny validation for milestone \"autonomy\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"autonomy\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "autonomy",
+      "status": "completed",
+      "workerSessionIds": [
+        "9e95eb4d-7014-497d-ab59-568b5c337e95"
+      ]
+    },
+    {
+      "id": "user-testing-validator-autonomy",
+      "description": "User testing validation for milestone \"autonomy\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"autonomy\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "autonomy",
+      "status": "completed",
+      "workerSessionIds": [
+        "2e13d265-6346-4a22-8bf7-e4bb541e1b78"
+      ]
+    },
+    {
+      "id": "benchmark-suite",
+      "description": "Benchmark suite: 50 curated tasks spanning bug fixes, features, refactoring, tests.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Full system working"
+      ],
+      "expectedBehavior": [
+        "Diverse task set",
+        "Measurable success",
+        "Repeatable"
+      ],
+      "verificationSteps": [
+        "Run benchmark suite",
+        "Track completion rate"
+      ],
+      "fulfills": [],
+      "milestone": "benchmark",
+      "status": "completed",
+      "workerSessionIds": [
+        "c48bb609-c9fa-47e5-b2da-878b1f116651"
+      ]
+    },
+    {
+      "id": "scrutiny-validator-benchmark",
+      "description": "Scrutiny validation for milestone \"benchmark\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"benchmark\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "benchmark",
+      "status": "completed",
+      "workerSessionIds": [
+        "d961a795-b2cc-4796-a0f8-15c42596cba0",
+        "5f29bea0-499e-464d-9bbd-147549c7aa08"
+      ]
+    },
+    {
+      "id": "user-testing-validator-benchmark",
+      "description": "User testing validation for milestone \"benchmark\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"benchmark\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "benchmark",
+      "status": "completed",
+      "workerSessionIds": [
+        "93a7def7-ca11-46de-badb-418b29ed9c1e"
+      ]
+    },
+    {
+      "id": "observability-dashboard-api",
+      "description": "Dashboard API: active tasks, agents, cost, progress, events. REST + WebSocket.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Daemon complete"
+      ],
+      "expectedBehavior": [
+        "Real-time data",
+        "REST endpoints",
+        "WebSocket events"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-daemon -- dashboard"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "completed",
+      "workerSessionIds": [
+        "88b0fd09-5875-4b34-824b-887987ef749b"
+      ]
+    },
+    {
+      "id": "observability-metrics",
+      "description": "Metrics: completion rate, validation pass rate, retry rate, cost/task, agent utilization.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Dashboard API working"
+      ],
+      "expectedBehavior": [
+        "Tracks metrics",
+        "Aggregates over time",
+        "Alert thresholds"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- metrics"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "completed",
+      "workerSessionIds": [
+        "773e9562-ac6f-4f6a-be3b-98e67e08a23a"
+      ]
+    },
+    {
+      "id": "observability-alerts",
+      "description": "Alert system: loop detection, consecutive failures, cost threshold, policy violations.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Metrics working"
+      ],
+      "expectedBehavior": [
+        "Monitors thresholds",
+        "Alerts on breach",
+        "Actionable notifications"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- alerts"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "completed",
+      "workerSessionIds": [
+        "49217f50-79a2-4a1f-b8d7-574b116667cc"
+      ]
+    },
+    {
+      "id": "observability-structured-json",
+      "description": "Structured JSON logging with tracing::json, every event has trace_id, span_id, timestamp, level, message.",
+      "skillName": "Rust",
+      "preconditions": [
+        "Tracing crate available"
+      ],
+      "expectedBehavior": [
+        "Every event serialized as JSON",
+        "trace_id and span_id included",
+        "timestamp with millisecond precision",
+        "level (trace/debug/info/warn/error)",
+        "message field present"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-core -- structured_json"
+      ],
+      "fulfills": [],
+      "milestone": "observability",
+      "status": "completed",
+      "workerSessionIds": [
+        "95d11cc7-24d5-45c1-a530-a5ffc3ac5321"
+      ]
+    }
+  ]
+}
