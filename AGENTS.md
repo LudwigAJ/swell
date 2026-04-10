@@ -226,19 +226,86 @@ Multi-backend LLM support:
 - OpenAI GPT
 - Mock for testing
 
-## MCP Protocol
+## MCP Protocol Integration
 
-SWELL supports the Model Context Protocol (MCP) for tool integration. The MCP client implementation is in `swell-tools/src/mcp.rs`.
+SWELL uses the Model Context Protocol (MCP) to integrate with external tools and servers. MCP uses JSON-RPC 2.0 over stdio for communication.
 
-**MCP Features:**
-- Tool discovery and invocation
-- Resource management
-- Prompt templates
-- Tool annotations (readOnlyHint, destructiveHint, idempotentHint)
+### MCP Client Implementation
 
-**MCP Crate:**
-```toml
-swell-mcp = { path = "crates/swell-mcp" }  # Future: separate crate
+The MCP client is in `swell-tools/src/mcp.rs` and implements:
+
+- **Transport**: JSON-RPC 2.0 over stdio (subprocess)
+- **Discovery**: `tools/list` for finding available tools
+- **Invocation**: `tools/call` for executing tools
+- **Deferred Loading**: Lazy tool loading for performance
+
+### MCP Server Integration
+
+SWELL integrates with these MCP servers:
+
+| Server | Purpose | Tools Available |
+|--------|---------|----------------|
+| `mcp-server-tree-sitter` | AST parsing, code analysis | `get_ast`, `run_query`, `find_usage`, `analyze_project` |
+| `mcp-language-server` + `rust-analyzer` | Rust code intelligence | `definition`, `references`, `diagnostics`, `hover` |
+| `mcp-language-server` + `clangd` | C/C++ intelligence | `definition`, `references`, `diagnostics` |
+
+### MCP Configuration
+
+Configure MCP servers in `.swell/mcp_servers.json`:
+
+```json
+{
+  "servers": [
+    {
+      "name": "tree-sitter",
+      "command": "python3",
+      "args": ["-m", "mcp_server_tree_sitter"],
+      "env": {
+        "MCP_TS_CACHE_MAX_SIZE_MB": "256"
+      }
+    },
+    {
+      "name": "rust-analyzer",
+      "command": "mcp-language-server",
+      "args": ["--lsp", "rust-analyzer"]
+    }
+  ]
+}
+```
+
+### MCP Tool Schema
+
+MCP tools use JSON Schema for input validation:
+
+```json
+{
+  "name": "tool_name",
+  "description": "What this tool does",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "param_name": {
+        "type": "string",
+        "description": "Parameter description"
+      }
+    },
+    "required": ["param_name"]
+  }
+}
+```
+
+### Using MCP Tools in Agents
+
+```rust
+use swell_tools::mcp::{McpClient, McpManager};
+
+// Connect to a server
+let manager = McpManager::new();
+manager.add_server("tree-sitter".into(), "python3 -m mcp_server_tree_sitter".into()).await?;
+
+// List and call tools
+let tools = manager.list_all_tools().await;
+let result = client.call_tool("get_ast", json!({"path": "src/main.rs"})).await?;
 ```
 
 ## Critical Missing Features (v2 Roadmap)
