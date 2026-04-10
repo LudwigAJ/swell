@@ -40,6 +40,15 @@ pub use triple_stream::{
     ReciprocalRankFusion, GraphTraversal,
 };
 
+// Cross-encoder reranking module - BGE-reranker for cross-encoder reranking of top retrieved candidates
+pub mod cross_encoder_rerank;
+
+pub use cross_encoder_rerank::{
+    CrossEncoderConfig, CrossEncoderReranker, CrossEncoderScore, CrossEncoderService,
+    MockReranker, RerankCandidate, RerankResult, RerankerModelType, RerankableCandidates,
+    SimpleReranker,
+};
+
 // Skill extraction module - Extracts reusable procedures from successful task trajectories
 pub mod skill_extraction;
 

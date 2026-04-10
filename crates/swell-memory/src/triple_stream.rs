@@ -6,7 +6,11 @@
 // 3. Graph Traversal - Relationship-based retrieval via semantic graph
 //
 // The streams are combined using Reciprocal Rank Fusion (RRF) to produce a unified ranking.
+// For improved relevance, a cross-encoder reranker can optionally re-rank the top candidates.
 
+use crate::cross_encoder_rerank::{
+    CrossEncoderConfig, CrossEncoderService, RerankCandidate, RerankResult, RerankerModelType,
+};
 use crate::recall::{RecallQuery, RecallService};
 use crate::semantic::{SemanticRelationQuery, SemanticRelationType, SemanticStore, SqliteSemanticStore};
 use crate::{MemorySearchResult, SqliteMemoryStore, SwellError};
@@ -36,6 +40,8 @@ pub struct TripleStreamConfig {
     pub enable_bm25: bool,
     /// Whether to use graph traversal
     pub enable_graph: bool,
+    /// Cross-encoder reranking configuration (optional)
+    pub reranker: Option<CrossEncoderConfig>,
 }
 
 impl Default for TripleStreamConfig {
@@ -49,6 +55,7 @@ impl Default for TripleStreamConfig {
             enable_vector: true,
             enable_bm25: true,
             enable_graph: true,
+            reranker: Some(CrossEncoderConfig::default()),
         }
     }
 }
@@ -562,6 +569,112 @@ impl TripleStreamService {
         Ok(results)
     }
 
+    /// Perform triple-stream retrieval with optional cross-encoder reranking.
+    ///
+    /// This method first performs standard triple-stream retrieval using RRF fusion,
+    /// then optionally re-ranks the top candidates using a cross-encoder model.
+    ///
+    /// The cross-encoder reranker scores query-document pairs jointly, providing
+    /// more accurate relevance scoring than bi-encoders used in the initial retrieval.
+    ///
+    /// # Arguments
+    /// * `query` - The search query
+    /// * `reranker_config` - Optional cross-encoder configuration. If None, reranking is skipped.
+    ///
+    /// # Returns
+    /// * `Vec<TripleStreamResult>` - Re-ranked results with cross-encoder scores
+    pub async fn search_with_reranking(
+        &self,
+        query: TripleStreamQuery,
+        reranker_config: Option<CrossEncoderConfig>,
+    ) -> Result<Vec<TripleStreamResult>, SwellError> {
+        // First, perform standard triple-stream search to get initial rankings
+        let initial_results = self.search(query.clone()).await?;
+
+        if initial_results.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // If no reranker config, return initial results
+        let reranker_config = match reranker_config {
+            Some(config) if config.enabled => config,
+            _ => return Ok(initial_results),
+        };
+
+        // Get full memory entries for the candidates
+        let candidates = self.build_rerank_candidates(&initial_results).await?;
+
+        if candidates.is_empty() {
+            return Ok(initial_results);
+        }
+
+        // Create cross-encoder service
+        let reranker_type = reranker_config.model_type;
+        let cross_encoder_service = match reranker_type {
+            RerankerModelType::Simple | RerankerModelType::Bge => {
+                CrossEncoderService::with_simple_reranker(reranker_config)
+            }
+            RerankerModelType::Mock => CrossEncoderService::with_mock_reranker(reranker_config),
+        };
+
+        // Perform reranking
+        let reranked = cross_encoder_service
+            .rerank(&query.query_text, candidates)
+            .await?;
+
+        // Convert reranked results back to TripleStreamResult format
+        let results = self.reranked_to_triple_stream_results(reranked, initial_results);
+
+        Ok(results)
+    }
+
+    /// Build rerank candidates from triple-stream results
+    async fn build_rerank_candidates(
+        &self,
+        results: &[TripleStreamResult],
+    ) -> Result<Vec<RerankCandidate>, SwellError> {
+        let mut candidates = Vec::new();
+
+        for result in results {
+            // Fetch the full memory entry
+            if let Some(entry) = self.memory_store.get(result.id).await? {
+                candidates.push(RerankCandidate::with_stream_scores(
+                    entry,
+                    result.score,
+                    result.vector_score,
+                    result.bm25_score,
+                    result.graph_score,
+                ));
+            }
+        }
+
+        Ok(candidates)
+    }
+
+    /// Convert reranked results back to TripleStreamResult format
+    fn reranked_to_triple_stream_results(
+        &self,
+        reranked: Vec<RerankResult>,
+        _initial_results: Vec<TripleStreamResult>,
+    ) -> Vec<TripleStreamResult> {
+        reranked
+            .into_iter()
+            .enumerate()
+            .map(|(_rank, result)| {
+                TripleStreamResult {
+                    id: result.entry.id,
+                    score: result.final_score,
+                    vector_score: None, // Not preserved through reranking
+                    bm25_score: None,
+                    graph_score: None,
+                    vector_rank: None,
+                    bm25_rank: None,
+                    graph_rank: None,
+                }
+            })
+            .collect()
+    }
+
     /// Vector search stream
     async fn vector_search_stream(&self, query: &TripleStreamQuery) -> Result<Vec<RankedItem>, SwellError> {
         // In a real implementation, we would generate an embedding for the query
@@ -870,6 +983,9 @@ mod tests {
 #[cfg(test)]
 mod integration_tests {
     use super::*;
+    use crate::cross_encoder_rerank::CrossEncoderConfig;
+    use crate::cross_encoder_rerank::RerankerModelType;
+    use crate::MemoryBlockType;
     use crate::SqliteMemoryStore;
     use crate::SqliteSemanticStore;
     use crate::recall::RecallService;
@@ -919,6 +1035,7 @@ mod integration_tests {
             enable_vector: true,
             enable_bm25: false,
             enable_graph: true,
+            reranker: None,
         };
         
         let service = TripleStreamService::with_config(
@@ -1121,5 +1238,201 @@ mod integration_tests {
         // id2 or id3 should be second
         let second_ids = vec![id2, id3];
         assert!(second_ids.contains(&fused[1].0));
+    }
+
+    // =========================================================================
+    // Cross-Encoder Reranking Integration Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_search_with_reranking_basic() {
+        use crate::cross_encoder_rerank::{CrossEncoderConfig, RerankerModelType};
+        
+        let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
+        
+        SqliteMemoryStore::init_conversation_logs_schema(memory_store.pool.as_ref())
+            .await
+            .unwrap();
+        
+        let recall_service = RecallService::new(memory_store.clone());
+        
+        // Store test entries
+        let entry1 = crate::MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "Rust error handling".to_string(),
+            content: "This module handles errors in Rust using the Result type.".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: Some("rust".to_string()),
+            task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
+        };
+        
+        let entry2 = crate::MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Task,
+            label: "Python tutorial".to_string(),
+            content: "Learn Python programming from scratch.".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: Some("python".to_string()),
+            task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
+        };
+        
+        memory_store.store(entry1.clone()).await.unwrap();
+        memory_store.store(entry2.clone()).await.unwrap();
+        
+        let service = TripleStreamService::new(
+            memory_store.clone(),
+            semantic_store,
+            recall_service,
+        );
+        
+        // Configure reranking
+        let mut reranker_config = CrossEncoderConfig::default();
+        reranker_config.model_type = RerankerModelType::Simple;
+        reranker_config.max_candidates = 10;
+        reranker_config.max_results = 10;
+        
+        let query = TripleStreamQuery {
+            query_text: "Rust error handling".to_string(),
+            repository: "test-repo".to_string(),
+            limit: 10,
+            ..Default::default()
+        };
+        
+        // Search with reranking
+        let results = service
+            .search_with_reranking(query, Some(reranker_config))
+            .await
+            .unwrap();
+        
+        // Should return results (at least the Rust entry should be ranked higher)
+        assert!(!results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_search_with_reranking_disabled() {
+        let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
+        
+        SqliteMemoryStore::init_conversation_logs_schema(memory_store.pool.as_ref())
+            .await
+            .unwrap();
+        
+        let recall_service = RecallService::new(memory_store.clone());
+        
+        // Store a test entry
+        let entry = crate::MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "Test project".to_string(),
+            content: "Test content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
+        };
+        
+        memory_store.store(entry.clone()).await.unwrap();
+        
+        let service = TripleStreamService::new(
+            memory_store.clone(),
+            semantic_store,
+            recall_service,
+        );
+        
+        // Disable reranking by passing None
+        let query = TripleStreamQuery {
+            query_text: "test".to_string(),
+            repository: "test-repo".to_string(),
+            limit: 10,
+            ..Default::default()
+        };
+        
+        let results = service
+            .search_with_reranking(query, None)
+            .await
+            .unwrap();
+        
+        // Should still return results (reranking disabled)
+        assert!(!results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_search_with_reranking_no_results() {
+        let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
+        
+        SqliteMemoryStore::init_conversation_logs_schema(memory_store.pool.as_ref())
+            .await
+            .unwrap();
+        
+        let recall_service = RecallService::new(memory_store.clone());
+        
+        let service = TripleStreamService::new(
+            memory_store.clone(),
+            semantic_store,
+            recall_service,
+        );
+        
+        let reranker_config = CrossEncoderConfig::default();
+        
+        // Query for non-existent content
+        let query = TripleStreamQuery {
+            query_text: "nonexistent content xyz123".to_string(),
+            repository: "test-repo".to_string(),
+            limit: 10,
+            ..Default::default()
+        };
+        
+        let results = service
+            .search_with_reranking(query, Some(reranker_config))
+            .await
+            .unwrap();
+        
+        // Should return empty when no matching content
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_triple_stream_config_with_reranker() {
+        let mut config = TripleStreamConfig::default();
+        assert!(config.reranker.is_some());
+        
+        // Disable reranker
+        config.reranker = None;
+        assert!(config.reranker.is_none());
+        
+        // Re-enable with custom config
+        let reranker_config = CrossEncoderConfig {
+            enabled: true,
+            max_candidates: 25,
+            max_results: 5,
+            model_type: RerankerModelType::Mock,
+            ..Default::default()
+        };
+        config.reranker = Some(reranker_config);
+        assert!(config.reranker.is_some());
+        let reranker = config.reranker.unwrap();
+        assert_eq!(reranker.max_candidates, 25);
+        assert_eq!(reranker.max_results, 5);
+        assert_eq!(reranker.model_type, RerankerModelType::Mock);
     }
 }
