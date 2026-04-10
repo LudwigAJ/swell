@@ -1,13 +1,13 @@
 {
   "milestone": "prompts",
-  "round": 3,
+  "round": 4,
   "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": true,
       "command": "cargo test --workspace",
       "exitCode": 0,
-      "notes": "All tests pass (104 passed, 1 ignored). The previously hanging test_test_gate_validate_returns_outcome was fixed by adding #[ignore] - it calls cargo test which would cause infinite recursion when running the full test suite."
+      "notes": "All tests pass (104 passed, 1 ignored). The test_test_gate_validate_returns_outcome is ignored to prevent infinite recursion."
     },
     "typecheck": {
       "passed": true,
@@ -32,7 +32,7 @@
     "total": 0,
     "passed": 0,
     "failed": 0,
-    "notes": "No new features reviewed in round 3. All features in milestone 'prompts' remain pending (not completed). The fix-prompts-multi-run-validation feature (which should address round 1 blocking issues) is still pending. Previous round 1 reviews and blocking issues still apply."
+    "notes": "No new features reviewed in round 4. All features in milestone 'prompts' remain pending (not completed). The fix-prompts-multi-run-validation feature (which should address round 1 blocking issues) is still pending. Previous round 1-3 blocking issues still apply."
   },
   "blockingIssues": [
     {
@@ -57,13 +57,7 @@
       "description": "Behavioral invariant 'Multi-run validation reports statistical confidence' is satisfied unconditionally (always sets satisfied=true) rather than actually verifying that multi_run_result contains valid statistical confidence data."
     }
   ],
-  "appliedUpdates": [
-    {
-      "target": "swell-validation/src/lib.rs",
-      "description": "Added #[ignore] to test_test_gate_validate_returns_outcome test to prevent infinite recursion. This test calls gate.validate() which runs cargo test --workspace, causing the test suite to hang when run as part of the full test suite.",
-      "sourceFeature": "scrutiny-validator-prompts"
-    }
-  ],
+  "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
