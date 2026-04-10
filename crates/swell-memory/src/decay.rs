@@ -237,7 +237,7 @@ mod tests {
     fn test_calculate_decay_thirty_days() {
         let now = Utc::now();
         let month_ago = now - Duration::days(30);
-        
+
         let procedural = calculate_decay(DecayRate::Procedural, month_ago, now);
         let environmental = calculate_decay(DecayRate::Environmental, month_ago, now);
         let buffer = calculate_decay(DecayRate::Buffer, month_ago, now);

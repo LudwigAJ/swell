@@ -186,10 +186,10 @@ impl ModelPerformance {
 
         // Weight factors based on task type
         let (w_success, w_efficiency, w_speed) = match task_type {
-            TaskType::Fast => (0.3, 0.2, 0.5),   // Speed matters most for fast tasks
-            TaskType::Coding => (0.5, 0.3, 0.2),  // Success and efficiency matter for coding
+            TaskType::Fast => (0.3, 0.2, 0.5), // Speed matters most for fast tasks
+            TaskType::Coding => (0.5, 0.3, 0.2), // Success and efficiency matter for coding
             TaskType::Planning => (0.4, 0.3, 0.3), // Balanced for planning
-            TaskType::Review => (0.5, 0.3, 0.2),  // Success matters for review
+            TaskType::Review => (0.5, 0.3, 0.2), // Success matters for review
             TaskType::Default => (0.4, 0.3, 0.3), // Balanced default
         };
 
@@ -446,12 +446,10 @@ impl SqliteMetaCognitiveStore {
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_strategies_name ON prompting_strategies(name)",
-        )
-        .execute(pool)
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_strategies_name ON prompting_strategies(name)")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(())
     }
@@ -594,11 +592,10 @@ impl MetaCognitiveStore for SqliteMetaCognitiveStore {
         confidence: f64,
     ) -> Result<(), SwellError> {
         // Try to get existing record
-        let existing = self
-            .get_model_performance(&model_name, task_type)
-            .await?;
+        let existing = self.get_model_performance(&model_name, task_type).await?;
 
-        let mut performance = existing.unwrap_or_else(|| ModelPerformance::new(model_name.clone(), task_type));
+        let mut performance =
+            existing.unwrap_or_else(|| ModelPerformance::new(model_name.clone(), task_type));
         performance.record_completion(success, tokens_used, latency_ms, confidence);
 
         // Upsert
@@ -641,14 +638,13 @@ impl MetaCognitiveStore for SqliteMetaCognitiveStore {
         model_name: &str,
         task_type: TaskType,
     ) -> Result<Option<ModelPerformance>, SwellError> {
-        let row = sqlx::query(
-            "SELECT * FROM model_performance WHERE model_name = ? AND task_type = ?",
-        )
-        .bind(model_name)
-        .bind(Self::task_type_to_string(task_type))
-        .fetch_optional(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let row =
+            sqlx::query("SELECT * FROM model_performance WHERE model_name = ? AND task_type = ?")
+                .bind(model_name)
+                .bind(Self::task_type_to_string(task_type))
+                .fetch_optional(self.pool.as_ref())
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         match row {
             Some(r) => Ok(Some(self.row_to_model_performance(&r)?)),
@@ -843,10 +839,7 @@ impl MetaCognitiveStore for SqliteMetaCognitiveStore {
             ));
         }
         if recommended_strategy_id.is_some() {
-            reasoning.push_str(&format!(
-                "Effective {} strategy available.",
-                task_type
-            ));
+            reasoning.push_str(&format!("Effective {} strategy available.", task_type));
         }
         if reasoning.is_empty() {
             reasoning.push_str("No historical data available. Using default model selection.");
@@ -1266,9 +1259,18 @@ mod tests {
 
         let id = store.store_strategy(strategy).await.unwrap();
 
-        store.record_strategy_usage(id, true, Some(0.9)).await.unwrap();
-        store.record_strategy_usage(id, true, Some(0.85)).await.unwrap();
-        store.record_strategy_usage(id, false, Some(0.4)).await.unwrap();
+        store
+            .record_strategy_usage(id, true, Some(0.9))
+            .await
+            .unwrap();
+        store
+            .record_strategy_usage(id, true, Some(0.85))
+            .await
+            .unwrap();
+        store
+            .record_strategy_usage(id, false, Some(0.4))
+            .await
+            .unwrap();
 
         let updated = store.get_strategy(id).await.unwrap().unwrap();
         assert_eq!(updated.usage_count, 3);
@@ -1308,10 +1310,19 @@ mod tests {
         let id3 = store.store_strategy(strategy3).await.unwrap();
 
         // Record more successes for multi_strategy
-        store.record_strategy_usage(id3, true, Some(0.9)).await.unwrap();
-        store.record_strategy_usage(id3, true, Some(0.9)).await.unwrap();
+        store
+            .record_strategy_usage(id3, true, Some(0.9))
+            .await
+            .unwrap();
+        store
+            .record_strategy_usage(id3, true, Some(0.9))
+            .await
+            .unwrap();
 
-        let coding_strategies = store.find_strategies_for_task(TaskType::Coding, 10).await.unwrap();
+        let coding_strategies = store
+            .find_strategies_for_task(TaskType::Coding, 10)
+            .await
+            .unwrap();
 
         assert_eq!(coding_strategies.len(), 2);
         // multi_strategy should be first due to more successes

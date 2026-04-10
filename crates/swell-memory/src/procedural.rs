@@ -1326,29 +1326,68 @@ mod tests {
     #[test]
     fn test_confidence_level_thresholds() {
         // Test boundary at 0.3 - deprecated vs uncertain
-        assert_eq!(ConfidenceLevel::from_probability(0.0), ConfidenceLevel::Deprecated);
-        assert_eq!(ConfidenceLevel::from_probability(0.29), ConfidenceLevel::Deprecated);
-        assert_eq!(ConfidenceLevel::from_probability(0.3), ConfidenceLevel::Uncertain);
-        assert_eq!(ConfidenceLevel::from_probability(0.5), ConfidenceLevel::Uncertain);
-        assert_eq!(ConfidenceLevel::from_probability(0.59), ConfidenceLevel::Uncertain);
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.0),
+            ConfidenceLevel::Deprecated
+        );
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.29),
+            ConfidenceLevel::Deprecated
+        );
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.3),
+            ConfidenceLevel::Uncertain
+        );
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.5),
+            ConfidenceLevel::Uncertain
+        );
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.59),
+            ConfidenceLevel::Uncertain
+        );
 
         // Test boundary at 0.6 - uncertain vs probable
-        assert_eq!(ConfidenceLevel::from_probability(0.6), ConfidenceLevel::Probable);
-        assert_eq!(ConfidenceLevel::from_probability(0.7), ConfidenceLevel::Probable);
-        assert_eq!(ConfidenceLevel::from_probability(0.79), ConfidenceLevel::Probable);
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.6),
+            ConfidenceLevel::Probable
+        );
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.7),
+            ConfidenceLevel::Probable
+        );
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.79),
+            ConfidenceLevel::Probable
+        );
 
         // Test boundary at 0.8 - probable vs confident
-        assert_eq!(ConfidenceLevel::from_probability(0.8), ConfidenceLevel::Confident);
-        assert_eq!(ConfidenceLevel::from_probability(0.9), ConfidenceLevel::Confident);
-        assert_eq!(ConfidenceLevel::from_probability(1.0), ConfidenceLevel::Confident);
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.8),
+            ConfidenceLevel::Confident
+        );
+        assert_eq!(
+            ConfidenceLevel::from_probability(0.9),
+            ConfidenceLevel::Confident
+        );
+        assert_eq!(
+            ConfidenceLevel::from_probability(1.0),
+            ConfidenceLevel::Confident
+        );
     }
 
     #[test]
     fn test_confidence_level_description() {
-        assert!(ConfidenceLevel::Deprecated.description().contains("deprecated"));
-        assert!(ConfidenceLevel::Uncertain.description().contains("uncertain"));
+        assert!(ConfidenceLevel::Deprecated
+            .description()
+            .contains("deprecated"));
+        assert!(ConfidenceLevel::Uncertain
+            .description()
+            .contains("uncertain"));
         assert!(ConfidenceLevel::Probable.description().contains("probable"));
-        assert!(ConfidenceLevel::Confident.description().contains("confident"));
+        assert!(ConfidenceLevel::Confident
+            .description()
+            .contains("confident"));
     }
 
     #[test]

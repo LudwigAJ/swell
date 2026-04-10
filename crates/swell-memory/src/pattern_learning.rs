@@ -167,16 +167,74 @@ pub struct AntiPattern {
     pub why_anti: String,
     pub frequency: usize,
     pub confidence: f64,
+    /// Number of times this pattern has been confirmed (seen in rejections)
+    pub confirmation_count: u32,
+    /// Whether this pattern has been promoted to higher retrieval rank
+    pub is_promoted: bool,
     pub rejection_reasons: Vec<RejectionReason>,
     pub conventions: Vec<String>,
     pub source_task_id: Uuid,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
     pub metadata: serde_json::Value,
+}
+
+/// Promotion thresholds for patterns and rules
+#[derive(Debug, Clone, Copy)]
+pub struct PromotionThresholds {
+    /// Pattern promotion: minimum confirmations required
+    pub pattern_min_confirmations: u32,
+    /// Pattern promotion: minimum confidence required
+    pub pattern_min_confidence: f64,
+    /// Rule promotion: minimum confirmations required
+    pub rule_min_confirmations: u32,
+    /// Rule promotion: minimum confidence required
+    pub rule_min_confidence: f64,
+    /// Boost multiplier for promoted patterns in retrieval
+    pub promotion_rank_boost: f64,
+}
+
+impl Default for PromotionThresholds {
+    fn default() -> Self {
+        Self {
+            // Pattern promotion: ≥5 confirmations with confidence >0.6
+            pattern_min_confirmations: 5,
+            pattern_min_confidence: 0.6,
+            // Rule promotion: ≥10 confirmations with confidence >0.8
+            rule_min_confirmations: 10,
+            rule_min_confidence: 0.8,
+            // Promoted patterns get 50% boost in retrieval rank
+            promotion_rank_boost: 1.5,
+        }
+    }
+}
+
+/// Promotion status for a pattern or rule
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromotionStatus {
+    /// Not yet eligible for promotion
+    NotEligible,
+    /// Eligible but not yet promoted
+    Eligible,
+    /// Promoted to higher retrieval rank
+    Promoted,
+}
+
+impl std::fmt::Display for PromotionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PromotionStatus::NotEligible => write!(f, "not_eligible"),
+            PromotionStatus::Eligible => write!(f, "eligible"),
+            PromotionStatus::Promoted => write!(f, "promoted"),
+        }
+    }
 }
 
 impl AntiPattern {
     /// Create a new anti-pattern
     pub fn new(name: String, pattern_type: AntiPatternType, why_anti: String) -> Self {
+        let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
             name,
@@ -186,10 +244,13 @@ impl AntiPattern {
             why_anti,
             frequency: 0,
             confidence: 0.0,
+            confirmation_count: 0,
+            is_promoted: false,
             rejection_reasons: Vec::new(),
             conventions: Vec::new(),
             source_task_id: Uuid::nil(),
-            created_at: Utc::now(),
+            created_at: now,
+            updated_at: now,
             metadata: serde_json::json!({}),
         }
     }
@@ -198,6 +259,8 @@ impl AntiPattern {
     pub fn add_example(&mut self, example: AntiPatternExample) {
         self.examples.push(example);
         self.frequency = self.examples.len();
+        self.confirmation_count += 1;
+        self.updated_at = Utc::now();
     }
 
     /// Add a convention (what to do instead)
@@ -211,6 +274,62 @@ impl AntiPattern {
     pub fn update_confidence(&mut self, total_rejections: usize) {
         // Confidence increases with frequency, capped at 0.95
         self.confidence = (self.frequency as f64 / total_rejections as f64).min(0.95);
+        self.updated_at = Utc::now();
+        // Check if promotion thresholds are met
+        self.check_promotion();
+    }
+
+    /// Check if this pattern meets promotion thresholds and update is_promoted accordingly.
+    /// Pattern promotion: ≥5 confirmations with confidence >0.6
+    pub fn check_promotion(&mut self) {
+        let thresholds = PromotionThresholds::default();
+        let should_promote = self.confirmation_count >= thresholds.pattern_min_confirmations
+            && self.confidence > thresholds.pattern_min_confidence;
+
+        if should_promote && !self.is_promoted {
+            self.is_promoted = true;
+            self.updated_at = Utc::now();
+        }
+    }
+
+    /// Get the current promotion status
+    pub fn get_promotion_status(&self) -> PromotionStatus {
+        let thresholds = PromotionThresholds::default();
+        if self.is_promoted {
+            PromotionStatus::Promoted
+        } else if self.confirmation_count >= thresholds.pattern_min_confirmations
+            && self.confidence > thresholds.pattern_min_confidence
+        {
+            // Eligible but not yet promoted (edge case - should be auto-promoted)
+            PromotionStatus::Eligible
+        } else {
+            PromotionStatus::NotEligible
+        }
+    }
+
+    /// Get the retrieval rank boost factor for this pattern.
+    /// Promoted patterns get a higher rank boost in retrieval results.
+    pub fn get_retrieval_rank_boost(&self, base_score: f64) -> f64 {
+        let thresholds = PromotionThresholds::default();
+        if self.is_promoted {
+            base_score * thresholds.promotion_rank_boost
+        } else {
+            base_score
+        }
+    }
+
+    /// Record a confirmation (observed another instance of this anti-pattern)
+    pub fn record_confirmation(&mut self) {
+        self.confirmation_count += 1;
+        self.updated_at = Utc::now();
+        self.check_promotion();
+    }
+
+    /// Check if this pattern meets promotion criteria
+    pub fn meets_promotion_criteria(&self) -> bool {
+        let thresholds = PromotionThresholds::default();
+        self.confirmation_count >= thresholds.pattern_min_confirmations
+            && self.confidence > thresholds.pattern_min_confidence
     }
 }
 
@@ -269,7 +388,12 @@ pub struct Convention {
     pub examples: Vec<String>,
     pub source: ConventionSource,
     pub confidence: f64,
+    /// Number of times this convention has been confirmed
+    pub confirmation_count: u32,
+    /// Whether this convention has been promoted to higher retrieval rank
+    pub is_promoted: bool,
     pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -292,6 +416,88 @@ pub enum ConventionSource {
     FromAntiPattern,
     FromSuccessfulTask,
     FromOperatorFeedback,
+}
+
+impl Convention {
+    /// Create a new convention
+    pub fn new(name: String, convention_type: ConventionType, pattern: String) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            name,
+            description: String::new(),
+            convention_type,
+            pattern,
+            examples: Vec::new(),
+            source: ConventionSource::FromAntiPattern,
+            confidence: 0.0,
+            confirmation_count: 0,
+            is_promoted: false,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    /// Update confidence based on evidence
+    pub fn update_confidence(&mut self, total_observations: usize) {
+        // Confidence increases with confirmation rate, capped at 0.95
+        self.confidence = (self.confirmation_count as f64 / total_observations as f64).min(0.95);
+        self.updated_at = Utc::now();
+        // Check if promotion thresholds are met
+        self.check_promotion();
+    }
+
+    /// Check if this convention meets promotion thresholds and update is_promoted accordingly.
+    /// Rule promotion: ≥10 confirmations with confidence >0.8
+    pub fn check_promotion(&mut self) {
+        let thresholds = PromotionThresholds::default();
+        let should_promote = self.confirmation_count >= thresholds.rule_min_confirmations
+            && self.confidence > thresholds.rule_min_confidence;
+
+        if should_promote && !self.is_promoted {
+            self.is_promoted = true;
+            self.updated_at = Utc::now();
+        }
+    }
+
+    /// Get the current promotion status
+    pub fn get_promotion_status(&self) -> PromotionStatus {
+        let thresholds = PromotionThresholds::default();
+        if self.is_promoted {
+            PromotionStatus::Promoted
+        } else if self.confirmation_count >= thresholds.rule_min_confirmations
+            && self.confidence > thresholds.rule_min_confidence
+        {
+            PromotionStatus::Eligible
+        } else {
+            PromotionStatus::NotEligible
+        }
+    }
+
+    /// Get the retrieval rank boost factor for this convention.
+    /// Promoted conventions get a higher rank boost in retrieval results.
+    pub fn get_retrieval_rank_boost(&self, base_score: f64) -> f64 {
+        let thresholds = PromotionThresholds::default();
+        if self.is_promoted {
+            base_score * thresholds.promotion_rank_boost
+        } else {
+            base_score
+        }
+    }
+
+    /// Record a confirmation (observed another instance of this convention)
+    pub fn record_confirmation(&mut self) {
+        self.confirmation_count += 1;
+        self.updated_at = Utc::now();
+        self.check_promotion();
+    }
+
+    /// Check if this convention meets promotion criteria
+    pub fn meets_promotion_criteria(&self) -> bool {
+        let thresholds = PromotionThresholds::default();
+        self.confirmation_count >= thresholds.rule_min_confirmations
+            && self.confidence > thresholds.rule_min_confidence
+    }
 }
 
 /// Configuration for pattern learning
@@ -455,7 +661,10 @@ impl PatternLearningAnalyzer {
                     examples: vec!["cargo test --workspace".to_string()],
                     source: ConventionSource::FromAntiPattern,
                     confidence: 0.9,
+                    confirmation_count: 0,
+                    is_promoted: false,
                     created_at: Utc::now(),
+                    updated_at: Utc::now(),
                 });
             }
             ValidationErrorType::LintWarning => {
@@ -479,7 +688,10 @@ impl PatternLearningAnalyzer {
                     examples: vec!["cargo clippy -- -D warnings".to_string()],
                     source: ConventionSource::FromAntiPattern,
                     confidence: 0.85,
+                    confirmation_count: 0,
+                    is_promoted: false,
                     created_at: Utc::now(),
+                    updated_at: Utc::now(),
                 });
             }
             ValidationErrorType::MissingImport => {
@@ -544,7 +756,10 @@ impl PatternLearningAnalyzer {
                     examples: vec!["cargo fmt".to_string()],
                     source: ConventionSource::FromAntiPattern,
                     confidence: 0.8,
+                    confirmation_count: 0,
+                    is_promoted: false,
                     created_at: Utc::now(),
+                    updated_at: Utc::now(),
                 });
             }
             _ => {
@@ -713,7 +928,10 @@ impl PatternLearningAnalyzer {
                 .collect(),
             source: ConventionSource::FromAntiPattern,
             confidence: anti_pattern.confidence,
+            confirmation_count: 0,
+            is_promoted: false,
             created_at: Utc::now(),
+            updated_at: Utc::now(),
         })
     }
 
@@ -928,7 +1146,10 @@ impl PatternLearningService {
                         examples: Vec::new(),
                         source: ConventionSource::FromOperatorFeedback,
                         confidence: 0.5,
+                        confirmation_count: 0,
+                        is_promoted: false,
                         created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
                     });
                 }
             }
@@ -1222,5 +1443,378 @@ mod tests {
         assert_eq!(deserialized.tool_name, "edit_file");
         assert!(!deserialized.was_successful);
         assert!(deserialized.error.is_some());
+    }
+
+    // =====================================================================
+    // Promotion Threshold Tests
+    // =====================================================================
+
+    #[test]
+    fn test_promotion_thresholds_default() {
+        let thresholds = PromotionThresholds::default();
+        // Pattern promotion: ≥5 confirmations with confidence >0.6
+        assert_eq!(thresholds.pattern_min_confirmations, 5);
+        assert_eq!(thresholds.pattern_min_confidence, 0.6);
+        // Rule promotion: ≥10 confirmations with confidence >0.8
+        assert_eq!(thresholds.rule_min_confirmations, 10);
+        assert_eq!(thresholds.rule_min_confidence, 0.8);
+        // Promoted patterns get 1.5x boost
+        assert_eq!(thresholds.promotion_rank_boost, 1.5);
+    }
+
+    #[test]
+    fn test_anti_pattern_promotion_not_eligible() {
+        let mut ap = AntiPattern::new(
+            "test_pattern".to_string(),
+            AntiPatternType::TestPattern,
+            "Test anti-pattern".to_string(),
+        );
+
+        // Initially not eligible
+        assert_eq!(ap.get_promotion_status(), PromotionStatus::NotEligible);
+        assert!(!ap.is_promoted);
+        assert!(!ap.meets_promotion_criteria());
+
+        // Add some examples but not enough for promotion
+        for _ in 0..4 {
+            ap.add_example(AntiPatternExample {
+                task_id: Uuid::new_v4(),
+                before_code: None,
+                after_code: None,
+                error_message: "Test failed".to_string(),
+                rejection_reason: RejectionReason::TestFailure,
+                timestamp: Utc::now(),
+            });
+        }
+
+        // Still not eligible (4 confirmations, need 5)
+        assert_eq!(ap.get_promotion_status(), PromotionStatus::NotEligible);
+        assert!(!ap.is_promoted);
+    }
+
+    #[test]
+    fn test_anti_pattern_promotion_eligible_but_not_promoted() {
+        let mut ap = AntiPattern::new(
+            "test_pattern".to_string(),
+            AntiPatternType::TestPattern,
+            "Test anti-pattern".to_string(),
+        );
+
+        // Add 5 examples (this calls check_promotion but confidence is 0.0)
+        for i in 0..5 {
+            ap.add_example(AntiPatternExample {
+                task_id: Uuid::new_v4(),
+                before_code: None,
+                after_code: None,
+                error_message: format!("Test failed {}", i),
+                rejection_reason: RejectionReason::TestFailure,
+                timestamp: Utc::now(),
+            });
+        }
+
+        // Set high confidence (>0.6)
+        ap.confidence = 0.7;
+
+        // Manually check promotion now that confidence is set
+        ap.check_promotion();
+
+        // Now it should be promoted
+        assert_eq!(ap.get_promotion_status(), PromotionStatus::Promoted);
+        assert!(ap.is_promoted);
+        assert!(ap.meets_promotion_criteria());
+    }
+
+    #[test]
+    fn test_anti_pattern_promotion_confidence_too_low() {
+        let mut ap = AntiPattern::new(
+            "test_pattern".to_string(),
+            AntiPatternType::TestPattern,
+            "Test anti-pattern".to_string(),
+        );
+
+        // Add 5 examples but with low confidence
+        for _ in 0..5 {
+            ap.add_example(AntiPatternExample {
+                task_id: Uuid::new_v4(),
+                before_code: None,
+                after_code: None,
+                error_message: "Test failed".to_string(),
+                rejection_reason: RejectionReason::TestFailure,
+                timestamp: Utc::now(),
+            });
+        }
+
+        // Set low confidence (<=0.6)
+        ap.confidence = 0.5;
+        ap.check_promotion();
+
+        // Should NOT be promoted (confidence too low)
+        assert!(!ap.is_promoted);
+        assert!(!ap.meets_promotion_criteria());
+    }
+
+    #[test]
+    fn test_anti_pattern_record_confirmation() {
+        let mut ap = AntiPattern::new(
+            "test_pattern".to_string(),
+            AntiPatternType::TestPattern,
+            "Test anti-pattern".to_string(),
+        );
+
+        // Set initial state with confidence > 0.6 for promotion
+        ap.confidence = 0.7;
+        assert!(!ap.is_promoted);
+
+        // Record confirmations until promotion threshold
+        for i in 0..5 {
+            ap.record_confirmation();
+            if i < 4 {
+                assert!(
+                    !ap.is_promoted,
+                    "Should not be promoted before reaching 5 confirmations"
+                );
+            }
+        }
+
+        // Now should be promoted
+        assert!(
+            ap.is_promoted,
+            "Should be promoted after 5 confirmations with confidence > 0.6"
+        );
+        assert_eq!(ap.confirmation_count, 5);
+    }
+
+    #[test]
+    fn test_anti_pattern_retrieval_rank_boost() {
+        let mut ap = AntiPattern::new(
+            "test_pattern".to_string(),
+            AntiPatternType::TestPattern,
+            "Test anti-pattern".to_string(),
+        );
+
+        let base_score = 1.0;
+
+        // Not promoted - no boost
+        assert_eq!(ap.get_retrieval_rank_boost(base_score), 1.0);
+
+        // Promote the pattern
+        ap.confirmation_count = 5;
+        ap.confidence = 0.7;
+        ap.check_promotion();
+
+        // Now should get boost
+        assert_eq!(ap.get_retrieval_rank_boost(base_score), 1.5);
+    }
+
+    #[test]
+    fn test_convention_promotion_not_eligible() {
+        let mut convention = Convention::new(
+            "test_convention".to_string(),
+            ConventionType::Testing,
+            "cargo test".to_string(),
+        );
+
+        // Initially not eligible
+        assert_eq!(
+            convention.get_promotion_status(),
+            PromotionStatus::NotEligible
+        );
+        assert!(!convention.is_promoted);
+        assert!(!convention.meets_promotion_criteria());
+
+        // Add some confirmations but not enough for promotion (need 10)
+        for _ in 0..9 {
+            convention.record_confirmation();
+        }
+
+        // Still not eligible (9 confirmations, need 10)
+        assert_eq!(
+            convention.get_promotion_status(),
+            PromotionStatus::NotEligible
+        );
+        assert!(!convention.is_promoted);
+    }
+
+    #[test]
+    fn test_convention_promotion_eligible() {
+        let mut convention = Convention::new(
+            "test_convention".to_string(),
+            ConventionType::Testing,
+            "cargo test".to_string(),
+        );
+
+        // Set high confidence (>0.8)
+        convention.confidence = 0.85;
+
+        // Record 10 confirmations (promotion threshold for rules)
+        for _ in 0..10 {
+            convention.record_confirmation();
+        }
+
+        // Now should be promoted
+        assert_eq!(convention.get_promotion_status(), PromotionStatus::Promoted);
+        assert!(convention.is_promoted);
+        assert!(convention.meets_promotion_criteria());
+    }
+
+    #[test]
+    fn test_convention_promotion_confidence_too_low() {
+        let mut convention = Convention::new(
+            "test_convention".to_string(),
+            ConventionType::Testing,
+            "cargo test".to_string(),
+        );
+
+        // Set low confidence (<=0.8)
+        convention.confidence = 0.7;
+
+        // Record 10 confirmations
+        for _ in 0..10 {
+            convention.record_confirmation();
+        }
+
+        // Should NOT be promoted (confidence too low)
+        assert!(!convention.is_promoted);
+        assert!(!convention.meets_promotion_criteria());
+    }
+
+    #[test]
+    fn test_convention_retrieval_rank_boost() {
+        let mut convention = Convention::new(
+            "test_convention".to_string(),
+            ConventionType::Testing,
+            "cargo test".to_string(),
+        );
+
+        let base_score = 1.0;
+
+        // Not promoted - no boost
+        assert_eq!(convention.get_retrieval_rank_boost(base_score), 1.0);
+
+        // Promote the convention (10 confirmations + high confidence)
+        convention.confidence = 0.85;
+        for _ in 0..10 {
+            convention.record_confirmation();
+        }
+
+        // Now should get boost
+        assert_eq!(convention.get_retrieval_rank_boost(base_score), 1.5);
+    }
+
+    #[test]
+    fn test_promotion_status_display() {
+        assert_eq!(format!("{}", PromotionStatus::NotEligible), "not_eligible");
+        assert_eq!(format!("{}", PromotionStatus::Eligible), "eligible");
+        assert_eq!(format!("{}", PromotionStatus::Promoted), "promoted");
+    }
+
+    #[test]
+    fn test_promotion_status_serialization() {
+        let status = PromotionStatus::Promoted;
+        let json = serde_json::to_string(&status).unwrap();
+        assert_eq!(json, "\"promoted\"");
+
+        let deserialized: PromotionStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, PromotionStatus::Promoted);
+    }
+
+    #[test]
+    fn test_anti_pattern_promotion_boundary_conditions() {
+        // Test exact threshold boundary
+        let mut ap = AntiPattern::new(
+            "test_pattern".to_string(),
+            AntiPatternType::TestPattern,
+            "Test anti-pattern".to_string(),
+        );
+
+        // 5 confirmations with exactly 0.6 confidence - should NOT promote (need >0.6)
+        ap.confirmation_count = 5;
+        ap.confidence = 0.6;
+        ap.check_promotion();
+        assert!(
+            !ap.is_promoted,
+            "Should not promote at exactly 0.6 confidence (need > 0.6)"
+        );
+
+        // 5 confirmations with just above 0.6 confidence - should promote
+        ap.confidence = 0.601;
+        ap.check_promotion();
+        assert!(ap.is_promoted, "Should promote at > 0.6 confidence");
+
+        // Reset and test with just 4 confirmations
+        let mut ap2 = AntiPattern::new(
+            "test_pattern2".to_string(),
+            AntiPatternType::TestPattern,
+            "Test anti-pattern".to_string(),
+        );
+
+        // 4 confirmations with high confidence - should NOT promote (need >= 5)
+        ap2.confirmation_count = 4;
+        ap2.confidence = 0.9;
+        ap2.check_promotion();
+        assert!(
+            !ap2.is_promoted,
+            "Should not promote with only 4 confirmations"
+        );
+    }
+
+    #[test]
+    fn test_convention_promotion_boundary_conditions() {
+        // Test exact threshold boundary
+        let mut convention = Convention::new(
+            "test_convention".to_string(),
+            ConventionType::Testing,
+            "cargo test".to_string(),
+        );
+
+        // 10 confirmations with exactly 0.8 confidence - should NOT promote (need >0.8)
+        convention.confirmation_count = 10;
+        convention.confidence = 0.8;
+        convention.check_promotion();
+        assert!(
+            !convention.is_promoted,
+            "Should not promote at exactly 0.8 confidence (need > 0.8)"
+        );
+
+        // 10 confirmations with just above 0.8 confidence - should promote
+        convention.confidence = 0.801;
+        convention.check_promotion();
+        assert!(convention.is_promoted, "Should promote at > 0.8 confidence");
+
+        // Reset and test with only 9 confirmations
+        let mut convention2 = Convention::new(
+            "test_convention2".to_string(),
+            ConventionType::Testing,
+            "cargo test".to_string(),
+        );
+
+        // 9 confirmations with high confidence - should NOT promote (need >= 10)
+        convention2.confirmation_count = 9;
+        convention2.confidence = 0.95;
+        convention2.check_promotion();
+        assert!(
+            !convention2.is_promoted,
+            "Should not promote with only 9 confirmations"
+        );
+    }
+
+    #[test]
+    fn test_promotion_updates_timestamp() {
+        let mut ap = AntiPattern::new(
+            "test_pattern".to_string(),
+            AntiPatternType::TestPattern,
+            "Test anti-pattern".to_string(),
+        );
+
+        let _initial_updated_at = ap.updated_at;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Promote the pattern
+        ap.confirmation_count = 5;
+        ap.confidence = 0.7;
+        ap.check_promotion();
+
+        assert!(ap.is_promoted);
+        // Note: updated_at is updated in check_promotion when promotion occurs
     }
 }

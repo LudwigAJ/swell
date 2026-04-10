@@ -20,9 +20,7 @@ use uuid::Uuid;
 
 use swell_core::SwellError;
 
-use super::pattern_learning::{
-    Convention, ConventionSource, ConventionType,
-};
+use super::pattern_learning::{Convention, ConventionSource, ConventionType};
 
 /// Known guidance file names that contain operator-provided patterns
 const GUIDANCE_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md"];
@@ -150,21 +148,32 @@ impl OperatorPatternType {
         let lower = content.to_lowercase();
 
         // Check for "avoid" patterns first - these are high priority
-        if lower.contains("avoid") || lower.contains("don't") || lower.contains("do not")
-            || lower.contains("never") || lower.contains("forbidden") || lower.contains("don't")
+        if lower.contains("avoid")
+            || lower.contains("don't")
+            || lower.contains("do not")
+            || lower.contains("never")
+            || lower.contains("forbidden")
+            || lower.contains("don't")
         {
             return OperatorPatternType::Avoid;
         }
 
-        if lower.contains("naming") || lower.contains("file name") || lower.contains("function name") {
+        if lower.contains("naming")
+            || lower.contains("file name")
+            || lower.contains("function name")
+        {
             OperatorPatternType::Naming
         } else if lower.contains("import") || lower.contains("dependency") {
             OperatorPatternType::Import
-        } else if lower.contains("error") || lower.contains("exception") || lower.contains("panic") {
+        } else if lower.contains("error") || lower.contains("exception") || lower.contains("panic")
+        {
             OperatorPatternType::ErrorHandling
         } else if lower.contains("test") || lower.contains("spec") || lower.contains("mock") {
             OperatorPatternType::Testing
-        } else if lower.contains("document") || lower.contains("comment") || lower.contains("readme") {
+        } else if lower.contains("document")
+            || lower.contains("comment")
+            || lower.contains("readme")
+        {
             OperatorPatternType::Documentation
         } else if lower.contains("format") || lower.contains("style") || lower.contains("fmt") {
             OperatorPatternType::Formatting
@@ -172,9 +181,13 @@ impl OperatorPatternType {
             OperatorPatternType::GitCommit
         } else if lower.contains("type") || lower.contains("trait") || lower.contains("struct") {
             OperatorPatternType::TypeUsage
-        } else if lower.contains("workflow") || lower.contains("process") || lower.contains("step") {
+        } else if lower.contains("workflow") || lower.contains("process") || lower.contains("step")
+        {
             OperatorPatternType::Workflow
-        } else if lower.contains("architecture") || lower.contains("design") || lower.contains("structure") {
+        } else if lower.contains("architecture")
+            || lower.contains("design")
+            || lower.contains("structure")
+        {
             OperatorPatternType::Architecture
         } else {
             OperatorPatternType::Principle
@@ -192,7 +205,10 @@ impl OperatorPatternType {
             OperatorPatternType::Formatting => ConventionType::Formatting,
             OperatorPatternType::GitCommit => ConventionType::GitCommit,
             OperatorPatternType::TypeUsage => ConventionType::TypeUsage,
-            OperatorPatternType::Principle | OperatorPatternType::Workflow | OperatorPatternType::ToolUsage | OperatorPatternType::Architecture => ConventionType::CodeStructure,
+            OperatorPatternType::Principle
+            | OperatorPatternType::Workflow
+            | OperatorPatternType::ToolUsage
+            | OperatorPatternType::Architecture => ConventionType::CodeStructure,
             OperatorPatternType::Avoid => ConventionType::CodeStructure,
         }
     }
@@ -266,8 +282,14 @@ impl OperatorFeedbackParser {
                 match self.parse_file(&file_path) {
                     Ok(patterns) => {
                         files_parsed += 1;
-                        let mtime = fs::metadata(&file_path).ok().and_then(|m| m.modified().ok())
-                            .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64);
+                        let mtime = fs::metadata(&file_path)
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .map(|t| {
+                                t.duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs() as i64
+                            });
                         file_mtimes.insert(filename.to_string(), mtime);
                         all_patterns.extend(patterns);
                     }
@@ -285,13 +307,22 @@ impl OperatorFeedbackParser {
                 match self.parse_file(&file_path) {
                     Ok(patterns) => {
                         files_parsed += 1;
-                        let mtime = fs::metadata(&file_path).ok().and_then(|m| m.modified().ok())
-                            .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64);
+                        let mtime = fs::metadata(&file_path)
+                            .ok()
+                            .and_then(|m| m.modified().ok())
+                            .map(|t| {
+                                t.duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs() as i64
+                            });
                         file_mtimes.insert(filename.clone(), mtime);
                         all_patterns.extend(patterns);
                     }
                     Err(e) => {
-                        errors.push(format!("Failed to parse additional file {}: {}", filename, e));
+                        errors.push(format!(
+                            "Failed to parse additional file {}: {}",
+                            filename, e
+                        ));
                     }
                 }
             }
@@ -312,11 +343,11 @@ impl OperatorFeedbackParser {
     /// Parse a single guidance file
     pub fn parse_file(&self, file_path: &Path) -> Result<Vec<OperatorGuidancePattern>, SwellError> {
         use std::io::Read;
-        
+
         let mut content = String::new();
         let mut file = std::fs::File::open(file_path)?;
         file.read_to_string(&mut content)?;
-        
+
         let filename = file_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -327,7 +358,11 @@ impl OperatorFeedbackParser {
     }
 
     /// Parse content from a guidance file
-    pub fn parse_content(&self, content: &str, filename: &str) -> Result<Vec<OperatorGuidancePattern>, SwellError> {
+    pub fn parse_content(
+        &self,
+        content: &str,
+        filename: &str,
+    ) -> Result<Vec<OperatorGuidancePattern>, SwellError> {
         let mut patterns = Vec::new();
         let mut current_heading: Option<String> = None;
         let mut current_block: Vec<String> = Vec::new();
@@ -457,7 +492,10 @@ impl OperatorFeedbackParser {
     fn generate_pattern_name(&self, heading: &str, pattern_type: &OperatorPatternType) -> String {
         // Clean up heading into a usable name
         let cleaned = heading
-            .replace(|c: char| c.is_whitespace() || (!c.is_alphanumeric() && c != '-'), "_")
+            .replace(
+                |c: char| c.is_whitespace() || (!c.is_alphanumeric() && c != '-'),
+                "_",
+            )
             .trim_matches('_')
             .to_string();
 
@@ -475,10 +513,34 @@ impl OperatorFeedbackParser {
 
         // Extract code-related keywords
         let code_terms = [
-            "rust", "python", "javascript", "typescript", "cargo", "npm", "git",
-            "test", "mock", "function", "struct", "trait", "impl", "async",
-            "error", "panic", "result", "option", "vec", "string", "str",
-            "clippy", "fmt", "build", "run", "execute", "shell", "file",
+            "rust",
+            "python",
+            "javascript",
+            "typescript",
+            "cargo",
+            "npm",
+            "git",
+            "test",
+            "mock",
+            "function",
+            "struct",
+            "trait",
+            "impl",
+            "async",
+            "error",
+            "panic",
+            "result",
+            "option",
+            "vec",
+            "string",
+            "str",
+            "clippy",
+            "fmt",
+            "build",
+            "run",
+            "execute",
+            "shell",
+            "file",
         ];
 
         for term in &code_terms {
@@ -516,7 +578,9 @@ impl OperatorFeedbackParser {
             if trimmed.starts_with('-') || trimmed.starts_with(|c: char| c.is_ascii_digit()) {
                 // Extract the example text
                 let example = trimmed
-                    .trim_start_matches(|c: char| c == '-' || c.is_ascii_digit() || c == '.' || c == ' ')
+                    .trim_start_matches(|c: char| {
+                        c == '-' || c.is_ascii_digit() || c == '.' || c == ' '
+                    })
                     .trim();
 
                 // Skip very short examples
@@ -572,7 +636,10 @@ impl OperatorFeedbackParser {
     }
 
     /// Deduplicate patterns by name
-    fn deduplicate_patterns(&self, mut patterns: Vec<OperatorGuidancePattern>) -> Vec<OperatorGuidancePattern> {
+    fn deduplicate_patterns(
+        &self,
+        mut patterns: Vec<OperatorGuidancePattern>,
+    ) -> Vec<OperatorGuidancePattern> {
         let mut seen: HashMap<String, usize> = HashMap::new();
         patterns.retain(|p| {
             let entry = seen.entry(p.name.clone()).or_insert(0);
@@ -595,7 +662,10 @@ impl OperatorFeedbackParser {
                 examples: p.examples.clone(),
                 source: ConventionSource::FromOperatorFeedback,
                 confidence: p.confidence,
+                confirmation_count: 0,
+                is_promoted: false,
                 created_at: p.created_at,
+                updated_at: chrono::Utc::now(),
             })
             .collect()
     }
@@ -630,7 +700,10 @@ impl OperatorFeedbackService {
     }
 
     /// Load and parse guidance files from a directory
-    pub async fn load_from_directory(&self, dir_path: &Path) -> Result<OperatorFeedbackResult, SwellError> {
+    pub async fn load_from_directory(
+        &self,
+        dir_path: &Path,
+    ) -> Result<OperatorFeedbackResult, SwellError> {
         let result = self.parser.parse_directory(dir_path);
 
         if result.errors.is_empty() || result.patterns_extracted > 0 {
@@ -653,7 +726,10 @@ impl OperatorFeedbackService {
     }
 
     /// Get patterns filtered by type
-    pub async fn get_patterns_by_type(&self, pattern_type: OperatorPatternType) -> Vec<OperatorGuidancePattern> {
+    pub async fn get_patterns_by_type(
+        &self,
+        pattern_type: OperatorPatternType,
+    ) -> Vec<OperatorGuidancePattern> {
         self.patterns
             .read()
             .await
@@ -664,7 +740,10 @@ impl OperatorFeedbackService {
     }
 
     /// Get patterns matching keywords
-    pub async fn get_patterns_by_keywords(&self, keywords: &[String]) -> Vec<OperatorGuidancePattern> {
+    pub async fn get_patterns_by_keywords(
+        &self,
+        keywords: &[String],
+    ) -> Vec<OperatorGuidancePattern> {
         let patterns = self.patterns.read().await;
         keywords
             .iter()
@@ -674,7 +753,9 @@ impl OperatorFeedbackService {
                     .iter()
                     .filter(move |p| {
                         p.name.to_lowercase().contains(&kw_lower)
-                            || p.context_keywords.iter().any(|k| k.to_lowercase().contains(&kw_lower))
+                            || p.context_keywords
+                                .iter()
+                                .any(|k| k.to_lowercase().contains(&kw_lower))
                     })
                     .cloned()
             })
@@ -710,7 +791,10 @@ impl OperatorFeedbackService {
     }
 
     /// Get current modification times for guidance files
-    fn get_current_mtimes(&self, dir_path: &Path) -> Result<HashMap<String, Option<i64>>, SwellError> {
+    fn get_current_mtimes(
+        &self,
+        dir_path: &Path,
+    ) -> Result<HashMap<String, Option<i64>>, SwellError> {
         let mut mtimes = HashMap::new();
 
         for &filename in GUIDANCE_FILES {
@@ -719,7 +803,11 @@ impl OperatorFeedbackService {
                 let mtime = fs::metadata(&file_path)
                     .ok()
                     .and_then(|m| m.modified().ok())
-                    .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64);
+                    .map(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64
+                    });
                 mtimes.insert(filename.to_string(), mtime);
             }
         }
@@ -730,7 +818,11 @@ impl OperatorFeedbackService {
                 let mtime = fs::metadata(&file_path)
                     .ok()
                     .and_then(|m| m.modified().ok())
-                    .map(|t| t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs() as i64);
+                    .map(|t| {
+                        t.duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64
+                    });
                 mtimes.insert(filename.clone(), mtime);
             }
         }
@@ -745,7 +837,10 @@ impl OperatorFeedbackService {
     }
 
     /// Get patterns with higher confidence than threshold
-    pub async fn get_high_confidence_patterns(&self, min_confidence: f64) -> Vec<OperatorGuidancePattern> {
+    pub async fn get_high_confidence_patterns(
+        &self,
+        min_confidence: f64,
+    ) -> Vec<OperatorGuidancePattern> {
         self.patterns
             .read()
             .await
@@ -762,7 +857,10 @@ impl OperatorFeedbackService {
             pattern.last_synced_at = Utc::now();
             Ok(())
         } else {
-            Err(SwellError::InvalidOperation(format!("Pattern not found: {}", pattern_id)))
+            Err(SwellError::InvalidOperation(format!(
+                "Pattern not found: {}",
+                pattern_id
+            )))
         }
     }
 
@@ -785,7 +883,10 @@ impl From<OperatorGuidancePattern> for Convention {
             examples: pattern.examples,
             source: ConventionSource::FromOperatorFeedback,
             confidence: pattern.confidence,
+            confirmation_count: 0,
+            is_promoted: false,
             created_at: pattern.created_at,
+            updated_at: chrono::Utc::now(),
         }
     }
 }
@@ -796,26 +897,32 @@ mod tests {
 
     #[test]
     fn test_operator_pattern_type_infer_naming() {
-        let pattern = OperatorPatternType::infer_from_content("File naming convention: use snake_case");
+        let pattern =
+            OperatorPatternType::infer_from_content("File naming convention: use snake_case");
         assert_eq!(pattern, OperatorPatternType::Naming);
     }
 
     #[test]
     fn test_operator_pattern_type_infer_testing() {
-        let pattern = OperatorPatternType::infer_from_content("Run tests before submitting: cargo test");
+        let pattern =
+            OperatorPatternType::infer_from_content("Run tests before submitting: cargo test");
         assert_eq!(pattern, OperatorPatternType::Testing);
     }
 
     #[test]
     fn test_operator_pattern_type_infer_avoid() {
-        let pattern = OperatorPatternType::infer_from_content("Never use unwrap() in production code");
+        let pattern =
+            OperatorPatternType::infer_from_content("Never use unwrap() in production code");
         assert_eq!(pattern, OperatorPatternType::Avoid);
     }
 
     #[test]
     fn test_operator_pattern_type_as_str() {
         assert_eq!(OperatorPatternType::Naming.as_str(), "naming");
-        assert_eq!(OperatorPatternType::ErrorHandling.as_str(), "error_handling");
+        assert_eq!(
+            OperatorPatternType::ErrorHandling.as_str(),
+            "error_handling"
+        );
         assert_eq!(OperatorPatternType::Avoid.as_str(), "avoid");
     }
 
@@ -840,10 +947,19 @@ mod tests {
     #[test]
     fn test_parse_heading() {
         let parser = OperatorFeedbackParser::with_default_config();
-        
-        assert_eq!(parser.parse_heading("## Naming Conventions"), Some((2, "naming_conventions".to_string())));
-        assert_eq!(parser.parse_heading("# Testing Guidelines"), Some((1, "testing_guidelines".to_string())));
-        assert_eq!(parser.parse_heading("### Error Handling"), Some((3, "error_handling".to_string())));
+
+        assert_eq!(
+            parser.parse_heading("## Naming Conventions"),
+            Some((2, "naming_conventions".to_string()))
+        );
+        assert_eq!(
+            parser.parse_heading("# Testing Guidelines"),
+            Some((1, "testing_guidelines".to_string()))
+        );
+        assert_eq!(
+            parser.parse_heading("### Error Handling"),
+            Some((3, "error_handling".to_string()))
+        );
         assert_eq!(parser.parse_heading("Not a heading"), None);
         // A bare # returns Some with empty text
         assert_eq!(parser.parse_heading("#"), Some((1, String::new())));
@@ -862,12 +978,13 @@ Use snake_case for file names and function names.
 - my_file.rs
 - my_function()
 "#;
-        
+
         let result = parser.parse_content(content, "CLAUDE.md").unwrap();
         assert!(!result.is_empty());
-        
+
         // Should have at least one pattern from "Naming Conventions"
-        let naming_patterns: Vec<_> = result.iter()
+        let naming_patterns: Vec<_> = result
+            .iter()
             .filter(|p| p.pattern_type == OperatorPatternType::Naming)
             .collect();
         assert!(!naming_patterns.is_empty());
@@ -877,7 +994,7 @@ Use snake_case for file names and function names.
     fn test_extract_keywords() {
         let parser = OperatorFeedbackParser::with_default_config();
         let keywords = parser.extract_keywords("Run cargo test and cargo clippy before submitting");
-        
+
         assert!(keywords.contains(&"cargo".to_string()));
         assert!(keywords.contains(&"test".to_string()));
         assert!(keywords.contains(&"clippy".to_string()));
@@ -886,12 +1003,14 @@ Use snake_case for file names and function names.
     #[test]
     fn test_extract_examples() {
         let parser = OperatorFeedbackParser::with_default_config();
-        let examples = parser.extract_examples(r#"
+        let examples = parser.extract_examples(
+            r#"
 - cargo test --workspace
 - cargo clippy -- -D warnings
 - `rustfmt` for formatting
-"#);
-        
+"#,
+        );
+
         assert!(examples.iter().any(|e| e.contains("cargo test")));
         assert!(examples.iter().any(|e| e.contains("cargo clippy")));
         assert!(examples.iter().any(|e| e.contains("rustfmt")));
@@ -899,15 +1018,24 @@ Use snake_case for file names and function names.
 
     #[test]
     fn test_pattern_type_to_convention_type() {
-        assert_eq!(OperatorPatternType::Naming.to_convention_type(), ConventionType::Naming);
-        assert_eq!(OperatorPatternType::Testing.to_convention_type(), ConventionType::Testing);
-        assert_eq!(OperatorPatternType::Avoid.to_convention_type(), ConventionType::CodeStructure);
+        assert_eq!(
+            OperatorPatternType::Naming.to_convention_type(),
+            ConventionType::Naming
+        );
+        assert_eq!(
+            OperatorPatternType::Testing.to_convention_type(),
+            ConventionType::Testing
+        );
+        assert_eq!(
+            OperatorPatternType::Avoid.to_convention_type(),
+            ConventionType::CodeStructure
+        );
     }
 
     #[test]
     fn test_operator_feedback_parser_deduplication() {
         let parser = OperatorFeedbackParser::with_default_config();
-        
+
         let mut patterns = Vec::new();
         for i in 0..3 {
             let mut p = OperatorGuidancePattern::new(
@@ -917,7 +1045,7 @@ Use snake_case for file names and function names.
             p.description = format!("Description {}", i);
             patterns.push(p);
         }
-        
+
         let deduped = parser.deduplicate_patterns(patterns);
         // Should have 2 unique patterns (test_pattern_0 and test_pattern_1)
         assert_eq!(deduped.len(), 2);
@@ -929,7 +1057,7 @@ Use snake_case for file names and function names.
         let temp_dir = std::env::temp_dir();
         let test_dir = temp_dir.join(format!("swell_test_{}", Uuid::new_v4()));
         std::fs::create_dir_all(&test_dir).unwrap();
-        
+
         let claude_content = r#"
 # Test Guidance
 
@@ -941,16 +1069,16 @@ Use snake_case for file names.
 
 Run `cargo test` before submitting.
 "#;
-        
+
         std::fs::write(test_dir.join("CLAUDE.md"), claude_content).unwrap();
-        
+
         let service = OperatorFeedbackService::with_default_config();
         let result = service.load_from_directory(&test_dir).await.unwrap();
-        
+
         assert!(result.patterns_extracted > 0);
         assert!(result.files_parsed >= 1);
         assert!(result.errors.is_empty());
-        
+
         // Cleanup
         std::fs::remove_dir_all(test_dir).ok();
     }
@@ -958,7 +1086,7 @@ Run `cargo test` before submitting.
     #[tokio::test]
     async fn test_operator_feedback_service_get_patterns() {
         let service = OperatorFeedbackService::with_default_config();
-        
+
         // Initially empty
         let patterns = service.get_patterns().await;
         assert!(patterns.is_empty());
@@ -969,7 +1097,7 @@ Run `cargo test` before submitting.
         let temp_dir = std::env::temp_dir();
         let test_dir = temp_dir.join(format!("swell_test_{}", Uuid::new_v4()));
         std::fs::create_dir_all(&test_dir).unwrap();
-        
+
         let content = r#"
 # Rust Conventions
 
@@ -981,22 +1109,22 @@ Use snake_case for functions.
 
 Run `cargo test` before committing.
 "#;
-        
+
         std::fs::write(test_dir.join("CLAUDE.md"), content).unwrap();
-        
+
         let service = OperatorFeedbackService::with_default_config();
         service.load_from_directory(&test_dir).await.unwrap();
-        
+
         let conventions = service.get_conventions().await;
         assert!(!conventions.is_empty());
-        
+
         // All conventions should have FromOperatorFeedback source
         for conv in &conventions {
             assert_eq!(conv.source, ConventionSource::FromOperatorFeedback);
             // Operator feedback should have high confidence
             assert!(conv.confidence >= OPERATOR_FEEDBACK_MIN_CONFIDENCE);
         }
-        
+
         // Cleanup
         std::fs::remove_dir_all(test_dir).ok();
     }
@@ -1010,10 +1138,10 @@ Run `cargo test` before committing.
             errors: vec!["error1".to_string()],
             file_mtimes: HashMap::new(),
         };
-        
+
         let json = serde_json::to_string(&result).unwrap();
         let deserialized: OperatorFeedbackResult = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(deserialized.patterns_extracted, 5);
         assert_eq!(deserialized.files_parsed, 2);
         assert_eq!(deserialized.errors.len(), 1);
@@ -1024,7 +1152,7 @@ Run `cargo test` before committing.
         let source = ConventionSource::FromOperatorFeedback;
         let json = serde_json::to_string(&source).unwrap();
         assert_eq!(json, "\"from_operator_feedback\"");
-        
+
         let deserialized: ConventionSource = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, ConventionSource::FromOperatorFeedback);
     }
@@ -1043,7 +1171,7 @@ Run `cargo test` before committing.
         let temp_dir = std::env::temp_dir();
         let test_dir = temp_dir.join(format!("swell_test_{}", Uuid::new_v4()));
         std::fs::create_dir_all(&test_dir).unwrap();
-        
+
         let content = r#"
 # Project Guidelines
 
@@ -1056,18 +1184,28 @@ Always run cargo test before submitting. Make sure all tests pass.
 ## Error Handling
 Use Result types for error handling. Never use unwrap in production code.
 "#;
-        
+
         std::fs::write(test_dir.join("CLAUDE.md"), content).unwrap();
-        
+
         let service = OperatorFeedbackService::with_default_config();
         service.load_from_directory(&test_dir).await.unwrap();
-        
-        let testing_patterns = service.get_patterns_by_type(OperatorPatternType::Testing).await;
-        assert!(!testing_patterns.is_empty(), "Expected at least one testing pattern");
-        
-        let naming_patterns = service.get_patterns_by_type(OperatorPatternType::Naming).await;
-        assert!(!naming_patterns.is_empty(), "Expected at least one naming pattern");
-        
+
+        let testing_patterns = service
+            .get_patterns_by_type(OperatorPatternType::Testing)
+            .await;
+        assert!(
+            !testing_patterns.is_empty(),
+            "Expected at least one testing pattern"
+        );
+
+        let naming_patterns = service
+            .get_patterns_by_type(OperatorPatternType::Naming)
+            .await;
+        assert!(
+            !naming_patterns.is_empty(),
+            "Expected at least one naming pattern"
+        );
+
         // Cleanup
         std::fs::remove_dir_all(test_dir).ok();
     }
