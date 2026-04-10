@@ -125,6 +125,16 @@ pub use deprecation::{
     DEPRECATION_CONFIDENCE_THRESHOLD,
 };
 
+// Conflict resolution module - Detect contradictory memories and resolve using configurable rules
+pub mod conflict_resolution;
+
+pub use conflict_resolution::{
+    ConflictMemoryInfo, ConflictResolutionConfig, ConflictResolutionLogEntry,
+    ConflictResolutionResult, ConflictResolutionService, ConflictType, MemoryConflict,
+    MemoryConflictDetector, MemoryConflictResolver, MemoryConflictSummary, MemorySource,
+    ResolutionStrategy, CONFLICT_DISTANCE_MAX, CONFLICT_DISTANCE_MIN, LOW_CONFIDENCE_THRESHOLD,
+};
+
 // Staleness module - Memory staleness detection and reinforcement tracking
 pub mod staleness;
 
