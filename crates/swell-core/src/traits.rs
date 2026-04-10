@@ -215,6 +215,36 @@ pub struct MemoryEntry {
     /// Whether this memory has been invalidated due to staleness.
     /// Stale memories are excluded from retrieval results.
     pub is_stale: bool,
+    /// Source episode ID - links this memory to the task/episode that created it.
+    /// Enables full traceability of knowledge origin.
+    pub source_episode_id: Option<Uuid>,
+    /// Evidence from the source episode (raw data, transcript excerpt, etc.)
+    pub evidence: Option<String>,
+    /// Context from the source episode (metadata about how the fact was learned)
+    pub provenance_context: Option<serde_json::Value>,
+}
+
+impl Default for MemoryEntry {
+    fn default() -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            block_type: crate::MemoryBlockType::Project,
+            label: String::new(),
+            content: String::new(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: String::new(),
+            language: None,
+            task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        }
+    }
 }
 
 /// Search query for memory
@@ -231,6 +261,24 @@ pub struct MemoryQuery {
     pub language: Option<String>,
     /// Optional task type filter
     pub task_type: Option<String>,
+    /// Optional source episode ID filter - find memories from a specific episode
+    pub source_episode_id: Option<Uuid>,
+}
+
+impl Default for MemoryQuery {
+    fn default() -> Self {
+        Self {
+            query_text: None,
+            block_types: None,
+            labels: None,
+            limit: 10,
+            offset: 0,
+            repository: String::new(),
+            language: None,
+            task_type: None,
+            source_episode_id: None,
+        }
+    }
 }
 
 /// Search result with relevance score
@@ -266,6 +314,9 @@ pub trait MemoryStore: Send + Sync {
 
     /// Get all memories with a specific label
     async fn get_by_label(&self, label: String) -> Result<Vec<MemoryEntry>, SwellError>;
+
+    /// Get all memories from a specific source episode (provenance tracking)
+    async fn get_by_provenance(&self, source_episode_id: Uuid) -> Result<Vec<MemoryEntry>, SwellError>;
 }
 
 /// Knowledge graph operations

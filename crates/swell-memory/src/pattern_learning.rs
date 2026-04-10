@@ -1087,6 +1087,9 @@ impl PatternLearningService {
                 task_type: None,
                 last_reinforcement: Some(chrono::Utc::now()),
                 is_stale: false,
+                source_episode_id: None,
+                evidence: None,
+                provenance_context: None,
             };
             self.store.store(entry).await?;
             _updated_count = 1;

@@ -459,6 +459,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -501,6 +505,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -554,6 +562,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -627,6 +639,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -675,6 +691,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -716,6 +736,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -752,6 +776,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -812,6 +840,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -856,6 +888,10 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
 
         store.store(entry.clone()).await.unwrap();

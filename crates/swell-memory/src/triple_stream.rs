@@ -691,6 +691,7 @@ impl TripleStreamService {
             repository: query.repository.clone(),
             language: None,
             task_type: None,
+            source_episode_id: None,
         }).await?;
 
         // Score based on label match vs content match
@@ -1149,6 +1150,10 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
         
         store.store(entry.clone()).await.unwrap();
@@ -1183,6 +1188,10 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
         
         store.store(entry.clone()).await.unwrap();
@@ -1272,6 +1281,10 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
         
         let entry2 = crate::MemoryEntry {
@@ -1288,6 +1301,10 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
         
         memory_store.store(entry1.clone()).await.unwrap();
@@ -1348,6 +1365,10 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
+    
         };
         
         memory_store.store(entry.clone()).await.unwrap();

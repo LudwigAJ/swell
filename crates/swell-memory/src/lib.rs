@@ -217,6 +217,22 @@ impl SqliteMemoryStore {
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
 
+        // Add columns for provenance tracking if they don't exist (migration)
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN source_episode_id TEXT")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN evidence TEXT")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN provenance_context TEXT")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_memory_block_type ON memory_entries(block_type)",
         )
@@ -242,6 +258,11 @@ impl SqliteMemoryStore {
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_task_type ON memory_entries(task_type)")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_source_episode_id ON memory_entries(source_episode_id)")
             .execute(pool)
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -476,6 +497,9 @@ impl SqliteMemoryStore {
         let task_type: Option<String> = row.get("task_type");
         let last_reinforcement_str: Option<String> = row.get("last_reinforcement");
         let is_stale: i32 = row.get("is_stale");
+        let source_episode_id_str: Option<String> = row.get("source_episode_id");
+        let evidence: Option<String> = row.get("evidence");
+        let provenance_context_str: Option<String> = row.get("provenance_context");
 
         let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid timestamp: {}", e)))?
@@ -496,6 +520,16 @@ impl SqliteMemoryStore {
 
         let embedding = embedding_bytes.map(|bytes: Vec<u8>| Self::bytes_to_embedding(&bytes));
 
+        let source_episode_id = source_episode_id_str
+            .map(|s| Uuid::parse_str(&s))
+            .transpose()
+            .map_err(|e| SwellError::DatabaseError(format!("Invalid UUID: {}", e)))?;
+
+        let provenance_context = provenance_context_str
+            .map(|s| serde_json::from_str(&s))
+            .transpose()
+            .map_err(|e| SwellError::DatabaseError(format!("Invalid JSON provenance_context: {}", e)))?;
+
         Ok(MemoryEntry {
             id,
             block_type: Self::string_to_block_type(&block_type_str),
@@ -510,6 +544,9 @@ impl SqliteMemoryStore {
             task_type,
             last_reinforcement,
             is_stale: is_stale != 0,
+            source_episode_id,
+            evidence,
+            provenance_context,
         })
     }
 }
@@ -769,6 +806,22 @@ impl MemoryStore for SqliteMemoryStore {
 
         Ok(entries)
     }
+
+    /// Get all memories from a specific source episode (provenance tracking)
+    async fn get_by_provenance(&self, source_episode_id: Uuid) -> Result<Vec<MemoryEntry>, SwellError> {
+        let rows = sqlx::query("SELECT * FROM memory_entries WHERE source_episode_id = ?")
+            .bind(source_episode_id.to_string())
+            .fetch_all(self.pool.as_ref())
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(Self::row_to_entry(&row)?);
+        }
+
+        Ok(entries)
+    }
 }
 
 // Separate impl block for staleness-related methods
@@ -930,6 +983,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let id = store.store(entry.clone()).await.unwrap();
@@ -961,6 +1017,9 @@ mod tests {
             task_type: Some("bugfix".to_string()),
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -995,6 +1054,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let entry2 = MemoryEntry {
@@ -1011,6 +1073,9 @@ mod tests {
             task_type: Some("feature".to_string()),
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -1026,6 +1091,8 @@ mod tests {
                 repository: "my-repo".to_string(),
                 language: None,
                 task_type: None,
+                source_episode_id: None,
+            
             })
             .await
             .unwrap();
@@ -1052,6 +1119,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let entry2 = MemoryEntry {
@@ -1068,6 +1138,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -1084,6 +1157,8 @@ mod tests {
                 repository: "test-repo".to_string(),
                 language: Some("rust".to_string()),
                 task_type: None,
+                source_episode_id: None,
+            
             })
             .await
             .unwrap();
@@ -1110,6 +1185,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let entry2 = MemoryEntry {
@@ -1126,6 +1204,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -1142,6 +1223,8 @@ mod tests {
                 repository: "repo-a".to_string(),
                 language: None,
                 task_type: None,
+                source_episode_id: None,
+            
             })
             .await
             .unwrap();
@@ -1160,6 +1243,8 @@ mod tests {
                 repository: "repo-b".to_string(),
                 language: None,
                 task_type: None,
+                source_episode_id: None,
+            
             })
             .await
             .unwrap();
@@ -1186,6 +1271,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let entry2 = MemoryEntry {
@@ -1202,6 +1290,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -1234,6 +1325,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let entry2 = MemoryEntry {
@@ -1250,6 +1344,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -1286,6 +1383,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // Store the first entry - should succeed
@@ -1308,6 +1408,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // Try to store similar entry - should be rejected
@@ -1343,6 +1446,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // Store the first entry - should succeed
@@ -1365,6 +1471,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // Try to store different entry - should succeed
@@ -1390,6 +1499,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // Store entry without embedding - should succeed
@@ -1409,6 +1521,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // Store another entry without embedding - should also succeed
@@ -1438,6 +1553,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry_a.clone()).await.unwrap();
@@ -1459,6 +1577,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // Should succeed because different repositories are isolated
@@ -1529,6 +1650,9 @@ mod tests {
             task_type: None,
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let id = store.store(entry.clone()).await.unwrap();
@@ -1558,6 +1682,9 @@ mod tests {
             task_type: None,
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(fresh_entry.clone()).await.unwrap();
@@ -1577,6 +1704,9 @@ mod tests {
             task_type: None,
             last_reinforcement: Some(chrono::Utc::now() - chrono::Duration::days(60)),
             is_stale: true, // Mark as stale
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // For testing, we need to insert directly to bypass the store's auto-staleness
@@ -1598,6 +1728,8 @@ mod tests {
                 repository: "test-repo".to_string(),
                 language: None,
                 task_type: None,
+                source_episode_id: None,
+            
             })
             .await
             .unwrap();
@@ -1626,6 +1758,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -1665,6 +1800,9 @@ mod tests {
             task_type: None,
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -1700,6 +1838,9 @@ mod tests {
             task_type: None,
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let entry2 = MemoryEntry {
@@ -1716,6 +1857,9 @@ mod tests {
             task_type: None,
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -1745,6 +1889,8 @@ mod tests {
                 repository: "test-repo".to_string(),
                 language: None,
                 task_type: None,
+                source_episode_id: None,
+            
             })
             .await
             .unwrap();
@@ -1772,6 +1918,9 @@ mod tests {
             task_type: None,
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let entry2 = MemoryEntry {
@@ -1788,6 +1937,9 @@ mod tests {
             task_type: None,
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry1.clone()).await.unwrap();

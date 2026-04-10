@@ -217,6 +217,9 @@ pub fn create_project_block(
         task_type: None,
         last_reinforcement: Some(now),
         is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
     }
 }
 
@@ -240,6 +243,9 @@ pub fn create_user_block(user_id: &str, preferences: &str) -> MemoryEntry {
         task_type: None,
         last_reinforcement: Some(now),
         is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
     }
 }
 
@@ -263,6 +269,9 @@ pub fn create_task_block(task_id: Uuid, context: &str) -> MemoryEntry {
         task_type: None,
         last_reinforcement: Some(now),
         is_stale: false,
+        source_episode_id: None,
+        evidence: None,
+        provenance_context: None,
     }
 }
 

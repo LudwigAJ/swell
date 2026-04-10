@@ -520,6 +520,9 @@ impl RerankableCandidates for Vec<crate::triple_stream::TripleStreamResult> {
                         task_type: None,
                         last_reinforcement: None,
                         is_stale: false,
+                        source_episode_id: None,
+                        evidence: None,
+                        provenance_context: None,
                     },
                     result.score,
                     result.vector_score,
@@ -557,6 +560,9 @@ mod tests {
                     task_type: None,
                     last_reinforcement: None,
                     is_stale: false,
+                    source_episode_id: None,
+                    evidence: None,
+                    provenance_context: None,
                 },
                 0.8,
             ),
@@ -575,6 +581,9 @@ mod tests {
                     task_type: None,
                     last_reinforcement: None,
                     is_stale: false,
+                    source_episode_id: None,
+                    evidence: None,
+                    provenance_context: None,
                 },
                 0.7,
             ),
@@ -593,6 +602,9 @@ mod tests {
                     task_type: None,
                     last_reinforcement: None,
                     is_stale: false,
+                    source_episode_id: None,
+                    evidence: None,
+                    provenance_context: None,
                 },
                 0.6,
             ),
@@ -641,6 +653,9 @@ mod tests {
                 task_type: None,
                 last_reinforcement: None,
                 is_stale: false,
+                source_episode_id: None,
+                evidence: None,
+                provenance_context: None,
             },
             0.5,
         )];
@@ -677,6 +692,9 @@ mod tests {
                     task_type: None,
                     last_reinforcement: None,
                     is_stale: false,
+                    source_episode_id: None,
+                    evidence: None,
+                    provenance_context: None,
                 },
                 0.5,
             ),
@@ -695,6 +713,9 @@ mod tests {
                     task_type: None,
                     last_reinforcement: None,
                     is_stale: false,
+                    source_episode_id: None,
+                    evidence: None,
+                    provenance_context: None,
                 },
                 0.5,
             ),
@@ -815,6 +836,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let result = RerankResult::new(entry.clone(), 0.9, 0.7, 1);
@@ -841,6 +865,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         // 50-50 blend
@@ -875,6 +902,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         let candidate = RerankCandidate::new(entry.clone(), 0.8);
@@ -937,6 +967,9 @@ mod tests {
                 task_type: None,
                 last_reinforcement: None,
                 is_stale: false,
+                source_episode_id: None,
+                evidence: None,
+                provenance_context: None,
             },
             0.5,
         )];
