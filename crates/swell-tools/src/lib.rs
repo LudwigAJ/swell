@@ -13,6 +13,7 @@ pub mod branch_strategy;
 pub mod commit_strategy;
 pub mod conflict_resolution;
 pub mod executor;
+pub mod hybrid;
 pub mod mcp;
 pub mod pr_creation;
 pub mod registry;
@@ -30,6 +31,10 @@ pub use conflict_resolution::{
     ConflictResolverConfig, FileOwner, ResolutionResult, ResolutionStrategy,
 };
 pub use executor::ToolExecutor;
+pub use hybrid::{
+    ExecutorInput, HybridConfig, HybridExecutor, LocalExecutor, RemoteExecutor, RiskClass,
+    ToolExecutorTrait,
+};
 pub use pr_creation::{
     EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
 };

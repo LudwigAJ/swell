@@ -1,50 +1,10 @@
 {
   "features": [
     {
-      "id": "agent-skills-loader",
+      "id": "agent-skills-loader-unique",
       "description": "Implement Agent Skills loader following agentskills.io standard. Skills are directories with SKILL.md containing YAML frontmatter (name, description) plus optional scripts/, references/, assets/ directories. This enables model-driven skill discovery and activation.",
       "skillName": "Rust",
-      "preconditions": [
-        "swell-core complete"
-      ],
-      "expectedBehavior": [
-        "Discovery: Scan .swell/skills/ and optionally ~/.swell/skills/ for SKILL.md files",
-        "Parsing: Extract YAML frontmatter (name, description) from each SKILL.md",
-        "Lenient validation: Accept skills with missing optional fields (allow other frontmatter)",
-        "Catalog: Build catalog with name, description, location for each skill",
-        "Progressive disclosure: Tier 1 (name+description ~50-100 tokens) at startup, Tier 2 (full SKILL.md body) on activation",
-        "On-demand resources: Load scripts/, references/, assets/ when explicitly requested",
-        "Model-driven activation: LLM reads catalog, matches skills to tasks using description keywords",
-        "Skills discoverable by description keywords (e.g., 'rust', 'async', 'tokio' for rust-coding)"
-      ],
-      "verificationSteps": [
-        "cargo build --workspace",
-        "cargo test -p swell-core -- skills",
-        "Verify skill catalog includes all skills with name+description",
-        "Verify full content loaded only on activation",
-        "Verify scripts/references/assets loaded on demand"
-      ],
-      "fulfills": [
-        "VAL-SKILLS-001",
-        "VAL-SKILLS-002",
-        "VAL-SKILLS-003",
-        "VAL-SKILLS-004",
-        "VAL-SKILLS-005",
-        "VAL-SKILLS-006",
-        "VAL-SKILLS-007",
-        "VAL-SKILLS-008"
-      ],
-      "milestone": "skills",
-      "status": "pending",
-      "workerSessionIds": []
-    },
-    {
-      "id": "agent-skills-loader",
-      "description": "Implement Agent Skills loader following agentskills.io standard. Skills are directories with SKILL.md containing YAML frontmatter (name, description) plus optional scripts/, references/, assets/ directories. This enables model-driven skill discovery and activation.",
-      "skillName": "Rust",
-      "preconditions": [
-        "swell-core complete"
-      ],
+      "preconditions": [],
       "expectedBehavior": [
         "Discovery: Scan .swell/skills/ and optionally ~/.swell/skills/ for SKILL.md files",
         "Parsing: Extract YAML frontmatter (name, description) from each SKILL.md",
