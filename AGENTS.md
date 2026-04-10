@@ -290,14 +290,18 @@ SWELL will connect to each server, negotiate capabilities, and expose whatever t
 
 ## Agent Skills
 
-SWELL supports the [Agent Skills](https://agentskills.io) standard for defining reusable agent capabilities.
+SWELL supports the [Agent Skills](https://agentskills.io) standard for defining reusable agent capabilities. Skills are discovered from `.swell/skills/` and can be added by users.
+
+### User-Extensible
+
+Users can add new skills to `.swell/skills/` - no code changes needed. SWELL discovers skills at startup.
 
 ### Skill Directory Structure
 
 ```
-.swell/skills/
+.swell/skills/          # User-extensible - add skills here!
 ├── rust-coding/
-│   └── SKILL.md          # YAML frontmatter + instructions
+│   └── SKILL.md
 ├── test-writing/
 │   └── SKILL.md
 ├── code-review/
@@ -310,11 +314,8 @@ SWELL supports the [Agent Skills](https://agentskills.io) standard for defining 
 
 ```yaml
 ---
-name: skill-name
+name: my-custom-skill
 description: What this skill does and when to use it.
-metadata:
-  author: example
-  version: "1.0"
 ---
 # Instructions in Markdown
 ```
@@ -325,7 +326,9 @@ metadata:
 2. **Activation**: Load full `SKILL.md` body when skill is needed
 3. **Resources**: Load `scripts/`, `references/`, `assets/` on demand
 
-### Included Skills
+### Included Skills (Defaults)
+
+These come with SWELL but can be replaced or extended:
 
 | Skill | Purpose |
 |-------|---------|
