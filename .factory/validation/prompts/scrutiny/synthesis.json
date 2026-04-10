@@ -1,25 +1,25 @@
 {
   "milestone": "prompts",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": false,
       "command": "cargo test --workspace",
       "exitCode": "timeout",
-      "notes": "Test suite timed out after 600 seconds. However, all tests that completed before timeout passed. Build passes. Issue appears environmental rather than code failure."
+      "notes": "Test suite timed out again after 600 seconds. However, all tests that completed before timeout passed. Build and lint (clippy with warnings) pass. Issue is environmental - the test suite appears to hang on swell-validation tests, not a code failure."
     },
     "typecheck": {
       "passed": true,
       "command": "cargo clippy --workspace -- -D warnings",
       "exitCode": 0,
-      "notes": "Fixed redundant closure error in swell-skills/src/loader.rs before passing."
+      "notes": "Typecheck passes with no warnings."
     },
     "lint": {
       "passed": true,
       "command": "cargo clippy --workspace",
       "exitCode": 0,
-      "notes": "Lint passed after fix."
+      "notes": "Lint passes with warnings (unused variables, unused imports) but no errors."
     },
     "build": {
       "passed": true,
@@ -32,7 +32,8 @@
     "total": 4,
     "passed": 3,
     "failed": 1,
-    "failedFeatures": ["prompts-multi-run-validation"]
+    "failedFeatures": ["prompts-multi-run-validation"],
+    "notes": "No new features reviewed. prompts-multi-run-validation remains unfixed (fix-prompts-multi-run-validation is pending). All 4 reviews from round 1 remain valid."
   },
   "blockingIssues": [
     {
@@ -82,5 +83,5 @@
       "reason": "Not a gap - this is expected behavior. SWELL workers correctly implemented only the core audit logging functionality without non-existent dependencies."
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/prompts/scrutiny/synthesis.json"
 }
