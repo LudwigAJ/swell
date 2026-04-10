@@ -41,6 +41,15 @@ pub use semantic::{
     SqliteSemanticStore,
 };
 
+// Procedural memory module - Strategies, procedures, and action patterns stored with
+// Beta posterior distribution for confidence scoring
+pub mod procedural;
+
+pub use procedural::{
+    BetaPosterior, ProceduralStore, Procedure, ProcedureQuery, ProcedureResult, ProcedureStep,
+    SqliteProceduralStore,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
