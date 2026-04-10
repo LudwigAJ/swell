@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 8,
+  "round": 9,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -9,7 +9,7 @@
   },
   "reviewsSummary": {
     "total": 23,
-    "passed": 14,
+    "passed": 4,
     "failed": 9,
     "failedFeatures": [
       "memory-skill-extraction",
@@ -27,31 +27,31 @@
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 107: ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. Extracted skills will not be discoverable by the system's skill discovery mechanism. STILL NOT FIXED since round 1 (now round 8).",
+      "description": "Line 107: ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. Extracted skills will not be discoverable by the system's skill discovery mechanism. STILL NOT FIXED since round 1 (now round 9).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs line 107: store_path: \".skills\".to_string()"
     },
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 139: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. The analyzer only processes input trajectory in memory without querying historical data. STILL NOT FIXED since round 1 (now round 8).",
+      "description": "Line 139: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. The analyzer only processes input trajectory in memory without querying historical data. STILL NOT FIXED since round 1 (now round 9).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs line 139: #[allow(dead_code)] on TrajectoryAnalyzer struct"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 8).",
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 9).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs line 955: final_pattern.update_confidence(frequency_map.values().sum())"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 8).",
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 9).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs line 1145: let name = trimmed[3..colon_pos].trim().to_string();"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 8).",
+      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 9).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs lines 1173-1176: Ok(Vec::new()) with 'For MVP, return empty' comment"
     },
     {
@@ -101,19 +101,13 @@
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "CRITICAL: These 12 blocking issues have persisted for 8 rounds without resolution. The orchestrator should create dedicated, HIGH-PRIORITY fix features for each blocking issue that get auto-assigned rather than expecting implementation workers to self-correct. These are well-identified, localized bugs that should be fixed by targeted features.",
-      "evidence": "All issues marked 'STILL NOT FIXED' or clearly identified in 1-2 prior rounds. No code changes to memory-pattern-learning, memory-skill-extraction. Multiple issues clearly described with file:line evidence.",
+      "suggestion": "CRITICAL: 12 blocking issues have persisted for 9 rounds without resolution. The orchestrator should create HIGH-PRIORITY dedicated fix features for each blocking issue that get auto-assigned. These are well-identified, localized bugs that should be fixed by targeted features, not expect implementation workers to self-correct.",
+      "evidence": "All 12 issues marked 'STILL NOT FIXED since round 1' with file:line evidence. No code changes made to address these issues across 9 rounds.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "The skill store path convention is unclear: skill extraction outputs to `.skills/` but AGENTS.md documents `.swell/skills/` as the user-extensible skill directory. Clarify the intended behavior: (a) skill_extraction.rs should use `.swell/skills/` as the default store path, or (b) AGENTS.md should document both locations with different purposes.",
-      "evidence": "memory-skill-extraction stores to `.skills/` (line 107) but AGENTS.md line ~210 states 'Users can add new skills to .swell/skills/ - no code changes needed.'",
-      "isSystemic": false
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Add guidance on error handling for JSON serialization in audit-critical paths: unwrap_or_default() is inappropriate for audit trails where data loss is unacceptable. Workers should use ? propagation or handle errors explicitly rather than silently discarding them.",
+      "suggestion": "Add guidance on error handling for audit-critical paths: unwrap_or_default() is inappropriate for audit trails where data loss is unacceptable. Workers should use ? propagation or handle errors explicitly rather than silently discarding them. This anti-pattern appears in mem-event-log-jsonl.",
       "evidence": "mem-event-log-jsonl review identified 5 unwrap_or_default() calls that silently lose audit data on serialization failure",
       "isSystemic": true
     },
@@ -128,8 +122,23 @@
       "suggestion": "Add guidance on trait completeness: features that add methods to existing traits should verify the trait is implemented and integrated. The Deprecatable trait is defined but has no implementations - either implement it or remove the dead code.",
       "evidence": "mem-deprecation review identified Deprecatable trait with no implementations and MemoryEntry lacking confidence field",
       "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify the skill store path convention: skill extraction outputs to `.skills/` but AGENTS.md documents `.swell/skills/` as the user-extensible skill directory. Either (a) skill_extraction.rs should use `.swell/skills/` as the default store path, or (b) AGENTS.md should document both locations with different purposes.",
+      "evidence": "memory-skill-extraction stores to `.skills/` but AGENTS.md line ~210 states 'Users can add new skills to .swell/skills/'",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Standardize error types: event_log.rs uses io::Error directly instead of SwellError or thiserror enum. Architecture.md states 'Error handling via thiserror enums' and AGENTS.md says 'All fallible operations return Result<T, SwellError>'. Workers should follow this convention.",
+      "evidence": "mem-event-log-jsonl review noted io::Error usage vs project convention",
+      "isSystemic": true
     }
   ],
-  "rejectedObservations": [],
-  "previousRound": "dcf9145"
+  "rejectedObservations": [
+    { "observation": ".factory/services.yaml missing - ENOENT on read", "reason": "This is a fact about missing infrastructure, not guidance to apply. The orchestrator owns .factory/ directory." },
+    { "observation": "Feature skillName 'rust-worker' vs available 'rust' skill mismatch", "reason": "This is a feature configuration issue, not a guidance issue. The orchestrator manages feature definitions." }
+  ],
+  "previousRound": "4acc49e"
 }
