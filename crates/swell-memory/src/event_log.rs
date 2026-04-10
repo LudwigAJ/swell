@@ -452,7 +452,7 @@ pub fn read_all_events(path: &Path) -> io::Result<Vec<EventLogEntry>> {
 }
 
 #[cfg(test)]
-mod tests {
+mod episodic {
     use super::*;
     use tempfile::TempDir;
 
