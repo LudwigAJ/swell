@@ -149,10 +149,12 @@ impl SqliteMemoryStore {
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_repository ON memory_entries(repository)")
-            .execute(pool)
-            .await
-            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_memory_repository ON memory_entries(repository)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_language ON memory_entries(language)")
             .execute(pool)
@@ -242,6 +244,76 @@ impl SqliteMemoryStore {
             .collect()
     }
 
+    /// Compute cosine distance between two embeddings
+    /// Returns a value between 0 (identical) and 1 (orthogonal)
+    fn cosine_distance(embedding1: &[f32], embedding2: &[f32]) -> f32 {
+        if embedding1.len() != embedding2.len() {
+            return 1.0; // Different dimensions = maximum distance
+        }
+
+        let dot_product: f32 = embedding1
+            .iter()
+            .zip(embedding2.iter())
+            .map(|(a, b)| a * b)
+            .sum();
+
+        let norm1: f32 = embedding1.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let norm2: f32 = embedding2.iter().map(|x| x * x).sum::<f32>().sqrt();
+
+        if norm1 == 0.0 || norm2 == 0.0 {
+            return 1.0; // Zero vector = maximum distance
+        }
+
+        let cosine_similarity = dot_product / (norm1 * norm2);
+        // Cosine distance = 1 - cosine similarity
+        // Clamp to handle floating point errors
+        (1.0 - cosine_similarity).clamp(0.0, 1.0)
+    }
+
+    /// Check if entry is too similar to any existing memory in the same repository
+    /// Returns Some(existing_id) if similar memory found, None otherwise
+    async fn find_similar_memory(
+        &self,
+        entry: &MemoryEntry,
+        max_distance: f32,
+    ) -> Result<Option<Uuid>, SwellError> {
+        // Only check if the entry has an embedding
+        let Some(new_embedding) = &entry.embedding else {
+            return Ok(None);
+        };
+
+        // Query all entries with embeddings in the same repository
+        let rows = sqlx::query(
+            r#"
+            SELECT * FROM memory_entries 
+            WHERE repository = ? AND embedding IS NOT NULL
+            "#,
+        )
+        .bind(&entry.repository)
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        for row in rows {
+            let existing_entry = Self::row_to_entry(&row)?;
+
+            // Skip the entry itself (for updates)
+            if existing_entry.id == entry.id {
+                continue;
+            }
+
+            if let Some(existing_embedding) = &existing_entry.embedding {
+                let distance = Self::cosine_distance(new_embedding, existing_embedding);
+
+                if distance < max_distance {
+                    return Ok(Some(existing_entry.id));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Helper to convert database row to MemoryEntry
     fn row_to_entry(row: &SqliteRow) -> Result<MemoryEntry, SwellError> {
         let id_str: String = row.get("id");
@@ -288,7 +360,19 @@ impl SqliteMemoryStore {
 #[async_trait]
 impl MemoryStore for SqliteMemoryStore {
     /// Store a new memory entry
+    /// Rejects memories with cosine distance < 0.15 (similarity > 0.85) to existing memories
+    /// in the same repository to prevent duplication.
     async fn store(&self, entry: MemoryEntry) -> Result<Uuid, SwellError> {
+        // Check for similar memories before storing
+        // Reject if cosine distance < 0.15 (i.e., similarity > 0.85)
+        const SIMILARITY_THRESHOLD: f32 = 0.15;
+        if let Some(similar_id) = self
+            .find_similar_memory(&entry, SIMILARITY_THRESHOLD)
+            .await?
+        {
+            return Err(SwellError::SimilarMemoryFound(similar_id));
+        }
+
         let block_type_str = Self::block_type_to_string(entry.block_type);
         let embedding_bytes = entry
             .embedding
@@ -847,5 +931,233 @@ mod tests {
             .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, entry1.id);
+    }
+
+    #[tokio::test]
+    async fn test_similarity_check_rejects_similar_embeddings() {
+        use swell_core::SwellError;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Create a base embedding
+        let base_embedding = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+
+        let entry1 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-1".to_string(),
+            content: "Project content".to_string(),
+            embedding: Some(base_embedding.clone()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        // Store the first entry - should succeed
+        store.store(entry1.clone()).await.unwrap();
+
+        // Create a very similar embedding (distance < 0.15)
+        let similar_embedding = vec![0.11, 0.21, 0.31, 0.41, 0.51];
+
+        let entry2 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-2".to_string(),
+            content: "Different content".to_string(),
+            embedding: Some(similar_embedding),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        // Try to store similar entry - should be rejected
+        let result = store.store(entry2).await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            SwellError::SimilarMemoryFound(existing_id) => {
+                assert_eq!(existing_id, entry1.id);
+            }
+            _ => panic!("Expected SimilarMemoryFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_similarity_check_accepts_different_embeddings() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Create a base embedding
+        let base_embedding = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+
+        let entry1 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-1".to_string(),
+            content: "Project content".to_string(),
+            embedding: Some(base_embedding),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        // Store the first entry - should succeed
+        store.store(entry1.clone()).await.unwrap();
+
+        // Create a very different embedding (distance > 0.15)
+        let different_embedding = vec![0.9, 0.8, 0.7, 0.6, 0.5];
+
+        let entry2 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-2".to_string(),
+            content: "Different content".to_string(),
+            embedding: Some(different_embedding),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        // Try to store different entry - should succeed
+        let result = store.store(entry2).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_similarity_check_allows_no_embedding() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry1 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-1".to_string(),
+            content: "Project content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        // Store entry without embedding - should succeed
+        store.store(entry1.clone()).await.unwrap();
+
+        let entry2 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-2".to_string(),
+            content: "Different content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        // Store another entry without embedding - should also succeed
+        // (no similarity check performed without embeddings)
+        let result = store.store(entry2).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_similarity_check_is_repository_scoped() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Create embedding in repo-a
+        let embedding_a = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+
+        let entry_a = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-a".to_string(),
+            content: "Project A content".to_string(),
+            embedding: Some(embedding_a),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "repo-a".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        store.store(entry_a.clone()).await.unwrap();
+
+        // Create very similar embedding in repo-b
+        let similar_embedding = vec![0.11, 0.21, 0.31, 0.41, 0.51];
+
+        let entry_b = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-b".to_string(),
+            content: "Project B content".to_string(),
+            embedding: Some(similar_embedding),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "repo-b".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        // Should succeed because different repositories are isolated
+        let result = store.store(entry_b).await;
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cosine_distance_identical_embeddings() {
+        let embedding = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+        let distance = SqliteMemoryStore::cosine_distance(&embedding, &embedding);
+        assert!(
+            distance < 0.001,
+            "Identical embeddings should have distance near 0"
+        );
+    }
+
+    #[test]
+    fn test_cosine_distance_orthogonal_embeddings() {
+        // [1, 0, 0] and [0, 1, 0] are orthogonal
+        let embedding1 = vec![1.0, 0.0, 0.0];
+        let embedding2 = vec![0.0, 1.0, 0.0];
+        let distance = SqliteMemoryStore::cosine_distance(&embedding1, &embedding2);
+        assert!(
+            distance > 0.99,
+            "Orthogonal embeddings should have distance near 1"
+        );
+    }
+
+    #[test]
+    fn test_cosine_distance_different_lengths() {
+        let embedding1 = vec![0.1, 0.2, 0.3];
+        let embedding2 = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+        let distance = SqliteMemoryStore::cosine_distance(&embedding1, &embedding2);
+        assert_eq!(
+            distance, 1.0,
+            "Different length embeddings should have max distance"
+        );
+    }
+
+    #[test]
+    fn test_cosine_distance_zero_vectors() {
+        let embedding1 = vec![0.0, 0.0, 0.0];
+        let embedding2 = vec![0.0, 0.0, 0.0];
+        let distance = SqliteMemoryStore::cosine_distance(&embedding1, &embedding2);
+        assert_eq!(distance, 1.0, "Zero vectors should have max distance");
     }
 }

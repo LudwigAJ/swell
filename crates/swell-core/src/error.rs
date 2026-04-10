@@ -43,6 +43,9 @@ pub enum SwellError {
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("Similar memory found: {0}")]
+    SimilarMemoryFound(uuid::Uuid),
 }
 
 impl serde::Serialize for SwellError {
