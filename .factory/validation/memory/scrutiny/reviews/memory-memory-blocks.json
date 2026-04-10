@@ -1,31 +1,39 @@
 {
   "featureId": "memory-memory-blocks",
-  "reviewedAt": "2026-04-10T00:15:00Z",
+  "reviewedAt": "2026-04-10T03:05:00Z",
   "commitId": "4cbce48",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "Implementation provides Project/User/Task memory blocks with auto-loading via DefaultBlockLoader and context assembly via ContextAssembler. The blocks.rs module is well-structured with 7 passing tests. Code follows existing project patterns.",
-    "issues": []
+    "summary": "The memory-memory-blocks feature is well-implemented with no blocking issues. Created blocks.rs module with MemoryBlockLoader trait, DefaultBlockLoader, ContextAssembler, and helper functions. All 7 tests pass, clippy is clean.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/blocks.rs",
+        "line": 203,
+        "severity": "non_blocking",
+        "description": "create_project_block always uses label 'project:architecture' regardless of whether content is about architecture or conventions. The content format includes both architecture AND conventions sections, but the label only reflects the architecture part.",
+        "suggestedFix": "Consider using a more generic label like 'project:info' since the content covers both architecture and conventions. Alternatively, add a label parameter to the function to allow callers to specify the label."
+      }
+    ]
   },
   "sharedStateObservations": [
     {
       "area": "skills",
-      "observation": "Feature specifies skillName 'Rust' but worker transcript shows attempt to use 'rust-worker' skill (which doesn't exist). Worker correctly used the available 'Rust' skill instead. The skill feedback correctly notes this mismatch, suggesting the rust-worker skill should be created or renamed.",
-      "evidence": "features.json shows skillName: 'Rust'; transcript shows: 'The rust-worker skill was not found, so I invoked the Rust skill instead'; skillFeedback.deviations: {step: 'skill invocation', whatIDidInstead: 'The rust-worker skill was not found, so I invoked the Rust skill instead'}"
+      "observation": "The worker expected a 'rust-worker' skill but features.json specifies skillName 'Rust'. The transcript shows the worker invoked the Rust skill instead after finding rust-worker didn't exist. The actual available skill is 'Rust' not 'rust-worker'.",
+      "evidence": "Transcript shows: 'Skill \"rust-worker\" not found' followed by successful invocation of 'Rust' skill. Handoff.skillFeedback.followedProcedure is false with deviation: 'rust-worker skill was not found, so I invoked the Rust skill instead'."
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill documentation correctly guided the worker on async_trait::async_trait usage and other Rust patterns. No issues with the skill content itself.",
+      "evidence": "Worker successfully used #[tokio::test] for async tests, Arc<dyn Trait> for dynamic dispatch, and followed error handling patterns as documented in the Rust skill."
     },
     {
       "area": "conventions",
-      "observation": "The load_blocks function in DefaultBlockLoader uses get_by_type(MemoryBlockType::Project) without repository scope filtering, while get_by_label is used for User and Task blocks. This inconsistency could return project entries from wrong repositories if multiple repos store project blocks.",
-      "evidence": "blocks.rs:52-65 - project block lookup uses get_by_type and iterates checking metadata.repository, but get_by_type itself is not repository-scoped in the MemoryStore trait implementation (lib.rs:get_by_type has no repository parameter)"
-    },
-    {
-      "area": "knowledge",
-      "observation": "create_project_block hardcodes the label to 'project:architecture' for ALL project blocks, meaning only one project block per repository. The feature description mentions 'Project (architecture, conventions)' suggesting possibly multiple project-related blocks. If a repository needs separate architecture vs conventions blocks, the current design doesn't support this.",
-      "evidence": "blocks.rs:167 - label: labels::PROJECT_ARCHITECTURE.to_string() is hardcoded; labels module defines PROJECT_CONVENTIONS constant but it's not used"
+      "observation": "The worker discovered and correctly used the pattern for creating MemoryEntry with all required fields (is_stale, last_reinforcement, provenance_context, etc). This pattern is not explicitly documented in AGENTS.md but is consistent with existing code in lib.rs.",
+      "evidence": "blocks.rs lines 211-224, 237-250, 263-276 show correct MemoryEntry construction with all fields. The existing tests in lib.rs use the same pattern."
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature memory-memory-blocks passes review. Implementation is solid with proper Project/User/Task blocks, DefaultBlockLoader for auto-loading, and ContextAssembler for context assembly. All 7 tests pass and clippy is clean. Three observations noted for potential improvements: skill naming mismatch, repository scoping in get_by_type, and single project block limitation."
+  "summary": "Feature passes scrutiny. Implementation correctly covers all expected behavior: Project/User/Task memory blocks with auto-loading via MemoryBlockLoader trait and context assembly via ContextAssembler. Build succeeds, 7 tests pass, clippy clean. One non-blocking label naming suggestion. Worker followed Rust skill guidance correctly after skill name mismatch."
 }
