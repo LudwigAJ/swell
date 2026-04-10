@@ -1,61 +1,114 @@
 {
   "milestone": "memory",
-  "round": 3,
+  "round": 1,
   "status": "fail",
   "validatorsRun": {
-    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
-    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
-    "lint": { "passed": true, "command": "cargo fmt --all -- --check", "exitCode": 0 }
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace",
+      "exitCode": 0
+    }
   },
   "reviewsSummary": {
-    "total": 5,
-    "passed": 4,
-    "failed": 1,
-    "failedFeatures": ["memory-pattern-learning"]
+    "total": 24,
+    "passed": 16,
+    "failed": 8,
+    "failedFeatures": [
+      "memory-pattern-learning",
+      "mem-event-log-jsonl",
+      "mem-episodic-memory",
+      "mem-deprecation",
+      "mem-scoping",
+      "mem-cross-encoder-rerank",
+      "mem-provenance-tracking",
+      "mem-triple-stream-retrieval"
+    ]
   },
   "blockingIssues": [
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Convention parsing broken (line 1143): String slice indices incorrect - uses [3..] instead of [4..] for '- **' prefix, causing stored conventions to be unparsable. The name extraction `trimmed[3..colon_pos]` incorrectly includes the second asterisk."
+      "description": "Line 955: confidence calculation uses sum of all pattern frequencies instead of per-pattern frequency. Line 1143: convention parsing uses wrong string slice index [3..] instead of [4..]. Line 1175: get_anti_patterns_for_error is an unimplemented stub returning empty vec."
     },
     {
-      "featureId": "memory-pattern-learning",
+      "featureId": "mem-event-log-jsonl",
       "severity": "blocking",
-      "description": "Confidence calculation bug (line 955): Uses sum of all pattern frequencies instead of per-pattern frequency. `frequency_map.values().sum()` inflates confidence scores incorrectly."
+      "description": "Lines 196, 218, 237, 253, 271: unwrap_or_default() silently swallows JSON serialization errors, risking lost audit trail data. Should propagate error or handle explicitly."
     },
     {
-      "featureId": "memory-pattern-learning",
+      "featureId": "mem-episodic-memory",
       "severity": "blocking",
-      "description": "Anti-pattern retrieval unimplemented (line 1175): get_anti_patterns_for_error is a stub returning empty vec - anti-patterns are extracted but cannot be retrieved."
+      "description": "EventType::Observation and ObservationPayload are defined but log_observation() method is missing from EventLog. The expectedBehavior requires 'Stores observations and outcomes immutably' but only log_outcome() exists."
+    },
+    {
+      "featureId": "mem-deprecation",
+      "severity": "blocking",
+      "description": "MemoryEntry does not have a confidence field (added in mem-confidence-bayesian but not integrated). SqliteMemoryStore database schema has no deprecation columns. Deprecatable trait is dead code since MemoryEntry doesn't implement it."
+    },
+    {
+      "featureId": "mem-scoping",
+      "severity": "blocking",
+      "description": "get_by_type(), get_by_label(), and get_by_provenance() do NOT filter by repository - return ALL memories across ALL repositories. Violates 'cross-repo memories isolated by default' requirement. Root cause: MemoryStore trait doesn't include repository parameters for these methods."
+    },
+    {
+      "featureId": "mem-cross-encoder-rerank",
+      "severity": "blocking",
+      "description": "Feature description requires 'BGE-reranker for cross-encoder reranking' but only SimpleReranker is implemented. RerankerModelType::Bge falls through to SimpleReranker - no ONNX model loading or actual BGE inference exists."
+    },
+    {
+      "featureId": "mem-provenance-tracking",
+      "severity": "blocking",
+      "description": "search() does NOT filter by source_episode_id despite it being in MemoryQuery. The handoff claimed 4 provenance tests but they don't exist in codebase."
+    },
+    {
+      "featureId": "mem-triple-stream-retrieval",
+      "severity": "blocking",
+      "description": "BM25 search stream (line 620) generates Uuid::new_v4() instead of using actual RecallResult.entry_id. This breaks RRF fusion since IDs don't match actual memory entries."
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Document the convention block markdown format: '### ConventionType\\n\\n- **name**: description\\n\\n  - Example: `code`' - this format is used by pattern_learning and skill_extraction but never documented",
-      "evidence": "Features memory-pattern-learning and memory-skill-extraction both use this format but it's reverse-engineered from parsing code",
+      "suggestion": "Document the error handling convention: 'All fallible operations return Result<T, SwellError>' - several features used Option or io::Error instead, and the event_log module uses io::Error directly rather than SwellError/thiserror.",
+      "evidence": "mem-event-log-jsonl (io::Error), mem-deprecation (Option return), mem-confidence-bayesian (proper Result usage documented)",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Add guidance on when parse() methods should be fallible vs return defaults - enum parsing patterns vary across codebase (some panic, some default, some return Result)",
-      "evidence": "mem-semantic-memory uses silent defaults in parse(), memory-confidence-bayesian uses expect(), no consistent pattern documented",
-      "isSystemic": true
+      "suggestion": "Clarify skills directory convention: '.swell/skills/' per AGENTS.md vs '.skills/' used by some features. The memory-skill-extraction feature uses '.skills' default which conflicts with documented convention.",
+      "evidence": "memory-skill-extraction stores to '.skills' but AGENTS.md shows '.swell/skills/rust-coding/SKILL.md' structure",
+      "isSystemic": false
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Document that MemoryStore trait get_by_type() and get_by_label() are not repository-scoped - this is a pre-existing design gap that workers should be aware of",
-      "evidence": "mem-scoping review found get_by_type/get_by_label have no repository parameter despite search() requiring repository",
-      "isSystemic": true
+      "suggestion": "Add guidance on magic numbers and tuning parameters. The mem-meta-cognitive feature has hardcoded weights (100_000.0, 60_000.0, 0.3/0.2/0.5) with no documentation on how to manage such values.",
+      "evidence": "mem-meta-cognitive composite_score() uses hardcoded weights per task type",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify parse/fallback patterns for FromStr conversions - whether they should be fallible (Result) or use silent defaults like SemanticEntityType::parse() does.",
+      "evidence": "mem-semantic-memory uses silent defaults in parse methods, no guidance in AGENTS.md or Rust skill",
+      "isSystemic": false
+    },
+    {
+      "target": "skills/rust",
+      "suggestion": "Add note about #[async_trait] macro usage - new developers might not know to use it without checking existing code.",
+      "evidence": "mem-contrastive-learning review notes async_trait pattern not mentioned in Rust skill",
+      "isSystemic": false
     }
   ],
   "rejectedObservations": [],
-  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json",
-  "notes": {
-    "fixFeatureNeverImplemented": "The fix-memory-blocking-issues feature was never implemented. Despite round 2 synthesis identifying blocking issues in memory-pattern-learning, no fix feature was created or executed. The issues remain unfixed in the current codebase.",
-    "otherFailedFeaturesStillPending": "The following features with blocking issues from round 2 are still 'pending' (not completed): mem-scoping, mem-deprecation, mem-decay-function, mem-triple-stream-retrieval, mem-provenance-tracking, mem-event-log-jsonl. These cannot be reviewed until they are implemented.",
-    "round3Changes": "Round 3 re-reviewed all 5 completed features. memory-pattern-learning remains the only completed feature with blocking issues. All other completed features (sqlite-store, memory-blocks, recall, skill-extraction) pass review."
-  }
+  "previousRound": null
 }
