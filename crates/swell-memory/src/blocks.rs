@@ -212,6 +212,9 @@ pub fn create_project_block(
             "repository": repository,
             "description": "Project architecture and conventions"
         }),
+        repository: repository.to_string(),
+        language: None,
+        task_type: None,
     }
 }
 
@@ -230,6 +233,9 @@ pub fn create_user_block(user_id: &str, preferences: &str) -> MemoryEntry {
             "user_id": user_id,
             "description": "User preferences and settings"
         }),
+        repository: String::new(), // User blocks are not scoped to repository
+        language: None,
+        task_type: None,
     }
 }
 
@@ -248,6 +254,9 @@ pub fn create_task_block(task_id: Uuid, context: &str) -> MemoryEntry {
             "task_id": task_id.to_string(),
             "description": "Task-specific context and background"
         }),
+        repository: String::new(), // Task blocks are not scoped to repository
+        language: None,
+        task_type: None,
     }
 }
 

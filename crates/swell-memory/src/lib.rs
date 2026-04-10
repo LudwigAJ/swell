@@ -126,7 +126,10 @@ impl SqliteMemoryStore {
                 embedding BLOB,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                metadata TEXT NOT NULL
+                metadata TEXT NOT NULL,
+                repository TEXT NOT NULL DEFAULT '',
+                language TEXT,
+                task_type TEXT
             )
             "#,
         )
@@ -142,6 +145,21 @@ impl SqliteMemoryStore {
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_label ON memory_entries(label)")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_repository ON memory_entries(repository)")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_language ON memory_entries(language)")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_memory_task_type ON memory_entries(task_type)")
             .execute(pool)
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -236,6 +254,9 @@ impl SqliteMemoryStore {
         let created_at_str: String = row.get("created_at");
         let updated_at_str: String = row.get("updated_at");
         let metadata_str: String = row.get("metadata");
+        let repository: String = row.get("repository");
+        let language: Option<String> = row.get("language");
+        let task_type: Option<String> = row.get("task_type");
 
         let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid timestamp: {}", e)))?
@@ -257,6 +278,9 @@ impl SqliteMemoryStore {
             created_at,
             updated_at,
             metadata,
+            repository,
+            language,
+            task_type,
         })
     }
 }
@@ -277,8 +301,8 @@ impl MemoryStore for SqliteMemoryStore {
 
         sqlx::query(
             r#"
-            INSERT INTO memory_entries (id, block_type, label, content, embedding, created_at, updated_at, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO memory_entries (id, block_type, label, content, embedding, created_at, updated_at, metadata, repository, language, task_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(entry.id.to_string())
@@ -289,6 +313,9 @@ impl MemoryStore for SqliteMemoryStore {
         .bind(created_at_str)
         .bind(updated_at_str)
         .bind(metadata_str)
+        .bind(&entry.repository)
+        .bind(&entry.language)
+        .bind(&entry.task_type)
         .execute(self.pool.as_ref())
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -369,8 +396,11 @@ impl MemoryStore for SqliteMemoryStore {
 
     /// Search memories by query (basic LIKE for MVP, vector search can be stubbed)
     async fn search(&self, query: MemoryQuery) -> Result<Vec<MemorySearchResult>, SwellError> {
-        let mut sql = String::from("SELECT * FROM memory_entries WHERE 1=1");
+        let mut sql = String::from("SELECT * FROM memory_entries WHERE repository = ?");
         let mut params: Vec<String> = Vec::new();
+
+        // Repository scope is REQUIRED - this ensures cross-repo isolation
+        params.push(query.repository.clone());
 
         if let Some(ref query_text) = query.query_text {
             sql.push_str(" AND (content LIKE ? OR label LIKE ?)");
@@ -396,6 +426,18 @@ impl MemoryStore for SqliteMemoryStore {
                 sql.push_str(&format!(" AND label IN ({})", placeholders.join(", ")));
                 params.extend(labels.clone());
             }
+        }
+
+        // Optional language filter
+        if let Some(ref language) = query.language {
+            sql.push_str(" AND language = ?");
+            params.push(language.clone());
+        }
+
+        // Optional task_type filter
+        if let Some(ref task_type) = query.task_type {
+            sql.push_str(" AND task_type = ?");
+            params.push(task_type.clone());
         }
 
         sql.push_str(&format!(" LIMIT {} OFFSET {}", query.limit, query.offset));
@@ -493,6 +535,9 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: Some("rust".to_string()),
+            task_type: None,
         };
 
         let id = store.store(entry.clone()).await.unwrap();
@@ -503,6 +548,7 @@ mod tests {
         let retrieved = retrieved.unwrap();
         assert_eq!(retrieved.label, entry.label);
         assert_eq!(retrieved.content, entry.content);
+        assert_eq!(retrieved.repository, "test-repo");
     }
 
     #[tokio::test]
@@ -518,6 +564,9 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: Some("bugfix".to_string()),
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -547,6 +596,9 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            repository: "my-repo".to_string(),
+            language: Some("rust".to_string()),
+            task_type: None,
         };
 
         let entry2 = MemoryEntry {
@@ -558,6 +610,9 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            repository: "my-repo".to_string(),
+            language: None,
+            task_type: Some("feature".to_string()),
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -570,12 +625,141 @@ mod tests {
                 labels: None,
                 limit: 10,
                 offset: 0,
+                repository: "my-repo".to_string(),
+                language: None,
+                task_type: None,
             })
             .await
             .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].entry.id, entry1.id);
+    }
+
+    #[tokio::test]
+    async fn test_search_by_language_filter() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry1 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "rust-project".to_string(),
+            content: "Rust project content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: Some("rust".to_string()),
+            task_type: None,
+        };
+
+        let entry2 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "python-project".to_string(),
+            content: "Python project content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: Some("python".to_string()),
+            task_type: None,
+        };
+
+        store.store(entry1.clone()).await.unwrap();
+        store.store(entry2.clone()).await.unwrap();
+
+        // Search with language filter
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                repository: "test-repo".to_string(),
+                language: Some("rust".to_string()),
+                task_type: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.language, Some("rust".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_search_cross_repo_isolation() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry1 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-a".to_string(),
+            content: "Project A content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "repo-a".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        let entry2 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-b".to_string(),
+            content: "Project B content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "repo-b".to_string(),
+            language: None,
+            task_type: None,
+        };
+
+        store.store(entry1.clone()).await.unwrap();
+        store.store(entry2.clone()).await.unwrap();
+
+        // Search for repo-a - should only find entry1
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                repository: "repo-a".to_string(),
+                language: None,
+                task_type: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.repository, "repo-a");
+
+        // Search for repo-b - should only find entry2
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                repository: "repo-b".to_string(),
+                language: None,
+                task_type: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.repository, "repo-b");
     }
 
     #[tokio::test]
@@ -591,6 +775,9 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
         };
 
         let entry2 = MemoryEntry {
@@ -602,6 +789,9 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -629,6 +819,9 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
         };
 
         let entry2 = MemoryEntry {
@@ -640,6 +833,9 @@ mod tests {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
         };
 
         store.store(entry1.clone()).await.unwrap();

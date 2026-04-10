@@ -202,6 +202,12 @@ pub struct MemoryEntry {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub metadata: serde_json::Value,
+    /// Repository scope - memories are isolated by repository by default
+    pub repository: String,
+    /// Optional language filter (e.g., "rust", "python")
+    pub language: Option<String>,
+    /// Optional task type filter (e.g., "bugfix", "feature", "refactor")
+    pub task_type: Option<String>,
 }
 
 /// Search query for memory
@@ -212,6 +218,12 @@ pub struct MemoryQuery {
     pub labels: Option<Vec<String>>,
     pub limit: usize,
     pub offset: usize,
+    /// Repository scope - REQUIRED for all memory operations
+    pub repository: String,
+    /// Optional language filter
+    pub language: Option<String>,
+    /// Optional task type filter
+    pub task_type: Option<String>,
 }
 
 /// Search result with relevance score

@@ -1082,6 +1082,9 @@ impl PatternLearningService {
                     "last_updated": chrono::Utc::now().to_rfc3339(),
                     "conventions_count": conventions.len(),
                 }),
+                repository: String::new(),
+                language: None,
+                task_type: None,
             };
             self.store.store(entry).await?;
             _updated_count = 1;
