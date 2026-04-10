@@ -80,16 +80,18 @@ impl LlmBackend for MockLlm {
         // Start OpenTelemetry span for the mock LLM call
         let tracer = self.tracer();
         let span_name = format!("Mock chat {}", self.model);
-        let mut span = tracer.build(&span_name);
-        span.set_attribute(KeyValue::new(gen_ai::OPERATION_NAME, "chat"));
-        span.set_attribute(KeyValue::new(gen_ai::PROVIDER_NAME, "mock"));
-        span.set_attribute(KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()));
-        span.set_attribute(KeyValue::new("mock", true));
+        let mut span_builder = tracer.span_builder(span_name);
+        span_builder.attributes = Some(vec![
+            KeyValue::new(gen_ai::OPERATION_NAME, "chat".to_string()),
+            KeyValue::new(gen_ai::PROVIDER_NAME, "mock".to_string()),
+            KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()),
+            KeyValue::new("mock", true),
+        ]);
+        let mut span = tracer.build(span_builder);
 
         let latency = LatencyTracker::new();
 
         if self.should_fail {
-            span.record_error("Mock failure");
             span.set_status(opentelemetry::trace::Status::error("Mock failure"));
             span.end();
             return Err(SwellError::LlmError("Mock failure".to_string()));

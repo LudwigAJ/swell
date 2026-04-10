@@ -10,6 +10,7 @@ members = [
     "crates/swell-validation",
     "crates/swell-orchestrator",
     "crates/swell-daemon",
+    "crates/swell-skills",
     "crates/swell-benchmark",
     "clients/swell-cli",
 ]
