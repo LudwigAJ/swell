@@ -31,6 +31,16 @@ pub mod skill_extraction;
 // Pattern learning module - Learns anti-patterns from rejection feedback and extracts conventions
 pub mod pattern_learning;
 
+// Semantic memory module - Facts, entities, and relationships stored as graph nodes
+// for semantic knowledge representation
+pub mod semantic;
+
+pub use semantic::{
+    SemanticEntity, SemanticEntityQuery, SemanticEntityType, SemanticRelation,
+    SemanticRelationQuery, SemanticRelationResult, SemanticRelationType, SemanticStore,
+    SqliteSemanticStore,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
