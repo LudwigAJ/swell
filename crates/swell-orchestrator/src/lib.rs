@@ -11,6 +11,7 @@
 //! - [`PolicyEngine`] - evaluates YAML-defined policies against agent actions
 
 pub mod agents;
+pub mod alerts;
 pub mod autonomy;
 pub mod backlog;
 pub mod drift_detector;
@@ -51,6 +52,12 @@ pub use metrics::{
     AggregatedMetrics, AlertSeverity, AlertThresholds, AlertType, MetricsAlert, MetricsCollector,
     MetricsWindow, MetricSample, OrchestratorMetrics, SharedMetricsCollector,
     create_metrics_collector, create_metrics_collector_with_thresholds,
+};
+pub use alerts::{
+    Alert, AlertCategory, AlertManager, AlertManagerConfig, ConsecutiveFailureConfig,
+    CostThresholdConfig, LoopDetectionConfig, LoopDetectionState,
+    PolicyViolationConfig, SharedAlertManager, create_alert_manager,
+    create_alert_manager_with_config,
 };
 
 use std::sync::Arc;
