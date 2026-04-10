@@ -1720,6 +1720,7 @@ mod test_gate_tests {
     }
 
     #[tokio::test]
+    #[ignore] // This test calls cargo test which would cause infinite recursion when running the full test suite
     async fn test_test_gate_validate_returns_outcome() {
         let gate = TestGate::new();
         let context = ValidationContext {
