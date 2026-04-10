@@ -1,0 +1,17 @@
+{
+  "milestone": "prompts",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "notes": "The 'prompts' milestone features (prompts-quality-improvement, prompts-multi-run-validation, prompts-structured-handoffs, audit-hash-chained-log) have empty fulfills arrays - they do not fulfill any specific validation contract assertions. All existing assertions in validation-state.json are already 'passed'. No user-facing behaviors require user-testing validation for this milestone - the validation was handled by scrutiny-validator-prompts which passed all test/typecheck/lint validators.",
+  "previousRound": null
+}
