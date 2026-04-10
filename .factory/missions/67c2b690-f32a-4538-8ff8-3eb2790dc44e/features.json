@@ -1,24 +1,40 @@
 {
   "features": [
     {
-      "id": "fix-prompts-multi-run-validation",
-      "description": "Fix blocking issues in prompts-multi-run-validation: (1) FlakinessDetector.record() is never called - integrate into validation workflow; (2) gate_flaffiness_rates only tracks 'all'/'failed' keys - use actual gate names like LintGate, TestGate; (3) Behavioral invariant satisfied unconditionally - actually verify confidence data.",
+      "id": "agent-skills-loader",
+      "description": "Implement Agent Skills loader following agentskills.io standard. Skills are directories with SKILL.md containing YAML frontmatter (name, description) plus optional scripts/, references/, assets/ directories. This enables model-driven skill discovery and activation.",
       "skillName": "Rust",
       "preconditions": [
-        "prompts-multi-run-validation complete"
+        "swell-core complete"
       ],
       "expectedBehavior": [
-        "FlakinessDetector.record() called after each validation run with gate name and pass/fail result",
-        "gate_flaffiness_rates uses actual gate names (LintGate, TestGate, SecurityGate, AiReviewGate)",
-        "Behavioral invariant actually verifies MultiRunValidationResult contains valid confidence data",
-        "Fix typo 'gate_flaffiness_rates' -> 'gate_flakiness_rates'"
+        "Discovery: Scan .swell/skills/ and optionally ~/.swell/skills/ for SKILL.md files",
+        "Parsing: Extract YAML frontmatter (name, description) from each SKILL.md",
+        "Lenient validation: Accept skills with missing optional fields (allow other frontmatter)",
+        "Catalog: Build catalog with name, description, location for each skill",
+        "Progressive disclosure: Tier 1 (name+description ~50-100 tokens) at startup, Tier 2 (full SKILL.md body) on activation",
+        "On-demand resources: Load scripts/, references/, assets/ when explicitly requested",
+        "Model-driven activation: LLM reads catalog, matches skills to tasks using description keywords",
+        "Skills discoverable by description keywords (e.g., 'rust', 'async', 'tokio' for rust-coding)"
       ],
       "verificationSteps": [
         "cargo build --workspace",
-        "cargo test -p swell-orchestrator -- multi_run"
+        "cargo test -p swell-core -- skills",
+        "Verify skill catalog includes all skills with name+description",
+        "Verify full content loaded only on activation",
+        "Verify scripts/references/assets loaded on demand"
       ],
-      "fulfills": [],
-      "milestone": "prompts",
+      "fulfills": [
+        "VAL-SKILLS-001",
+        "VAL-SKILLS-002",
+        "VAL-SKILLS-003",
+        "VAL-SKILLS-004",
+        "VAL-SKILLS-005",
+        "VAL-SKILLS-006",
+        "VAL-SKILLS-007",
+        "VAL-SKILLS-008"
+      ],
+      "milestone": "skills",
       "status": "pending",
       "workerSessionIds": []
     },
@@ -5034,6 +5050,31 @@
       "workerSessionIds": [
         "95d11cc7-24d5-45c1-a530-a5ffc3ac5321"
       ]
+    }
+  ,
+    {
+      "id": "fix-memory-blocking-issues",
+      "description": "Cancelled: Investigation confirmed all mentioned functionality is already correctly implemented and tests pass. No bugs found.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [],
+      "verificationSteps": [],
+      "fulfills": [],
+      "milestone": "memory",
+      "status": "cancelled",
+      "workerSessionIds": []
+    },
+    {
+      "id": "fix-prompts-multi-run-validation",
+      "description": "Cancelled: Investigation confirmed the functionality is correctly implemented. No bugs found.",
+      "skillName": "Rust",
+      "preconditions": [],
+      "expectedBehavior": [],
+      "verificationSteps": [],
+      "fulfills": [],
+      "milestone": "prompts",
+      "status": "cancelled",
+      "workerSessionIds": []
     }
   ]
 }
