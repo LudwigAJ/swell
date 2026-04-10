@@ -1,0 +1,123 @@
+{
+  "flowId": "skills-cargo-tests",
+  "assertions": [
+    "VAL-SKILLS-001",
+    "VAL-SKILLS-002",
+    "VAL-SKILLS-003",
+    "VAL-SKILLS-004",
+    "VAL-SKILLS-005",
+    "VAL-SKILLS-006",
+    "VAL-SKILLS-007",
+    "VAL-SKILLS-008"
+  ],
+  "tool": "cargo test",
+  "status": "pass",
+  "summary": "All 18 unit tests in swell-skills crate pass, covering all 8 skills assertions",
+  "testResults": [
+    {
+      "test": "test_extract_body_after_frontmatter",
+      "module": "catalog::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_extract_body_no_frontmatter",
+      "module": "catalog::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_skill_catalog_search",
+      "module": "catalog::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_skill_catalog_find_matching",
+      "module": "catalog::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_async_skill_catalog",
+      "module": "catalog::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_parse_frontmatter_empty_name",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_parse_frontmatter_missing_closing",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_parse_frontmatter_no_frontmatter",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_discover_nonexistent_directory",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_parse_frontmatter_missing_name",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_parse_frontmatter_missing_description",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_parse_valid_frontmatter",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_parse_frontmatter_with_extra_fields",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_discover_empty_directory",
+      "module": "loader::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_keyword_extraction",
+      "module": "types::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_skill_catalog_entry_no_keywords",
+      "module": "types::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_skill_catalog_entry_matches",
+      "module": "types::tests",
+      "status": "ok"
+    },
+    {
+      "test": "test_skill_creation",
+      "module": "types::tests",
+      "status": "ok"
+    }
+  ],
+  "evidence": [
+    {
+      "type": "cargo test output",
+      "location": "swell-skills crate",
+      "result": "18 tests passed"
+    },
+    {
+      "type": "skills directory",
+      "location": ".swell/skills/",
+      "found": ["code-review", "refactoring", "rust-coding", "test-writing"]
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo test", "cargo build", "cargo clippy"]
+}
