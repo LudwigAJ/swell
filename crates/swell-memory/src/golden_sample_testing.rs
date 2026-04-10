@@ -586,14 +586,14 @@ impl SqliteGoldenSampleStore {
 #[async_trait]
 impl GoldenSampleStore for SqliteGoldenSampleStore {
     async fn store_sample(&self, sample: GoldenSample) -> Result<Uuid, SwellError> {
-        let criteria_str =
-            serde_json::to_string(&sample.validation_criteria).map_err(|e| {
-                SwellError::DatabaseError(format!("Failed to serialize criteria: {}", e))
-            })?;
+        let criteria_str = serde_json::to_string(&sample.validation_criteria).map_err(|e| {
+            SwellError::DatabaseError(format!("Failed to serialize criteria: {}", e))
+        })?;
         let tags_str = serde_json::to_string(&sample.tags)
             .map_err(|e| SwellError::DatabaseError(format!("Failed to serialize tags: {}", e)))?;
-        let metadata_str = serde_json::to_string(&sample.metadata)
-            .map_err(|e| SwellError::DatabaseError(format!("Failed to serialize metadata: {}", e)))?;
+        let metadata_str = serde_json::to_string(&sample.metadata).map_err(|e| {
+            SwellError::DatabaseError(format!("Failed to serialize metadata: {}", e))
+        })?;
         let created_at_str = sample.created_at.to_rfc3339();
         let updated_at_str = sample.updated_at.to_rfc3339();
 
@@ -638,14 +638,14 @@ impl GoldenSampleStore for SqliteGoldenSampleStore {
     }
 
     async fn update_sample(&self, sample: GoldenSample) -> Result<(), SwellError> {
-        let criteria_str =
-            serde_json::to_string(&sample.validation_criteria).map_err(|e| {
-                SwellError::DatabaseError(format!("Failed to serialize criteria: {}", e))
-            })?;
+        let criteria_str = serde_json::to_string(&sample.validation_criteria).map_err(|e| {
+            SwellError::DatabaseError(format!("Failed to serialize criteria: {}", e))
+        })?;
         let tags_str = serde_json::to_string(&sample.tags)
             .map_err(|e| SwellError::DatabaseError(format!("Failed to serialize tags: {}", e)))?;
-        let metadata_str = serde_json::to_string(&sample.metadata)
-            .map_err(|e| SwellError::DatabaseError(format!("Failed to serialize metadata: {}", e)))?;
+        let metadata_str = serde_json::to_string(&sample.metadata).map_err(|e| {
+            SwellError::DatabaseError(format!("Failed to serialize metadata: {}", e))
+        })?;
         let updated_at_str = chrono::Utc::now().to_rfc3339();
 
         let result = sqlx::query(
@@ -737,8 +737,9 @@ impl GoldenSampleStore for SqliteGoldenSampleStore {
     }
 
     async fn store_validation(&self, validation: ProcedureValidation) -> Result<Uuid, SwellError> {
-        let details_str = serde_json::to_string(&validation.validation_details)
-            .map_err(|e| SwellError::DatabaseError(format!("Failed to serialize details: {}", e)))?;
+        let details_str = serde_json::to_string(&validation.validation_details).map_err(|e| {
+            SwellError::DatabaseError(format!("Failed to serialize details: {}", e))
+        })?;
         let validated_at_str = validation.validated_at.to_rfc3339();
 
         sqlx::query(
@@ -881,8 +882,7 @@ impl GoldenSampleTester {
             } else {
                 // Check validation criteria
                 for criterion in &sample.validation_criteria {
-                    let criterion_result =
-                        self.check_criterion(procedure_output, criterion);
+                    let criterion_result = self.check_criterion(procedure_output, criterion);
 
                     if !criterion_result.passed && criterion.is_required {
                         validation.passed = false;
@@ -899,7 +899,9 @@ impl GoldenSampleTester {
 
             // Store validation result
             if let Err(e) = self.store.store_validation(validation.clone()).await {
-                result.errors.push(format!("Failed to store validation: {}", e));
+                result
+                    .errors
+                    .push(format!("Failed to store validation: {}", e));
             }
 
             result.validations.push(validation);
@@ -908,12 +910,12 @@ impl GoldenSampleTester {
 
         // Calculate pass rate
         if result.samples_tested > 0 {
-            result.pass_rate =
-                result.samples_passed as f64 / result.samples_tested as f64;
+            result.pass_rate = result.samples_passed as f64 / result.samples_tested as f64;
         }
 
         // Check if eligible for promotion
-        result.is_eligible_for_promotion = result.samples_tested >= self.config.min_samples_for_promotion
+        result.is_eligible_for_promotion = result.samples_tested
+            >= self.config.min_samples_for_promotion
             && result.pass_rate >= self.config.promotion_pass_rate;
 
         // Flag for review if promotion fails
@@ -1012,15 +1014,13 @@ impl GoldenSampleTester {
                     )
                 }
             }
-            CriterionType::ValidJson => {
-                match serde_json::from_str::<serde_json::Value>(output) {
-                    Ok(_) => CriterionResult::pass(criterion.description.clone()),
-                    Err(e) => CriterionResult::fail(
-                        criterion.description.clone(),
-                        format!("Invalid JSON: {}", e),
-                    ),
-                }
-            }
+            CriterionType::ValidJson => match serde_json::from_str::<serde_json::Value>(output) {
+                Ok(_) => CriterionResult::pass(criterion.description.clone()),
+                Err(e) => CriterionResult::fail(
+                    criterion.description.clone(),
+                    format!("Invalid JSON: {}", e),
+                ),
+            },
             CriterionType::ValidRust => {
                 // For now, just check for basic Rust syntax indicators
                 // Full compilation check would require rustc
@@ -1144,7 +1144,10 @@ impl GoldenSampleService {
             .validate_before_promotion(procedure_id, procedure_context, procedure_output)
             .await?;
 
-        Ok((validation_result.is_eligible_for_promotion, validation_result))
+        Ok((
+            validation_result.is_eligible_for_promotion,
+            validation_result,
+        ))
     }
 }
 
@@ -1288,12 +1291,8 @@ mod tests {
 
     #[test]
     fn test_procedure_validation_add_criterion_result() {
-        let mut validation = ProcedureValidation::new(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            true,
-            "output".to_string(),
-        );
+        let mut validation =
+            ProcedureValidation::new(Uuid::new_v4(), Uuid::new_v4(), true, "output".to_string());
 
         validation.add_criterion_result(CriterionResult::pass("Check 1".to_string()));
         validation.add_criterion_result(CriterionResult::fail(
@@ -1713,7 +1712,10 @@ mod tests {
         assert_eq!(id, validation.id);
 
         // Retrieve via validation history
-        let history = store.get_validation_history(validation.procedure_id, 10).await.unwrap();
+        let history = store
+            .get_validation_history(validation.procedure_id, 10)
+            .await
+            .unwrap();
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].id, validation.id);
     }
@@ -1728,23 +1730,18 @@ mod tests {
         let sample_id = Uuid::new_v4();
 
         // Add multiple validations with slight delays (using timestamps)
-        let validation1 = ProcedureValidation::new(
-            procedure_id,
-            sample_id,
-            false,
-            "output1".to_string(),
-        );
+        let validation1 =
+            ProcedureValidation::new(procedure_id, sample_id, false, "output1".to_string());
         store.store_validation(validation1.clone()).await.unwrap();
 
-        let validation2 = ProcedureValidation::new(
-            procedure_id,
-            sample_id,
-            true,
-            "output2".to_string(),
-        );
+        let validation2 =
+            ProcedureValidation::new(procedure_id, sample_id, true, "output2".to_string());
         store.store_validation(validation2.clone()).await.unwrap();
 
-        let history = store.get_validation_history(procedure_id, 10).await.unwrap();
+        let history = store
+            .get_validation_history(procedure_id, 10)
+            .await
+            .unwrap();
         assert_eq!(history.len(), 2);
         // Most recent first
         assert_eq!(history[0].id, validation2.id);
@@ -1759,18 +1756,10 @@ mod tests {
         let sample_id = Uuid::new_v4();
 
         // Create validations for different procedures
-        let validation1 = ProcedureValidation::new(
-            Uuid::new_v4(),
-            sample_id,
-            true,
-            "output1".to_string(),
-        );
-        let validation2 = ProcedureValidation::new(
-            Uuid::new_v4(),
-            sample_id,
-            false,
-            "output2".to_string(),
-        );
+        let validation1 =
+            ProcedureValidation::new(Uuid::new_v4(), sample_id, true, "output1".to_string());
+        let validation2 =
+            ProcedureValidation::new(Uuid::new_v4(), sample_id, false, "output2".to_string());
 
         store.store_validation(validation1.clone()).await.unwrap();
         store.store_validation(validation2.clone()).await.unwrap();
@@ -1813,11 +1802,7 @@ mod tests {
         let service = GoldenSampleService::new(store);
 
         let result = service
-            .validate_before_promotion(
-                Uuid::new_v4(),
-                "some context",
-                "procedure output",
-            )
+            .validate_before_promotion(Uuid::new_v4(), "some context", "procedure output")
             .await
             .unwrap();
 
@@ -1881,11 +1866,7 @@ mod tests {
 
         // Validate with non-matching output - context "rust test" matches sample
         let result = service
-            .validate_before_promotion(
-                Uuid::new_v4(),
-                "rust test",
-                "completely different output",
-            )
+            .validate_before_promotion(Uuid::new_v4(), "rust test", "completely different output")
             .await
             .unwrap();
 
@@ -1976,7 +1957,10 @@ mod tests {
         assert!(!result.should_flag_for_review);
 
         // 4. Verify validation history was stored
-        let history = service.get_validation_history(procedure_id, 10).await.unwrap();
+        let history = service
+            .get_validation_history(procedure_id, 10)
+            .await
+            .unwrap();
         assert_eq!(history.len(), 2);
     }
 
@@ -2026,7 +2010,10 @@ mod tests {
         assert_eq!(result.samples_failed, 2);
 
         // History should contain the failed validations
-        let history = service.get_validation_history(procedure_id, 10).await.unwrap();
+        let history = service
+            .get_validation_history(procedure_id, 10)
+            .await
+            .unwrap();
         assert_eq!(history.len(), 2);
         assert!(history.iter().all(|v| !v.passed));
     }

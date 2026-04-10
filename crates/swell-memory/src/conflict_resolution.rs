@@ -303,9 +303,7 @@ impl MemoryConflictDetector {
         }
 
         // Calculate semantic distance using embeddings if available
-        let distance = if let (Some(emb1), Some(emb2)) =
-            (&memory1.embedding, &memory2.embedding)
-        {
+        let distance = if let (Some(emb1), Some(emb2)) = (&memory1.embedding, &memory2.embedding) {
             Self::cosine_distance(emb1, emb2)
         } else {
             // Fallback to content-based comparison
@@ -323,10 +321,7 @@ impl MemoryConflictDetector {
         Some(MemoryConflict {
             id: Uuid::new_v4(),
             memory_ids: vec![memory1.id, memory2.id],
-            conflicting_memories: vec![
-                memory1.to_summary(),
-                memory2.to_summary(),
-            ],
+            conflicting_memories: vec![memory1.to_summary(), memory2.to_summary()],
             distance,
             conflict_type,
             detected_at: Utc::now(),
@@ -523,22 +518,14 @@ impl MemoryConflictResolver {
         let (winner_idx, loser_indices, strategy_used) = self.determine_winner(memories);
 
         let winner_id = memories[winner_idx].id;
-        let loser_ids: Vec<Uuid> = loser_indices
-            .iter()
-            .map(|&idx| memories[idx].id)
-            .collect();
+        let loser_ids: Vec<Uuid> = loser_indices.iter().map(|&idx| memories[idx].id).collect();
 
         // Build loser memory references for explanation
-        let loser_memories: Vec<&MemoryConflictSummary> = loser_indices
-            .iter()
-            .map(|&idx| &memories[idx])
-            .collect();
+        let loser_memories: Vec<&MemoryConflictSummary> =
+            loser_indices.iter().map(|&idx| &memories[idx]).collect();
 
-        let resolution_reason = self.explain_resolution(
-            &memories[winner_idx],
-            &loser_memories,
-            strategy_used,
-        );
+        let resolution_reason =
+            self.explain_resolution(&memories[winner_idx], &loser_memories, strategy_used);
 
         if self.config.enable_logging {
             tracing::info!(
@@ -577,24 +564,17 @@ impl MemoryConflictResolver {
     }
 
     /// Determine which memory wins the conflict
-    fn determine_winner(&self, memories: &[MemoryConflictSummary]) -> (usize, Vec<usize>, ResolutionStrategy) {
+    fn determine_winner(
+        &self,
+        memories: &[MemoryConflictSummary],
+    ) -> (usize, Vec<usize>, ResolutionStrategy) {
         // Strategy: Higher Confidence Wins (default)
         match self.config.primary_strategy {
-            ResolutionStrategy::HigherConfidenceWins => {
-                self.resolve_higher_confidence(memories)
-            }
-            ResolutionStrategy::NewerWins => {
-                self.resolve_newer(memories)
-            }
-            ResolutionStrategy::OperatorOverrides => {
-                self.resolve_operator_override(memories)
-            }
-            ResolutionStrategy::KeepOriginal => {
-                self.resolve_keep_original(memories)
-            }
-            ResolutionStrategy::KeepNew => {
-                self.resolve_keep_new(memories)
-            }
+            ResolutionStrategy::HigherConfidenceWins => self.resolve_higher_confidence(memories),
+            ResolutionStrategy::NewerWins => self.resolve_newer(memories),
+            ResolutionStrategy::OperatorOverrides => self.resolve_operator_override(memories),
+            ResolutionStrategy::KeepOriginal => self.resolve_keep_original(memories),
+            ResolutionStrategy::KeepNew => self.resolve_keep_new(memories),
             ResolutionStrategy::Merge | ResolutionStrategy::Manual => {
                 // Fallback to higher confidence for merge/manual
                 self.resolve_higher_confidence(memories)
@@ -603,7 +583,10 @@ impl MemoryConflictResolver {
     }
 
     /// Resolution: Higher confidence wins
-    fn resolve_higher_confidence(&self, memories: &[MemoryConflictSummary]) -> (usize, Vec<usize>, ResolutionStrategy) {
+    fn resolve_higher_confidence(
+        &self,
+        memories: &[MemoryConflictSummary],
+    ) -> (usize, Vec<usize>, ResolutionStrategy) {
         let mut winner_idx = 0;
         let mut max_confidence = memories[0].confidence;
 
@@ -621,15 +604,20 @@ impl MemoryConflictResolver {
             }
         }
 
-        let loser_indices: Vec<usize> = (0..memories.len())
-            .filter(|&i| i != winner_idx)
-            .collect();
+        let loser_indices: Vec<usize> = (0..memories.len()).filter(|&i| i != winner_idx).collect();
 
-        (winner_idx, loser_indices, ResolutionStrategy::HigherConfidenceWins)
+        (
+            winner_idx,
+            loser_indices,
+            ResolutionStrategy::HigherConfidenceWins,
+        )
     }
 
     /// Resolution: Newer memory wins
-    fn resolve_newer(&self, memories: &[MemoryConflictSummary]) -> (usize, Vec<usize>, ResolutionStrategy) {
+    fn resolve_newer(
+        &self,
+        memories: &[MemoryConflictSummary],
+    ) -> (usize, Vec<usize>, ResolutionStrategy) {
         let mut winner_idx = 0;
         let mut newest_time = memories[0].updated_at;
 
@@ -646,9 +634,7 @@ impl MemoryConflictResolver {
             }
         }
 
-        let loser_indices: Vec<usize> = (0..memories.len())
-            .filter(|&i| i != winner_idx)
-            .collect();
+        let loser_indices: Vec<usize> = (0..memories.len()).filter(|&i| i != winner_idx).collect();
 
         (winner_idx, loser_indices, ResolutionStrategy::NewerWins)
     }
@@ -661,9 +647,7 @@ impl MemoryConflictResolver {
         // Find operator feedback memory
         for (idx, memory) in memories.iter().enumerate() {
             if memory.is_operator_feedback {
-                let loser_indices: Vec<usize> = (0..memories.len())
-                    .filter(|&i| i != idx)
-                    .collect();
+                let loser_indices: Vec<usize> = (0..memories.len()).filter(|&i| i != idx).collect();
                 return (idx, loser_indices, ResolutionStrategy::OperatorOverrides);
             }
         }
@@ -673,13 +657,19 @@ impl MemoryConflictResolver {
     }
 
     /// Resolution: Keep the original (first) memory
-    fn resolve_keep_original(&self, memories: &[MemoryConflictSummary]) -> (usize, Vec<usize>, ResolutionStrategy) {
+    fn resolve_keep_original(
+        &self,
+        memories: &[MemoryConflictSummary],
+    ) -> (usize, Vec<usize>, ResolutionStrategy) {
         let loser_indices: Vec<usize> = (1..memories.len()).collect();
         (0, loser_indices, ResolutionStrategy::KeepOriginal)
     }
 
     /// Resolution: Keep the newest memory
-    fn resolve_keep_new(&self, memories: &[MemoryConflictSummary]) -> (usize, Vec<usize>, ResolutionStrategy) {
+    fn resolve_keep_new(
+        &self,
+        memories: &[MemoryConflictSummary],
+    ) -> (usize, Vec<usize>, ResolutionStrategy) {
         let mut winner_idx = 0;
         let mut newest_time = memories[0].created_at;
 
@@ -690,9 +680,7 @@ impl MemoryConflictResolver {
             }
         }
 
-        let loser_indices: Vec<usize> = (0..memories.len())
-            .filter(|&i| i != winner_idx)
-            .collect();
+        let loser_indices: Vec<usize> = (0..memories.len()).filter(|&i| i != winner_idx).collect();
 
         (winner_idx, loser_indices, ResolutionStrategy::KeepNew)
     }
@@ -736,12 +724,8 @@ impl MemoryConflictResolver {
             ResolutionStrategy::KeepNew => {
                 "Winner is the newest memory, older memories were superseded".to_string()
             }
-            ResolutionStrategy::Merge => {
-                "Content from all memories merged".to_string()
-            }
-            ResolutionStrategy::Manual => {
-                "Conflict requires manual resolution".to_string()
-            }
+            ResolutionStrategy::Merge => "Content from all memories merged".to_string(),
+            ResolutionStrategy::Manual => "Conflict requires manual resolution".to_string(),
         }
     }
 
@@ -752,7 +736,8 @@ impl MemoryConflictResolver {
             winner_id: Uuid::nil(),
             loser_ids: vec![],
             strategy_used: ResolutionStrategy::Manual,
-            resolution_reason: "Conflict involves fewer than 2 memories - cannot resolve automatically".to_string(),
+            resolution_reason:
+                "Conflict involves fewer than 2 memories - cannot resolve automatically".to_string(),
             winner_updated: false,
             superseded_ids: vec![],
             resolved_at: Utc::now(),
@@ -805,7 +790,11 @@ impl ConflictResolutionService {
         let mut conflicts = Vec::new();
 
         for existing in existing_memories {
-            if let Some(conflict) = self.resolver.detector().detect_conflict(new_memory, existing) {
+            if let Some(conflict) = self
+                .resolver
+                .detector()
+                .detect_conflict(new_memory, existing)
+            {
                 conflicts.push(conflict);
             }
         }
@@ -821,10 +810,7 @@ impl ConflictResolutionService {
         existing_memories: &[ConflictMemoryInfo],
     ) -> Vec<ConflictResolutionResult> {
         let conflicts = self.detect_conflicts(new_memory, existing_memories).await;
-        conflicts
-            .iter()
-            .map(|c| self.resolver.resolve(c))
-            .collect()
+        conflicts.iter().map(|c| self.resolver.resolve(c)).collect()
     }
 
     /// Check if a new memory would conflict with any existing memories
@@ -834,7 +820,12 @@ impl ConflictResolutionService {
         existing_memories: &[ConflictMemoryInfo],
     ) -> bool {
         for existing in existing_memories {
-            if self.resolver.detector().detect_conflict(new_memory, existing).is_some() {
+            if self
+                .resolver
+                .detector()
+                .detect_conflict(new_memory, existing)
+                .is_some()
+            {
                 return true;
             }
         }
@@ -908,8 +899,10 @@ mod tests {
 
         let conflict = conflict.unwrap();
         assert_eq!(conflict.memory_ids.len(), 2);
-        assert!(conflict.conflict_type == ConflictType::PartialOverlap
-            || conflict.conflict_type == ConflictType::Contradiction);
+        assert!(
+            conflict.conflict_type == ConflictType::PartialOverlap
+                || conflict.conflict_type == ConflictType::Contradiction
+        );
     }
 
     #[test]
@@ -996,12 +989,18 @@ mod tests {
         );
 
         let conflict = resolver.detector().detect_conflict(&memory1, &memory2);
-        assert!(conflict.is_some(), "Similar content should be detected as conflict");
+        assert!(
+            conflict.is_some(),
+            "Similar content should be detected as conflict"
+        );
 
         let result = resolver.resolve(&conflict.unwrap());
         assert_eq!(result.winner_id, memory2.id);
         assert!(result.loser_ids.contains(&memory1.id));
-        assert_eq!(result.strategy_used, ResolutionStrategy::HigherConfidenceWins);
+        assert_eq!(
+            result.strategy_used,
+            ResolutionStrategy::HigherConfidenceWins
+        );
     }
 
     #[test]
@@ -1032,7 +1031,10 @@ mod tests {
         );
 
         let conflict = resolver.detector().detect_conflict(&memory1, &memory2);
-        assert!(conflict.is_some(), "Similar content should be detected as conflict");
+        assert!(
+            conflict.is_some(),
+            "Similar content should be detected as conflict"
+        );
 
         let result = resolver.resolve(&conflict.unwrap());
         assert_eq!(result.winner_id, memory2.id);
@@ -1068,8 +1070,13 @@ mod tests {
             MemorySource::OperatorFeedback,
         );
 
-        let conflict = resolver.detector().detect_conflict(&agent_memory, &operator_memory);
-        assert!(conflict.is_some(), "Similar content should be detected as conflict");
+        let conflict = resolver
+            .detector()
+            .detect_conflict(&agent_memory, &operator_memory);
+        assert!(
+            conflict.is_some(),
+            "Similar content should be detected as conflict"
+        );
 
         let result = resolver.resolve(&conflict.unwrap());
         assert_eq!(result.winner_id, operator_memory.id);
@@ -1116,18 +1123,27 @@ mod tests {
     fn test_content_similarity() {
         // Identical content
         let dist = MemoryConflictDetector::content_similarity("hello world", "hello world");
-        assert!(dist < 0.01, "Identical content should have near-zero distance");
+        assert!(
+            dist < 0.01,
+            "Identical content should have near-zero distance"
+        );
 
         // Completely different content
         let dist = MemoryConflictDetector::content_similarity("cat dog bird", "red green blue");
-        assert!(dist > 0.9, "Completely different content should have high distance");
+        assert!(
+            dist > 0.9,
+            "Completely different content should have high distance"
+        );
 
         // Partial overlap
         let dist = MemoryConflictDetector::content_similarity(
             "run tests before commit",
             "run lint before commit",
         );
-        assert!(dist > 0.3 && dist < 0.7, "Partial overlap should have moderate distance");
+        assert!(
+            dist > 0.3 && dist < 0.7,
+            "Partial overlap should have moderate distance"
+        );
     }
 
     #[test]
@@ -1176,7 +1192,10 @@ mod tests {
     fn test_conflict_resolution_config_default() {
         let config = ConflictResolutionConfig::default();
 
-        assert_eq!(config.primary_strategy, ResolutionStrategy::HigherConfidenceWins);
+        assert_eq!(
+            config.primary_strategy,
+            ResolutionStrategy::HigherConfidenceWins
+        );
         assert_eq!(config.fallback_strategy, ResolutionStrategy::NewerWins);
         assert!(config.enable_operator_override);
         assert!(config.enable_logging);
@@ -1185,7 +1204,10 @@ mod tests {
     #[test]
     fn test_memory_source_outranks() {
         // Operator feedback outranks everything except itself
-        assert!(!MemorySource::OperatorFeedback.outranks(&MemorySource::OperatorFeedback), "Same source should not outrank itself");
+        assert!(
+            !MemorySource::OperatorFeedback.outranks(&MemorySource::OperatorFeedback),
+            "Same source should not outrank itself"
+        );
         assert!(MemorySource::OperatorFeedback.outranks(&MemorySource::TaskSuccess));
         assert!(MemorySource::OperatorFeedback.outranks(&MemorySource::TaskFailure));
         assert!(MemorySource::OperatorFeedback.outranks(&MemorySource::PatternLearning));
@@ -1199,21 +1221,36 @@ mod tests {
         assert!(MemorySource::Manual.outranks(&MemorySource::SkillExtraction));
 
         // Same tier comparisons
-        assert!(!MemorySource::TaskSuccess.outranks(&MemorySource::TaskSuccess), "Same source should not outrank itself");
-        assert!(!MemorySource::Manual.outranks(&MemorySource::Manual), "Same source should not outrank itself");
+        assert!(
+            !MemorySource::TaskSuccess.outranks(&MemorySource::TaskSuccess),
+            "Same source should not outrank itself"
+        );
+        assert!(
+            !MemorySource::Manual.outranks(&MemorySource::Manual),
+            "Same source should not outrank itself"
+        );
     }
 
     #[test]
     fn test_resolution_strategy_display() {
-        assert_eq!(ResolutionStrategy::HigherConfidenceWins.to_string(), "higher_confidence_wins");
+        assert_eq!(
+            ResolutionStrategy::HigherConfidenceWins.to_string(),
+            "higher_confidence_wins"
+        );
         assert_eq!(ResolutionStrategy::NewerWins.to_string(), "newer_wins");
-        assert_eq!(ResolutionStrategy::OperatorOverrides.to_string(), "operator_overrides");
+        assert_eq!(
+            ResolutionStrategy::OperatorOverrides.to_string(),
+            "operator_overrides"
+        );
     }
 
     #[test]
     fn test_conflict_type_display() {
         assert_eq!(ConflictType::Contradiction.to_string(), "contradiction");
-        assert_eq!(ConflictType::OutdatedSupersession.to_string(), "outdated_supersession");
+        assert_eq!(
+            ConflictType::OutdatedSupersession.to_string(),
+            "outdated_supersession"
+        );
         assert_eq!(ConflictType::PartialOverlap.to_string(), "partial_overlap");
     }
 
@@ -1239,7 +1276,10 @@ mod tests {
             5,
             MemorySource::TaskFailure,
         );
-        assert!(service.would_conflict(&new_similar, &existing), "Similar content should conflict");
+        assert!(
+            service.would_conflict(&new_similar, &existing),
+            "Similar content should conflict"
+        );
 
         // Different label should not conflict
         let new_different_label = create_test_memory(

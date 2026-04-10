@@ -1,0 +1,21 @@
+{
+  "featureId": "mem-promotion-threshold",
+  "reviewedAt": "2026-04-10T12:20:00Z",
+  "commitId": "37b8f4a3dae8a211887f6a6a910812b9f0c0c98c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation correctly fulfills all feature requirements. Promotion thresholds are properly implemented: AntiPattern uses ≥5 confirmations with confidence >0.6, Convention uses ≥10 confirmations with confidence >0.8. The promotion system tracks confirmation counts, checks promotion eligibility, and provides retrieval rank boost for promoted patterns.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "Worker used cargo build, cargo test, and cargo clippy commands but .factory/services.yaml does not exist in this project. This is consistent with the pattern seen in other memory feature handoffs.",
+      "evidence": "Transcript shows: cargo build --workspace, cargo test -p swell-memory, cargo clippy --workspace. No services.yaml found at /Users/ludwigjonsson/.factory/services.yaml"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature mem-promotion-threshold passes scrutiny. Implementation correctly adds pattern promotion thresholds (≥5 confirmations with confidence >0.6 for patterns, ≥10 confirmations with confidence >0.8 for rules) with retrieval rank boost. 15 promotion tests were added covering boundary conditions. Worker followed Rust skill procedure correctly."
+}

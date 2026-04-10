@@ -1,0 +1,128 @@
+{
+  "milestone": "memory",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo fmt --all -- --check", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 25,
+    "passed": 18,
+    "failed": 7,
+    "failedFeatures": [
+      "memory-pattern-learning",
+      "mem-scoping",
+      "mem-deprecation",
+      "mem-decay-function",
+      "mem-triple-stream-retrieval",
+      "mem-provenance-tracking",
+      "mem-event-log-jsonl"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "memory-pattern-learning",
+      "severity": "blocking",
+      "description": "Convention parsing broken (line 1182): String slice indices incorrect - uses [3..] instead of [4..] for '- **' prefix, causing stored conventions to be unparsable"
+    },
+    {
+      "featureId": "memory-pattern-learning",
+      "severity": "blocking",
+      "description": "Confidence calculation bug (line 1125): Uses sum of all pattern frequencies instead of per-pattern frequency, incorrectly inflating confidence scores"
+    },
+    {
+      "featureId": "memory-pattern-learning",
+      "severity": "blocking",
+      "description": "Anti-pattern retrieval unimplemented (line 1199): get_anti_patterns_for_error is a stub returning empty vec - anti-patterns are extracted but cannot be retrieved"
+    },
+    {
+      "featureId": "mem-scoping",
+      "severity": "blocking",
+      "description": "update() doesn't preserve scoping fields (line 634): UPDATE query omits repository, language, task_type columns - entries lose scoping metadata on update"
+    },
+    {
+      "featureId": "mem-scoping",
+      "severity": "blocking",
+      "description": "get_by_type() has no repository filter (line 786): Returns entries from ALL repositories, violating cross-repo isolation"
+    },
+    {
+      "featureId": "mem-scoping",
+      "severity": "blocking",
+      "description": "get_by_label() has no repository filter (line 803): Returns entries from ALL repositories, violating cross-repo isolation"
+    },
+    {
+      "featureId": "mem-deprecation",
+      "severity": "blocking",
+      "description": "MemoryEntry lacks confidence field (traits.rs:196): Feature requires 'confidence <0.3 as deprecated' but MemoryEntry has no confidence field"
+    },
+    {
+      "featureId": "mem-deprecation",
+      "severity": "blocking",
+      "description": "MemoryEntry lacks superseded_by field (traits.rs:196): Feature requires 'superseded_by link' but field doesn't exist"
+    },
+    {
+      "featureId": "mem-deprecation",
+      "severity": "blocking",
+      "description": "No integration into memory system: Deprecation module is standalone utility never called by SqliteMemoryStore"
+    },
+    {
+      "featureId": "mem-decay-function",
+      "severity": "blocking",
+      "description": "decay_rate_for_block_type() will panic (line 96): Should return Option<DecayRate> instead of DecayRate - unknown variants cause runtime panic"
+    },
+    {
+      "featureId": "mem-triple-stream-retrieval",
+      "severity": "blocking",
+      "description": "BM25 search generates random UUIDs (line 620): Uses Uuid::new_v4() instead of actual entry_id from RecallResult, breaking RRF fusion"
+    },
+    {
+      "featureId": "mem-provenance-tracking",
+      "severity": "blocking",
+      "description": "search() doesn't filter by source_episode_id (line 725): Field exists in MemoryQuery but is never checked - 'Query memories by provenance' requirement unmet"
+    },
+    {
+      "featureId": "mem-provenance-tracking",
+      "severity": "blocking",
+      "description": "Claimed tests don't exist (line 809): Handoff claims 4 provenance tests were added but grep finds none"
+    },
+    {
+      "featureId": "mem-event-log-jsonl",
+      "severity": "blocking",
+      "description": "Serialization errors silently dropped (lines 176,203,221,238,257): unwrap_or_default() creates empty {} instead of propagating errors - data loss for error events"
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the convention block markdown format: '### ConventionType\\n\\n- **name**: description\\n\\n  - Example: `code`' - this format is used by pattern_learning and skill_extraction but never documented",
+      "evidence": "Features memory-pattern-learning and memory-skill-extraction both use this format but it's reverse-engineered from parsing code",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance on when parse() methods should be fallible vs return defaults - enum parsing patterns vary across codebase (some panic, some default, some return Result)",
+      "evidence": "mem-semantic-memory uses silent defaults in parse(), memory-confidence-bayesian uses expect(), no consistent pattern documented",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that MemoryStore trait get_by_type() and get_by_label() are not repository-scoped - this is a pre-existing design gap that workers should be aware of",
+      "evidence": "mem-scoping review found get_by_type/get_by_label have no repository parameter despite search() requiring repository",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Skills stored in '.skills' but project standard is '.swell/skills/'",
+      "reason": "Already documented in memory-skill-extraction review as non-blocking - feature description specifies '.skills' so implementation matches spec"
+    },
+    {
+      "observation": "Rust skill should be renamed to rust-worker",
+      "reason": "Skill naming is not a blocker - 'Rust' skill exists and workers correctly fall back to it"
+    }
+  ],
+  "previousRound": null
+}

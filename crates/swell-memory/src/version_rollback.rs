@@ -10,7 +10,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::SqliteMemoryStore;
-use swell_core::{MemoryStore, MemoryEntry, SwellError};
+use swell_core::{MemoryEntry, MemoryStore, SwellError};
 
 /// A historical version of a memory entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,13 +105,12 @@ impl SqliteMemoryStore {
 
     /// Get the current version number for a memory entry
     async fn get_current_version_number(&self, memory_id: Uuid) -> Result<u32, SwellError> {
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT MAX(version) FROM memory_versions WHERE memory_id = ?",
-        )
-        .bind(memory_id.to_string())
-        .fetch_optional(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT MAX(version) FROM memory_versions WHERE memory_id = ?")
+                .bind(memory_id.to_string())
+                .fetch_optional(self.pool.as_ref())
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(row.map(|r| r.0 as u32).unwrap_or(0))
     }
@@ -142,20 +141,17 @@ impl SqliteMemoryStore {
             let created_by: String = row.get("created_by");
             let reason: Option<String> = row.get("reason");
 
-            let id = Uuid::parse_str(&id_str).map_err(|e| {
-                SwellError::DatabaseError(format!("Invalid version UUID: {}", e))
-            })?;
-            let mid = Uuid::parse_str(&memory_id_str).map_err(|e| {
-                SwellError::DatabaseError(format!("Invalid memory UUID: {}", e))
-            })?;
+            let id = Uuid::parse_str(&id_str)
+                .map_err(|e| SwellError::DatabaseError(format!("Invalid version UUID: {}", e)))?;
+            let mid = Uuid::parse_str(&memory_id_str)
+                .map_err(|e| SwellError::DatabaseError(format!("Invalid memory UUID: {}", e)))?;
 
             let created_at = DateTime::parse_from_rfc3339(&created_at_str)
                 .map_err(|e| SwellError::DatabaseError(format!("Invalid timestamp: {}", e)))?
                 .with_timezone(&Utc);
 
-            let metadata: serde_json::Value = serde_json::from_str(&metadata_str).map_err(
-                |e| SwellError::DatabaseError(format!("Invalid JSON metadata: {}", e)),
-            )?;
+            let metadata: serde_json::Value = serde_json::from_str(&metadata_str)
+                .map_err(|e| SwellError::DatabaseError(format!("Invalid JSON metadata: {}", e)))?;
 
             versions.push(MemoryVersion {
                 id,
@@ -202,8 +198,9 @@ impl SqliteMemoryStore {
                 let created_by: String = r.get("created_by");
                 let reason: Option<String> = r.get("reason");
 
-                let id = Uuid::parse_str(&id_str)
-                    .map_err(|e| SwellError::DatabaseError(format!("Invalid version UUID: {}", e)))?;
+                let id = Uuid::parse_str(&id_str).map_err(|e| {
+                    SwellError::DatabaseError(format!("Invalid version UUID: {}", e))
+                })?;
                 let mid = Uuid::parse_str(&memory_id_str).map_err(|e| {
                     SwellError::DatabaseError(format!("Invalid memory UUID: {}", e))
                 })?;
@@ -212,9 +209,10 @@ impl SqliteMemoryStore {
                     .map_err(|e| SwellError::DatabaseError(format!("Invalid timestamp: {}", e)))?
                     .with_timezone(&Utc);
 
-                let metadata: serde_json::Value = serde_json::from_str(&metadata_str).map_err(
-                    |e| SwellError::DatabaseError(format!("Invalid JSON metadata: {}", e)),
-                )?;
+                let metadata: serde_json::Value =
+                    serde_json::from_str(&metadata_str).map_err(|e| {
+                        SwellError::DatabaseError(format!("Invalid JSON metadata: {}", e))
+                    })?;
 
                 Ok(Some(MemoryVersion {
                     id,
@@ -290,8 +288,14 @@ impl SqliteMemoryStore {
         self.update(updated.clone()).await?;
 
         // Log the rollback in the audit trail
-        self.log_rollback(memory_id, from_version, target_version, triggered_by, reason)
-            .await?;
+        self.log_rollback(
+            memory_id,
+            from_version,
+            target_version,
+            triggered_by,
+            reason,
+        )
+        .await?;
 
         Ok(RollbackResult {
             success: true,
@@ -361,12 +365,10 @@ impl SqliteMemoryStore {
             let triggered_by: String = row.get("triggered_by");
             let reason: Option<String> = row.get("reason");
 
-            let id = Uuid::parse_str(&id_str).map_err(|e| {
-                SwellError::DatabaseError(format!("Invalid audit UUID: {}", e))
-            })?;
-            let mid = Uuid::parse_str(&memory_id_str).map_err(|e| {
-                SwellError::DatabaseError(format!("Invalid memory UUID: {}", e))
-            })?;
+            let id = Uuid::parse_str(&id_str)
+                .map_err(|e| SwellError::DatabaseError(format!("Invalid audit UUID: {}", e)))?;
+            let mid = Uuid::parse_str(&memory_id_str)
+                .map_err(|e| SwellError::DatabaseError(format!("Invalid memory UUID: {}", e)))?;
 
             let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
                 .map_err(|e| SwellError::DatabaseError(format!("Invalid timestamp: {}", e)))?
@@ -392,13 +394,12 @@ impl SqliteMemoryStore {
         // - None outer = no rows found
         // - Some(None inner) = NULL (no max, i.e., no versions)
         // - Some(Some(val)) = actual max value
-        let row: Option<(Option<i64>,)> = sqlx::query_as(
-            "SELECT MAX(version) FROM memory_versions WHERE memory_id = ?",
-        )
-        .bind(memory_id.to_string())
-        .fetch_optional(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let row: Option<(Option<i64>,)> =
+            sqlx::query_as("SELECT MAX(version) FROM memory_versions WHERE memory_id = ?")
+                .bind(memory_id.to_string())
+                .fetch_optional(self.pool.as_ref())
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(row.and_then(|r| r.0).map(|v| v as u32))
     }
@@ -409,27 +410,24 @@ impl SqliteMemoryStore {
         memory_id: Uuid,
         before_version: u32,
     ) -> Result<u64, SwellError> {
-        let result = sqlx::query(
-            "DELETE FROM memory_versions WHERE memory_id = ? AND version < ?",
-        )
-        .bind(memory_id.to_string())
-        .bind(before_version as i64)
-        .execute(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let result = sqlx::query("DELETE FROM memory_versions WHERE memory_id = ? AND version < ?")
+            .bind(memory_id.to_string())
+            .bind(before_version as i64)
+            .execute(self.pool.as_ref())
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(result.rows_affected())
     }
 
     /// Check if a memory entry has version history
     pub async fn has_version_history(&self, memory_id: Uuid) -> Result<bool, SwellError> {
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT COUNT(*) FROM memory_versions WHERE memory_id = ?",
-        )
-        .bind(memory_id.to_string())
-        .fetch_optional(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT COUNT(*) FROM memory_versions WHERE memory_id = ?")
+                .bind(memory_id.to_string())
+                .fetch_optional(self.pool.as_ref())
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(row.map(|r| r.0 > 0).unwrap_or(false))
     }
@@ -459,10 +457,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -505,17 +502,22 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
 
         // Save version 1
         store
-            .save_version(entry.id, "v1 content".to_string(), entry.metadata.clone(), "test", None)
+            .save_version(
+                entry.id,
+                "v1 content".to_string(),
+                entry.metadata.clone(),
+                "test",
+                None,
+            )
             .await
             .unwrap();
 
@@ -562,10 +564,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -639,10 +640,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -691,17 +691,22 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
 
         // Save initial version
         store
-            .save_version(entry.id, "v1".to_string(), entry.metadata.clone(), "init", None)
+            .save_version(
+                entry.id,
+                "v1".to_string(),
+                entry.metadata.clone(),
+                "init",
+                None,
+            )
             .await
             .unwrap();
 
@@ -736,10 +741,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -750,7 +754,13 @@ mod tests {
 
         // After saving a version
         store
-            .save_version(entry.id, "v1".to_string(), entry.metadata.clone(), "test", None)
+            .save_version(
+                entry.id,
+                "v1".to_string(),
+                entry.metadata.clone(),
+                "test",
+                None,
+            )
             .await
             .unwrap();
 
@@ -776,10 +786,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -808,10 +817,7 @@ mod tests {
         assert_eq!(versions.len(), 5);
 
         // Delete versions before version 3
-        let deleted = store
-            .delete_versions_before(entry.id, 3)
-            .await
-            .unwrap();
+        let deleted = store.delete_versions_before(entry.id, 3).await.unwrap();
         assert_eq!(deleted, 2);
 
         // Should have 3 versions remaining (3, 4, 5)
@@ -840,10 +846,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -888,10 +893,9 @@ mod tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
 
         store.store(entry.clone()).await.unwrap();

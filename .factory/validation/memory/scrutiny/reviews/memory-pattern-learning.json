@@ -1,0 +1,62 @@
+{
+  "featureId": "memory-pattern-learning",
+  "reviewedAt": "2026-04-10T00:00:00Z",
+  "commitId": "536231e059e76a41efa94d63186cad569d240b96",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation provides the basic structure for pattern learning but has several bugs that cause incorrect behavior. The feature creates anti-patterns and conventions correctly during analysis, but the round-trip storage/retrieval is broken due to parsing bugs in `parse_conventions_from_content`, and confidence calculation in deduplication is incorrect.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/pattern_learning.rs",
+        "line": 1182,
+        "severity": "blocking",
+        "description": "Convention parsing is broken in `parse_conventions_from_content`. The name extraction uses `trimmed[3..colon_pos]` which assumes '- **' is 3 characters but it's actually 4. Also `description` extraction `trimmed[colon_pos + 2..]` skips '**' but leaves leading space. This causes stored conventions to be unparsable."
+      },
+      {
+        "file": "crates/swell-memory/src/pattern_learning.rs",
+        "line": 1125,
+        "severity": "blocking",
+        "description": "Confidence calculation bug in `deduplicate_anti_patterns`: calls `update_confidence(frequency_map.values().sum())` which uses total frequency across all patterns instead of each pattern's own frequency. This incorrectly inflates confidence scores."
+      },
+      {
+        "file": "crates/swell-memory/src/pattern_learning.rs",
+        "line": 1199,
+        "severity": "blocking",
+        "description": "The `get_anti_patterns_for_error` method is a stub returning empty vec with a comment 'For MVP, return empty'. Anti-patterns are extracted and converted to conventions but there's no way to retrieve stored anti-patterns - only conventions can be retrieved."
+      },
+      {
+        "file": "crates/swell-memory/src/pattern_learning.rs",
+        "line": 1087,
+        "severity": "non_blocking",
+        "description": "Anti-patterns are not stored in `update_memory_blocks` - only conventions are persisted. The 'Anti-Patterns to Avoid' section in content references convention names but anti-patterns themselves are lost after the function returns."
+      },
+      {
+        "file": "crates/swell-memory/src/pattern_learning.rs",
+        "line": 1063,
+        "severity": "non_blocking",
+        "description": "Unused variable `_updated_count` is assigned but never read before returning. The function returns `_updated_count` but it's always 1 when conventions exist."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The Rust skill documentation warns against `unwrap()` in production code, but the AGENTS.md doesn't specify when `unwrap()` is acceptable in tests vs production. The pattern_learning.rs uses `unwrap()` in several places. This is borderline acceptable in test code but worth documenting.",
+      "evidence": "pattern_learning.rs:563 - `let store = SqliteMemoryStore::create(\"sqlite::memory:\").await.unwrap();`"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The convention block format uses markdown-style headers (### Naming) and bullet points (- **name**: description). This format is not documented anywhere in the codebase, so future developers would need to reverse-engineer it from the parsing code.",
+      "evidence": "pattern_learning.rs:1040-1087 shows the format creation, lines 1146-1182 show parsing. The format is: '### ConventionType\\n\\n- **name**: description\\n\\n  - Example: `code`\\n'"
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill procedure was followed correctly. The worker used async/await properly and tokio::test for async tests. No deviations noted.",
+      "evidence": "Transcript shows skillFeedback.followedProcedure: true with no deviations"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The pattern learning feature is structurally complete but has three blocking bugs: (1) convention parsing is broken due to incorrect string slice indices, (2) confidence calculation uses aggregated frequencies instead of per-pattern frequencies, (3) anti-pattern retrieval is unimplemented. These issues prevent the feature from correctly round-tripping learned patterns through memory storage and retrieval."
+}

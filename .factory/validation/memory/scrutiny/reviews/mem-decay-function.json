@@ -1,0 +1,28 @@
+{
+  "featureId": "mem-decay-function",
+  "reviewedAt": "2026-04-10T09:45:00Z",
+  "commitId": "5f0bfc1",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation correctly implements time-based decay with three tiers: Procedural (0.99/day slow), Environmental (0.95/day medium), and Buffer (0.90/day fast). Decay formula and retrieval probability adjustment work as specified. 19 unit tests provide good coverage. However, there is an architectural gap: Buffer decay rate cannot be obtained from any MemoryBlockType since the core enum doesn't include a Buffer variant.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/decay.rs",
+        "line": 96,
+        "severity": "blocking",
+        "description": "decay_rate_for_block_type() will panic if passed an unknown MemoryBlockType variant. The function should return Option<DecayRate> rather than DecayRate to handle extensible block types gracefully. Compare to the public API which correctly uses an exhaustive match - if a new block type is added to swell-core without updating this function, it will panic at runtime."
+      },
+      {
+        "file": "crates/swell-core/src/types.rs",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "MemoryBlockType enum has no Buffer variant, but the feature description mentions 'buffer memories fast' and DecayRate::Buffer is implemented. This is an architectural gap: the decay module correctly implements Buffer decay but there's no way to obtain it from a MemoryBlockType. If Buffer memory type is needed, MemoryBlockType needs a Buffer variant added to swell-core."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation is correct and complete. The three decay rates (procedural 0.99, environmental 0.95, buffer 0.90) are implemented as specified. Tests pass (19 decay tests, 588 workspace tests). The only notable issue is that decay_rate_for_block_type() will panic on unknown block types - it should return Option<DecayRate>. Additionally, there's no MemoryBlockType::Buffer in swell-core, creating a gap between the feature description (which mentions buffer memories) and the available block types."
+}

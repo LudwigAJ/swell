@@ -1,0 +1,49 @@
+{
+  "featureId": "mem-similarity-check",
+  "reviewedAt": "2026-04-10T10:30:00Z",
+  "commitId": "a203a82",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation correctly rejects memories with cosine distance < 0.15 to existing memories in the same repository. The cosine_distance helper, find_similar_memory method, and store method modification are all correctly implemented. 8 test cases cover the core functionality including rejection, acceptance, no-embedding bypass, repository isolation, and edge cases.",
+    "issues": [
+      {
+        "file": "features.json",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "expectedBehavior contains a documentation error: 'Reject if cosine distance < 0.85 (similarity > 0.15)' appears to have wrong threshold values. The feature description correctly states 0.15, and the implementation uses 0.15. The expectedBehavior should likely be 'Reject if cosine distance < 0.15 (similarity > 0.85)' not 'distance < 0.85'. This is a documentation issue in features.json, not an implementation bug."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 932,
+        "severity": "non_blocking",
+        "description": "test_similarity_check_is_repository_scoped only verifies that different-repository similar entries are NOT rejected. It does not verify that same-repository similar entries ARE rejected. The other tests cover rejection, but this test name could be misleading. Consider adding a comment clarifying what is and isn't being tested, or adding an assertion that would fail if repository isolation were broken."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "No convention gaps found. Worker followed AGENTS.md patterns: async_trait usage, error handling with Result<SwellError>, using tracing for logging was not needed for this task.",
+      "evidence": "Worker used #[async_trait] for trait impl, proper error propagation with ?, and added error variant to swell-core/src/error.rs following existing patterns."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed Rust skill procedure correctly. No deviations noted in skillFeedback.",
+      "evidence": "skillFeedback shows followedProcedure: true with no deviations. Worker explored codebase first (grep for MemoryStore trait, MemoryEntry struct, SwellError), then implemented the feature, then ran verification."
+    },
+    {
+      "area": "services",
+      "observation": "No new services or commands were used. All verification was done via standard cargo commands documented in services.yaml.",
+      "evidence": "Verification used cargo build --workspace, cargo test -p swell-memory -- similarity, cargo fmt -- --check, cargo clippy -p swell-memory -- -D warnings - all documented in .factory/services.yaml"
+    },
+    {
+      "area": "knowledge",
+      "observation": "No knowledge gaps identified. Worker correctly understood the MemoryStore trait, MemoryEntry structure, and SwellError enum from the existing codebase.",
+      "evidence": "Worker grepped for 'trait MemoryStore', 'struct MemoryEntry', and 'enum SwellError' before implementing."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Implementation correctly implements similarity checking for memory deduplication. The feature adds cosine_distance computation, find_similar_memory repository-scoped lookup, and store method modification to reject entries within cosine distance 0.15. All 8 test cases pass. The only issue is a documentation inconsistency in expectedBehavior (0.85 vs 0.15) which does not affect correctness."
+}

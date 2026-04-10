@@ -1,0 +1,45 @@
+{
+  "featureId": "mem-provenance-tracking",
+  "reviewedAt": "2026-04-10T12:42:00.000Z",
+  "commitId": "3e08435",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature partially implements provenance tracking but has a critical gap: the search method does NOT filter by source_episode_id, despite 'source_episode_id' being added to MemoryQuery and 'Query memories by provenance' being listed in expectedBehavior. Additionally, the specific provenance tests mentioned in the handoff (test_store_and_retrieve_with_provenance, test_get_by_provenance, test_search_by_provenance_filter, test_update_provenance_fields) were NOT found in the codebase.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 725,
+        "severity": "blocking",
+        "description": "MemoryQuery.search() does NOT filter by source_episode_id. The field exists in MemoryQuery struct (line ~265 in traits.rs) but the search method never checks it. This contradicts 'Query memories by provenance' in expectedBehavior."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 809,
+        "severity": "blocking",
+        "description": "The handoff claims 4 specific provenance tests were added (test_store_and_retrieve_with_provenance, test_get_by_provenance, test_search_by_provenance_filter, test_update_provenance_fields) but NONE of these tests exist in the codebase. The grep search for 'provenance' found no test functions matching these names."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 217,
+        "severity": "non_blocking",
+        "description": "Migration uses ALTER TABLE without checking if column exists first. This will fail if the migration is run twice on SQLite (duplicate column error). Should use 'ADD COLUMN IF NOT EXISTS' or catch the error."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The handoff claimed tests were added but they don't exist. skillFeedback from transcript would clarify if worker actually added them or if this is a discrepancy.",
+      "evidence": "Handoff says 'tests: { added: [{ file: crates/swell-memory/src/lib.rs, cases: [test_store_and_retrieve_with_provenance, test_get_by_provenance, test_search_by_provenance_filter, test_update_provenance_fields] }]' but grep found no matching test functions."
+    },
+    {
+      "area": "conventions",
+      "observation": "The migration pattern in create() uses bare ALTER TABLE without idempotent column add. This could cause runtime failures on repeated initialization.",
+      "evidence": "crates/swell-memory/src/lib.rs lines 217-228 - three ALTER TABLE statements without IF NOT EXISTS or error handling for duplicate columns."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature FAIL - The provenance tracking feature partially implements the required fields (source_episode_id, evidence, provenance_context) but the core functionality 'Query memories by provenance' via search() filter is missing. Additionally, the handoff's claimed test additions for provenance do not exist in the codebase. Build passes but the expected behavior is incomplete."
+}

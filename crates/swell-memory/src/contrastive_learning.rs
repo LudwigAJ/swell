@@ -322,7 +322,11 @@ impl ContrastiveAnalyzer {
     }
 
     /// Check if two successful trajectories share similar patterns
-    fn trajectories_are_similar(&self, traj1: &SuccessTrajectory, traj2: &SuccessTrajectory) -> bool {
+    fn trajectories_are_similar(
+        &self,
+        traj1: &SuccessTrajectory,
+        traj2: &SuccessTrajectory,
+    ) -> bool {
         // Same outcome type is a strong signal
         if traj1.outcome != traj2.outcome {
             return false;
@@ -361,7 +365,11 @@ impl ContrastiveAnalyzer {
     }
 
     /// Check if a success and failure trajectory have contrasting patterns
-    fn trajectories_are_contrasting(&self, success: &SuccessTrajectory, failure: &FailureTrajectory) -> bool {
+    fn trajectories_are_contrasting(
+        &self,
+        success: &SuccessTrajectory,
+        failure: &FailureTrajectory,
+    ) -> bool {
         // Check if they modify the same files (context overlap)
         let success_files: HashSet<_> = success.files_modified.iter().collect();
         let failure_files: HashSet<_> = failure.files_modified.iter().collect();
@@ -523,13 +531,21 @@ impl ContrastiveTrainer {
         let grad = match pair_type {
             PairType::Positive => {
                 // Move anchor toward comparison (reduce distance)
-                comparison.iter().zip(anchor.iter()).map(|(c, a)| c - a).collect()
+                comparison
+                    .iter()
+                    .zip(anchor.iter())
+                    .map(|(c, a)| c - a)
+                    .collect()
             }
             PairType::Negative => {
                 // Move anchor away from comparison (increase distance)
                 // Only if distance < margin, otherwise no gradient
                 if distance < self.config.margin {
-                    anchor.iter().zip(comparison.iter()).map(|(a, c)| a - c).collect()
+                    anchor
+                        .iter()
+                        .zip(comparison.iter())
+                        .map(|(a, c)| a - c)
+                        .collect()
                 } else {
                     vec![0.0; anchor.len()] // Already far enough apart
                 }
@@ -598,7 +614,9 @@ impl ContrastiveTrainer {
 
             // Accumulate gradients
             let grad = self.compute_gradient(anchor, comparison, pair.pair_type);
-            let entry = gradients.entry(pair.anchor_id).or_insert_with(|| vec![0.0; anchor.len()]);
+            let entry = gradients
+                .entry(pair.anchor_id)
+                .or_insert_with(|| vec![0.0; anchor.len()]);
             for (i, g) in grad.iter().enumerate() {
                 entry[i] += g;
             }
@@ -850,7 +868,10 @@ mod tests {
     fn test_cosine_distance_identical() {
         let emb = vec![0.1, 0.2, 0.3, 0.4];
         let distance = ContrastiveTrainer::cosine_distance(&emb, &emb);
-        assert!(distance < 0.001, "Identical embeddings should have near-zero distance");
+        assert!(
+            distance < 0.001,
+            "Identical embeddings should have near-zero distance"
+        );
     }
 
     #[test]
@@ -858,7 +879,10 @@ mod tests {
         let emb1 = vec![1.0, 0.0, 0.0, 0.0];
         let emb2 = vec![0.0, 1.0, 0.0, 0.0];
         let distance = ContrastiveTrainer::cosine_distance(&emb1, &emb2);
-        assert!(distance > 0.99, "Orthogonal embeddings should have near-1 distance");
+        assert!(
+            distance > 0.99,
+            "Orthogonal embeddings should have near-1 distance"
+        );
     }
 
     #[test]
@@ -866,7 +890,10 @@ mod tests {
         let emb1 = vec![0.1, 0.2, 0.3];
         let emb2 = vec![0.1, 0.2, 0.3, 0.4];
         let distance = ContrastiveTrainer::cosine_distance(&emb1, &emb2);
-        assert_eq!(distance, 1.0, "Different length embeddings should return max distance");
+        assert_eq!(
+            distance, 1.0,
+            "Different length embeddings should return max distance"
+        );
     }
 
     #[test]
@@ -882,7 +909,10 @@ mod tests {
         let emb = vec![3.0, 4.0];
         let normalized = ContrastiveTrainer::normalize_embedding(&emb);
         let norm: f32 = normalized.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 0.001, "Normalized embedding should have unit norm");
+        assert!(
+            (norm - 1.0).abs() < 0.001,
+            "Normalized embedding should have unit norm"
+        );
     }
 
     #[test]
@@ -980,7 +1010,10 @@ mod tests {
         // For positive pair, loss should be (distance - margin)^2 when distance > margin
         // If distance = 0.5 and margin = 1.0, loss = max(0, 0.5 - 1.0)^2 = 0
         let loss = trainer.compute_pair_loss(0.5, PairType::Positive);
-        assert!(loss < 0.001, "Positive pair with distance < margin should have near-zero loss");
+        assert!(
+            loss < 0.001,
+            "Positive pair with distance < margin should have near-zero loss"
+        );
     }
 
     #[test]
@@ -989,7 +1022,10 @@ mod tests {
         // For negative pair, loss should be (margin - distance)^2 when distance < margin
         // If distance = 0.5 and margin = 1.0, loss = max(0, 1.0 - 0.5)^2 = 0.25
         let loss = trainer.compute_pair_loss(0.5, PairType::Negative);
-        assert!((loss - 0.25).abs() < 0.001, "Negative pair with distance < margin should have positive loss");
+        assert!(
+            (loss - 0.25).abs() < 0.001,
+            "Negative pair with distance < margin should have positive loss"
+        );
     }
 
     #[test]
@@ -997,7 +1033,10 @@ mod tests {
         let trainer = ContrastiveTrainer::with_default_config();
         // If distance = 1.5 (far apart) and margin = 1.0, loss = max(0, 1.0 - 1.5)^2 = 0
         let loss = trainer.compute_pair_loss(1.5, PairType::Negative);
-        assert!(loss < 0.001, "Negative pair with distance > margin should have near-zero loss");
+        assert!(
+            loss < 0.001,
+            "Negative pair with distance > margin should have near-zero loss"
+        );
     }
 
     // =====================================================================
@@ -1016,15 +1055,13 @@ mod tests {
             task_id: Uuid::new_v4(),
             task_description: "Add feature A".to_string(),
             memory_ids: vec![Uuid::new_v4(), Uuid::new_v4()],
-            steps: vec![
-                TrajectoryStep {
-                    step_id: Uuid::new_v4(),
-                    description: "Step 1".to_string(),
-                    affected_files: vec!["src/main.rs".to_string()],
-                    risk_level: "medium".to_string(),
-                    status: StepStatus::Executed,
-                },
-            ],
+            steps: vec![TrajectoryStep {
+                step_id: Uuid::new_v4(),
+                description: "Step 1".to_string(),
+                affected_files: vec!["src/main.rs".to_string()],
+                risk_level: "medium".to_string(),
+                status: StepStatus::Executed,
+            }],
             outcome: SuccessOutcome::Accepted,
             tool_calls: vec![
                 ToolCallRecord {
@@ -1048,15 +1085,13 @@ mod tests {
             task_id: Uuid::new_v4(),
             task_description: "Add feature B".to_string(),
             memory_ids: vec![Uuid::new_v4(), Uuid::new_v4()],
-            steps: vec![
-                TrajectoryStep {
-                    step_id: Uuid::new_v4(),
-                    description: "Step 1".to_string(),
-                    affected_files: vec!["src/lib.rs".to_string()],
-                    risk_level: "medium".to_string(),
-                    status: StepStatus::Executed,
-                },
-            ],
+            steps: vec![TrajectoryStep {
+                step_id: Uuid::new_v4(),
+                description: "Step 1".to_string(),
+                affected_files: vec!["src/lib.rs".to_string()],
+                risk_level: "medium".to_string(),
+                status: StepStatus::Executed,
+            }],
             outcome: SuccessOutcome::Accepted,
             tool_calls: vec![
                 ToolCallRecord {
@@ -1079,10 +1114,16 @@ mod tests {
         // Empty failures
         let failures: Vec<FailureTrajectory> = vec![];
 
-        let pairs = analyzer.build_pairs(&[traj1, traj2], &failures).await.unwrap();
+        let pairs = analyzer
+            .build_pairs(&[traj1, traj2], &failures)
+            .await
+            .unwrap();
 
         // Should have positive pairs between similar successful trajectories
-        assert!(!pairs.is_empty(), "Should create positive pairs from similar successes");
+        assert!(
+            !pairs.is_empty(),
+            "Should create positive pairs from similar successes"
+        );
     }
 
     #[tokio::test]
@@ -1099,14 +1140,12 @@ mod tests {
             memory_ids: vec![Uuid::new_v4()],
             steps: vec![],
             outcome: SuccessOutcome::Accepted,
-            tool_calls: vec![
-                ToolCallRecord {
-                    tool_name: "edit_file".to_string(),
-                    arguments: serde_json::json!({}),
-                    success: true,
-                    timestamp: Utc::now(),
-                },
-            ],
+            tool_calls: vec![ToolCallRecord {
+                tool_name: "edit_file".to_string(),
+                arguments: serde_json::json!({}),
+                success: true,
+                timestamp: Utc::now(),
+            }],
             files_modified: vec!["src/main.rs".to_string()],
             timestamp: Utc::now(),
         };
@@ -1118,14 +1157,12 @@ mod tests {
             steps: vec![],
             failure_reason: FailureReason::TestFailure,
             validation_errors: vec![],
-            tool_calls: vec![
-                ToolCallRecord {
-                    tool_name: "edit_file".to_string(),
-                    arguments: serde_json::json!({}),
-                    success: true,
-                    timestamp: Utc::now(),
-                },
-            ],
+            tool_calls: vec![ToolCallRecord {
+                tool_name: "edit_file".to_string(),
+                arguments: serde_json::json!({}),
+                success: true,
+                timestamp: Utc::now(),
+            }],
             files_modified: vec!["src/main.rs".to_string()], // Same file
             iteration_count: 1,
             timestamp: Utc::now(),
@@ -1134,8 +1171,14 @@ mod tests {
         let pairs = analyzer.build_pairs(&[success], &[failure]).await.unwrap();
 
         // Should have negative pairs for success-failure contrast
-        let neg_pairs: Vec<_> = pairs.iter().filter(|p| p.pair_type == PairType::Negative).collect();
-        assert!(!neg_pairs.is_empty(), "Should create negative pairs from contrasting trajectories");
+        let neg_pairs: Vec<_> = pairs
+            .iter()
+            .filter(|p| p.pair_type == PairType::Negative)
+            .collect();
+        assert!(
+            !neg_pairs.is_empty(),
+            "Should create negative pairs from contrasting trajectories"
+        );
     }
 
     // =====================================================================
@@ -1188,7 +1231,10 @@ mod tests {
         let failures: Vec<FailureTrajectory> = vec![];
 
         let result = service.analyze_trajectories(successes, failures).await;
-        assert!(result.is_ok(), "Analysis should succeed even without embeddings");
+        assert!(
+            result.is_ok(),
+            "Analysis should succeed even without embeddings"
+        );
     }
 
     // =====================================================================
@@ -1226,8 +1272,14 @@ mod tests {
         // For negative pair with distance < margin, should push apart
         // Since anchor[0] < comparison[0] AND anchor[1] < comparison[1],
         // both should decrease to move away (negative gradient)
-        assert!(grad[0] < 0.0, "Anchor component 0 should decrease (move away)");
-        assert!(grad[1] < 0.0, "Anchor component 1 should decrease (move away)");
+        assert!(
+            grad[0] < 0.0,
+            "Anchor component 0 should decrease (move away)"
+        );
+        assert!(
+            grad[1] < 0.0,
+            "Anchor component 1 should decrease (move away)"
+        );
     }
 
     #[test]
@@ -1242,7 +1294,10 @@ mod tests {
 
         // For negative pair with distance > margin, gradient should be zero (already far enough)
         for g in &grad {
-            assert!(g.abs() < 0.001, "Gradient should be zero when already far apart");
+            assert!(
+                g.abs() < 0.001,
+                "Gradient should be zero when already far apart"
+            );
         }
     }
 }

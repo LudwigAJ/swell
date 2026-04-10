@@ -53,21 +53,16 @@ impl Default for CrossEncoderConfig {
 }
 
 /// Type of reranker model
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum RerankerModelType {
     /// BGE reranker with ONNX runtime (requires onnxruntime package)
     Bge,
     /// Simple keyword-based reranker for testing/MVP
+    #[default]
     Simple,
     /// Mock reranker that returns deterministic scores
     Mock,
-}
-
-impl Default for RerankerModelType {
-    fn default() -> Self {
-        Self::Simple
-    }
 }
 
 /// A candidate memory entry with its initial retrieval score
@@ -130,7 +125,12 @@ pub struct RerankResult {
 
 impl RerankResult {
     /// Create a new rerank result
-    pub fn new(entry: MemoryEntry, cross_encoder_score: f32, original_score: f32, rank: usize) -> Self {
+    pub fn new(
+        entry: MemoryEntry,
+        cross_encoder_score: f32,
+        original_score: f32,
+        rank: usize,
+    ) -> Self {
         Self {
             final_score: cross_encoder_score, // Default to cross-encoder score
             cross_encoder_score,
@@ -330,12 +330,17 @@ impl CrossEncoderReranker for SimpleReranker {
                 let density_score = self.score_term_density(query, &content);
 
                 // Weighted combination of scoring methods
-                let cross_encoder_score = label_score * 0.2 +
-                    content_score * 0.3 +
-                    phrase_score * 0.3 +
-                    density_score * 0.2;
+                let cross_encoder_score = label_score * 0.2
+                    + content_score * 0.3
+                    + phrase_score * 0.3
+                    + density_score * 0.2;
 
-                RerankResult::new(candidate.entry, cross_encoder_score, candidate.original_score, 0)
+                RerankResult::new(
+                    candidate.entry,
+                    cross_encoder_score,
+                    candidate.original_score,
+                    0,
+                )
             })
             .collect();
 
@@ -397,7 +402,12 @@ impl CrossEncoderReranker for MockReranker {
             .map(|(i, candidate)| {
                 // Invert the original score (higher original score = lower position)
                 let cross_encoder_score = 1.0 / (i + 1) as f32;
-                RerankResult::new(candidate.entry, cross_encoder_score, candidate.original_score, i + 1)
+                RerankResult::new(
+                    candidate.entry,
+                    cross_encoder_score,
+                    candidate.original_score,
+                    i + 1,
+                )
             })
             .collect();
 
@@ -449,7 +459,10 @@ impl CrossEncoderService {
     }
 
     /// Create with a custom reranker
-    pub fn with_reranker<R: CrossEncoderReranker + 'static>(reranker: R, config: CrossEncoderConfig) -> Self {
+    pub fn with_reranker<R: CrossEncoderReranker + 'static>(
+        reranker: R,
+        config: CrossEncoderConfig,
+    ) -> Self {
         Self {
             reranker: Box::new(reranker),
             config,
@@ -467,16 +480,17 @@ impl CrossEncoderService {
             let results: Vec<RerankResult> = candidates
                 .into_iter()
                 .enumerate()
-                .map(|(i, c)| {
-                    RerankResult::new(c.entry, c.original_score, c.original_score, i + 1)
-                })
+                .map(|(i, c)| RerankResult::new(c.entry, c.original_score, c.original_score, i + 1))
                 .collect();
             return Ok(results);
         }
 
         // Limit candidates to max_candidates
         let candidates = if candidates.len() > self.config.max_candidates {
-            candidates.into_iter().take(self.config.max_candidates).collect()
+            candidates
+                .into_iter()
+                .take(self.config.max_candidates)
+                .collect()
         } else {
             candidates
         };
@@ -550,7 +564,8 @@ mod tests {
                     id: Uuid::new_v4(),
                     block_type: MemoryBlockType::Project,
                     label: "Rust error handling".to_string(),
-                    content: "This module handles errors in Rust using the Result type.".to_string(),
+                    content: "This module handles errors in Rust using the Result type."
+                        .to_string(),
                     embedding: None,
                     created_at: chrono::Utc::now(),
                     updated_at: chrono::Utc::now(),
@@ -592,7 +607,8 @@ mod tests {
                     id: Uuid::new_v4(),
                     block_type: MemoryBlockType::Convention,
                     label: "Rust naming conventions".to_string(),
-                    content: "Use snake_case for functions and PascalCase for types in Rust.".to_string(),
+                    content: "Use snake_case for functions and PascalCase for types in Rust."
+                        .to_string(),
                     embedding: None,
                     created_at: chrono::Utc::now(),
                     updated_at: chrono::Utc::now(),
@@ -643,7 +659,8 @@ mod tests {
                 id: Uuid::new_v4(),
                 block_type: MemoryBlockType::Task,
                 label: "Error handling patterns".to_string(),
-                content: "Error handling patterns in Rust using Result and Option types.".to_string(),
+                content: "Error handling patterns in Rust using Result and Option types."
+                    .to_string(),
                 embedding: None,
                 created_at: chrono::Utc::now(),
                 updated_at: chrono::Utc::now(),
@@ -747,10 +764,7 @@ mod tests {
         let reranker = MockReranker::new(config);
 
         let candidates = create_test_candidates();
-        let results = reranker
-            .rerank("any query", candidates)
-            .await
-            .unwrap();
+        let results = reranker.rerank("any query", candidates).await.unwrap();
 
         // Mock reranker returns results in original order with inverse rank scoring
         assert_eq!(results.len(), 3);
@@ -1002,7 +1016,10 @@ mod tests {
         let reranker = SimpleReranker::new(config);
 
         let score = reranker.score_keywords("rust error handling", "rust error handling");
-        assert!((score - 1.0).abs() < 0.001, "Identical texts should have score 1.0");
+        assert!(
+            (score - 1.0).abs() < 0.001,
+            "Identical texts should have score 1.0"
+        );
     }
 
     #[test]
@@ -1011,7 +1028,10 @@ mod tests {
         let reranker = SimpleReranker::new(config);
 
         let score = reranker.score_keywords("rust error handling", "rust programming");
-        assert!(score > 0.0 && score < 1.0, "Partial overlap should have score between 0 and 1");
+        assert!(
+            score > 0.0 && score < 1.0,
+            "Partial overlap should have score between 0 and 1"
+        );
     }
 
     #[test]
@@ -1029,7 +1049,10 @@ mod tests {
         let reranker = SimpleReranker::new(config);
 
         // Exact phrase match
-        let score = reranker.score_phrases("error handling in rust", "Learn about error handling in rust");
+        let score = reranker.score_phrases(
+            "error handling in rust",
+            "Learn about error handling in rust",
+        );
         assert!(score > 0.0, "Should detect phrase match");
 
         // No phrase match
@@ -1050,10 +1073,7 @@ mod tests {
         assert!(score > 0.5, "High term density should score well");
 
         // Low density
-        let score = reranker.score_term_density(
-            "rust error handling",
-            "Python is a language.",
-        );
+        let score = reranker.score_term_density("rust error handling", "Python is a language.");
         assert!(score < 0.5, "Low term density should score lower");
     }
 }

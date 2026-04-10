@@ -316,7 +316,10 @@ pub trait MemoryStore: Send + Sync {
     async fn get_by_label(&self, label: String) -> Result<Vec<MemoryEntry>, SwellError>;
 
     /// Get all memories from a specific source episode (provenance tracking)
-    async fn get_by_provenance(&self, source_episode_id: Uuid) -> Result<Vec<MemoryEntry>, SwellError>;
+    async fn get_by_provenance(
+        &self,
+        source_episode_id: Uuid,
+    ) -> Result<Vec<MemoryEntry>, SwellError>;
 }
 
 /// Knowledge graph operations

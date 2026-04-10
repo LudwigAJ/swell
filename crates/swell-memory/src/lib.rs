@@ -18,9 +18,8 @@ pub use swell_core::SwellError;
 
 // Golden sample testing exports
 pub use golden_sample_testing::{
-    GoldenSample, GoldenSampleConfig, GoldenSampleService, GoldenSampleSource,
-    GoldenSampleStore, GoldenSampleTester, GoldenSampleValidationResult,
-    ProcedureValidation,
+    GoldenSample, GoldenSampleConfig, GoldenSampleService, GoldenSampleSource, GoldenSampleStore,
+    GoldenSampleTester, GoldenSampleValidationResult, ProcedureValidation,
 };
 
 // Memory blocks module - Project/User/Task blocks with auto-loading and context assembly
@@ -36,17 +35,16 @@ pub mod recall;
 pub mod triple_stream;
 
 pub use triple_stream::{
-    TripleStreamConfig, TripleStreamQuery, TripleStreamResult, TripleStreamService,
-    ReciprocalRankFusion, GraphTraversal,
+    GraphTraversal, ReciprocalRankFusion, TripleStreamConfig, TripleStreamQuery,
+    TripleStreamResult, TripleStreamService,
 };
 
 // Cross-encoder reranking module - BGE-reranker for cross-encoder reranking of top retrieved candidates
 pub mod cross_encoder_rerank;
 
 pub use cross_encoder_rerank::{
-    CrossEncoderConfig, CrossEncoderReranker, CrossEncoderScore, CrossEncoderService,
-    MockReranker, RerankCandidate, RerankResult, RerankerModelType, RerankableCandidates,
-    SimpleReranker,
+    CrossEncoderConfig, CrossEncoderReranker, CrossEncoderScore, CrossEncoderService, MockReranker,
+    RerankCandidate, RerankResult, RerankableCandidates, RerankerModelType, SimpleReranker,
 };
 
 // Skill extraction module - Extracts reusable procedures from successful task trajectories
@@ -66,8 +64,8 @@ pub mod contrastive_learning;
 pub use contrastive_learning::{
     ContrastiveAnalyzer, ContrastiveLearningConfig, ContrastiveLearningResult,
     ContrastiveLearningService, ContrastivePair, ContrastiveTrainer, FailureReason,
-    FailureTrajectory, LossComponents, PairType, SuccessOutcome, SuccessTrajectory,
-    ToolCallRecord, TrajectoryStep, StepStatus, ValidationErrorRecord,
+    FailureTrajectory, LossComponents, PairType, StepStatus, SuccessOutcome, SuccessTrajectory,
+    ToolCallRecord, TrajectoryStep, ValidationErrorRecord,
 };
 
 // Operator feedback module - Parses CLAUDE.md/AGENTS.md with higher trust weight than agent self-learning
@@ -139,18 +137,15 @@ pub use conflict_resolution::{
 pub mod staleness;
 
 pub use staleness::{
-    check_staleness, check_staleness_default, days_until_stale, is_stale_default,
-    is_stale_memory, reinforce as reinforce_memory,
-    StalenessCheckResult, StalenessConfig, DEFAULT_REINFORCEMENT_INTERVAL_DAYS,
-    DEFAULT_STALENESS_WINDOW_DAYS,
+    check_staleness, check_staleness_default, days_until_stale, is_stale_default, is_stale_memory,
+    reinforce as reinforce_memory, StalenessCheckResult, StalenessConfig,
+    DEFAULT_REINFORCEMENT_INTERVAL_DAYS, DEFAULT_STALENESS_WINDOW_DAYS,
 };
 
 // Version rollback module - Version history tracking and rollback capability for memory entries
 pub mod version_rollback;
 
-pub use version_rollback::{
-    MemoryVersion, RollbackAuditEntry, RollbackResult,
-};
+pub use version_rollback::{MemoryVersion, RollbackAuditEntry, RollbackResult};
 
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
@@ -212,10 +207,12 @@ impl SqliteMemoryStore {
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
 
-        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN is_stale INTEGER NOT NULL DEFAULT 0")
-            .execute(pool)
-            .await
-            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+        let _ = sqlx::query(
+            "ALTER TABLE memory_entries ADD COLUMN is_stale INTEGER NOT NULL DEFAULT 0",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
 
         // Add columns for provenance tracking if they don't exist (migration)
         let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN source_episode_id TEXT")
@@ -528,7 +525,9 @@ impl SqliteMemoryStore {
         let provenance_context = provenance_context_str
             .map(|s| serde_json::from_str(&s))
             .transpose()
-            .map_err(|e| SwellError::DatabaseError(format!("Invalid JSON provenance_context: {}", e)))?;
+            .map_err(|e| {
+                SwellError::DatabaseError(format!("Invalid JSON provenance_context: {}", e))
+            })?;
 
         Ok(MemoryEntry {
             id,
@@ -808,7 +807,10 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     /// Get all memories from a specific source episode (provenance tracking)
-    async fn get_by_provenance(&self, source_episode_id: Uuid) -> Result<Vec<MemoryEntry>, SwellError> {
+    async fn get_by_provenance(
+        &self,
+        source_episode_id: Uuid,
+    ) -> Result<Vec<MemoryEntry>, SwellError> {
         let rows = sqlx::query("SELECT * FROM memory_entries WHERE source_episode_id = ?")
             .bind(source_episode_id.to_string())
             .fetch_all(self.pool.as_ref())
@@ -1092,7 +1094,6 @@ mod tests {
                 language: None,
                 task_type: None,
                 source_episode_id: None,
-            
             })
             .await
             .unwrap();
@@ -1158,7 +1159,6 @@ mod tests {
                 language: Some("rust".to_string()),
                 task_type: None,
                 source_episode_id: None,
-            
             })
             .await
             .unwrap();
@@ -1224,7 +1224,6 @@ mod tests {
                 language: None,
                 task_type: None,
                 source_episode_id: None,
-            
             })
             .await
             .unwrap();
@@ -1244,7 +1243,6 @@ mod tests {
                 language: None,
                 task_type: None,
                 source_episode_id: None,
-            
             })
             .await
             .unwrap();
@@ -1729,7 +1727,6 @@ mod tests {
                 language: None,
                 task_type: None,
                 source_episode_id: None,
-            
             })
             .await
             .unwrap();
@@ -1890,7 +1887,6 @@ mod tests {
                 language: None,
                 task_type: None,
                 source_episode_id: None,
-            
             })
             .await
             .unwrap();

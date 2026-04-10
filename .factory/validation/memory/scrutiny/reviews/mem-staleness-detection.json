@@ -1,0 +1,28 @@
+{
+  "featureId": "mem-staleness-detection",
+  "reviewedAt": "2026-04-10T11:00:00Z",
+  "commitId": "0241792",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation covers all three expected behaviors: tracking last_reinforcement timestamp, invalidating after staleness window, and excluding stale memories from retrieval. The feature adds staleness.rs module with configuration, staleness check functions, and comprehensive unit tests. The SqliteMemoryStore is extended with reinforce(), mark_stale(), update_staleness_status(), get_stale_memories(), and is_memory_stale() methods. Search results properly exclude stale memories via is_stale = 0 filter. Found one non-blocking code quality issue.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 910,
+        "severity": "non_blocking",
+        "description": "SQL construction uses string formatting for IN clause instead of parameterized queries. While IDs come from validated UUIDs in the database, this is a code smell - should use parameterized queries or batch binding. Current: `sqlx::query(&format!(\"UPDATE memory_entries SET is_stale = 1 WHERE id IN ({})\", ids_list))`"
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The update() method does not reset last_reinforcement or is_stale flags. If a stale memory entry is updated via update(), it remains stale. This may or may not be intentional design, but the staleness feature is only reinforced via the reinforce() method, not via update().",
+      "evidence": "crates/swell-memory/src/lib.rs:634-650 - UPDATE query does not include last_reinforcement or is_stale columns"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The mem-staleness-detection feature is well-implemented with proper tracking of last_reinforcement timestamps, staleness window enforcement (30 days default), and exclusion of stale memories from retrieval. The worker followed procedure and added comprehensive tests (23 total). One non-blocking code quality issue noted: SQL string formatting in update_staleness_status should use parameterized queries for better practice, though the current approach is not exploitable since IDs come from validated database values."
+}

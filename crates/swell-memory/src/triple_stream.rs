@@ -12,12 +12,14 @@ use crate::cross_encoder_rerank::{
     CrossEncoderConfig, CrossEncoderService, RerankCandidate, RerankResult, RerankerModelType,
 };
 use crate::recall::{RecallQuery, RecallService};
-use crate::semantic::{SemanticRelationQuery, SemanticRelationType, SemanticStore, SqliteSemanticStore};
+use crate::semantic::{
+    SemanticRelationQuery, SemanticRelationType, SemanticStore, SqliteSemanticStore,
+};
 use crate::{MemorySearchResult, SqliteMemoryStore, SwellError};
-use swell_core::MemoryStore;
-use sqlx::Row;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::collections::{HashMap, HashSet};
+use swell_core::MemoryStore;
 use uuid::Uuid;
 
 /// Configuration for the triple-stream retrieval
@@ -282,7 +284,7 @@ impl<'a> GraphTraversal<'a> {
         // Score entities by their proximity to seed (closer = higher score)
         // Also consider connectivity (more connections = higher score)
         let connectivity = self.count_connections(&visited).await?;
-        
+
         let mut scored: Vec<(Uuid, f32)> = all_entities
             .into_iter()
             .map(|(id, depth)| {
@@ -342,9 +344,9 @@ impl<'a> GraphTraversal<'a> {
             let query = SemanticRelationQuery::new()
                 .with_relation_types(relation_types.to_vec())
                 .with_source(*seed_id);
-            
+
             let outgoing = self.semantic_store.query_relations(query).await?;
-            
+
             for relation in outgoing {
                 *all_related.entry(relation.target_id).or_insert(0) += 1;
             }
@@ -353,9 +355,9 @@ impl<'a> GraphTraversal<'a> {
             let query2 = SemanticRelationQuery::new()
                 .with_relation_types(relation_types.to_vec())
                 .with_target(*seed_id);
-            
+
             let incoming = self.semantic_store.query_relations(query2).await?;
-            
+
             for relation in incoming {
                 *all_related.entry(relation.source_id).or_insert(0) += 1;
             }
@@ -404,13 +406,17 @@ impl ReciprocalRankFusion {
 
     /// Fuse multiple ranked lists into a single ranking
     /// Each input is a mapping from ID to rank (1-based rank, 0 means not ranked)
-    pub fn fuse(&self, rankings: Vec<HashMap<Uuid, u32>>, weights: Option<&[f32]>) -> Vec<(Uuid, f32)> {
+    pub fn fuse(
+        &self,
+        rankings: Vec<HashMap<Uuid, u32>>,
+        weights: Option<&[f32]>,
+    ) -> Vec<(Uuid, f32)> {
         let mut scores: HashMap<Uuid, f32> = HashMap::new();
         let weights = weights.unwrap_or(&[1.0; 100]); // Dummy large array, will use actual length
 
         for (stream_idx, ranking) in rankings.iter().enumerate() {
             let weight = weights.get(stream_idx).copied().unwrap_or(1.0);
-            
+
             for (id, &rank) in ranking {
                 if rank > 0 {
                     // RRF formula: weight / (k + rank)
@@ -428,15 +434,14 @@ impl ReciprocalRankFusion {
     }
 
     /// Fuse ranked items from different streams
-    pub fn fuse_ranked(&self, stream_results: Vec<Vec<RankedItem>>, weights: &[f32]) -> Vec<(Uuid, f32)> {
+    pub fn fuse_ranked(
+        &self,
+        stream_results: Vec<Vec<RankedItem>>,
+        weights: &[f32],
+    ) -> Vec<(Uuid, f32)> {
         let rankings: Vec<HashMap<Uuid, u32>> = stream_results
             .iter()
-            .map(|items| {
-                items
-                    .iter()
-                    .map(|item| (item.id, item.rank))
-                    .collect()
-            })
+            .map(|items| items.iter().map(|item| (item.id, item.rank)).collect())
             .collect();
 
         self.fuse(rankings, Some(weights))
@@ -485,14 +490,17 @@ impl TripleStreamService {
     }
 
     /// Perform triple-stream retrieval and fuse results
-    pub async fn search(&self, query: TripleStreamQuery) -> Result<Vec<TripleStreamResult>, SwellError> {
+    pub async fn search(
+        &self,
+        query: TripleStreamQuery,
+    ) -> Result<Vec<TripleStreamResult>, SwellError> {
         let config = &query.config;
-        
+
         // Track ranks for each stream
         let mut vector_ranks: HashMap<Uuid, u32> = HashMap::new();
         let mut bm25_ranks: HashMap<Uuid, u32> = HashMap::new();
         let mut graph_ranks: HashMap<Uuid, u32> = HashMap::new();
-        
+
         let mut stream_results: Vec<Vec<RankedItem>> = Vec::new();
         let mut weights: Vec<f32> = Vec::new();
 
@@ -550,9 +558,15 @@ impl TripleStreamService {
             results.push(TripleStreamResult {
                 id,
                 score,
-                vector_score: vector_ranks.get(&id).map(|r| 1.0 / (config.rrf_k as f32 + *r as f32)),
-                bm25_score: bm25_ranks.get(&id).map(|r| 1.0 / (config.rrf_k as f32 + *r as f32)),
-                graph_score: graph_ranks.get(&id).map(|r| 1.0 / (config.rrf_k as f32 + *r as f32)),
+                vector_score: vector_ranks
+                    .get(&id)
+                    .map(|r| 1.0 / (config.rrf_k as f32 + *r as f32)),
+                bm25_score: bm25_ranks
+                    .get(&id)
+                    .map(|r| 1.0 / (config.rrf_k as f32 + *r as f32)),
+                graph_score: graph_ranks
+                    .get(&id)
+                    .map(|r| 1.0 / (config.rrf_k as f32 + *r as f32)),
                 vector_rank: vector_ranks.get(&id).copied(),
                 bm25_rank: bm25_ranks.get(&id).copied(),
                 graph_rank: graph_ranks.get(&id).copied(),
@@ -659,8 +673,7 @@ impl TripleStreamService {
     ) -> Vec<TripleStreamResult> {
         reranked
             .into_iter()
-            .enumerate()
-            .map(|(_rank, result)| {
+            .map(|result| {
                 TripleStreamResult {
                     id: result.entry.id,
                     score: result.final_score,
@@ -676,30 +689,41 @@ impl TripleStreamService {
     }
 
     /// Vector search stream
-    async fn vector_search_stream(&self, query: &TripleStreamQuery) -> Result<Vec<RankedItem>, SwellError> {
+    async fn vector_search_stream(
+        &self,
+        query: &TripleStreamQuery,
+    ) -> Result<Vec<RankedItem>, SwellError> {
         // In a real implementation, we would generate an embedding for the query
         // For now, we search using content matching and return mock vector scores
         // This is a placeholder that simulates vector similarity
-        
+
         // Get all entries with embeddings and match by content
-        let entries: Vec<MemorySearchResult> = self.memory_store.search(crate::MemoryQuery {
-            query_text: Some(query.query_text.clone()),
-            block_types: None,
-            labels: None,
-            limit: query.config.max_stream_results,
-            offset: 0,
-            repository: query.repository.clone(),
-            language: None,
-            task_type: None,
-            source_episode_id: None,
-        }).await?;
+        let entries: Vec<MemorySearchResult> = self
+            .memory_store
+            .search(crate::MemoryQuery {
+                query_text: Some(query.query_text.clone()),
+                block_types: None,
+                labels: None,
+                limit: query.config.max_stream_results,
+                offset: 0,
+                repository: query.repository.clone(),
+                language: None,
+                task_type: None,
+                source_episode_id: None,
+            })
+            .await?;
 
         // Score based on label match vs content match
         let ranked: Vec<RankedItem> = entries
             .into_iter()
             .enumerate()
             .map(|(i, result)| {
-                let vector_score = if result.entry.label.to_lowercase().contains(&query.query_text.to_lowercase()) {
+                let vector_score = if result
+                    .entry
+                    .label
+                    .to_lowercase()
+                    .contains(&query.query_text.to_lowercase())
+                {
                     0.9 - (i as f32 * 0.01)
                 } else {
                     0.7 - (i as f32 * 0.01)
@@ -716,7 +740,10 @@ impl TripleStreamService {
     }
 
     /// BM25 search stream
-    async fn bm25_search_stream(&self, query: &TripleStreamQuery) -> Result<Vec<RankedItem>, SwellError> {
+    async fn bm25_search_stream(
+        &self,
+        query: &TripleStreamQuery,
+    ) -> Result<Vec<RankedItem>, SwellError> {
         let keywords = if let Some(ref kw) = query.keywords {
             kw.clone()
         } else {
@@ -737,7 +764,7 @@ impl TripleStreamService {
         };
 
         let recall_results = self.recall_service.search(recall_query).await?;
-        
+
         // Convert RecallResults to RankedItems based on memory entry content matching
         // Since recall operates on conversation logs, we need to map back to memory entries
         // For now, we use the BM25 scores directly
@@ -760,23 +787,30 @@ impl TripleStreamService {
     }
 
     /// Graph traversal stream
-    async fn graph_traversal_stream(&self, query: &TripleStreamQuery) -> Result<Vec<RankedItem>, SwellError> {
+    async fn graph_traversal_stream(
+        &self,
+        query: &TripleStreamQuery,
+    ) -> Result<Vec<RankedItem>, SwellError> {
         let seed_ids = match &query.graph_seed_ids {
             Some(ids) if !ids.is_empty() => ids,
             _ => return Ok(Vec::new()),
         };
 
         let traversal = GraphTraversal::new(&self.semantic_store);
-        
+
         let ranked = if let Some(ref types) = query.graph_relation_types {
-            traversal.find_related(seed_ids, types, query.config.max_stream_results).await?
+            traversal
+                .find_related(seed_ids, types, query.config.max_stream_results)
+                .await?
         } else {
-            traversal.traverse(
-                seed_ids,
-                query.graph_depth,
-                None,
-                query.config.max_stream_results,
-            ).await?
+            traversal
+                .traverse(
+                    seed_ids,
+                    query.graph_depth,
+                    None,
+                    query.config.max_stream_results,
+                )
+                .await?
         };
 
         Ok(ranked)
@@ -805,7 +839,10 @@ mod tests {
         let embedding1 = vec![0.1, 0.2, 0.3, 0.4, 0.5];
         let embedding2 = vec![0.1, 0.2, 0.3, 0.4, 0.5];
         let similarity = SqliteMemoryStore::cosine_similarity(&embedding1, &embedding2);
-        assert!(similarity > 0.99, "Identical embeddings should have similarity near 1");
+        assert!(
+            similarity > 0.99,
+            "Identical embeddings should have similarity near 1"
+        );
     }
 
     #[test]
@@ -813,7 +850,10 @@ mod tests {
         let embedding1 = vec![1.0, 0.0, 0.0];
         let embedding2 = vec![0.0, 1.0, 0.0];
         let similarity = SqliteMemoryStore::cosine_similarity(&embedding1, &embedding2);
-        assert!(similarity < 0.01, "Orthogonal embeddings should have similarity near 0");
+        assert!(
+            similarity < 0.01,
+            "Orthogonal embeddings should have similarity near 0"
+        );
     }
 
     #[test]
@@ -821,7 +861,10 @@ mod tests {
         let embedding1 = vec![0.1, 0.2, 0.3];
         let embedding2 = vec![0.1, 0.2, 0.3, 0.4, 0.5];
         let similarity = SqliteMemoryStore::cosine_similarity(&embedding1, &embedding2);
-        assert_eq!(similarity, 0.0, "Different length embeddings should have similarity 0");
+        assert_eq!(
+            similarity, 0.0,
+            "Different length embeddings should have similarity 0"
+        );
     }
 
     #[test]
@@ -837,14 +880,11 @@ mod tests {
         let rrf = ReciprocalRankFusion::new(60);
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
-        
-        let rankings = vec![HashMap::from([
-            (id1, 1),
-            (id2, 2),
-        ])];
-        
+
+        let rankings = vec![HashMap::from([(id1, 1), (id2, 2)])];
+
         let fused = rrf.fuse(rankings, None);
-        
+
         assert_eq!(fused.len(), 2);
         assert_eq!(fused[0].0, id1); // id1 should be first (rank 1)
         assert_eq!(fused[1].0, id2); // id2 should be second (rank 2)
@@ -856,16 +896,16 @@ mod tests {
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
         let id3 = Uuid::new_v4();
-        
+
         // Stream 1: id1=1, id2=2, id3=3
         // Stream 2: id2=1, id1=2, id3=3
         let rankings = vec![
             HashMap::from([(id1, 1), (id2, 2), (id3, 3)]),
             HashMap::from([(id2, 1), (id1, 2), (id3, 3)]),
         ];
-        
+
         let fused = rrf.fuse(rankings, None);
-        
+
         // id1 appears at rank 1 and 2: score = 1/(60+1) + 1/(60+2)
         // id2 appears at rank 2 and 1: score = 1/(60+2) + 1/(60+1)
         // id3 appears at rank 3 and 3: score = 1/(60+3) + 1/(60+3)
@@ -878,16 +918,16 @@ mod tests {
         let rrf = ReciprocalRankFusion::new(60);
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
-        
+
         let rankings = vec![
             HashMap::from([(id1, 1), (id2, 2)]),
             HashMap::from([(id2, 1), (id1, 2)]),
         ];
-        
+
         let weights = vec![2.0, 1.0];
-        
+
         let fused = rrf.fuse(rankings, Some(&weights));
-        
+
         // With weights, id1 should rank higher (higher weight in first stream where it's rank 1)
         assert_eq!(fused[0].0, id1);
     }
@@ -896,12 +936,12 @@ mod tests {
     fn test_rrf_score_calculation() {
         let rrf = ReciprocalRankFusion::new(60);
         let id = Uuid::new_v4();
-        
+
         // When id is at rank 1 with weight 1.0:
         // score = 1.0 / (60 + 1) = 1/61 ≈ 0.01639
         let rankings = vec![HashMap::from([(id, 1)])];
         let fused = rrf.fuse(rankings, None);
-        
+
         assert!((fused[0].1 - 1.0 / 61.0).abs() < 0.001);
     }
 
@@ -976,7 +1016,7 @@ mod tests {
     // Integration tests require database setup - these would be run with tokio::test
     // The actual integration tests would verify:
     // 1. Vector search returns relevant results based on embedding similarity
-    // 2. BM25 search returns relevant results based on keyword matching  
+    // 2. BM25 search returns relevant results based on keyword matching
     // 3. Graph traversal returns entities related via semantic relations
     // 4. RRF fusion combines rankings correctly
 }
@@ -986,31 +1026,29 @@ mod integration_tests {
     use super::*;
     use crate::cross_encoder_rerank::CrossEncoderConfig;
     use crate::cross_encoder_rerank::RerankerModelType;
-    use crate::MemoryBlockType;
-    use crate::SqliteMemoryStore;
-    use crate::SqliteSemanticStore;
     use crate::recall::RecallService;
+    use crate::MemoryBlockType;
     use crate::SemanticEntityType;
     use crate::SemanticRelationType;
+    use crate::SqliteMemoryStore;
+    use crate::SqliteSemanticStore;
 
     #[tokio::test]
     async fn test_triple_stream_service_creation() {
         let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
-        
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
         // Initialize recall schema
         SqliteMemoryStore::init_conversation_logs_schema(memory_store.pool.as_ref())
             .await
             .unwrap();
-        
+
         let recall_service = RecallService::new(memory_store.clone());
-        
-        let service = TripleStreamService::new(
-            memory_store,
-            semantic_store,
-            recall_service,
-        );
-        
+
+        let service = TripleStreamService::new(memory_store, semantic_store, recall_service);
+
         assert!(service.config.enable_vector);
         assert!(service.config.enable_bm25);
         assert!(service.config.enable_graph);
@@ -1019,14 +1057,16 @@ mod integration_tests {
     #[tokio::test]
     async fn test_triple_stream_service_with_custom_config() {
         let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
-        
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
         SqliteMemoryStore::init_conversation_logs_schema(memory_store.pool.as_ref())
             .await
             .unwrap();
-        
+
         let recall_service = RecallService::new(memory_store.clone());
-        
+
         let config = TripleStreamConfig {
             vector_weight: 2.0,
             bm25_weight: 1.0,
@@ -1038,58 +1078,57 @@ mod integration_tests {
             enable_graph: true,
             reranker: None,
         };
-        
-        let service = TripleStreamService::with_config(
-            memory_store,
-            semantic_store,
-            recall_service,
-            config,
-        );
-        
+
+        let service =
+            TripleStreamService::with_config(memory_store, semantic_store, recall_service, config);
+
         assert_eq!(service.config.vector_weight, 2.0);
         assert!(!service.config.enable_bm25);
     }
 
     #[tokio::test]
     async fn test_graph_traversal_empty_seeds() {
-        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
-        let traversal = GraphTraversal::new(&semantic_store);
-        
-        let results = traversal
-            .traverse(&[], 2, None, 10)
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
             .await
             .unwrap();
-        
+        let traversal = GraphTraversal::new(&semantic_store);
+
+        let results = traversal.traverse(&[], 2, None, 10).await.unwrap();
+
         assert!(results.is_empty());
     }
 
     #[tokio::test]
     async fn test_graph_traversal_with_entities() {
-        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
-        
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
         // Create test entities
         let entity1 = crate::SemanticEntity::new(SemanticEntityType::Module, "ModuleA".to_string());
         let entity2 = crate::SemanticEntity::new(SemanticEntityType::Function, "funcA".to_string());
         let entity3 = crate::SemanticEntity::new(SemanticEntityType::Class, "ClassA".to_string());
-        
+
         semantic_store.store_entity(entity1.clone()).await.unwrap();
         semantic_store.store_entity(entity2.clone()).await.unwrap();
         semantic_store.store_entity(entity3.clone()).await.unwrap();
-        
+
         // Create relations
-        let rel1 = crate::SemanticRelation::new(SemanticRelationType::Contains, entity1.id, entity2.id);
-        let rel2 = crate::SemanticRelation::new(SemanticRelationType::Contains, entity1.id, entity3.id);
-        
+        let rel1 =
+            crate::SemanticRelation::new(SemanticRelationType::Contains, entity1.id, entity2.id);
+        let rel2 =
+            crate::SemanticRelation::new(SemanticRelationType::Contains, entity1.id, entity3.id);
+
         semantic_store.store_relation(rel1).await.unwrap();
         semantic_store.store_relation(rel2).await.unwrap();
-        
+
         // Traverse from entity1
         let traversal = GraphTraversal::new(&semantic_store);
         let results = traversal
             .traverse(&[entity1.id], 2, None, 10)
             .await
             .unwrap();
-        
+
         // Should find entity2 and entity3 via Contains relation
         assert!(results.len() >= 2);
         let found_ids: Vec<Uuid> = results.iter().map(|r| r.id).collect();
@@ -1099,31 +1138,35 @@ mod integration_tests {
 
     #[tokio::test]
     async fn test_find_related_by_type() {
-        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
-        
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
         // Create entities
         let module = crate::SemanticEntity::new(SemanticEntityType::Module, "ModuleA".to_string());
         let func1 = crate::SemanticEntity::new(SemanticEntityType::Function, "func1".to_string());
         let func2 = crate::SemanticEntity::new(SemanticEntityType::Function, "func2".to_string());
-        
+
         semantic_store.store_entity(module.clone()).await.unwrap();
         semantic_store.store_entity(func1.clone()).await.unwrap();
         semantic_store.store_entity(func2.clone()).await.unwrap();
-        
+
         // Create Contains relations
-        let rel1 = crate::SemanticRelation::new(SemanticRelationType::Contains, module.id, func1.id);
-        let rel2 = crate::SemanticRelation::new(SemanticRelationType::Contains, module.id, func2.id);
-        
+        let rel1 =
+            crate::SemanticRelation::new(SemanticRelationType::Contains, module.id, func1.id);
+        let rel2 =
+            crate::SemanticRelation::new(SemanticRelationType::Contains, module.id, func2.id);
+
         semantic_store.store_relation(rel1).await.unwrap();
         semantic_store.store_relation(rel2).await.unwrap();
-        
+
         // Find related entities via Contains relation
         let traversal = GraphTraversal::new(&semantic_store);
         let results = traversal
             .find_related(&[module.id], &[SemanticRelationType::Contains], 10)
             .await
             .unwrap();
-        
+
         assert_eq!(results.len(), 2);
         let found_ids: Vec<Uuid> = results.iter().map(|r| r.id).collect();
         assert!(found_ids.contains(&func1.id));
@@ -1133,7 +1176,7 @@ mod integration_tests {
     #[tokio::test]
     async fn test_vector_search_with_embeddings() {
         let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        
+
         // Create entry with embedding
         let embedding = vec![0.1, 0.2, 0.3, 0.4, 0.5];
         let entry = crate::MemoryEntry {
@@ -1150,20 +1193,19 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
-        
+
         store.store(entry.clone()).await.unwrap();
-        
+
         // Search with same embedding (should get high similarity)
         let results = store
             .vector_search(&embedding, "test-repo", 10)
             .await
             .unwrap();
-        
+
         assert!(!results.is_empty());
         assert_eq!(results[0].id, entry.id);
         assert!(results[0].score > 0.99);
@@ -1172,7 +1214,7 @@ mod integration_tests {
     #[tokio::test]
     async fn test_vector_search_no_embeddings() {
         let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        
+
         // Create entry without embedding
         let entry = crate::MemoryEntry {
             id: Uuid::new_v4(),
@@ -1188,60 +1230,95 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
-        
+
         store.store(entry.clone()).await.unwrap();
-        
+
         // Search with embedding - entry without embedding should not be returned
         let query_embedding = vec![0.1, 0.2, 0.3, 0.4, 0.5];
         let results = store
             .vector_search(&query_embedding, "test-repo", 10)
             .await
             .unwrap();
-        
+
         assert!(results.is_empty());
     }
 
     #[tokio::test]
     async fn test_rrf_fuse_integration() {
         let rrf = ReciprocalRankFusion::new(60);
-        
+
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
         let id3 = Uuid::new_v4();
         let id4 = Uuid::new_v4();
-        
+
         // Three streams with different rankings
         let stream1 = vec![
-            RankedItem { id: id1, score: 1.0, rank: 1 },
-            RankedItem { id: id2, score: 0.9, rank: 2 },
-            RankedItem { id: id3, score: 0.8, rank: 3 },
+            RankedItem {
+                id: id1,
+                score: 1.0,
+                rank: 1,
+            },
+            RankedItem {
+                id: id2,
+                score: 0.9,
+                rank: 2,
+            },
+            RankedItem {
+                id: id3,
+                score: 0.8,
+                rank: 3,
+            },
         ];
-        
+
         let stream2 = vec![
-            RankedItem { id: id2, score: 1.0, rank: 1 },
-            RankedItem { id: id1, score: 0.9, rank: 2 },
-            RankedItem { id: id4, score: 0.7, rank: 3 },
+            RankedItem {
+                id: id2,
+                score: 1.0,
+                rank: 1,
+            },
+            RankedItem {
+                id: id1,
+                score: 0.9,
+                rank: 2,
+            },
+            RankedItem {
+                id: id4,
+                score: 0.7,
+                rank: 3,
+            },
         ];
-        
+
         let stream3 = vec![
-            RankedItem { id: id3, score: 1.0, rank: 1 },
-            RankedItem { id: id1, score: 0.8, rank: 2 },
-            RankedItem { id: id4, score: 0.6, rank: 3 },
+            RankedItem {
+                id: id3,
+                score: 1.0,
+                rank: 1,
+            },
+            RankedItem {
+                id: id1,
+                score: 0.8,
+                rank: 2,
+            },
+            RankedItem {
+                id: id4,
+                score: 0.6,
+                rank: 3,
+            },
         ];
-        
+
         let weights = vec![1.0, 1.0, 1.0];
         let fused = rrf.fuse_ranked(vec![stream1, stream2, stream3], &weights);
-        
+
         // id1 appears in all streams at ranks 1, 2, 2
         // id2 appears in streams 1, 2 at ranks 2, 1
         // id3 appears in streams 1, 3 at ranks 3, 1
         // id4 appears in streams 2, 3 at ranks 3, 3
-        
+
         // id1 should be first (appears in all 3 streams)
         assert_eq!(fused[0].0, id1);
         // id2 or id3 should be second
@@ -1256,16 +1333,18 @@ mod integration_tests {
     #[tokio::test]
     async fn test_search_with_reranking_basic() {
         use crate::cross_encoder_rerank::{CrossEncoderConfig, RerankerModelType};
-        
+
         let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
-        
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
         SqliteMemoryStore::init_conversation_logs_schema(memory_store.pool.as_ref())
             .await
             .unwrap();
-        
+
         let recall_service = RecallService::new(memory_store.clone());
-        
+
         // Store test entries
         let entry1 = crate::MemoryEntry {
             id: Uuid::new_v4(),
@@ -1281,12 +1360,11 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
-        
+
         let entry2 = crate::MemoryEntry {
             id: Uuid::new_v4(),
             block_type: MemoryBlockType::Task,
@@ -1301,40 +1379,36 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
-        
+
         memory_store.store(entry1.clone()).await.unwrap();
         memory_store.store(entry2.clone()).await.unwrap();
-        
-        let service = TripleStreamService::new(
-            memory_store.clone(),
-            semantic_store,
-            recall_service,
-        );
-        
+
+        let service =
+            TripleStreamService::new(memory_store.clone(), semantic_store, recall_service);
+
         // Configure reranking
         let mut reranker_config = CrossEncoderConfig::default();
         reranker_config.model_type = RerankerModelType::Simple;
         reranker_config.max_candidates = 10;
         reranker_config.max_results = 10;
-        
+
         let query = TripleStreamQuery {
             query_text: "Rust error handling".to_string(),
             repository: "test-repo".to_string(),
             limit: 10,
             ..Default::default()
         };
-        
+
         // Search with reranking
         let results = service
             .search_with_reranking(query, Some(reranker_config))
             .await
             .unwrap();
-        
+
         // Should return results (at least the Rust entry should be ranked higher)
         assert!(!results.is_empty());
     }
@@ -1342,14 +1416,16 @@ mod integration_tests {
     #[tokio::test]
     async fn test_search_with_reranking_disabled() {
         let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
-        
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
         SqliteMemoryStore::init_conversation_logs_schema(memory_store.pool.as_ref())
             .await
             .unwrap();
-        
+
         let recall_service = RecallService::new(memory_store.clone());
-        
+
         // Store a test entry
         let entry = crate::MemoryEntry {
             id: Uuid::new_v4(),
@@ -1365,20 +1441,16 @@ mod integration_tests {
             task_type: None,
             last_reinforcement: None,
             is_stale: false,
-        source_episode_id: None,
-        evidence: None,
-        provenance_context: None,
-    
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
         };
-        
+
         memory_store.store(entry.clone()).await.unwrap();
-        
-        let service = TripleStreamService::new(
-            memory_store.clone(),
-            semantic_store,
-            recall_service,
-        );
-        
+
+        let service =
+            TripleStreamService::new(memory_store.clone(), semantic_store, recall_service);
+
         // Disable reranking by passing None
         let query = TripleStreamQuery {
             query_text: "test".to_string(),
@@ -1386,12 +1458,9 @@ mod integration_tests {
             limit: 10,
             ..Default::default()
         };
-        
-        let results = service
-            .search_with_reranking(query, None)
-            .await
-            .unwrap();
-        
+
+        let results = service.search_with_reranking(query, None).await.unwrap();
+
         // Should still return results (reranking disabled)
         assert!(!results.is_empty());
     }
@@ -1399,22 +1468,21 @@ mod integration_tests {
     #[tokio::test]
     async fn test_search_with_reranking_no_results() {
         let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        let semantic_store = SqliteSemanticStore::create("sqlite::memory:").await.unwrap();
-        
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
         SqliteMemoryStore::init_conversation_logs_schema(memory_store.pool.as_ref())
             .await
             .unwrap();
-        
+
         let recall_service = RecallService::new(memory_store.clone());
-        
-        let service = TripleStreamService::new(
-            memory_store.clone(),
-            semantic_store,
-            recall_service,
-        );
-        
+
+        let service =
+            TripleStreamService::new(memory_store.clone(), semantic_store, recall_service);
+
         let reranker_config = CrossEncoderConfig::default();
-        
+
         // Query for non-existent content
         let query = TripleStreamQuery {
             query_text: "nonexistent content xyz123".to_string(),
@@ -1422,12 +1490,12 @@ mod integration_tests {
             limit: 10,
             ..Default::default()
         };
-        
+
         let results = service
             .search_with_reranking(query, Some(reranker_config))
             .await
             .unwrap();
-        
+
         // Should return empty when no matching content
         assert!(results.is_empty());
     }
@@ -1436,11 +1504,11 @@ mod integration_tests {
     async fn test_triple_stream_config_with_reranker() {
         let mut config = TripleStreamConfig::default();
         assert!(config.reranker.is_some());
-        
+
         // Disable reranker
         config.reranker = None;
         assert!(config.reranker.is_none());
-        
+
         // Re-enable with custom config
         let reranker_config = CrossEncoderConfig {
             enabled: true,

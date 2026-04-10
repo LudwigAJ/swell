@@ -1,0 +1,26 @@
+{
+  "featureId": "memory-recall",
+  "reviewedAt": "2026-04-10T12:25:00Z",
+  "commitId": "7b57129",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation fully covers the memory-recall feature requirements with BM25 keyword search, temporal queries, and ConversationLog storage. All 8 tests pass. The implementation is solid with proper error handling and comprehensive test coverage.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The recall module requires callers to manually initialize the conversation_logs schema via `SqliteMemoryStore::init_conversation_logs_schema(pool).await`. This is not documented in AGENTS.md and was discovered by the worker from reading the code. Future developers using recall must know to call this before using recall_search.",
+      "evidence": "Worker transcript shows: 'Initialize conversation logs schema' being done manually in each test. Also, recall.rs does not export init_conversation_logs_schema as a public method on SqliteMemoryStore - it's only accessible as a standalone associated function. The feature's expectedBehavior includes 'Logs agent interactions' but there's no documented initialization step."
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md specifies using 'async_trait::async_trait for async trait methods' but the recall module doesn't define any async traits - it just adds methods to SqliteMemoryStore. This is fine and follows the existing pattern in the crate.",
+      "evidence": "recall.rs adds methods like `store_conversation_log`, `recall_search`, `get_conversation_logs_by_session` directly to SqliteMemoryStore without using async_trait, which is consistent with how other modules in swell-memory extend the store."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Memory-recall feature passes review. Implementation includes: (1) ConversationLog struct with session_id, task_id, agent_id, agent_role, action, content, timestamp, metadata fields; (2) BM25 ranking algorithm for keyword search with configurable k1/b parameters; (3) temporal query support with start_time/end_time filtering; (4) RecallService for high-level operations; (5) comprehensive tests covering tokenization, serialization, search, and filtering. All 8 tests pass. The only gap is the lack of documentation for the schema initialization requirement, but this is a minor knowledge gap rather than a code defect."
+}

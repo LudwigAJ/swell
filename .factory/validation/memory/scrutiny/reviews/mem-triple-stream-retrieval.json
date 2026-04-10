@@ -1,0 +1,34 @@
+{
+  "featureId": "mem-triple-stream-retrieval",
+  "reviewedAt": "2026-04-10T10:30:00Z",
+  "commitId": "46d9dbd1fca0d70bbf9ccf4b0b9b52dbac52ccec",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The triple-stream retrieval implementation has a critical bug in the BM25 search stream that generates random UUIDs instead of using actual memory entry IDs, breaking the RRF fusion. The vector search also has scalability concerns (loading all embeddings into memory). However, the core RRF fusion algorithm, graph traversal, and test coverage are solid.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 620,
+        "severity": "blocking",
+        "description": "BM25 search stream generates random UUIDs instead of using actual entry IDs. The code creates `Uuid::new_v4()` for each result, but RecallResult has an `entry_id` field that should be used. This breaks RRF fusion since the IDs don't match actual memory entries."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 120,
+        "severity": "non_blocking",
+        "description": "Vector search loads ALL entries with embeddings into memory for similarity calculation. This doesn't scale for production databases with many embeddings. Should use SQL dot product or approximate nearest neighbor (ANN) index."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 597,
+        "severity": "non_blocking",
+        "description": "The tokenize_query function filters tokens with length <= 2, but 3-char tokens like 'rust', 'sql' would be excluded. Consider lowering threshold to 2 characters or removing the filter entirely."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The triple-stream retrieval implementation is mostly well-structured with solid RRF fusion and graph traversal, but has a critical bug in the BM25 stream that generates random UUIDs instead of using actual entry IDs from RecallResult. This breaks the ability to fuse BM25 results with vector and graph results. The worker followed Rust skill procedures correctly and built comprehensive tests. However, the BM25 stream bug is blocking because it produces non-deterministic, incorrect fusion results."
+}

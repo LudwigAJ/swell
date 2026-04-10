@@ -52,7 +52,11 @@ impl StalenessConfig {
     }
 
     /// Check if a memory should be reinforced based on last_reinforcement
-    pub fn should_reinforce(&self, last_reinforcement: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
+    pub fn should_reinforce(
+        &self,
+        last_reinforcement: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+    ) -> bool {
         match last_reinforcement {
             None => true, // Never reinforced = should reinforce
             Some(lr) => {

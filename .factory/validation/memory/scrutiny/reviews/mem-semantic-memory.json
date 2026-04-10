@@ -1,0 +1,51 @@
+{
+  "featureId": "mem-semantic-memory",
+  "reviewedAt": "2026-04-10T08:45:00Z",
+  "commitId": "46683e6ab04bfe6a743a76bba0eb8aa0906dcd30",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation provides graph-based semantic knowledge representation with SemanticEntity (nodes) and SemanticRelation (edges). 18 entity types and 14 relation types defined. SqliteSemanticStore provides full CRUD and query operations. 12 unit tests cover core functionality.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/semantic.rs",
+        "line": 77,
+        "severity": "non_blocking",
+        "description": "SemanticEntityType::parse() silently defaults to SemanticEntityType::Project for unknown strings. Consider returning a Result or logging a warning to catch data inconsistencies early."
+      },
+      {
+        "file": "crates/swell-memory/src/semantic.rs",
+        "line": 155,
+        "severity": "non_blocking",
+        "description": "SemanticRelationType::parse() silently defaults to SemanticRelationType::References for unknown strings. Same concern as above - silent fallback could mask data issues."
+      },
+      {
+        "file": "crates/swell-memory/src/semantic.rs",
+        "line": 252,
+        "severity": "non_blocking",
+        "description": "SemanticRelationResult struct is defined but never used in the implementation or tests. Dead code that could be removed or the struct could be utilized by adding a query method that returns source/target entities alongside the relation."
+      },
+      {
+        "file": "crates/swell-memory/src/semantic.rs",
+        "line": 1025,
+        "severity": "non_blocking",
+        "description": "Missing test coverage for relation update operations. Only entity update is tested (test_update_entity), not relation updates."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The enum parse methods (SemanticEntityType::parse, SemanticRelationType::parse) use silent default fallback for unknown strings. This pattern isn't documented in AGENTS.md or elsewhere - there's no guidance on whether parse methods should be fallible or panic on invalid input.",
+      "evidence": "Lines 77-101 and 155-179 use '_ => SemanticEntityType::Project' and '_ => SemanticRelationType::References' as catch-all branches."
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill document mentions 'Never panic in production code' but doesn't address enum parsing patterns. The worker's implementation of parse() methods with silent defaults follows general Rust conventions but the skill could be more explicit about error handling strategies for FromStr-style conversions.",
+      "evidence": "Skill file .factory/skills/rust/SKILL.md - Error Handling section doesn't cover parse/fallback patterns."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "mem-semantic-memory feature passes review. Implementation correctly provides: (1) 18 SemanticEntityType variants for typed nodes, (2) 14 SemanticRelationType variants for typed edges, (3) SqliteSemanticStore with full CRUD and query-by-type operations, (4) cascade delete for entity relations, (5) 12 unit tests covering core functionality. All expected behaviors verified. Non-blocking issues noted: silent fallback in parse methods could mask data inconsistencies; unused SemanticRelationResult struct; missing relation update tests."
+}
