@@ -1,6 +1,6 @@
 {
   "milestone": "prompts",
-  "round": 5,
+  "round": 6,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -13,13 +13,13 @@
       "passed": true,
       "command": "cargo clippy --workspace -- -D warnings",
       "exitCode": 0,
-      "notes": "Typecheck passes with no warnings."
+      "notes": "Typecheck passes with no warnings or errors."
     },
     "lint": {
       "passed": true,
       "command": "cargo clippy --workspace",
       "exitCode": 0,
-      "notes": "Lint passes with warnings (unused variables, unused imports) but no errors."
+      "notes": "Lint passes - only minor warnings (unused variables, unused imports) but no errors."
     },
     "build": {
       "passed": true,
@@ -33,7 +33,7 @@
     "passed": 3,
     "failed": 1,
     "failedFeatures": ["prompts-multi-run-validation"],
-    "notes": "Reviews completed in prior rounds. 3 features pass: audit-hash-chained-log, prompts-quality-improvement, prompts-structured-handoffs. 1 feature fails with blocking issues: prompts-multi-run-validation. The fix-prompts-multi-run-validation feature is still pending."
+    "notes": "Reviews completed in prior rounds (rounds 1-5). 3 features pass: audit-hash-chained-log, prompts-quality-improvement, prompts-structured-handoffs. 1 feature fails with blocking issues: prompts-multi-run-validation. No fix feature has been completed yet (fix-prompts-multi-run-validation is pending/in_progress). This is re-run check per orchestrator directive."
   },
   "blockingIssues": [
     {
