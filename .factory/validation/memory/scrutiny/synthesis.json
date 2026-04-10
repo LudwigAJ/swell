@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 9,
+  "round": 10,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -8,8 +8,8 @@
     "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 23,
-    "passed": 4,
+    "total": 9,
+    "passed": 0,
     "failed": 9,
     "failedFeatures": [
       "memory-skill-extraction",
@@ -27,87 +27,87 @@
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 107: ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. Extracted skills will not be discoverable by the system's skill discovery mechanism. STILL NOT FIXED since round 1 (now round 9).",
-      "evidence": "crates/swell-memory/src/skill_extraction.rs line 107: store_path: \".skills\".to_string()"
+      "description": "Line 125: ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. STILL NOT FIXED since round 1 (now round 10).",
+      "evidence": "crates/swell-memory/src/skill_extraction.rs line 125: store_path: \".skills\".to_string()"
     },
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 139: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. The analyzer only processes input trajectory in memory without querying historical data. STILL NOT FIXED since round 1 (now round 9).",
+      "description": "Line 139: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. STILL NOT FIXED since round 1 (now round 10).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs line 139: #[allow(dead_code)] on TrajectoryAnalyzer struct"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 9).",
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 10).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs line 955: final_pattern.update_confidence(frequency_map.values().sum())"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 9).",
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 10).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs line 1145: let name = trimmed[3..colon_pos].trim().to_string();"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 9).",
+      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 10).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs lines 1173-1176: Ok(Vec::new()) with 'For MVP, return empty' comment"
     },
     {
       "featureId": "mem-cross-encoder-rerank",
       "severity": "blocking",
-      "description": "BGE cross-encoder reranking NOT implemented. The feature description states 'BGE-reranker for cross-encoder reranking' but no ONNX model loading or BGE inference is present. RerankerModelType::Bge variant exists but falls through to SimpleReranker. No actual BGE implementation exists - Bge type is dead code.",
+      "description": "BGE cross-encoder reranking NOT implemented. The feature description states 'BGE-reranker for cross-encoder reranking' but no ONNX model loading or BGE inference is present. RerankerModelType::Bge variant exists but falls through to SimpleReranker. No actual BGE implementation exists - Bge type is dead code. STILL NOT FIXED since round 1 (now round 10).",
       "evidence": "crates/swell-memory/src/cross_encoder_rerank.rs, triple_stream.rs:545-549"
     },
     {
       "featureId": "mem-deprecation",
       "severity": "blocking",
-      "description": "Deprecation module is disconnected from actual MemoryEntry storage. MemoryEntry has no confidence field, SqliteMemoryStore has no deprecation columns, and Deprecatable trait is defined but never implemented. The feature's core promise ('Mark memories with confidence <0.3') cannot be fulfilled.",
+      "description": "Deprecation module is disconnected from actual MemoryEntry storage. MemoryEntry has no confidence field, SqliteMemoryStore has no deprecation columns, and Deprecatable trait is defined but never implemented. The feature's core promise ('Mark memories with confidence <0.3') cannot be fulfilled. STILL NOT FIXED since round 1 (now round 10).",
       "evidence": "crates/swell-memory/src/deprecation.rs, swell-core/src/traits.rs: MemoryEntry lacks confidence field"
     },
     {
       "featureId": "mem-episodic-memory",
       "severity": "blocking",
-      "description": "log_observation() method is missing. EventType::Observation and ObservationPayload are defined but no convenience method exists to log observations, contradicting expectedBehavior 'Stores observations and outcomes immutably'.",
+      "description": "log_observation() method is missing. EventType::Observation and ObservationPayload are defined but no convenience method exists to log observations, contradicting expectedBehavior 'Stores observations and outcomes immutably'. STILL NOT FIXED since round 1 (now round 10).",
       "evidence": "crates/swell-memory/src/event_log.rs: missing log_observation method"
     },
     {
       "featureId": "mem-event-log-jsonl",
       "severity": "blocking",
-      "description": "unwrap_or_default() silently swallows JSON serialization errors in all five convenience logging methods (log_tool_invocation, log_decision, log_error, log_outcome, log_state_transition). An empty {} would be logged instead of the actual event, corrupting the audit trail.",
+      "description": "unwrap_or_default() silently swallows JSON serialization errors in all five convenience logging methods (log_tool_invocation, log_decision, log_error, log_outcome, log_state_transition). An empty {} would be logged instead of the actual event, corrupting the audit trail. STILL NOT FIXED since round 1 (now round 10).",
       "evidence": "crates/swell-memory/src/event_log.rs lines 196, 218, 237, 253, 271"
     },
     {
       "featureId": "mem-scoping",
       "severity": "blocking",
-      "description": "get_by_type(), get_by_label(), get_by_provenance() do NOT filter by repository - return ALL memories across ALL repositories. This violates 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'. The MemoryStore trait lacks repository parameters for these methods.",
-      "evidence": "crates/swell-memory/src/lib.rs lines 450, 462, 472"
+      "description": "get_by_type(), get_by_label(), get_by_provenance() do NOT filter by repository - return ALL memories across ALL repositories. This violates 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'. The MemoryStore trait lacks repository parameters for these methods. STILL NOT FIXED since round 1 (now round 10).",
+      "evidence": "crates/swell-memory/src/lib.rs lines 779, 795, 814"
     },
     {
       "featureId": "mem-provenance-tracking",
       "severity": "blocking",
-      "description": "MemoryQuery.search() does NOT filter by source_episode_id despite the field being added to MemoryQuery. The expectedBehavior 'Query memories by provenance' is not fulfilled.",
-      "evidence": "crates/swell-memory/src/lib.rs line 725"
+      "description": "MemoryQuery.search() does NOT filter by source_episode_id despite the field being added to MemoryQuery. The expectedBehavior 'Query memories by provenance' is not fulfilled. STILL NOT FIXED since round 1 (now round 10).",
+      "evidence": "crates/swell-memory/src/lib.rs line 684"
     },
     {
       "featureId": "mem-triple-stream-retrieval",
       "severity": "blocking",
-      "description": "BM25 search stream generates random UUIDs (Uuid::new_v4()) instead of using actual RecallResult entry_id field. This breaks RRF fusion since IDs don't match actual memory entries.",
-      "evidence": "crates/swell-memory/src/triple_stream.rs line 620"
+      "description": "BM25 search stream generates random UUIDs (Uuid::new_v4()) instead of using actual RecallResult entry_id field. This breaks RRF fusion since IDs don't match actual memory entries. STILL NOT FIXED since round 1 (now round 10).",
+      "evidence": "crates/swell-memory/src/triple_stream.rs line 780"
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "CRITICAL: 12 blocking issues have persisted for 9 rounds without resolution. The orchestrator should create HIGH-PRIORITY dedicated fix features for each blocking issue that get auto-assigned. These are well-identified, localized bugs that should be fixed by targeted features, not expect implementation workers to self-correct.",
-      "evidence": "All 12 issues marked 'STILL NOT FIXED since round 1' with file:line evidence. No code changes made to address these issues across 9 rounds.",
+      "suggestion": "CRITICAL: 12 blocking issues have persisted for 10 rounds without resolution. The orchestrator should create HIGH-PRIORITY dedicated fix features for each blocking issue that get auto-assigned. These are well-identified, localized bugs that should be fixed by targeted features, not expect implementation workers to self-correct. The current approach of re-running scrutiny on the same features without focused fixes has failed for 10 consecutive rounds.",
+      "evidence": "All 12 issues marked 'STILL NOT FIXED since round 1' with file:line evidence. No code changes made to address these issues across 10 rounds.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Add guidance on error handling for audit-critical paths: unwrap_or_default() is inappropriate for audit trails where data loss is unacceptable. Workers should use ? propagation or handle errors explicitly rather than silently discarding them. This anti-pattern appears in mem-event-log-jsonl.",
+      "suggestion": "Add guidance on error handling for audit-critical paths: unwrap_or_default() is inappropriate for audit trails where data loss is unacceptable. Workers should use ? propagation or handle errors explicitly rather than silently discarding them. This anti-pattern appears in mem-event-log-jsonl across 5 locations.",
       "evidence": "mem-event-log-jsonl review identified 5 unwrap_or_default() calls that silently lose audit data on serialization failure",
       "isSystemic": true
     },
@@ -134,11 +134,17 @@
       "suggestion": "Standardize error types: event_log.rs uses io::Error directly instead of SwellError or thiserror enum. Architecture.md states 'Error handling via thiserror enums' and AGENTS.md says 'All fallible operations return Result<T, SwellError>'. Workers should follow this convention.",
       "evidence": "mem-event-log-jsonl review noted io::Error usage vs project convention",
       "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance on verifying partial implementations: Workers should not assume a feature is 'already implemented' based on type definitions alone. The expectedBehavior requires actual methods that fulfill those behaviors - if log_observation() is specified but missing, that's a blocking gap regardless of type definitions.",
+      "evidence": "mem-episodic-memory worker incorrectly claimed feature was 'already implemented' when only types were defined but methods were missing",
+      "isSystemic": false
     }
   ],
   "rejectedObservations": [
     { "observation": ".factory/services.yaml missing - ENOENT on read", "reason": "This is a fact about missing infrastructure, not guidance to apply. The orchestrator owns .factory/ directory." },
     { "observation": "Feature skillName 'rust-worker' vs available 'rust' skill mismatch", "reason": "This is a feature configuration issue, not a guidance issue. The orchestrator manages feature definitions." }
   ],
-  "previousRound": "4acc49e"
+  "previousRound": "a258370"
 }
