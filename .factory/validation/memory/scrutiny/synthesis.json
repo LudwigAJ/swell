@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 18,
+  "round": 19,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test -p swell-memory", "exitCode": 0 },
@@ -12,37 +12,37 @@
     "passed": 0,
     "failed": 0,
     "failedFeatures": [],
-    "note": "No new fix features completed since prior synthesis (round 17). 5 blocking issues persist across 2 features (memory-skill-extraction, memory-pattern-learning). Validators pass but correctness bugs remain. Re-verified all issues still present at exact lines."
+    "note": "No new fix features completed since prior synthesis (round 18). 5 blocking issues persist across 2 features (memory-skill-extraction, memory-pattern-learning). Validators pass but correctness bugs remain. Re-verified all issues still present at exact lines."
   },
   "blockingIssues": [
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 125: ExtractionConfig::default() sets store_path to '.skills' but AGENTS.md specifies user-extensible skills should be in '.swell/skills/'. STILL NOT FIXED since round 1 (now round 18).",
+      "description": "Line 125: ExtractionConfig::default() sets store_path to '.skills' but AGENTS.md specifies user-extensible skills should be in '.swell/skills/'. STILL NOT FIXED since round 1 (now round 19).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs:125: store_path: \".skills\".to_string()"
     },
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 141: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. STILL NOT FIXED since round 1 (now round 18).",
+      "description": "Line 141: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. STILL NOT FIXED since round 1 (now round 19).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs:141: #[allow(dead_code)]"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 18).",
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 19).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs:955: final_pattern.update_confidence(frequency_map.values().sum())"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 18).",
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 19).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs:1145: let name = trimmed[3..colon_pos].trim().to_string();"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1174: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 18).",
+      "description": "Line 1174: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 19).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs:1174-1177: Ok(Vec::new()) with 'For MVP, return empty' comment"
     }
   ],
@@ -50,8 +50,8 @@
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "CRITICAL: 5 blocking issues have persisted for 18 rounds without resolution across 2 features (memory-skill-extraction, memory-pattern-learning). These are well-identified, localized bugs with exact line numbers and clear fix instructions. The orchestrator created fix-memory-blocking-issues but it remains pending. HIGH-PRIORITY: Assign a dedicated worker to fix-memory-blocking-issues with explicit requirement to fix each listed issue. Do not allow re-runs of scrutiny until the fix feature is completed.",
-      "evidence": "All 5 issues marked 'STILL NOT FIXED since round 1' with file:line evidence. No code changes made to address these issues across 18 rounds. Workers correctly implement features but introduce logic bugs that tests don't catch.",
+      "suggestion": "CRITICAL: 5 blocking issues have persisted for 19 rounds without resolution across 2 features (memory-skill-extraction, memory-pattern-learning). These are well-identified, localized bugs with exact line numbers and clear fix instructions. The orchestrator created fix-memory-blocking-issues but it remains pending. HIGH-PRIORITY: Assign a dedicated worker to fix-memory-blocking-issues with explicit requirement to fix each listed issue. Do not allow re-runs of scrutiny until the fix feature is completed.",
+      "evidence": "All 5 issues marked 'STILL NOT FIXED since round 1' with file:line evidence. No code changes made to address these issues across 19 rounds. Workers correctly implement features but introduce logic bugs that tests don't catch.",
       "isSystemic": true
     },
     {
@@ -62,5 +62,5 @@
     }
   ],
   "rejectedObservations": [],
-  "previousRound": "9d77f23"
+  "previousRound": "474d27f"
 }
