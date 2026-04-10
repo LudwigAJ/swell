@@ -1,51 +1,74 @@
 {
   "featureId": "mem-scoping",
-  "reviewedAt": "2026-04-10T12:00:00Z",
+  "reviewedAt": "2026-04-10T10:30:00Z",
   "commitId": "103568b",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "Implementation adds repository (required), language (optional), and task_type (optional) fields to MemoryEntry and MemoryQuery in swell-core, updates SqliteMemoryStore schema with new columns and indexes, and modifies search() to enforce repository scope. However, the update() method does NOT update the repository, language, and task_type columns - entries updated via update() lose their scoping fields. Additionally, get_by_type() and get_by_label() do not apply repository filtering, allowing cross-repo data leakage.",
+    "summary": "The implementation adds repository, language, and task_type scoping fields to MemoryEntry and MemoryQuery. However, several critical methods do not enforce repository scope, violating the 'cross-repo memories isolated by default' requirement.",
     "issues": [
       {
         "file": "crates/swell-memory/src/lib.rs",
-        "line": 634,
+        "line": 450,
         "severity": "blocking",
-        "description": "The update() method does NOT preserve scoping fields. The UPDATE query only includes: block_type, label, content, embedding, updated_at, metadata. The repository, language, and task_type columns are NOT updated. This means if you update a memory entry that has repository='my-repo' and language='rust', after update() those fields become empty/NULL. The UPDATE statement at line 634-649 is missing repository, language, and task_type in the SET clause."
+        "description": "get_by_type() does not filter by repository - returns ALL memories of a given type across ALL repositories. This violates 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'. The method signature in the trait (swell-core/src/traits.rs:232) does not include repository parameter, so trait would need updating."
       },
       {
         "file": "crates/swell-memory/src/lib.rs",
-        "line": 786,
+        "line": 462,
         "severity": "blocking",
-        "description": "get_by_type() does not apply repository filtering. The query 'SELECT * FROM memory_entries WHERE block_type = ?' does not filter by repository, so it returns entries from ALL repositories. This violates the 'cross-repo memories isolated by default' expected behavior. The method signature should include a repository parameter, similar to search()."
+        "description": "get_by_label() does not filter by repository - returns ALL memories with a given label across ALL repositories. Same cross-repo isolation violation."
       },
       {
         "file": "crates/swell-memory/src/lib.rs",
-        "line": 803,
+        "line": 472,
         "severity": "blocking",
-        "description": "get_by_label() does not apply repository filtering. The query 'SELECT * FROM memory_entries WHERE label = ?' does not filter by repository, so it returns entries from ALL repositories. This violates the 'cross-repo memories isolated by default' expected behavior. The method signature should include a repository parameter, similar to search()."
+        "description": "get_by_provenance() does not filter by repository - returns ALL memories from a source episode across ALL repositories. Same cross-repo isolation violation."
       },
       {
         "file": "crates/swell-memory/src/lib.rs",
-        "line": 1062,
+        "line": 498,
         "severity": "non_blocking",
-        "description": "test_update_and_delete() does not verify that scoping fields (repository, language, task_type) are preserved after update. The test only checks content change, not the scoping fields. Should add assertions like: assert_eq!(retrieved.repository, 'test-repo'); assert_eq!(retrieved.language, None); assert_eq!(retrieved.task_type, Some('bugfix'.to_string()));"
+        "description": "get_stale_memories() does not filter by repository - returns ALL stale memories across all repositories. Consider adding repository filtering."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 414,
+        "severity": "non_blocking",
+        "description": "delete(id) does not validate repository scope - could delete memories from any repository if ID is known. IDs are internal UUIDs so risk is low, but worth noting."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 396,
+        "severity": "non_blocking",
+        "description": "search() starts with 'WHERE repository = ?' which is correct, but the query construction could be clearer if the mandatory repository filter was visually separated from optional filters."
+      },
+      {
+        "file": "features.json verificationSteps",
+        "line": 0,
+        "severity": "non_blocking",
+        "description": "Verification step 'cargo test -p swell-memory -- scoping' runs 0 tests because no test name contains 'scoping'. The tests are named 'test_search_cross_repo_isolation' and 'test_search_by_language_filter'. Either the filter should be 'cross_repo' or test names should include 'scoping'."
       }
     ]
   },
   "sharedStateObservations": [
     {
-      "area": "skills",
-      "observation": "The worker followed the Rust skill correctly. However, the trait MemoryStore::update signature doesn't include repository - it takes a MemoryEntry directly. This means the caller must provide correct scoping fields. The worker's implementation follows this correctly, but the trait design requires callers to maintain scoping fields on update.",
-      "evidence": "crates/swell-core/src/traits.rs:309-320 - update() signature is 'async fn update(&self, entry: MemoryEntry)' - entry already has repository, language, task_type fields. The issue is the SQL UPDATE doesn't include them."
+      "area": "conventions",
+      "observation": "The MemoryStore trait (swell-core/src/traits.rs) defines get_by_type, get_by_label, get_by_provenance without repository parameters. This is a trait design issue - the feature implementation correctly added repository to MemoryQuery for search(), but these methods predate the scoping feature and don't have repository scope. The trait should arguably be updated to support repository-scoped variants.",
+      "evidence": "swell-core/src/traits.rs:232-240 - trait methods lack repository parameter"
     },
     {
-      "area": "conventions",
-      "observation": "The MemoryStore trait doesn't define repository-scoped variants of get_by_type() and get_by_label(). The search() method properly requires repository in MemoryQuery, but get_by_type() and get_by_label() have no repository parameter at all. This appears to be a pre-existing design gap in the trait definition. The worker followed the existing pattern but didn't fix the design gap.",
-      "evidence": "crates/swell-core/src/traits.rs:321-323 - get_by_type has signature 'async fn get_by_type(&self, block_type: crate::MemoryBlockType) -> Result<Vec<MemoryEntry>, SwellError>' with no repository parameter"
+      "area": "skills",
+      "observation": "The Rust skill was followed correctly. Worker added scoping fields to MemoryEntry and MemoryQuery structs, updated the SQLite schema with new columns and indexes, and modified search() to apply repository filter first. The worker did not identify that get_by_type/get_by_label/get_by_provenance also need repository filtering because the trait doesn't support it.",
+      "evidence": "Transcript shows worker correctly implemented search() scoping but the trait itself limits get_by_type/get_by_label"
+    },
+    {
+      "area": "knowledge",
+      "observation": "Empty repository strings (String::new()) are used for user blocks and task blocks with comment 'User blocks are not scoped to repository'. This design choice means user/task blocks cannot be retrieved via search() with a specific repository filter - they can only be found with empty repository string. This might be intentional for cross-cutting concerns but is not documented.",
+      "evidence": "crates/swell-memory/src/blocks.rs:225 and :244 - repository: String::new() with comment about not being scoped"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "The mem-scoping feature correctly adds repository, language, and task_type to MemoryEntry and MemoryQuery in swell-core, updates the schema with indexes, and enforces repository scope in search(). However, three blocking bugs exist: (1) update() doesn't preserve scoping fields in the database, (2) get_by_type() doesn't filter by repository, and (3) get_by_label() doesn't filter by repository. The test_update_and_delete test also doesn't verify scoping field preservation. These issues mean cross-repo isolation is not fully enforced and scoping fields are lost on update."
+  "summary": "The mem-scoping feature partially implements repository scope isolation. The search() method correctly enforces cross-repo isolation by always applying repository filter first. However, get_by_type(), get_by_label(), and get_by_provenance() do NOT enforce repository scope, returning memories from ALL repositories. This is a blocking issue because the feature description requires 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'. The root cause is that the MemoryStore trait doesn't include repository parameters for these methods. Fix would require either updating the trait to add repository scope parameters to these methods, or accepting that not all methods need repository filtering (which contradicts the feature description)."
 }

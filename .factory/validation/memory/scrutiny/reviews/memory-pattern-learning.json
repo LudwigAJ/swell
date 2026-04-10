@@ -1,48 +1,34 @@
 {
   "featureId": "memory-pattern-learning",
-  "reviewedAt": "2026-04-10T00:00:00Z",
+  "reviewedAt": "2026-04-10T14:35:00Z",
   "commitId": "536231e",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "Feature implements pattern learning module for extracting anti-patterns from rejected tasks. Build passes and 29 tests pass. However, 3 blocking issues from prior round remain unfixed.",
+    "summary": "Round 13 re-review confirms all 3 prior blocking issues remain unfixed. The feature was committed at 536231e (Apr 9). Subsequent commits (provenance tracking 3e08435, staleness detection 0241792, repository scope 103568b, promotion thresholds 37b8f4a) added code to pattern_learning.rs but did not address these bugs. The anti-pattern name extraction at line 1145 still uses wrong index [3..] which captures the leading '*' from '**' prefix.",
     "issues": [
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
         "line": 955,
         "severity": "blocking",
-        "description": "Confidence calculation in deduplicate_anti_patterns uses wrong denominator: frequency_map.values().sum() gives sum of ALL pattern frequencies instead of total number of rejections",
-        "evidence": "Line ~955: final_pattern.update_confidence(frequency_map.values().sum()); - The update_confidence function divides self.frequency by this value, which results in self.frequency/total_all_frequencies. This is incorrect because it means confidence depends on how many other patterns exist, not how frequent this pattern is relative to total rejections."
+        "description": "Confidence calculation uses sum of all pattern frequencies as denominator instead of per-pattern frequency. `final_pattern.update_confidence(frequency_map.values().sum())` aggregates frequencies across ALL patterns (e.g., X:3, Y:5, Z:2 → sum=10) but should use the actual count of distinct rejection events for each pattern. Causes inflated confidence values."
       },
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
         "line": 1145,
         "severity": "blocking",
-        "description": "Convention parsing uses wrong string slice index [3..] instead of [4..]",
-        "evidence": "Line 1145: let name = trimmed[3..colon_pos].trim().to_string(); - For a line like '- **my_convention**: description', position 3 is the first '*' character, so trimmed[3..colon_pos] would include the leading '*'. Should be trimmed[4..colon_pos] to skip the '- **' prefix."
+        "description": "Convention parsing uses wrong string slice index [3..] instead of [4..]. For line '- **name**: description', index 3 points to '*' (second asterisk in '**'), so `trimmed[3..colon_pos]` extracts '*name' with leading asterisk. Correct index should be [4..] to skip '- **' prefix. Same bug has persisted across 13 rounds of review."
       },
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
-        "line": 1173,
+        "line": 1170,
         "severity": "blocking",
-        "description": "get_anti_patterns_for_error is an unimplemented stub returning empty vec",
-        "evidence": "Lines 1173-1178: pub async fn get_anti_patterns_for_error(...) -> Result<Vec<AntiPattern>, SwellError> { let _ = error_type; Ok(Vec::new()) } - The function ignores the error_type parameter and always returns an empty vector. Comment says 'For MVP, return empty' but this is a blocking issue for user testing since anti-pattern retrieval does not work."
+        "description": "get_anti_patterns_for_error is an unimplemented stub returning empty vec. Comment 'For MVP, return empty - in full implementation would query stored anti-patterns' acknowledges this. Code relying on this to retrieve anti-patterns for a given error type will always receive nothing."
       }
     ]
   },
-  "sharedStateObservations": [
-    {
-      "area": "conventions",
-      "observation": "The convention parsing logic uses markdown format '- **name**: description' but the slice index doesn't correctly extract the name portion",
-      "evidence": "crates/swell-memory/src/pattern_learning.rs:1145 - uses [3..] but should use [4..] for lines starting with '- **'"
-    },
-    {
-      "area": "skills",
-      "observation": "Worker reported following the Rust skill procedure, but the implementation shows several logic errors that suggest the skill's guidance on confidence calculation and string parsing may need more specific examples",
-      "evidence": "skillFeedback.followedProcedure: true, yet 3 blocking issues remain in core logic"
-    }
-  ],
-  "addressesFailureFrom": null,
-  "summary": "RE-RUN REVIEW: All 3 blocking issues from round 11 remain unfixed. (1) Confidence calculation divides by sum of all frequencies instead of total rejections. (2) Convention parsing uses wrong string slice index. (3) get_anti_patterns_for_error is an unimplemented stub. Build passes and 29 tests pass, but tests do not cover the buggy code paths. These issues must be fixed before user testing."
+  "sharedStateObservations": [],
+  "addressesFailureFrom": ".factory/validation/memory/scrutiny/reviews/memory-pattern-learning.json",
+  "summary": "Round 13 review confirms all 3 blocking issues from prior rounds remain unfixed. No code changes to fix these specific bugs since commit 536231e (Apr 9). Feature builds and 42 swell-memory tests pass, but correctness bugs persist: 1) confidence calculation uses wrong denominator (sum of all frequencies vs actual per-pattern count), 2) convention name parsing extracts '*name' instead of 'name' due to off-by-one slice index, 3) anti-pattern retrieval is an empty stub. Worker followed Rust skill procedure correctly; the issues are pure code correctness bugs that tests don't catch."
 }

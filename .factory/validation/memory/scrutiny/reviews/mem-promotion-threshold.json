@@ -1,21 +1,31 @@
 {
   "featureId": "mem-promotion-threshold",
-  "reviewedAt": "2026-04-10T12:20:00Z",
-  "commitId": "37b8f4a3dae8a211887f6a6a910812b9f0c0c98c",
+  "reviewedAt": "2026-04-10T09:15:00Z",
+  "commitId": "37b8f4a",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "Implementation correctly fulfills all feature requirements. Promotion thresholds are properly implemented: AntiPattern uses ≥5 confirmations with confidence >0.6, Convention uses ≥10 confirmations with confidence >0.8. The promotion system tracks confirmation counts, checks promotion eligibility, and provides retrieval rank boost for promoted patterns.",
+    "summary": "Implementation is correct and comprehensive. Pattern promotion thresholds (≥5 confirmations with confidence >0.6) and Rule promotion thresholds (≥10 confirmations with confidence >0.8) are properly implemented with 1.5x retrieval rank boost for promoted items. 15 unit tests cover the feature including boundary conditions.",
     "issues": []
   },
   "sharedStateObservations": [
     {
+      "area": "skills",
+      "observation": "Worker followed the Rust skill procedure correctly. The implementation uses standard Rust patterns (async_trait, thiserror, chrono for datetime, serde for serialization) consistent with the codebase conventions documented in AGENTS.md.",
+      "evidence": "skillFeedback.followedProcedure: true, deviations: []"
+    },
+    {
+      "area": "conventions",
+      "observation": "No convention violations detected. Worker correctly used PromotionThresholds::default() for configurable thresholds, implemented Display trait for PromotionStatus enum, and followed the existing AntiPattern and Convention struct patterns.",
+      "evidence": "crates/swell-memory/src/pattern_learning.rs - All new code follows existing patterns"
+    },
+    {
       "area": "services",
-      "observation": "Worker used cargo build, cargo test, and cargo clippy commands but .factory/services.yaml does not exist in this project. This is consistent with the pattern seen in other memory feature handoffs.",
-      "evidence": "Transcript shows: cargo build --workspace, cargo test -p swell-memory, cargo clippy --workspace. No services.yaml found at /Users/ludwigjonsson/.factory/services.yaml"
+      "observation": "No additional services were started. Worker used standard build/test commands already documented in AGENTS.md.",
+      "evidence": "Verification commands: cargo build --workspace, cargo test -p swell-memory -- promotion, cargo clippy --workspace"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature mem-promotion-threshold passes scrutiny. Implementation correctly adds pattern promotion thresholds (≥5 confirmations with confidence >0.6 for patterns, ≥10 confirmations with confidence >0.8 for rules) with retrieval rank boost. 15 promotion tests were added covering boundary conditions. Worker followed Rust skill procedure correctly."
+  "summary": "Feature implementation reviewed and passes scrutiny. Pattern promotion (≥5 confirmations, confidence >0.6) and rule promotion (≥10 confirmations, confidence >0.8) correctly implemented with 1.5x retrieval rank boost. Comprehensive tests cover boundary conditions (exactly 0.6/0.8 vs just above), confirmation count edges (4 vs 5, 9 vs 10), and promotion status transitions. Worker followed Rust skill procedure without deviations."
 }

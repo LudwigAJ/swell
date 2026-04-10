@@ -1,79 +1,69 @@
 {
   "featureId": "mem-event-log-jsonl",
-  "reviewedAt": "2026-04-10T08:25:00Z",
+  "reviewedAt": "2026-04-10T08:45:00.000Z",
   "commitId": "b6ac1d8",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "Implementation is solid and meets the core requirements: JSONL append-only logging, schema versioning, and replay capability. However, there is a blocking issue where serialization errors are silently dropped via unwrap_or_default(), which could lead to data loss in error events.",
+    "summary": "Implementation covers all three expected behaviors (JSONL format, schema versioning, replay capability) with 11 tests. However, there is a blocking issue: unwrap_or_default() silently swallows JSON serialization errors, which could lead to lost audit trail data in production.",
     "issues": [
       {
         "file": "crates/swell-memory/src/event_log.rs",
-        "line": 176,
+        "line": 196,
         "severity": "blocking",
-        "description": "serde_json::to_value(payload).unwrap_or_default() silently drops serialization errors. If serialization fails, an empty {} payload is created instead of propagating the error. This is particularly problematic for error events where losing error information could be critical. Should return Result or handle the error explicitly."
+        "description": "serde_json::to_value(payload).unwrap_or_default() in log_tool_invocation silently loses data if serialization fails. For an audit trail, this is dangerous - an empty {} would be logged instead of the actual event. Should propagate error or handle explicitly."
       },
       {
         "file": "crates/swell-memory/src/event_log.rs",
-        "line": 203,
+        "line": 218,
         "severity": "blocking",
-        "description": "Same issue: unwrap_or_default() in log_decision silently drops serialization errors."
+        "description": "Same unwrap_or_default() issue in log_decision - serialization failure silently becomes empty payload."
       },
       {
         "file": "crates/swell-memory/src/event_log.rs",
-        "line": 221,
+        "line": 237,
         "severity": "blocking",
-        "description": "Same issue: unwrap_or_default() in log_error silently drops serialization errors. Given this is the error logging function, losing error details is especially concerning."
+        "description": "Same unwrap_or_default() issue in log_error - silently loses error details on serialization failure."
       },
       {
         "file": "crates/swell-memory/src/event_log.rs",
-        "line": 238,
+        "line": 253,
         "severity": "blocking",
-        "description": "Same issue: unwrap_or_default() in log_outcome silently drops serialization errors."
+        "description": "Same unwrap_or_default() issue in log_outcome - silently loses outcome details on failure."
       },
       {
         "file": "crates/swell-memory/src/event_log.rs",
-        "line": 257,
+        "line": 271,
         "severity": "blocking",
-        "description": "Same issue: unwrap_or_default() in log_state_transition silently drops serialization errors."
+        "description": "Same unwrap_or_default() issue in log_state_transition - silently loses transition details."
       },
       {
         "file": "crates/swell-memory/src/event_log.rs",
-        "line": 308,
+        "line": 1,
         "severity": "non_blocking",
-        "description": "The parse_entry comment says 'handling version differences' but there's no actual migration logic - it just tries to parse directly. Future schema changes could break parsing without migration."
+        "description": "Conventions gap: Uses io::Error for error handling instead of SwellError or a custom thiserror enum. Architecture.md states 'Error handling via thiserror enums' and AGENTS.md says 'All fallible operations return Result<T, SwellError>'."
       },
       {
         "file": "crates/swell-memory/src/event_log.rs",
-        "line": 309,
+        "line": 1,
         "severity": "non_blocking",
-        "description": "Malformed JSON lines cause the iterator to return an error and stop iteration entirely. Consider skipping bad lines and continuing, similar to how empty lines are handled."
+        "description": "Missing convenience methods for Observation, ValidationResult, LlmCall, and MemoryOperation event types. Typed payloads exist but no log_observation, log_validation_result, log_llm_call, or log_memory_operation methods."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "conventions",
-      "observation": "The AGENTS.md mentions using 'thiserror::Error' for errors, but the event_log module uses io::Result with io::ErrorKind::InvalidData. This is acceptable for file operations but the pattern differs from the rest of the codebase.",
-      "evidence": "event_log.rs uses io::Result<()> while other modules like blocks.rs and recall.rs use thiserror"
+      "observation": "The architecture.md says 'Error handling via thiserror enums' and AGENTS.md says 'All fallible operations return Result<T, SwellError>', but event_log uses io::Error directly. This is a convention violation that isn't explicitly documented as forbidden in AGENTS.md.",
+      "evidence": "event_log.rs uses io::Result<()> return types throughout, not Result<T, SwellError> as specified in AGENTS.md"
     },
     {
       "area": "skills",
-      "observation": "The worker followed the Rust skill's guidance appropriately. No procedure deviations noted.",
-      "evidence": "Transcript shows standard Rust patterns were followed, clippy passes with no warnings"
-    },
-    {
-      "area": "services",
-      "observation": "No services or background processes were started that should be documented in services.yaml.",
-      "evidence": "Only cargo build/test commands were run, no long-running services"
-    },
-    {
-      "area": "knowledge",
-      "observation": "No new codebase knowledge was discovered that should be added to .factory/library/.",
-      "evidence": "Worker worked within existing conventions and patterns"
+      "observation": "The Rust skill explicitly warns: 'unwrap() panics — use ? or match in production'. The code uses unwrap_or_default() which is similar anti-pattern - silently swallowing errors. Worker did follow the skill by using ? elsewhere, but not in these 5 convenience methods.",
+      "evidence": "lines 196, 218, 237, 253, 271 use unwrap_or_default() instead of ? operator"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "The mem-event-log-jsonl feature implements append-only JSONL logging with schema versioning and replay capability. Build passes, all 11 tests pass, and clippy shows no warnings. However, there is a blocking issue where serialization errors are silently dropped via unwrap_or_default() in all log_* helper methods - this could lead to data loss especially for error events. The issue should be fixed to properly propagate serialization errors rather than silently creating empty payloads."
+  "summary": "Feature implementation is functionally complete with 11 passing tests covering all event types and replay functionality. The implementation satisfies the three expected behaviors: JSONL format with append-only writes, schema_version per entry (v1.0), and replay iterators (full and task-filtered). However, the review identified a blocking issue: the unwrap_or_default() pattern used in all five convenience logging methods silently swallows JSON serialization errors, which could corrupt the audit trail by logging empty payloads instead of propagating errors. This violates the Rust skill guidance about error handling in production code. Additionally, there is a convention gap regarding error type usage (io::Error vs SwellError/thiserror)."
 }

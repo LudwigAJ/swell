@@ -1,49 +1,34 @@
 {
   "featureId": "mem-meta-cognitive",
-  "reviewedAt": "2026-04-10T12:30:00Z",
+  "reviewedAt": "2026-04-10T12:50:00Z",
   "commitId": "374b407",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "Implementation of meta-cognitive memory module is complete and functional. The module provides self-knowledge tracking via TaskType enum, ModelPerformance for tracking model success/tokens/latency per task type, PromptingStrategy for storing effective prompting templates with effectiveness scoring, and SqliteMetaCognitiveStore with SQLite-backed persistence. The get_recommendation API correctly returns model/strategy recommendations. All 25 unit tests pass and verification commands succeed.",
+    "summary": "Implementation fully covers the feature requirements. Created meta_cognitive.rs with TaskType enum, ModelPerformance struct for tracking model success/tokens/latency, PromptingStrategy struct for prompting templates with effectiveness scoring, SqliteMetaCognitiveStore for SQLite-backed persistence, and get_recommendation API for model/strategy recommendations. 25 unit tests all pass. Build and clippy clean.",
     "issues": [
       {
         "file": "crates/swell-memory/src/meta_cognitive.rs",
-        "line": 580,
+        "line": 24,
         "severity": "non_blocking",
-        "description": "The `_task_description` parameter in `get_recommendation` is unused (prefixed with `_`). This parameter appears intended for semantic matching against task description but is not currently utilized. Consider either implementing task description matching or removing the parameter from the interface."
+        "description": "TaskType enum is duplicated from swell-llm/src/router.rs. The meta_cognitive module comment states 'These align with the LLM router's task types but are defined here to allow the memory system to evolve independently.' This is a design choice, but may lead to drift over time. Consider if the memory system should import TaskType from swell-core or share via a common crate."
       },
       {
         "file": "crates/swell-memory/src/meta_cognitive.rs",
-        "line": 661,
+        "line": 805,
         "severity": "non_blocking",
-        "description": "The `_task_types_str` variable in `record_strategy_usage` is constructed but never used. The variable is built from task_types but the UPDATE query doesn't write it back. This appears to be an oversight - the task_types should potentially be preserved if strategy is updated. Currently the UPDATE only modifies usage_count, success_count, avg_rating, last_used, updated_at, and metadata."
+        "description": "get_recommendation accepts task_description parameter but never uses it (marked with _ underscore prefix). This parameter could be used for semantic matching in future enhancements."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "conventions",
-      "observation": "No convention gaps observed. Worker followed standard Rust patterns, used async_trait::async_trait correctly, proper error handling with thiserror::Error, and used Arc<SqlitePool> for connection pooling consistent with other memory store implementations.",
-      "evidence": "Implementation matches existing patterns in swell-memory/src/lib.rs and other store implementations like procedural.rs"
-    },
-    {
-      "area": "skills",
-      "observation": "Worker used the Rust skill appropriately. Followed standard async Rust patterns with sqlx for database operations. No deviations from skill procedure observed.",
-      "evidence": "skillFeedback.followedProcedure: true in handoff"
-    },
-    {
-      "area": "services",
-      "observation": "Worker used standard commands (cargo build, cargo test, cargo clippy) that are already documented in .factory/services.yaml. No additional services or commands were started.",
-      "evidence": "services.yaml already defines install, typecheck, build, test, lint commands"
-    },
-    {
-      "area": "knowledge",
-      "observation": "Worker appears to have used their existing knowledge of sqlx, async_trait, and SQLite patterns. No gaps where documentation was lacking.",
-      "evidence": "Implementation is idiomatic Rust with standard async patterns"
+      "observation": "The meta-cognitive module uses magic numbers for composite scoring weights (e.g., 100_000.0 for token normalization, 60_000.0 for latency, and weight factors 0.3/0.2/0.5 for Fast tasks). AGENTS.md doesn't specify how such tuning parameters should be managed, but these appear to be reasonable heuristics that might need tuning based on real usage data.",
+      "evidence": "composite_score() function at line 144 - weights are hardcoded based on task type"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature mem-meta-cognitive successfully implemented self-knowledge tracking for model performance, prompting strategies, and task recommendations. The implementation is complete, passes all 25 unit tests, builds without errors, and passes clippy. Two minor unused parameter issues noted (non-blocking)."
+  "summary": "Feature mem-meta-cognitive passes review. Implementation adds TaskType enum, ModelPerformance for model tracking, PromptingStrategy for prompt templates, SqliteMetaCognitiveStore for persistence, and get_recommendation API. All 25 tests pass. Build and clippy clean. Code is well-structured with proper async patterns and error handling. Two non-blocking observations: TaskType duplication across crates (acknowledged in comments), and unused task_description parameter."
 }

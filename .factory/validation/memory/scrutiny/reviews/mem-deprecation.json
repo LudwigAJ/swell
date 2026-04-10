@@ -1,56 +1,40 @@
 {
   "featureId": "mem-deprecation",
-  "reviewedAt": "2026-04-10T09:15:00Z",
-  "commitId": "29d1b85c8d75e7b560edce49a0d4d18d293bf818",
+  "reviewedAt": "2026-04-10T12:00:00Z",
+  "commitId": "29d1b85",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "The deprecation module was implemented as a standalone utility with proper data structures and tests, but it cannot fulfill the feature requirements because it doesn't integrate with MemoryEntry. The core MemoryEntry struct (in swell-core/src/traits.rs) lacks both a `confidence` field and a `superseded_by` field, making it impossible to actually deprecate memories as specified.",
+    "summary": "The deprecation module is disconnected from actual MemoryEntry storage. The feature creates types and tests but is never integrated with the storage layer. All 4 blocking issues from prior reviews are STILL PRESENT.",
     "issues": [
       {
         "file": "crates/swell-core/src/traits.rs",
         "line": 196,
         "severity": "blocking",
-        "description": "MemoryEntry struct has no `confidence` field. The feature requires 'Mark memories with confidence <0.3 as deprecated' but MemoryEntry does not track confidence. The deprecation module's functions like `should_be_deprecated(confidence: f64)` take confidence as a parameter, but there's no way to extract this from a MemoryEntry."
+        "description": "MemoryEntry struct has NO confidence field. The feature requires checking confidence < 0.3 to mark as deprecated, but MemoryEntry (line 196-235) has no confidence field anywhere in its definition. Fields present: id, block_type, label, content, embedding, created_at, updated_at, metadata, repository, language, task_type, last_reinforcement, is_stale, source_episode_id, evidence, provenance_context."
       },
       {
-        "file": "crates/swell-core/src/traits.rs",
-        "line": 196,
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 182,
         "severity": "blocking",
-        "description": "MemoryEntry struct has no `superseded_by` field. The feature requires 'superseded_by link to replacement knowledge' but MemoryEntry does not have this field. DeprecationInfo.superseded_by exists in the deprecation module but there's no place to store it on the actual memory entry."
+        "description": "SqliteMemoryStore init_schema() has NO deprecation columns. The CREATE TABLE memory_entries statement (line 182-196) does not include: is_deprecated, superseded_by, deprecation_reason, or deprecated_at columns. DeprecationInfo cannot be persisted to database."
       },
       {
         "file": "crates/swell-memory/src/deprecation.rs",
-        "line": 1,
+        "line": 130,
         "severity": "blocking",
-        "description": "The deprecation module is a standalone utility with no integration into the memory system. It exports helper functions but these are never called by SqliteMemoryStore or any other memory component. The feature requires 'Automatic deprecation when confidence drops' but no automatic mechanism exists."
+        "description": "Deprecatable trait is defined at line 130 (fn get_confidence(&self) -> f64) but NEVER IMPLEMENTED for any type. 'grep -r \"impl Deprecatable\"' returns no matches in entire codebase. The trait is dead code."
       },
       {
         "file": "crates/swell-memory/src/deprecation.rs",
-        "line": 126,
-        "severity": "non_blocking",
-        "description": "The `Deprecatable` trait is defined but never implemented for MemoryEntry. This trait could have been the integration point but it's unused."
+        "line": 252,
+        "severity": "blocking",
+        "description": "check_deprecation() (line 252) and apply_confidence_deprecation() (line 288) functions exist but are NEVER CALLED from anywhere in the codebase outside their own tests. 'grep -r \"check_deprecation\\|apply_confidence_deprecation\"' shows they are only referenced in their own test module and in lib.rs exports - not called by any actual memory store implementation. They are dead code."
       }
     ]
   },
-  "sharedStateObservations": [
-    {
-      "area": "conventions",
-      "observation": "The worker correctly followed the Rust skill guidelines for error handling (using enums over unwrap), struct definitions, and test patterns. No convention violations detected.",
-      "evidence": "All 17 tests pass, clippy reports no warnings, code follows existing crate patterns."
-    },
-    {
-      "area": "skills",
-      "observation": "The worker followed the Rust skill procedure correctly. However, the skill doesn't address how to handle features that require modifications to core traits in swell-core when working on swell-memory.",
-      "evidence": "Transcript shows worker explored swell-memory structure extensively but didn't modify swell-core. The deprecation module was created in swell-memory rather than being integrated at the MemoryEntry level where the feature actually requires changes."
-    },
-    {
-      "area": "architecture",
-      "observation": "The feature requires changes to MemoryEntry in swell-core (adding confidence and superseded_by fields) but the worker only modified swell-memory. This is an architectural gap - the worker didn't have visibility into how to properly extend the core trait.",
-      "evidence": "MemoryEntry in swell-core/src/traits.rs:196 lacks the required fields. The deprecation.rs module in swell-memory can't actually deprecate MemoryEntry instances without these fields."
-    }
-  ],
-  "addressesFailureFrom": null,
-  "summary": "The implementation creates a well-structured deprecation module with comprehensive tests, but it cannot fulfill the feature requirements because MemoryEntry in swell-core lacks the `confidence` and `superseded_by` fields needed for deprecation. The module is a standalone utility disconnected from the actual memory system. To complete this feature, MemoryEntry must be extended with confidence tracking and superseded_by linking, and the deprecation logic must be integrated into the memory store operations."
+  "sharedStateObservations": [],
+  "addressesFailureFrom": ".factory/validation/memory/scrutiny/reviews/mem-deprecation.json",
+  "summary": "ROUND 11 BLOCKING ISSUES NOT FIXED. No new commits to deprecation.rs since round 1. All 4 blocking issues remain: (1) MemoryEntry has no confidence field (2) SqliteMemoryStore schema has no deprecation columns (3) Deprecatable trait is never implemented (4) check_deprecation() and apply_confidence_deprecation() are dead code never called from storage layer. The feature cannot function as specified - memories cannot be marked deprecated because there is no confidence field to check, no way to persist deprecation state, and no integration with memory store. This issue persists unchanged for 11 rounds."
 }
