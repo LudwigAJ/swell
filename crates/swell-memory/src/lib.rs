@@ -42,6 +42,17 @@ pub mod golden_sample_testing;
 // Pattern learning module - Learns anti-patterns from rejection feedback and extracts conventions
 pub mod pattern_learning;
 
+// Contrastive learning module - Analyzes success/failure trajectories and applies
+// contrastive loss to train embeddings for better retrieval
+pub mod contrastive_learning;
+
+pub use contrastive_learning::{
+    ContrastiveAnalyzer, ContrastiveLearningConfig, ContrastiveLearningResult,
+    ContrastiveLearningService, ContrastivePair, ContrastiveTrainer, FailureReason,
+    FailureTrajectory, LossComponents, PairType, SuccessOutcome, SuccessTrajectory,
+    ToolCallRecord, TrajectoryStep, StepStatus, ValidationErrorRecord,
+};
+
 // Operator feedback module - Parses CLAUDE.md/AGENTS.md with higher trust weight than agent self-learning
 pub mod operator_feedback;
 
