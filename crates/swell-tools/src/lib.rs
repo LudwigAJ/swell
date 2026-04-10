@@ -21,6 +21,7 @@ pub mod egress;
 pub mod executor;
 pub mod hybrid;
 pub mod killswitch;
+pub mod loop_detection;
 pub mod mcp;
 pub mod opa_policy;
 pub mod os_sandbox;
@@ -65,6 +66,11 @@ pub use hybrid::{
     ToolExecutorTrait,
 };
 pub use killswitch::ToolKillSwitch;
+pub use loop_detection::{
+    create_tool_loop_tracker, create_tool_loop_tracker_with_config, LoopDetectionConfig,
+    LoopDetectionResult, LoopPattern, LoopPatternType, SharedToolLoopTracker, ToolExecution,
+    ToolLoopTracker,
+};
 pub use resource_limits::{
     LimitCheckResult, LimitState, ResourceLimitError, ResourceLimitResult, SessionLimits,
     SessionResourceTracker,
