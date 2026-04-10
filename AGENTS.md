@@ -288,6 +288,52 @@ Configure external MCP servers in `.swell/mcp_servers.json`:
 
 SWELL will connect to each server, negotiate capabilities, and expose whatever tools the server provides.
 
+## Agent Skills
+
+SWELL supports the [Agent Skills](https://agentskills.io) standard for defining reusable agent capabilities.
+
+### Skill Directory Structure
+
+```
+.swell/skills/
+├── rust-coding/
+│   └── SKILL.md          # YAML frontmatter + instructions
+├── test-writing/
+│   └── SKILL.md
+├── code-review/
+│   └── SKILL.md
+└── refactoring/
+    └── SKILL.md
+```
+
+### SKILL.md Format
+
+```yaml
+---
+name: skill-name
+description: What this skill does and when to use it.
+metadata:
+  author: example
+  version: "1.0"
+---
+# Instructions in Markdown
+```
+
+### Progressive Disclosure
+
+1. **Startup**: Load skill `name` and `description` for all skills
+2. **Activation**: Load full `SKILL.md` body when skill is needed
+3. **Resources**: Load `scripts/`, `references/`, `assets/` on demand
+
+### Included Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `rust-coding` | Idiomatic Rust patterns, ownership, async |
+| `test-writing` | Unit tests, mocking, async tests |
+| `code-review` | Review checklist, clippy, security |
+| `refactoring` | Safe refactoring patterns, strangler fig |
+
 ## Critical Missing Features (v2 Roadmap)
 
 Based on the research documents, the following are planned for future versions:

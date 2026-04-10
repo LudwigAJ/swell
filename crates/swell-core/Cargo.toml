@@ -10,7 +10,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 uuid.workspace = true
 chrono.workspace = true
 async-trait.workspace = true
