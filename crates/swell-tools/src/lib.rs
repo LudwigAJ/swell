@@ -21,12 +21,16 @@ pub mod mcp;
 pub mod os_sandbox;
 pub mod pr_creation;
 pub mod registry;
+pub mod auto_masking;
 pub mod secret_scanning;
 pub mod tools;
 pub mod vault;
 pub mod worktree_isolation;
 pub mod worktree_pool;
 
+pub use auto_masking::{
+    AutoMasker, MaskingConfig, MaskingResult, MaskingStats, SecretPattern, MaskSecrets,
+};
 pub use branch_strategy::{
     BranchRequest, BranchResult, BranchStrategy, BranchStrategyConfig, BranchStrategyError,
 };
