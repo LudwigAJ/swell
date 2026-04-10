@@ -59,6 +59,15 @@ pub use procedural::{
     SqliteProceduralStore,
 };
 
+// Meta-cognitive memory module - Self-knowledge for model performance tracking,
+// prompting strategy storage, and recommendations
+pub mod meta_cognitive;
+
+pub use meta_cognitive::{
+    AlternativeRecommendation, MetaCognitiveQuery, MetaCognitiveStore, ModelPerformance,
+    PromptingStrategy, Recommendation, SqliteMetaCognitiveStore, TaskType,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
