@@ -31,6 +31,15 @@ pub mod skill_extraction;
 // Pattern learning module - Learns anti-patterns from rejection feedback and extracts conventions
 pub mod pattern_learning;
 
+// Operator feedback module - Parses CLAUDE.md/AGENTS.md with higher trust weight than agent self-learning
+pub mod operator_feedback;
+
+pub use operator_feedback::{
+    OperatorFeedbackConfig, OperatorFeedbackParser, OperatorFeedbackResult,
+    OperatorFeedbackService, OperatorGuidancePattern, OperatorPatternType,
+    OPERATOR_FEEDBACK_BASE_CONFIDENCE, OPERATOR_FEEDBACK_MIN_CONFIDENCE,
+};
+
 // Semantic memory module - Facts, entities, and relationships stored as graph nodes
 // for semantic knowledge representation
 pub mod semantic;
