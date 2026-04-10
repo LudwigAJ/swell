@@ -63,6 +63,16 @@ impl Daemon {
         let _ = self.shutdown_tx.send(true);
     }
 
+    /// Get the event emitter for the daemon
+    pub fn event_emitter(&self) -> Arc<EventEmitter> {
+        Arc::clone(&self.event_emitter)
+    }
+
+    /// Get the orchestrator for the daemon
+    pub fn orchestrator(&self) -> Arc<Mutex<Orchestrator>> {
+        Arc::clone(&self.orchestrator)
+    }
+
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Remove existing socket file
         if std::path::Path::new(&self.socket_path).exists() {

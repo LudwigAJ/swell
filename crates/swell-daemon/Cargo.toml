@@ -14,3 +14,12 @@ anyhow.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+
+# HTTP/WebSocket server for Dashboard API
+axum = { version = "0.7", features = ["ws"] }
+tokio-tungstenite = { version = "0.24", features = ["tokio-native-tls"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "async-await"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+hyper = { version = "1.4", features = ["full"] }
+http-body-util = "0.1"
