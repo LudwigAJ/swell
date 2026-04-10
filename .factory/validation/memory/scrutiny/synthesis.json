@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 2,
+  "round": 3,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -12,104 +12,98 @@
     "passed": 19,
     "failed": 6,
     "failedFeatures": [
-      "memory-pattern-learning",
       "mem-decay-function",
       "mem-deprecation",
       "mem-triple-stream-retrieval",
       "mem-cross-encoder-rerank",
-      "memory-sqlite-store"
+      "memory-sqlite-store",
+      "memory-pattern-learning"
     ]
   },
   "blockingIssues": [
     {
-      "featureId": "memory-pattern-learning",
-      "severity": "blocking",
-      "description": "pattern_learning.rs line 1087: MemoryEntry.repository set to String::new() instead of self.repository.clone(), causing repository-scoped queries to fail. NOTE: Working tree has fix but committed code still has bug.",
-      "file": "crates/swell-memory/src/pattern_learning.rs",
-      "line": 1087
-    },
-    {
       "featureId": "mem-decay-function",
       "severity": "blocking",
-      "description": "decay.rs line 56: calculate_decay() returns decay factor > 1.0 when now < last_reinforcement (negative elapsed time), violating documented [0.0, 1.0] range. Also affects line 80 (days_since).",
+      "description": "calculate_decay() returns decay factor > 1.0 when now < last_reinforcement (negative elapsed time). Code: let days_elapsed = (now - last_reinforcement).num_days() as f64; base.powf(negative) returns value > 1.0 when days_elapsed is negative (future time), violating documented [0.0, 1.0] range.",
       "file": "crates/swell-memory/src/decay.rs",
       "line": 56
     },
     {
       "featureId": "mem-deprecation",
       "severity": "blocking",
-      "description": "MemoryEntry lacks confidence, deprecation_info, and superseded_by fields. The deprecation module cannot integrate with the memory system as specified - it's standalone but non-functional.",
+      "description": "MemoryEntry lacks 'confidence' and 'deprecation_info' fields needed for deprecation feature. Deprecation module cannot integrate with memory system as specified.",
       "file": "crates/swell-core/src/traits.rs",
       "line": 58
     },
     {
       "featureId": "mem-triple-stream-retrieval",
       "severity": "blocking",
-      "description": "triple_stream.rs line 520: BM25 search generates random Uuid::new_v4() instead of actual memory entry IDs, breaking RRF fusion across streams. Also line 518: RecallResult has no memory_entry_id field for correlation.",
+      "description": "BM25 search stream generates Uuid::new_v4() for results instead of actual memory entry IDs. This is a documented MVP placeholder - 'In real implementation, recall results would link to memory entries'. Breaks RRF fusion for BM25 stream.",
       "file": "crates/swell-memory/src/triple_stream.rs",
       "line": 520
     },
     {
       "featureId": "mem-cross-encoder-rerank",
       "severity": "blocking",
-      "description": "cross_encoder_rerank.rs line 518: RerankableCandidates trait creates MemoryEntry with empty fields but is never called (dead code). triple_stream.rs line 777: Same BM25 UUID bug as triple-stream.",
+      "description": "RerankableCandidates trait (line 518) creates MemoryEntry with empty fields but is never called - dead code. Same BM25 UUID bug as triple-stream.",
       "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
       "line": 518
     },
     {
       "featureId": "memory-sqlite-store",
       "severity": "blocking",
-      "description": "lib.rs line 681: search() method does NOT filter by source_episode_id even though MemoryQuery has this field defined. Provenance-based search filtering is only available via get_by_provenance(), not general search().",
+      "description": "search() method does not filter by source_episode_id even though MemoryQuery has this field. get_by_provenance() provides provenance filtering separately.",
       "file": "crates/swell-memory/src/lib.rs",
       "line": 681
+    },
+    {
+      "featureId": "memory-pattern-learning",
+      "severity": "non_blocking",
+      "description": "Previously blocking - FIXED in commit 6192803 (repository: self.repository.clone()). Now non-blocking.",
+      "file": "crates/swell-memory/src/pattern_learning.rs",
+      "line": 1087
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Add guidance on magic numbers: 'Never hardcode magic numbers - always load from .swell/settings.json' is documented but no crates currently implement this pattern. Either implement settings loading in a reference crate or clarify the guideline applies only when settings.json exists and is intentionally optional.",
-      "evidence": "memory-pattern-learning hardcodes PromotionThresholds values that match settings.json. This is systemic - no crates currently load settings.json.",
+      "suggestion": "Clarify magic number guideline: 'Never hardcode magic numbers - always load from .swell/settings.json' applies only when settings.json intentionally provides those values. Since no crates currently load settings.json, this should be optional guidance until the pattern is first implemented in a reference crate.",
+      "evidence": "pattern_learning.rs hardcodes PromotionThresholds values that match settings.json. This is systemic - no crates implement settings.json loading.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Document async_trait::async_trait usage - all async trait methods in swell-memory use this pattern but it's not documented. Workers spend time discovering this pattern.",
-      "evidence": "cross_encoder_rerank.rs uses #[async_trait] pub trait CrossEncoderReranker. Skill review found workers not following async_trait pattern.",
-      "isSystemic": true
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Add convention for RecallService/MemoryEntry correlation: RecallService operates on conversation_logs, not directly on memory entries. triple_stream tries to use recall for keyword search on memory but there's no linkage. Document that recall module has no field linking results to memory entry IDs.",
-      "evidence": "mem-triple-stream-retrieval review discovered RecallResult has session_id, task_id, agent_role, action, start_time, end_time but no memory_entry_id. This mismatch wasn't documented.",
+      "suggestion": "Document that some blocking issues are working-as-intended MVP placeholders. The BM25 UUID generation and recall-to-memory linking limitations are documented in code comments as 'placeholder' and 'In real implementation'. These are acceptable for MVP if flagged upfront.",
+      "evidence": "triple_stream.rs line 520 comment: 'Placeholder' and line 518: 'In real implementation, recall results would link to memory entries'. Reviewer flagged as blocking but this is documented MVP limitation.",
       "isSystemic": false
     },
     {
       "target": "features.json",
-      "suggestion": "Fix skillName values: memory-sqlite-store uses 'rust-worker' skill which doesn't exist. Should be 'rust'. This caused worker to fall back to default skill.",
-      "evidence": "features.json skillName='rust-worker' vs AGENTS.md skill table showing 'rust' skill exists.",
+      "suggestion": "Fix skillName 'rust-worker' → 'rust'. memory-sqlite-store uses non-existent skill 'rust-worker'.",
+      "evidence": "features.json skillName mismatch with AGENTS.md skill table.",
       "isSystemic": false
     }
   ],
   "rejectedObservations": [],
   "sharedStateObservations": [
     {
-      "featureId": "memory-pattern-learning",
-      "observation": "Working tree has modifications to pattern_learning.rs that may address the repository bug, but these are not committed. The committed code still has the bug at line 1087."
+      "featureId": "mem-triple-stream-retrieval",
+      "observation": "The BM25 UUID bug is a documented MVP placeholder, not an oversight. Code comment explicitly states 'In real implementation, recall results would link to memory entries'. This requires vector search integration to fix properly."
     },
     {
-      "featureId": "mem-provenance-tracking",
-      "observation": "Feature review showed search() doesn't filter by source_episode_id - same root cause as memory-sqlite-store blocking issue. get_by_provenance() works correctly but general search doesn't support provenance filtering."
+      "featureId": "mem-deprecation",
+      "observation": "MemoryEntry schema would need breaking changes (add confidence, deprecation_info, superseded_by fields) to integrate deprecation module. This is a design decision for orchestrator."
     },
     {
-      "featureId": "memory-skill-extraction",
-      "observation": "AGENTS.md says 'Never hardcode magic numbers - always load from .swell/settings.json', but no crates currently load settings.json."
+      "featureId": "mem-decay-function",
+      "observation": "Negative time edge case (future 'now' relative to 'last_reinforcement') is unlikely in practice but violates documented contract. Simple fix: clamp days_elapsed to 0.0 minimum."
     }
   ],
   "commonBugAcrossFeatures": {
-    "description": "memory-pattern-learning and mem-scoping share the same bug: pattern_learning.rs creates MemoryEntry with repository: String::new() instead of self.repository.clone(). mem-scoping is now fixed (commit 024eda6) but memory-pattern-learning still has bug in committed code.",
-    "affectedFeatures": ["memory-pattern-learning", "mem-scoping"],
-    "fixLocation": "crates/swell-memory/src/pattern_learning.rs line 1085-1087"
+    "description": "memory-pattern-learning FIXED. Remaining issues are independent or documented limitations.",
+    "affectedFeatures": [],
+    "fixLocation": null
   },
-  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json (round 1)"
+  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json (round 2)"
 }
