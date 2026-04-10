@@ -15,6 +15,7 @@ pub mod autonomy;
 pub mod backlog;
 pub mod drift_detector;
 pub mod execution;
+pub mod metrics;
 pub mod policy;
 pub mod scheduler;
 pub mod state_machine;
@@ -46,6 +47,11 @@ pub use scheduler::{
 };
 pub use state_machine::TaskStateMachine;
 pub use task_graph::TaskGraph;
+pub use metrics::{
+    AggregatedMetrics, AlertSeverity, AlertThresholds, AlertType, MetricsAlert, MetricsCollector,
+    MetricsWindow, MetricSample, OrchestratorMetrics, SharedMetricsCollector,
+    create_metrics_collector, create_metrics_collector_with_thresholds,
+};
 
 use std::sync::Arc;
 use swell_core::{AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult};
