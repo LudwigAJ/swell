@@ -6,6 +6,7 @@
 //! - Built-in tools: file I/O, git, shell execution
 //! - MCP client for external tool servers
 //! - [`WorktreePool`] - git worktree pool for agent isolation
+//! - [`WorktreeIsolation`] - per-worktree environment isolation with separate PATH, env vars
 //! - [`CommitStrategy`] - atomic commits with metadata trailers
 //! - [`PrCreator`] - PR creation with metadata, evidence, and labels
 
@@ -19,6 +20,7 @@ pub mod os_sandbox;
 pub mod pr_creation;
 pub mod registry;
 pub mod tools;
+pub mod worktree_isolation;
 pub mod worktree_pool;
 
 pub use branch_strategy::{
@@ -45,6 +47,7 @@ pub use pr_creation::{
     EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
 };
 pub use registry::{ToolRegistration, ToolRegistry};
+pub use worktree_isolation::{WorktreeIsolation, WorktreeIsolationConfig};
 pub use worktree_pool::{WorktreeAllocation, WorktreePool, WorktreePoolConfig};
 
 #[cfg(test)]
