@@ -13,6 +13,7 @@
 pub mod branch_strategy;
 pub mod commit_strategy;
 pub mod conflict_resolution;
+pub mod credential_proxy;
 pub mod executor;
 pub mod hybrid;
 pub mod mcp;
@@ -32,6 +33,10 @@ pub use commit_strategy::{
 pub use conflict_resolution::{
     ConflictDetectionResult, ConflictHunk, ConflictInfo, ConflictResolutionError, ConflictResolver,
     ConflictResolverConfig, FileOwner, ResolutionResult, ResolutionStrategy,
+};
+pub use credential_proxy::{
+    AccessToken, Credential, CredentialProxy, CredentialProxyError, CredentialProvider,
+    CredentialScope, EnvCredentialProvider,
 };
 pub use executor::ToolExecutor;
 pub use hybrid::{
