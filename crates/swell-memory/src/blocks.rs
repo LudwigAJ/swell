@@ -215,6 +215,8 @@ pub fn create_project_block(
         repository: repository.to_string(),
         language: None,
         task_type: None,
+        last_reinforcement: Some(now),
+        is_stale: false,
     }
 }
 
@@ -236,6 +238,8 @@ pub fn create_user_block(user_id: &str, preferences: &str) -> MemoryEntry {
         repository: String::new(), // User blocks are not scoped to repository
         language: None,
         task_type: None,
+        last_reinforcement: Some(now),
+        is_stale: false,
     }
 }
 
@@ -257,6 +261,8 @@ pub fn create_task_block(task_id: Uuid, context: &str) -> MemoryEntry {
         repository: String::new(), // Task blocks are not scoped to repository
         language: None,
         task_type: None,
+        last_reinforcement: Some(now),
+        is_stale: false,
     }
 }
 

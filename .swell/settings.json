@@ -41,6 +41,8 @@
     "rule_promotion_confidence": 0.8,
     "deprecation_confidence": 0.3,
     "similarity_distance_threshold": 0.15,
+    "staleness_window_days": 30,
+    "reinforcement_update_interval_days": 7,
     "decay": {
       "procedural_slow": true,
       "environmental_medium": true,

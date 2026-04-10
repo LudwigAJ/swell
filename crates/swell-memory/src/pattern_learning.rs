@@ -1085,6 +1085,8 @@ impl PatternLearningService {
                 repository: String::new(),
                 language: None,
                 task_type: None,
+                last_reinforcement: Some(chrono::Utc::now()),
+                is_stale: false,
             };
             self.store.store(entry).await?;
             _updated_count = 1;

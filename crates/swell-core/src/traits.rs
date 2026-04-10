@@ -208,6 +208,13 @@ pub struct MemoryEntry {
     pub language: Option<String>,
     /// Optional task type filter (e.g., "bugfix", "feature", "refactor")
     pub task_type: Option<String>,
+    /// Last time this memory was reinforced (accessed, used, or confirmed valid).
+    /// Used for staleness detection - memories not reinforced within the staleness
+    /// window are considered stale and excluded from retrieval.
+    pub last_reinforcement: Option<chrono::DateTime<chrono::Utc>>,
+    /// Whether this memory has been invalidated due to staleness.
+    /// Stale memories are excluded from retrieval results.
+    pub is_stale: bool,
 }
 
 /// Search query for memory

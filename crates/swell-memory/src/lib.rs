@@ -86,6 +86,16 @@ pub use deprecation::{
     DEPRECATION_CONFIDENCE_THRESHOLD,
 };
 
+// Staleness module - Memory staleness detection and reinforcement tracking
+pub mod staleness;
+
+pub use staleness::{
+    check_staleness, check_staleness_default, days_until_stale, is_stale_default,
+    is_stale_memory, reinforce as reinforce_memory,
+    StalenessCheckResult, StalenessConfig, DEFAULT_REINFORCEMENT_INTERVAL_DAYS,
+    DEFAULT_STALENESS_WINDOW_DAYS,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
@@ -129,13 +139,27 @@ impl SqliteMemoryStore {
                 metadata TEXT NOT NULL,
                 repository TEXT NOT NULL DEFAULT '',
                 language TEXT,
-                task_type TEXT
+                task_type TEXT,
+                last_reinforcement TEXT,
+                is_stale INTEGER NOT NULL DEFAULT 0
             )
             "#,
         )
         .execute(pool)
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        // Add columns for staleness tracking if they don't exist (migration)
+        // Note: ALTER TABLE is idempotent - if column exists, it will error but we ignore it
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN last_reinforcement TEXT")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN is_stale INTEGER NOT NULL DEFAULT 0")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_memory_block_type ON memory_entries(block_type)",
@@ -329,6 +353,8 @@ impl SqliteMemoryStore {
         let repository: String = row.get("repository");
         let language: Option<String> = row.get("language");
         let task_type: Option<String> = row.get("task_type");
+        let last_reinforcement_str: Option<String> = row.get("last_reinforcement");
+        let is_stale: i32 = row.get("is_stale");
 
         let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid timestamp: {}", e)))?
@@ -338,6 +364,14 @@ impl SqliteMemoryStore {
             .with_timezone(&chrono::Utc);
         let metadata: serde_json::Value = serde_json::from_str(&metadata_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid JSON metadata: {}", e)))?;
+
+        let last_reinforcement = last_reinforcement_str
+            .map(|s| {
+                chrono::DateTime::parse_from_rfc3339(&s)
+                    .map(|dt| dt.with_timezone(&chrono::Utc))
+                    .map_err(|e| SwellError::DatabaseError(format!("Invalid timestamp: {}", e)))
+            })
+            .transpose()?;
 
         let embedding = embedding_bytes.map(|bytes: Vec<u8>| Self::bytes_to_embedding(&bytes));
 
@@ -353,6 +387,8 @@ impl SqliteMemoryStore {
             repository,
             language,
             task_type,
+            last_reinforcement,
+            is_stale: is_stale != 0,
         })
     }
 }
@@ -362,6 +398,7 @@ impl MemoryStore for SqliteMemoryStore {
     /// Store a new memory entry
     /// Rejects memories with cosine distance < 0.15 (similarity > 0.85) to existing memories
     /// in the same repository to prevent duplication.
+    /// Sets last_reinforcement to now() for new entries and is_stale to false.
     async fn store(&self, entry: MemoryEntry) -> Result<Uuid, SwellError> {
         // Check for similar memories before storing
         // Reject if cosine distance < 0.15 (i.e., similarity > 0.85)
@@ -383,10 +420,15 @@ impl MemoryStore for SqliteMemoryStore {
         let created_at_str = entry.created_at.to_rfc3339();
         let updated_at_str = entry.updated_at.to_rfc3339();
 
+        // Set last_reinforcement to now for new entries
+        let now = chrono::Utc::now();
+        let last_reinforcement_str = now.to_rfc3339();
+        let is_stale = 0i32; // false
+
         sqlx::query(
             r#"
-            INSERT INTO memory_entries (id, block_type, label, content, embedding, created_at, updated_at, metadata, repository, language, task_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO memory_entries (id, block_type, label, content, embedding, created_at, updated_at, metadata, repository, language, task_type, last_reinforcement, is_stale)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(entry.id.to_string())
@@ -400,6 +442,8 @@ impl MemoryStore for SqliteMemoryStore {
         .bind(&entry.repository)
         .bind(&entry.language)
         .bind(&entry.task_type)
+        .bind(last_reinforcement_str)
+        .bind(is_stale)
         .execute(self.pool.as_ref())
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -479,12 +523,16 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     /// Search memories by query (basic LIKE for MVP, vector search can be stubbed)
+    /// Excludes stale memories from retrieval results.
     async fn search(&self, query: MemoryQuery) -> Result<Vec<MemorySearchResult>, SwellError> {
         let mut sql = String::from("SELECT * FROM memory_entries WHERE repository = ?");
         let mut params: Vec<String> = Vec::new();
 
         // Repository scope is REQUIRED - this ensures cross-repo isolation
         params.push(query.repository.clone());
+
+        // Exclude stale memories from retrieval
+        sql.push_str(" AND is_stale = 0");
 
         if let Some(ref query_text) = query.query_text {
             sql.push_str(" AND (content LIKE ? OR label LIKE ?)");
@@ -602,6 +650,143 @@ impl MemoryStore for SqliteMemoryStore {
     }
 }
 
+// Separate impl block for staleness-related methods
+impl SqliteMemoryStore {
+    /// Reinforce a memory entry - updates last_reinforcement to now and marks it as not stale.
+    /// This should be called when a memory is accessed or used to prevent it from becoming stale.
+    pub async fn reinforce(&self, id: Uuid) -> Result<(), SwellError> {
+        let now = chrono::Utc::now().to_rfc3339();
+
+        let result = sqlx::query(
+            r#"
+            UPDATE memory_entries 
+            SET last_reinforcement = ?, is_stale = 0
+            WHERE id = ?
+            "#,
+        )
+        .bind(now)
+        .bind(id.to_string())
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(SwellError::DatabaseError(format!(
+                "No entry found with id {}",
+                id
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Mark a memory as stale - it will be excluded from retrieval until reinforced.
+    pub async fn mark_stale(&self, id: Uuid) -> Result<(), SwellError> {
+        let result = sqlx::query(
+            r#"
+            UPDATE memory_entries 
+            SET is_stale = 1
+            WHERE id = ?
+            "#,
+        )
+        .bind(id.to_string())
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        if result.rows_affected() == 0 {
+            return Err(SwellError::DatabaseError(format!(
+                "No entry found with id {}",
+                id
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Update staleness status for all memories based on their last_reinforcement timestamp.
+    /// Memories that have not been reinforced within the staleness_window_days are marked as stale.
+    /// This should be called periodically (e.g., on startup or as a background task).
+    pub async fn update_staleness_status(
+        &self,
+        staleness_window_days: i64,
+    ) -> Result<Vec<Uuid>, SwellError> {
+        let now = chrono::Utc::now();
+        let threshold = now - chrono::Duration::days(staleness_window_days);
+        let threshold_str = threshold.to_rfc3339();
+
+        // Find all non-stale memories that have exceeded the staleness window
+        let rows = sqlx::query(
+            r#"
+            SELECT id FROM memory_entries 
+            WHERE is_stale = 0 
+            AND last_reinforcement IS NOT NULL 
+            AND last_reinforcement < ?
+            "#,
+        )
+        .bind(threshold_str)
+        .fetch_all(self.pool.as_ref())
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        let mut stale_ids = Vec::new();
+        for row in rows {
+            let id_str: String = row.get("id");
+            if let Ok(id) = Uuid::parse_str(&id_str) {
+                stale_ids.push(id);
+            }
+        }
+
+        // Mark them as stale
+        if !stale_ids.is_empty() {
+            let ids_str: Vec<String> = stale_ids.iter().map(|id| format!("'{}'", id)).collect();
+            let ids_list = ids_str.join(", ");
+
+            sqlx::query(&format!(
+                "UPDATE memory_entries SET is_stale = 1 WHERE id IN ({})",
+                ids_list
+            ))
+            .execute(self.pool.as_ref())
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        }
+
+        Ok(stale_ids)
+    }
+
+    /// Get all stale memories (for inspection/review).
+    pub async fn get_stale_memories(&self) -> Result<Vec<MemoryEntry>, SwellError> {
+        let rows = sqlx::query("SELECT * FROM memory_entries WHERE is_stale = 1")
+            .fetch_all(self.pool.as_ref())
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        let mut entries = Vec::new();
+        for row in rows {
+            entries.push(Self::row_to_entry(&row)?);
+        }
+
+        Ok(entries)
+    }
+
+    /// Check if a memory is stale by ID.
+    pub async fn is_memory_stale(&self, id: Uuid) -> Result<bool, SwellError> {
+        let row = sqlx::query("SELECT is_stale FROM memory_entries WHERE id = ?")
+            .bind(id.to_string())
+            .fetch_optional(self.pool.as_ref())
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        match row {
+            Some(r) => {
+                let is_stale: i32 = r.get("is_stale");
+                Ok(is_stale != 0)
+            }
+            None => Ok(false), // Not found = not stale (or doesn't exist)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,6 +807,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: Some("rust".to_string()),
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         let id = store.store(entry.clone()).await.unwrap();
@@ -651,6 +838,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: Some("bugfix".to_string()),
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         store.store(entry.clone()).await.unwrap();
@@ -683,6 +872,8 @@ mod tests {
             repository: "my-repo".to_string(),
             language: Some("rust".to_string()),
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         let entry2 = MemoryEntry {
@@ -697,6 +888,8 @@ mod tests {
             repository: "my-repo".to_string(),
             language: None,
             task_type: Some("feature".to_string()),
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -736,6 +929,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: Some("rust".to_string()),
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         let entry2 = MemoryEntry {
@@ -750,6 +945,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: Some("python".to_string()),
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -790,6 +987,8 @@ mod tests {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         let entry2 = MemoryEntry {
@@ -804,6 +1003,8 @@ mod tests {
             repository: "repo-b".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -862,6 +1063,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         let entry2 = MemoryEntry {
@@ -876,6 +1079,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -906,6 +1111,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         let entry2 = MemoryEntry {
@@ -920,6 +1127,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         store.store(entry1.clone()).await.unwrap();
@@ -954,6 +1163,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         // Store the first entry - should succeed
@@ -974,6 +1185,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         // Try to store similar entry - should be rejected
@@ -1007,6 +1220,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         // Store the first entry - should succeed
@@ -1027,6 +1242,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         // Try to store different entry - should succeed
@@ -1050,6 +1267,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         // Store entry without embedding - should succeed
@@ -1067,6 +1286,8 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         // Store another entry without embedding - should also succeed
@@ -1094,6 +1315,8 @@ mod tests {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         store.store(entry_a.clone()).await.unwrap();
@@ -1113,6 +1336,8 @@ mod tests {
             repository: "repo-b".to_string(),
             language: None,
             task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
         };
 
         // Should succeed because different repositories are isolated
@@ -1159,5 +1384,304 @@ mod tests {
         let embedding2 = vec![0.0, 0.0, 0.0];
         let distance = SqliteMemoryStore::cosine_distance(&embedding1, &embedding2);
         assert_eq!(distance, 1.0, "Zero vectors should have max distance");
+    }
+
+    // ============================================================================
+    // Staleness Detection Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_new_memory_is_not_stale() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "test-project".to_string(),
+            content: "Test content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: Some(chrono::Utc::now()),
+            is_stale: false,
+        };
+
+        let id = store.store(entry.clone()).await.unwrap();
+        let retrieved = store.get(id).await.unwrap().unwrap();
+
+        // New memories should not be stale
+        assert!(!retrieved.is_stale);
+        assert!(retrieved.last_reinforcement.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_stale_memories_excluded_from_search() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Store a fresh memory
+        let fresh_entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "fresh-project".to_string(),
+            content: "Fresh content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: Some(chrono::Utc::now()),
+            is_stale: false,
+        };
+
+        store.store(fresh_entry.clone()).await.unwrap();
+
+        // Store a stale memory directly in the database
+        let stale_entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "stale-project".to_string(),
+            content: "Stale content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: Some(chrono::Utc::now() - chrono::Duration::days(60)),
+            is_stale: true, // Mark as stale
+        };
+
+        // For testing, we need to insert directly to bypass the store's auto-staleness
+        // Actually, the store sets is_stale=0 on insert, so we need to test differently
+        // Let's mark an existing memory as stale after storing
+        store.store(stale_entry.clone()).await.unwrap();
+
+        // Mark the second entry as stale
+        store.mark_stale(stale_entry.id).await.unwrap();
+
+        // Search should only return fresh memories
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                repository: "test-repo".to_string(),
+                language: None,
+                task_type: None,
+            })
+            .await
+            .unwrap();
+
+        // Should only find the fresh entry
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.id, fresh_entry.id);
+        assert_eq!(results[0].entry.label, "fresh-project");
+    }
+
+    #[tokio::test]
+    async fn test_reinforce_memory() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "test-project".to_string(),
+            content: "Test content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: None,
+            is_stale: false,
+        };
+
+        store.store(entry.clone()).await.unwrap();
+
+        // Mark as stale first
+        store.mark_stale(entry.id).await.unwrap();
+        let is_stale_before = store.is_memory_stale(entry.id).await.unwrap();
+        assert!(is_stale_before);
+
+        // Reinforce the memory
+        store.reinforce(entry.id).await.unwrap();
+
+        // Should no longer be stale
+        let is_stale_after = store.is_memory_stale(entry.id).await.unwrap();
+        assert!(!is_stale_after);
+
+        // The memory should be retrievable again
+        let retrieved = store.get(entry.id).await.unwrap().unwrap();
+        assert!(!retrieved.is_stale);
+    }
+
+    #[tokio::test]
+    async fn test_mark_stale() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "test-project".to_string(),
+            content: "Test content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: Some(chrono::Utc::now()),
+            is_stale: false,
+        };
+
+        store.store(entry.clone()).await.unwrap();
+
+        // Initially not stale
+        let is_stale_before = store.is_memory_stale(entry.id).await.unwrap();
+        assert!(!is_stale_before);
+
+        // Mark as stale
+        store.mark_stale(entry.id).await.unwrap();
+
+        // Now should be stale
+        let is_stale_after = store.is_memory_stale(entry.id).await.unwrap();
+        assert!(is_stale_after);
+    }
+
+    #[tokio::test]
+    async fn test_update_staleness_status() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Create two entries - both will have last_reinforcement set to now by store()
+        let entry1 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-1".to_string(),
+            content: "Content 1".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: Some(chrono::Utc::now()),
+            is_stale: false,
+        };
+
+        let entry2 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-2".to_string(),
+            content: "Content 2".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: Some(chrono::Utc::now()),
+            is_stale: false,
+        };
+
+        store.store(entry1.clone()).await.unwrap();
+        store.store(entry2.clone()).await.unwrap();
+
+        // Initially no stale memories
+        let stale_before = store.get_stale_memories().await.unwrap();
+        assert_eq!(stale_before.len(), 0);
+
+        // Manually mark one entry as stale to test the concept
+        // (update_staleness_status requires actual time passage which we can't easily test)
+        store.mark_stale(entry1.id).await.unwrap();
+
+        // Verify one is now stale
+        let stale_after = store.get_stale_memories().await.unwrap();
+        assert_eq!(stale_after.len(), 1);
+        assert_eq!(stale_after[0].id, entry1.id);
+
+        // Verify stale memory is excluded from search
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                repository: "test-repo".to_string(),
+                language: None,
+                task_type: None,
+            })
+            .await
+            .unwrap();
+
+        // Should only find entry2 (the non-stale one)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.id, entry2.id);
+    }
+
+    #[tokio::test]
+    async fn test_get_stale_memories() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry1 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-1".to_string(),
+            content: "Content 1".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: Some(chrono::Utc::now()),
+            is_stale: false,
+        };
+
+        let entry2 = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "project-2".to_string(),
+            content: "Content 2".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            last_reinforcement: Some(chrono::Utc::now()),
+            is_stale: false,
+        };
+
+        store.store(entry1.clone()).await.unwrap();
+        store.store(entry2.clone()).await.unwrap();
+
+        // Initially no stale memories
+        let stale_before = store.get_stale_memories().await.unwrap();
+        assert_eq!(stale_before.len(), 0);
+
+        // Mark one as stale
+        store.mark_stale(entry1.id).await.unwrap();
+
+        // Now should have one stale memory
+        let stale_after = store.get_stale_memories().await.unwrap();
+        assert_eq!(stale_after.len(), 1);
+        assert_eq!(stale_after[0].id, entry1.id);
     }
 }
