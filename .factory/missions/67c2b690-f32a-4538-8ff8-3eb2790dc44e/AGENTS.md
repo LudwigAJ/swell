@@ -1,5 +1,48 @@
 # SWELL MVP - Agent Guidance
 
+## Available Skills
+
+SWELL has two skill directories:
+- **`.factory/skills/`** - Core skills for agent operation
+- **`.swell/skills/`** - User-extensible skills following Agent Skills standard
+
+### Core Skills (`.factory/skills/`)
+
+| Skill | Description | When to Use |
+|-------|-------------|-------------|
+| **agent-access-control** | Tiered stranger access control for AI agents. Diplomatic deflection, owner approval flow, multi-tier access (owner/trusted/chat-only/blocked). | Contact permissions, unknown senders, approved contacts, stranger deflection on messaging platforms. |
+| **agent-audit-trail** | Append-only, hash-chained audit log. Records actions, tool calls, decisions with sha256 chain integrity. EU AI Act Article 12 compliance. | High-risk AI systems requiring automatic event recording, audit trail for agent actions. |
+| **agent-autonomy-kit** | Stop waiting for prompts. Keep working. Enables proactive task queues and continuous operation. | Transforming reactive agents into proactive ones, heartbeat-driven work loops, overnight automation. |
+| **agent-evaluation** | Testing and benchmarking LLM agents including behavioral testing, capability assessment, reliability metrics. | Agent testing, benchmark design, capability assessment, regression testing. |
+| **agent-team-orchestration** | Orchestrate multi-agent teams with defined roles, task lifecycles, handoff protocols, review workflows. | Teams of 2+ agents, task routing (inbox→spec→build→review→done), handoff protocols, review gates. |
+| **agentic-coding** | Ship production code through acceptance contracts, micro diffs, red green loops, deterministic handoff checkpoints. | Production features, risky refactors, bug fixes with reproducible failures, merge-ready code. |
+| **arc-security-audit** | Comprehensive security audit chaining scanner, differ, trust-verifier, health-monitor with prioritized findings. | Auditing full skill stack security, generating trust attestations, verifying binary integrity. |
+| **code** | Coding workflow with planning, implementation, verification, testing. | User requests code implementation, needs planning and verification guidance. |
+| **coding** | Coding style memory that adapts to preferences, conventions, patterns. Learns from explicit corrections. | Storing coding style preferences, naming conventions, formatting rules. |
+| **git** | Git commits, branches, rebases, merges, conflict resolution, history recovery, team workflows. | Any Git operation: repositories, branches, commits, merges, rebases, PRs. |
+| **proactive-agent** | Transform agents from task-followers into proactive partners. WAL Protocol, Working Buffer, Compaction Recovery, autonomous crons. | Building agents that act without being asked, survive context loss, or improve over time. |
+| **prompt-engineering-expert** | Advanced prompt engineering, custom instructions design, prompt optimization. | Writing/refining prompts, designing agent system instructions, optimizing for consistency. |
+| **rust** | Write idiomatic Rust avoiding ownership pitfalls, lifetime confusion, borrow checker battles. | Writing Rust code, debugging ownership/borrowing errors. |
+| **rust-code-review** | Reviews Rust code for ownership, borrowing, lifetime, error handling, trait design, unsafe usage. | Reviewing .rs files, checking borrow checker issues, validating error handling. |
+| **rust-patterns** | Production Rust patterns: async Tokio, Axum, SQLx, error handling, CLI tools, WASM, PyO3. | Building production Rust systems—web servers, async services, database access, CLI tools. |
+| **rust-testing-code-review** | Reviews Rust test code for unit tests, integration tests, async testing, mocking, property-based testing. | Reviewing _test.rs files, #[cfg(test)] modules, test infrastructure. |
+| **self-improving** | Self-reflection + self-criticism + self-learning. Evaluates own work, catches mistakes, improves permanently. | When commands fail, user corrects you, knowledge is outdated, or better approach discovered. |
+| **skill-guard** | Scan ClawHub skills for security vulnerabilities before installing. Detects prompt injections, malware, secrets. | Before installing any new skill from ClawHub or external sources. |
+| **task-development-workflow** | TDD-first workflow with structured planning, task tracking, PR-based code review. | Software requiring clarification phases, planning approval gates, Trello, TDD, PR feedback loops. |
+| **ui-ux-pro-max** | UI/UX design intelligence and implementation guidance for polished interfaces. | UI design, UX flows, design systems, component specs, frontend UI generation. |
+| **website** | Build fast, accessible, SEO-friendly websites with modern best practices. | Creating/auditing websites for performance, accessibility, mobile, SEO. |
+
+### SWELL Skills (`.swell/skills/` - User Extensible)
+
+These follow the Agent Skills standard with YAML frontmatter and progressive disclosure.
+
+| Skill | Description | When to Use |
+|-------|-------------|-------------|
+| **rust-coding** | Write idiomatic Rust following best practices. Ownership, lifetimes, error handling, async Tokio. | Implementing Rust features, fixing bugs, working with ownership/lifetimes. Keywords: rust, cargo, async, tokio, ownership |
+| **test-writing** | Write comprehensive tests for Rust code. Unit tests, mocking, async tests, property-based. | Adding tests, improving coverage, fixing failing tests. Keywords: test, mock, unit test, integration test |
+| **code-review** | Review Rust code for correctness, style, performance, security. Clippy, ownership checks. | Reviewing PRs, pre-commit checks, security review. Keywords: review, clippy, lint, security |
+| **refactoring** | Refactor Rust code while preserving behavior. Martin Fowler patterns, strangler fig. | Improving code structure, extracting functions, reducing duplication. Keywords: refactor, extract, builder |
+
 ## Mission Overview
 
 This mission implements the core orchestration loop for SWELL - an autonomous coding engine in Rust. The goal is a working daemon + CLI that can accept tasks, plan them, generate code, and validate output.
