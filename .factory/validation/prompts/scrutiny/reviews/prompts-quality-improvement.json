@@ -1,0 +1,21 @@
+{
+  "featureId": "prompts-quality-improvement",
+  "reviewedAt": "2026-04-10T10:30:00Z",
+  "commitId": "9e9808a",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature implementation fully meets all expected behaviors from features.json. All agent prompts in agents.rs have been refactored following prompt-engineering-expert skill principles: (1) XML-wrapped sections (<role>, <task>, <context>, <constraints>, <output_format>) present in all 9 agent role prompts, (2) few-shot examples added to PlannerAgent (3 examples, lines 393-458), GeneratorAgent (3 ReAct examples, lines 895-910), and EvaluatorAgent (3 validation examples, lines 2385-2406), (3) chain-of-thought requests 'Think step-by-step before output' present in all prompts (lines 369, 860, 2253, 2300, 2350, 2428, 2468, 2514, 2563, 2600), (4) anti-patterns constraints 'Do NOT: hallucinate, assume file contents, skip validation, leave TODOs' present in all prompts (lines 379, 884, 2264, 2323, 2372, 2436, 2476, 2523, 2572, 2608), (5) problem framing with clarification questions in PlannerAgent (line 2255: 'If requirements are ambiguous, ask clarification questions'), (6) TDD enforcement in GeneratorAgent (lines 891-892, 2330-2331: 'write test -> verify fail -> implement -> verify pass -> commit'), (7) structured handoffs in SystemPromptBuilder (lines 2210-2218), (8) explicit success criteria in PlannerAgent output_format (lines 476, 489-492), (9) context condensation trigger at 75% token utilization in SystemPromptBuilder (lines 2218-2228). Build passes and tests pass.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The feature description references prompt-engineering-expert, agentic-coding, task-development-workflow, and agent-team-orchestration skills, but the worker used the 'Rust' skill (as specified in features.json skillName field). The implementation correctly applied prompt-engineering-expert principles, but this disconnect between feature description and actual skill used could cause confusion if someone references the feature description to understand which skills apply to prompt engineering work.",
+      "evidence": "features.json has skillName='Rust' for this feature, but description mentions 'prompt-engineering-expert skill principles'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes review. All 9 expected behaviors are implemented correctly: XML-wrapped sections, few-shot examples, chain-of-thought requests, anti-patterns constraints, problem framing in PlannerAgent (clarification questions), TDD enforcement in GeneratorAgent, structured handoffs, explicit success criteria, and context condensation at 75%. Build passes with clippy no warnings. The only observation is a minor disconnect between feature description (which mentions multiple skills including prompt-engineering-expert) and the actual skill used (Rust as per features.json)."
+}

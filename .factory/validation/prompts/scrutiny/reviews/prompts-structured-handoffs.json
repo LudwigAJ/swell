@@ -1,0 +1,34 @@
+{
+  "featureId": "prompts-structured-handoffs",
+  "reviewedAt": "2026-04-10T05:45:00Z",
+  "commitId": "c77e39a8656bb3620a9d7479ad8c2e190f48d713",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation follows agent-team-orchestration skill. Created AgentHandoff and AgentComment types with required fields (what_was_done, artifacts, verification, known_issues, whats_next) and comment types (Start, Blocker, Handoff, Completion). PlannerAgent and GeneratorAgent produce proper structured handoffs. EvaluatorAgent produces handoff only in non-stub mode.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 1970,
+        "severity": "non_blocking",
+        "description": "EvaluatorAgent in stub mode (validation_pipeline.is_none()) returns early WITHOUT including the structured handoff in output. The handoff is only added in the full validation path (~line 2104). Test acknowledges this at line 7305: '// In stub mode, output is plain EvaluationResult JSON // The handoff is only included in full validation mode'. The expected behavior states 'EvaluatorAgent produces completion handoff summary' but this only happens in non-stub mode."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 6594,
+        "severity": "non_blocking",
+        "description": "Clippy warning: comparison is useless due to type limits. `assert!(review.score >= 0)` where score is f64 - comparison with 0 is always true."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature implementation introduces structured handoffs and agent comments as a new pattern, but AGENTS.md does not document this protocol. The architecture.md in .factory/library/ also doesn't mention handoffs.",
+      "evidence": "AGENTS.md defines agent types (planner, generator, evaluator) but doesn't specify the handoff format or comment types. Worker correctly followed agent-team-orchestration skill which defines handoff structure."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. Implementation correctly follows agent-team-orchestration skill with AgentHandoff struct (what_was_done, artifacts, verification, known_issues, whats_next) and AgentComment types (Start/Blocker/Handoff/Completion). PlannerAgent and GeneratorAgent produce proper structured handoffs. Non-blocking issue: EvaluatorAgent only produces handoff in non-stub mode; stub mode returns early with plain EvaluationResult. Minor clippy warning on line 6594. Documentation gap: AGENTS.md and architecture.md don't document the new handoff protocol."
+}
