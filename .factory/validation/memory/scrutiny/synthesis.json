@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 2,
+  "round": 3,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -20,8 +20,8 @@
     }
   },
   "reviewsSummary": {
-    "total": 5,
-    "passed": 3,
+    "total": 2,
+    "passed": 0,
     "failed": 2,
     "failedFeatures": [
       "memory-skill-extraction",
@@ -42,17 +42,17 @@
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (`frequency_map.values().sum()`) as denominator instead of per-pattern frequency. Still NOT FIXED from round 1."
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (`frequency_map.values().sum()`) as denominator instead of per-pattern frequency. NOT FIXED from round 1."
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. Still NOT FIXED from round 1."
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. NOT FIXED from round 1."
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1169: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. Still NOT FIXED from round 1."
+      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. NOT FIXED from round 1."
     }
   ],
   "appliedUpdates": [],
@@ -60,7 +60,7 @@
     {
       "target": "AGENTS.md",
       "suggestion": "Clarify the skill store path convention: skill extraction outputs to `.skills/` but AGENTS.md documents `.swell/skills/` as the user-extensible skill directory. Either (a) update skill_extraction.rs to use `.swell/skills/` as the default store path, or (b) update AGENTS.md to document both locations with different purposes.",
-      "evidence": "memory-skill-extraction stores to `.skills/` (line 107) but AGENTS.md line ~210 states 'Users can add new skills to .swell/skills/ - no code changes needed. SWELL discovers skills at startup.'",
+      "evidence": "memory-skill-extraction stores to `.skills/` (line 125) but AGENTS.md line ~210 states 'Users can add new skills to .swell/skills/ - no code changes needed. SWELL discovers skills at startup.'",
       "isSystemic": false
     },
     {
@@ -68,8 +68,14 @@
       "suggestion": "Document the skills directory structure more explicitly. The memory-skill-extraction feature extracts skills to `.skills/` but the existing skill discovery reads from `.swell/skills/`. There's a disconnect between skill extraction and skill discovery.",
       "evidence": "memory-skill-extraction review found skills stored in `.skills/` but discovery mechanism expects `.swell/skills/`. Workers are confused about which location to use.",
       "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "The memory-pattern-learning feature has three bugs that have persisted through multiple rounds: (1) confidence calculation uses wrong denominator, (2) convention parsing uses wrong string slice index, (3) anti-pattern retrieval is unimplemented stub. These need explicit fixes.",
+      "evidence": "All 3 issues marked 'NOT FIXED from round 1' in reviews. pattern_learning.rs lines 955, 1145, 1173 still contain the bugs.",
+      "isSystemic": false
     }
   ],
   "rejectedObservations": [],
-  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json"
+  "previousRound": "c782d0d"
 }
