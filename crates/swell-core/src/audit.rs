@@ -21,7 +21,8 @@ use crate::TaskState;
 /// Audit log file name
 const AUDIT_FILE: &str = "audit/swell-actions.ndjson";
 /// Genesis hash for the first entry
-pub const GENESIS_HASH: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+pub const GENESIS_HASH: &str =
+    "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
 /// Event kinds that can be recorded in the audit log
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,8 +118,7 @@ impl AuditEntry {
             hash: String::new(),
             ..self.clone()
         };
-        let raw = serde_json::to_string(&entry_without_hash)
-            .expect("audit entry should serialize");
+        let raw = serde_json::to_string(&entry_without_hash).expect("audit entry should serialize");
         let mut hasher = Sha256::new();
         hasher.update(raw.as_bytes());
         format!("sha256:{:x}", hasher.finalize())
@@ -261,7 +261,7 @@ impl AuditLog {
             target: target.to_string(),
             summary: format!("Tool {} called on {}", actor, target),
             prev_hash: String::new(), // Will be set by append
-            hash: String::new(),       // Will be set by append
+            hash: String::new(),      // Will be set by append
             arguments: arguments.map(|v| v.to_string()),
             result: result.map(|v| v.to_string()),
             duration_ms: Some(duration_ms),
@@ -363,11 +363,7 @@ impl AuditLog {
     }
 
     /// Log a session start event.
-    pub fn log_session_start(
-        &mut self,
-        actor: &str,
-        provenance: &str,
-    ) -> io::Result<AuditEntry> {
+    pub fn log_session_start(&mut self, actor: &str, provenance: &str) -> io::Result<AuditEntry> {
         let entry = AuditEntry {
             ts: Utc::now().to_rfc3339(),
             kind: AuditEventKind::SessionStart,
@@ -391,11 +387,7 @@ impl AuditLog {
     }
 
     /// Log a session end event.
-    pub fn log_session_end(
-        &mut self,
-        actor: &str,
-        provenance: &str,
-    ) -> io::Result<AuditEntry> {
+    pub fn log_session_end(&mut self, actor: &str, provenance: &str) -> io::Result<AuditEntry> {
         let entry = AuditEntry {
             ts: Utc::now().to_rfc3339(),
             kind: AuditEventKind::SessionEnd,
@@ -487,10 +479,7 @@ impl AuditLog {
                     entries_verified,
                     error: Some(format!(
                         "PREV_HASH MISMATCH at entry {} (ord={}): expected {}, got {}",
-                        i,
-                        entry.ord,
-                        prev_hash,
-                        entry.prev_hash
+                        i, entry.ord, prev_hash, entry.prev_hash
                     )),
                     broken_at: Some(i as u64),
                 };
@@ -522,10 +511,7 @@ impl AuditLog {
                     entries_verified,
                     error: Some(format!(
                         "HASH MISMATCH at entry {} (ord={}): expected {}, got {}",
-                        i,
-                        entry.ord,
-                        computed_hash,
-                        entry.hash
+                        i, entry.ord, computed_hash, entry.hash
                     )),
                     broken_at: Some(i as u64),
                 };

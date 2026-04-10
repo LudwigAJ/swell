@@ -6,19 +6,11 @@ pub mod events;
 pub mod kill_switch;
 pub mod langfuse;
 pub mod opentelemetry;
-pub mod tracing_json;
 pub mod trace_waterfall;
+pub mod tracing_json;
 pub mod traits;
 pub mod types;
 
-pub use events::{
-    AgentSessionId, CrossTaskCorrelationId, EventStore, ObservableEvent, Outcome, RequestId,
-    SpanId, ToolInvocation, TraceId,
-};
-pub use trace_waterfall::{
-    SpanAttribute, SpanAttributeValue, SpanKind, ToTraceSpan, ToolSpanDetails, TraceSpan,
-    TraceSummary, TraceWaterfall, TraceWaterfallBuilder,
-};
 pub use audit::{
     verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,
     ChainVerificationResult, GENESIS_HASH,
@@ -28,9 +20,17 @@ pub use cost_tracking::{
     CostTrackerError, ModelBreakdown, ModelCostInfo,
 };
 pub use error::SwellError;
+pub use events::{
+    AgentSessionId, CrossTaskCorrelationId, EventStore, ObservableEvent, Outcome, RequestId,
+    SpanId, ToolInvocation, TraceId,
+};
 pub use kill_switch::{
     EnvVarVerifier, FileVerifier, KillLevel, KillSwitchError, KillSwitchGuard, KillSwitchState,
     KillSwitchVerifier, ScopeBlock, ThrottleConfig,
+};
+pub use trace_waterfall::{
+    SpanAttribute, SpanAttributeValue, SpanKind, ToTraceSpan, ToolSpanDetails, TraceSpan,
+    TraceSummary, TraceWaterfall, TraceWaterfallBuilder,
 };
 pub use types::*;
 // Explicitly re-export traits to avoid ambiguity with types::Agent and types::Tool

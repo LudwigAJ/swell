@@ -1,6 +1,28 @@
 {
   "features": [
     {
+      "id": "fix-prompts-multi-run-validation",
+      "description": "Fix blocking issues in prompts-multi-run-validation: (1) FlakinessDetector.record() is never called - integrate into validation workflow; (2) gate_flaffiness_rates only tracks 'all'/'failed' keys - use actual gate names like LintGate, TestGate; (3) Behavioral invariant satisfied unconditionally - actually verify confidence data.",
+      "skillName": "Rust",
+      "preconditions": [
+        "prompts-multi-run-validation complete"
+      ],
+      "expectedBehavior": [
+        "FlakinessDetector.record() called after each validation run with gate name and pass/fail result",
+        "gate_flaffiness_rates uses actual gate names (LintGate, TestGate, SecurityGate, AiReviewGate)",
+        "Behavioral invariant actually verifies MultiRunValidationResult contains valid confidence data",
+        "Fix typo 'gate_flaffiness_rates' -> 'gate_flakiness_rates'"
+      ],
+      "verificationSteps": [
+        "cargo build --workspace",
+        "cargo test -p swell-orchestrator -- multi_run"
+      ],
+      "fulfills": [],
+      "milestone": "prompts",
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
       "id": "agent-skills-loader",
       "description": "Implement Agent Skills loader following agentskills.io standard. Skills are directories with SKILL.md containing YAML frontmatter (name, description) plus optional scripts/, references/, assets/ directories. This enables model-driven skill discovery and activation.",
       "skillName": "Rust",

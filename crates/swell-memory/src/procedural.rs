@@ -99,6 +99,17 @@ impl Procedure {
     pub fn confidence_score(&self) -> f64 {
         self.effectiveness.confidence_score()
     }
+
+    /// Get the confidence level based on expected success rate
+    ///
+    /// Thresholds:
+    /// - <0.3: deprecated
+    /// - 0.3-0.6: uncertain
+    /// - 0.6-0.8: probable
+    /// - >0.8: confident
+    pub fn confidence_level(&self) -> ConfidenceLevel {
+        self.effectiveness.confidence_level()
+    }
 }
 
 /// A single step within a procedure
@@ -108,6 +119,103 @@ pub struct ProcedureStep {
     pub description: String,
     pub tool_sequence: Vec<String>,
     pub validation_check: Option<String>,
+}
+
+/// Confidence level based on expected probability thresholds
+///
+/// Thresholds:
+/// - <0.3: deprecated (low confidence, should not be used)
+/// - 0.3-0.6: uncertain (needs more evidence)
+/// - 0.6-0.8: probable (likely effective)
+/// - >0.8: confident (highly reliable)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ConfidenceLevel {
+    /// Confidence < 0.3 - deprecated, should not be used
+    Deprecated,
+    /// Confidence 0.3-0.6 - uncertain, needs more evidence
+    Uncertain,
+    /// Confidence 0.6-0.8 - probable, likely effective
+    Probable,
+    /// Confidence > 0.8 - confident, highly reliable
+    Confident,
+}
+
+impl ConfidenceLevel {
+    /// Threshold for uncertain zone (lower bound)
+    pub const UNCERTAIN_THRESHOLD: f64 = 0.3;
+    /// Threshold for probable zone (lower bound)
+    pub const PROBABLE_THRESHOLD: f64 = 0.6;
+    /// Threshold for confident zone (lower bound)
+    pub const CONFIDENT_THRESHOLD: f64 = 0.8;
+
+    /// Get the confidence level from a probability value
+    pub fn from_probability(probability: f64) -> Self {
+        if probability < Self::UNCERTAIN_THRESHOLD {
+            ConfidenceLevel::Deprecated
+        } else if probability < Self::PROBABLE_THRESHOLD {
+            ConfidenceLevel::Uncertain
+        } else if probability < Self::CONFIDENT_THRESHOLD {
+            ConfidenceLevel::Probable
+        } else {
+            ConfidenceLevel::Confident
+        }
+    }
+
+    /// Get the minimum probability for this confidence level
+    pub fn min_probability(&self) -> f64 {
+        match self {
+            ConfidenceLevel::Deprecated => 0.0,
+            ConfidenceLevel::Uncertain => Self::UNCERTAIN_THRESHOLD,
+            ConfidenceLevel::Probable => Self::PROBABLE_THRESHOLD,
+            ConfidenceLevel::Confident => Self::CONFIDENT_THRESHOLD,
+        }
+    }
+
+    /// Get the maximum probability for this confidence level
+    pub fn max_probability(&self) -> f64 {
+        match self {
+            ConfidenceLevel::Deprecated => Self::UNCERTAIN_THRESHOLD,
+            ConfidenceLevel::Uncertain => Self::PROBABLE_THRESHOLD,
+            ConfidenceLevel::Probable => Self::CONFIDENT_THRESHOLD,
+            ConfidenceLevel::Confident => 1.0,
+        }
+    }
+
+    /// Check if a probability meets the minimum threshold for this level
+    pub fn is_met_by(&self, probability: f64) -> bool {
+        match self {
+            ConfidenceLevel::Deprecated => probability < Self::UNCERTAIN_THRESHOLD,
+            ConfidenceLevel::Uncertain => {
+                (Self::UNCERTAIN_THRESHOLD..Self::PROBABLE_THRESHOLD).contains(&probability)
+            }
+            ConfidenceLevel::Probable => {
+                (Self::PROBABLE_THRESHOLD..Self::CONFIDENT_THRESHOLD).contains(&probability)
+            }
+            ConfidenceLevel::Confident => probability >= Self::CONFIDENT_THRESHOLD,
+        }
+    }
+
+    /// Human-readable description of the confidence level
+    pub fn description(&self) -> &'static str {
+        match self {
+            ConfidenceLevel::Deprecated => "deprecated (< 0.3) - should not be used",
+            ConfidenceLevel::Uncertain => "uncertain (0.3-0.6) - needs more evidence",
+            ConfidenceLevel::Probable => "probable (0.6-0.8) - likely effective",
+            ConfidenceLevel::Confident => "confident (> 0.8) - highly reliable",
+        }
+    }
+}
+
+impl std::fmt::Display for ConfidenceLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            ConfidenceLevel::Deprecated => "deprecated",
+            ConfidenceLevel::Uncertain => "uncertain",
+            ConfidenceLevel::Probable => "probable",
+            ConfidenceLevel::Confident => "confident",
+        };
+        write!(f, "{}", label)
+    }
 }
 
 /// Beta posterior distribution for tracking effectiveness
@@ -279,6 +387,29 @@ impl BetaPosterior {
                 1.0 - (self.alpha / (self.alpha + self.beta)).max(0.5)
             }
         }
+    }
+
+    /// Get the confidence level based on the expected probability
+    ///
+    /// Uses threshold zones:
+    /// - <0.3: deprecated
+    /// - 0.3-0.6: uncertain
+    /// - 0.6-0.8: probable
+    /// - >0.8: confident
+    pub fn confidence_level(&self) -> ConfidenceLevel {
+        ConfidenceLevel::from_probability(self.mean())
+    }
+
+    /// Check if this posterior has enough data for meaningful inference
+    ///
+    /// Returns true if total observations >= 4
+    pub fn has_sufficient_data(&self) -> bool {
+        self.alpha + self.beta >= 4.0
+    }
+
+    /// Get total number of observations
+    pub fn total_observations(&self) -> u32 {
+        self.successes + self.failures
     }
 }
 
@@ -1186,5 +1317,189 @@ mod tests {
 
         // Should be close to empirical rate
         assert!((empirical - posterior_mean).abs() < 0.1);
+    }
+
+    // =====================================================================
+    // Bayesian confidence level tests
+    // =====================================================================
+
+    #[test]
+    fn test_confidence_level_thresholds() {
+        // Test boundary at 0.3 - deprecated vs uncertain
+        assert_eq!(ConfidenceLevel::from_probability(0.0), ConfidenceLevel::Deprecated);
+        assert_eq!(ConfidenceLevel::from_probability(0.29), ConfidenceLevel::Deprecated);
+        assert_eq!(ConfidenceLevel::from_probability(0.3), ConfidenceLevel::Uncertain);
+        assert_eq!(ConfidenceLevel::from_probability(0.5), ConfidenceLevel::Uncertain);
+        assert_eq!(ConfidenceLevel::from_probability(0.59), ConfidenceLevel::Uncertain);
+
+        // Test boundary at 0.6 - uncertain vs probable
+        assert_eq!(ConfidenceLevel::from_probability(0.6), ConfidenceLevel::Probable);
+        assert_eq!(ConfidenceLevel::from_probability(0.7), ConfidenceLevel::Probable);
+        assert_eq!(ConfidenceLevel::from_probability(0.79), ConfidenceLevel::Probable);
+
+        // Test boundary at 0.8 - probable vs confident
+        assert_eq!(ConfidenceLevel::from_probability(0.8), ConfidenceLevel::Confident);
+        assert_eq!(ConfidenceLevel::from_probability(0.9), ConfidenceLevel::Confident);
+        assert_eq!(ConfidenceLevel::from_probability(1.0), ConfidenceLevel::Confident);
+    }
+
+    #[test]
+    fn test_confidence_level_description() {
+        assert!(ConfidenceLevel::Deprecated.description().contains("deprecated"));
+        assert!(ConfidenceLevel::Uncertain.description().contains("uncertain"));
+        assert!(ConfidenceLevel::Probable.description().contains("probable"));
+        assert!(ConfidenceLevel::Confident.description().contains("confident"));
+    }
+
+    #[test]
+    fn test_confidence_level_display() {
+        assert_eq!(format!("{}", ConfidenceLevel::Deprecated), "deprecated");
+        assert_eq!(format!("{}", ConfidenceLevel::Uncertain), "uncertain");
+        assert_eq!(format!("{}", ConfidenceLevel::Probable), "probable");
+        assert_eq!(format!("{}", ConfidenceLevel::Confident), "confident");
+    }
+
+    #[test]
+    fn test_confidence_level_min_max_probability() {
+        assert_eq!(ConfidenceLevel::Deprecated.min_probability(), 0.0);
+        assert_eq!(ConfidenceLevel::Deprecated.max_probability(), 0.3);
+
+        assert_eq!(ConfidenceLevel::Uncertain.min_probability(), 0.3);
+        assert_eq!(ConfidenceLevel::Uncertain.max_probability(), 0.6);
+
+        assert_eq!(ConfidenceLevel::Probable.min_probability(), 0.6);
+        assert_eq!(ConfidenceLevel::Probable.max_probability(), 0.8);
+
+        assert_eq!(ConfidenceLevel::Confident.min_probability(), 0.8);
+        assert_eq!(ConfidenceLevel::Confident.max_probability(), 1.0);
+    }
+
+    #[test]
+    fn test_confidence_level_is_met_by() {
+        // Deprecated
+        assert!(ConfidenceLevel::Deprecated.is_met_by(0.0));
+        assert!(ConfidenceLevel::Deprecated.is_met_by(0.29));
+        assert!(!ConfidenceLevel::Deprecated.is_met_by(0.3));
+
+        // Uncertain
+        assert!(ConfidenceLevel::Uncertain.is_met_by(0.3));
+        assert!(ConfidenceLevel::Uncertain.is_met_by(0.5));
+        assert!(!ConfidenceLevel::Uncertain.is_met_by(0.6));
+
+        // Probable
+        assert!(ConfidenceLevel::Probable.is_met_by(0.6));
+        assert!(ConfidenceLevel::Probable.is_met_by(0.7));
+        assert!(!ConfidenceLevel::Probable.is_met_by(0.8));
+
+        // Confident
+        assert!(ConfidenceLevel::Confident.is_met_by(0.8));
+        assert!(ConfidenceLevel::Confident.is_met_by(0.9));
+        assert!(ConfidenceLevel::Confident.is_met_by(1.0));
+    }
+
+    #[test]
+    fn test_beta_posterior_confidence_level() {
+        // Beta(1,1) uniform prior - mean = 0.5 = Uncertain
+        let bp = BetaPosterior::new(1.0, 1.0);
+        assert_eq!(bp.confidence_level(), ConfidenceLevel::Uncertain);
+
+        // After many successes: mean approaches 1.0 = Confident
+        let mut high_success = BetaPosterior::new(1.0, 1.0);
+        for _ in 0..100 {
+            high_success.update(true);
+        }
+        // With 100 successes and 0 failures: mean = 101/102 ≈ 0.99
+        assert_eq!(high_success.confidence_level(), ConfidenceLevel::Confident);
+
+        // After many failures: mean approaches 0 = Deprecated
+        let mut high_failure = BetaPosterior::new(1.0, 1.0);
+        for _ in 0..100 {
+            high_failure.update(false);
+        }
+        // With 0 successes and 100 failures: mean = 1/102 ≈ 0.01
+        assert_eq!(high_failure.confidence_level(), ConfidenceLevel::Deprecated);
+
+        // Mixed: 15 successes, 5 failures -> mean = 16/22 ≈ 0.727 = Probable
+        let mixed = BetaPosterior::from_observations(15, 5);
+        assert_eq!(mixed.confidence_level(), ConfidenceLevel::Probable);
+    }
+
+    #[test]
+    fn test_beta_posterior_confidence_level_zone_transitions() {
+        // Track transitions through confidence zones as observations accumulate
+        let mut bp = BetaPosterior::new(1.0, 1.0);
+
+        // Start: Beta(1,1) -> mean 0.5 = Uncertain
+        assert_eq!(bp.confidence_level(), ConfidenceLevel::Uncertain);
+
+        // Add successes to move toward Confident
+        // After 8 successes: Beta(9,1) -> mean = 9/10 = 0.9 = Confident
+        for _ in 0..8 {
+            bp.update(true);
+        }
+        assert_eq!(bp.confidence_level(), ConfidenceLevel::Confident);
+
+        // Add failures to move toward Deprecated
+        // After 10 total failures starting from Beta(9,1):
+        // 8 successes, 10 failures -> Beta(9, 11) -> mean = 9/20 = 0.45 = Uncertain
+        for _ in 0..10 {
+            bp.update(false);
+        }
+        assert_eq!(bp.confidence_level(), ConfidenceLevel::Uncertain);
+    }
+
+    #[test]
+    fn test_beta_posterior_has_sufficient_data() {
+        let mut bp = BetaPosterior::new(1.0, 1.0);
+        assert!(!bp.has_sufficient_data());
+
+        // Need at least 4 total observations (alpha + beta >= 4)
+        bp.update(true); // Beta(2,1) -> total = 3
+        assert!(!bp.has_sufficient_data());
+
+        bp.update(true); // Beta(3,1) -> total = 4
+        assert!(bp.has_sufficient_data());
+
+        bp.update(false); // Beta(3,2) -> total = 5
+        assert!(bp.has_sufficient_data());
+    }
+
+    #[test]
+    fn test_beta_posterior_total_observations() {
+        let bp = BetaPosterior::from_observations(7, 3);
+        assert_eq!(bp.total_observations(), 10);
+    }
+
+    #[test]
+    fn test_procedure_confidence_level() {
+        let mut procedure = Procedure::new(
+            "test".to_string(),
+            "desc".to_string(),
+            "context".to_string(),
+        );
+
+        // Initially uncertain (mean = 0.5)
+        assert_eq!(procedure.confidence_level(), ConfidenceLevel::Uncertain);
+
+        // After many successes -> confident
+        for _ in 0..50 {
+            procedure.record_outcome(true);
+        }
+        assert_eq!(procedure.confidence_level(), ConfidenceLevel::Confident);
+
+        // After failures -> drop to uncertain
+        for _ in 0..30 {
+            procedure.record_outcome(false);
+        }
+        // 50 successes, 30 failures: mean = 51/(51+31) = 51/82 ≈ 0.62 = Probable
+        assert_eq!(procedure.confidence_level(), ConfidenceLevel::Probable);
+    }
+
+    #[test]
+    fn test_confidence_level_serialization() {
+        let level = ConfidenceLevel::Probable;
+        let json = serde_json::to_string(&level).unwrap();
+        let deserialized: ConfidenceLevel = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, level);
     }
 }

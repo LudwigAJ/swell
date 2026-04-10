@@ -1,0 +1,15 @@
+{
+  "customModels": [
+    {
+      "model": "MiniMax-M2.7",
+      "id": "custom:MiniMax-M2.7-0",
+      "index": 0,
+      "baseUrl": "https://api.minimax.io/anthropic",
+      "apiKey": "sk-cp-ie_KBKAHRhp62sz0hg6zmb06f6luMqd0X5MhunonYHp3KX_SrL17-8WMJxFKfmrZonIXobb8HdiAT8ggDUrw7tIRyJnw7Pcx_uA60Eoi0kgk-DRzWLZ1XeY",
+      "displayName": "MiniMax-M2.7",
+      "maxOutputTokens": 64000,
+      "noImageSupport": false,
+      "provider": "anthropic"
+    }
+  ]
+}

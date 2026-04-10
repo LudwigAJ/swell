@@ -2733,6 +2733,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "swell-core",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

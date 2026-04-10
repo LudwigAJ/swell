@@ -345,13 +345,21 @@ impl Orchestrator {
     }
 
     /// Inject instructions into a task
-    pub async fn inject_instruction(&self, task_id: Uuid, instruction: String) -> Result<(), SwellError> {
+    pub async fn inject_instruction(
+        &self,
+        task_id: Uuid,
+        instruction: String,
+    ) -> Result<(), SwellError> {
         let mut sm = self.state_machine.write().await;
         sm.inject_instruction(task_id, instruction)
     }
 
     /// Modify task scope boundaries
-    pub async fn modify_scope(&self, task_id: Uuid, new_scope: swell_core::TaskScope) -> Result<(), SwellError> {
+    pub async fn modify_scope(
+        &self,
+        task_id: Uuid,
+        new_scope: swell_core::TaskScope,
+    ) -> Result<(), SwellError> {
         let mut sm = self.state_machine.write().await;
         sm.modify_scope(task_id, new_scope)
     }
@@ -363,7 +371,10 @@ impl Orchestrator {
     }
 
     /// Get injected instructions for a task
-    pub async fn get_injected_instructions(&self, task_id: Uuid) -> Result<Vec<String>, SwellError> {
+    pub async fn get_injected_instructions(
+        &self,
+        task_id: Uuid,
+    ) -> Result<Vec<String>, SwellError> {
         let sm = self.state_machine.read().await;
         let task = sm.get_task(task_id)?;
         Ok(task.injected_instructions.clone())

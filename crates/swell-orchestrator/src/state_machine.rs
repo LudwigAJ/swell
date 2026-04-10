@@ -208,7 +208,11 @@ impl TaskStateMachine {
     }
 
     /// Inject instructions into a task
-    pub fn inject_instruction(&mut self, id: uuid::Uuid, instruction: String) -> Result<(), SwellError> {
+    pub fn inject_instruction(
+        &mut self,
+        id: uuid::Uuid,
+        instruction: String,
+    ) -> Result<(), SwellError> {
         let task = self.get_task_mut(id)?;
         // Can inject into any active state
         match task.state {
@@ -231,7 +235,11 @@ impl TaskStateMachine {
     }
 
     /// Modify task scope boundaries
-    pub fn modify_scope(&mut self, id: uuid::Uuid, new_scope: swell_core::TaskScope) -> Result<(), SwellError> {
+    pub fn modify_scope(
+        &mut self,
+        id: uuid::Uuid,
+        new_scope: swell_core::TaskScope,
+    ) -> Result<(), SwellError> {
         let task = self.get_task_mut(id)?;
         // Store original scope if not already stored
         if task.original_scope.is_none() {

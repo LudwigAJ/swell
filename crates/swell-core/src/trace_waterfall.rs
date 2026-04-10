@@ -291,7 +291,9 @@ impl TraceWaterfallBuilder {
 
     /// Check if a tool name represents an LLM call
     fn is_llm_tool(tool_name: &str) -> bool {
-        tool_name.starts_with("llm_") || tool_name.contains("chat") || tool_name.contains("complete")
+        tool_name.starts_with("llm_")
+            || tool_name.contains("chat")
+            || tool_name.contains("complete")
     }
 
     /// Build a complete trace waterfall from accumulated events
@@ -334,10 +336,7 @@ impl TraceWaterfallBuilder {
         }
 
         // Find root span (one without parent)
-        let root_index = self
-            .spans
-            .iter()
-            .position(|s| s.parent_span_id.is_none())?;
+        let root_index = self.spans.iter().position(|s| s.parent_span_id.is_none())?;
 
         let mut root = self.spans.remove(root_index);
         root.end_time = root
@@ -379,11 +378,9 @@ impl TraceWaterfallBuilder {
 
         // Sort children by start time (ascending), then by span_id for consistent ordering
         // This ensures deterministic ordering when timestamps are equal
-        children.sort_by(|a, b| {
-            match a.start_time.cmp(&b.start_time) {
-                std::cmp::Ordering::Equal => a.span_id.as_str().cmp(b.span_id.as_str()),
-                other => other,
-            }
+        children.sort_by(|a, b| match a.start_time.cmp(&b.start_time) {
+            std::cmp::Ordering::Equal => a.span_id.as_str().cmp(b.span_id.as_str()),
+            other => other,
         });
 
         children
@@ -856,7 +853,7 @@ mod tests {
         assert_eq!(waterfall.summary.decision_count, 1); // file_write has error
         assert_eq!(waterfall.summary.total_tool_duration_ms, 300); // 100 + 200
         assert_eq!(waterfall.summary.total_llm_duration_ms, 300); // llm_complete duration
-        // Outcome should be Error since one span had an error
+                                                                  // Outcome should be Error since one span had an error
         assert_eq!(waterfall.summary.outcome, Outcome::Error);
     }
 

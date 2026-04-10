@@ -106,7 +106,9 @@ fn rand_u64() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
-    nanos.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)
+    nanos
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407)
 }
 
 impl std::fmt::Display for SpanId {
@@ -272,7 +274,12 @@ pub struct ToolInvocation {
 
 impl ToolInvocation {
     /// Create a new tool invocation record
-    pub fn new(tool_name: String, arguments: serde_json::Value, success: bool, duration_ms: u64) -> Self {
+    pub fn new(
+        tool_name: String,
+        arguments: serde_json::Value,
+        success: bool,
+        duration_ms: u64,
+    ) -> Self {
         Self {
             tool_name,
             arguments,
@@ -635,12 +642,8 @@ mod tests {
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        );
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
 
         assert_eq!(event.agent_id, agent_id);
         assert_eq!(event.session_id, session_id);
@@ -657,16 +660,15 @@ mod tests {
         let task_id = Uuid::new_v4();
         let parent_span_id = SpanId::generate();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        )
-        .with_parent_span(parent_span_id.clone());
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success)
+                .with_parent_span(parent_span_id.clone());
 
         assert!(event.parent_span_id.is_some());
-        assert_eq!(event.parent_span_id.unwrap().as_str(), parent_span_id.as_str());
+        assert_eq!(
+            event.parent_span_id.unwrap().as_str(),
+            parent_span_id.as_str()
+        );
     }
 
     #[test]
@@ -682,13 +684,9 @@ mod tests {
             50,
         );
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        )
-        .with_tool_invocation(tool_invocation.clone());
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success)
+                .with_tool_invocation(tool_invocation.clone());
 
         assert!(event.tool_invocation.is_some());
         let stored_tool = event.tool_invocation.unwrap();
@@ -703,12 +701,8 @@ mod tests {
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        );
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
 
         let (child_span_id, child_event) = event.start_child_span();
 
@@ -723,7 +717,10 @@ mod tests {
 
         // Child should have parent set to original span
         assert!(child_event.parent_span_id.is_some());
-        assert_eq!(child_event.parent_span_id.unwrap().as_str(), event.span_id.as_str());
+        assert_eq!(
+            child_event.parent_span_id.unwrap().as_str(),
+            event.span_id.as_str()
+        );
     }
 
     #[test]
@@ -834,19 +831,18 @@ mod tests {
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        );
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
 
         // root_trace_id should equal trace_id for initial event
         assert_eq!(event.root_trace_id.as_str(), event.trace_id.as_str());
 
         // Child span should propagate root_trace_id
         let (_child_span_id, child_event) = event.start_child_span();
-        assert_eq!(child_event.root_trace_id.as_str(), event.root_trace_id.as_str());
+        assert_eq!(
+            child_event.root_trace_id.as_str(),
+            event.root_trace_id.as_str()
+        );
     }
 
     #[test]
@@ -870,14 +866,20 @@ mod tests {
         assert_eq!(event2.root_trace_id.as_str(), event1.root_trace_id.as_str());
 
         // cross_task_correlation_id should be the same
-        assert_eq!(event2.cross_task_correlation_id.as_uuid(), event1.cross_task_correlation_id.as_uuid());
+        assert_eq!(
+            event2.cross_task_correlation_id.as_uuid(),
+            event1.cross_task_correlation_id.as_uuid()
+        );
 
         // But task_id should be different
         assert_eq!(event2.task_id, task_id_2);
         assert_ne!(event2.task_id, task_id_1);
 
         // Agent session should be NEW (different)
-        assert_ne!(event2.agent_session_id.as_uuid(), event1.agent_session_id.as_uuid());
+        assert_ne!(
+            event2.agent_session_id.as_uuid(),
+            event1.agent_session_id.as_uuid()
+        );
     }
 
     #[test]
@@ -886,12 +888,8 @@ mod tests {
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        );
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
 
         let (_child_span_id, child_event) = event.start_child_span();
 
@@ -944,12 +942,8 @@ mod tests {
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        );
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
         let root_trace_id = event.root_trace_id.clone();
 
         let (_child_span_id, child_event) = event.start_child_span();
@@ -994,12 +988,8 @@ mod tests {
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        );
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
         let agent_session_id = event.agent_session_id.clone();
 
         let (_child_span_id, child_event) = event.start_child_span();
@@ -1018,12 +1008,8 @@ mod tests {
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        );
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
         let request_id = event.request_id.clone();
 
         store.add(event);
@@ -1040,12 +1026,8 @@ mod tests {
         let session_id = Uuid::new_v4();
         let task_id = Uuid::new_v4();
 
-        let event = ObservableEvent::with_generated_trace(
-            agent_id,
-            session_id,
-            task_id,
-            Outcome::Success,
-        );
+        let event =
+            ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
 
         let (_child_span_id, child_event) = event.start_child_span();
 

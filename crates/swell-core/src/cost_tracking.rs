@@ -97,13 +97,16 @@ impl ModelBreakdown {
 
     /// Add a cost record to the breakdown
     pub fn add_record(&mut self, record: &CostRecord) {
-        let info = self.by_model.entry(record.model.clone()).or_insert_with(|| ModelCostInfo {
-            model: record.model.clone(),
-            call_count: 0,
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_cost_usd: 0.0,
-        });
+        let info = self
+            .by_model
+            .entry(record.model.clone())
+            .or_insert_with(|| ModelCostInfo {
+                model: record.model.clone(),
+                call_count: 0,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                total_cost_usd: 0.0,
+            });
 
         info.call_count += 1;
         info.total_input_tokens += record.input_tokens;
@@ -304,7 +307,12 @@ pub struct BudgetAlert {
 
 impl BudgetAlert {
     /// Create a warning alert
-    pub fn warning(task_id: Uuid, current_tokens: u64, threshold_tokens: u64, current_cost_usd: f64) -> Self {
+    pub fn warning(
+        task_id: Uuid,
+        current_tokens: u64,
+        threshold_tokens: u64,
+        current_cost_usd: f64,
+    ) -> Self {
         Self {
             alert_type: BudgetAlertType::Warning,
             task_id: Some(task_id),
@@ -316,7 +324,12 @@ impl BudgetAlert {
     }
 
     /// Create a hard stop alert
-    pub fn hard_stop(task_id: Uuid, current_tokens: u64, threshold_tokens: u64, current_cost_usd: f64) -> Self {
+    pub fn hard_stop(
+        task_id: Uuid,
+        current_tokens: u64,
+        threshold_tokens: u64,
+        current_cost_usd: f64,
+    ) -> Self {
         Self {
             alert_type: BudgetAlertType::HardStop,
             task_id: Some(task_id),
@@ -340,7 +353,11 @@ impl BudgetAlert {
     }
 
     /// Create a run-level hard stop alert (no task)
-    pub fn run_hard_stop(current_tokens: u64, threshold_tokens: u64, current_cost_usd: f64) -> Self {
+    pub fn run_hard_stop(
+        current_tokens: u64,
+        threshold_tokens: u64,
+        current_cost_usd: f64,
+    ) -> Self {
         Self {
             alert_type: BudgetAlertType::HardStop,
             task_id: None,
@@ -715,8 +732,12 @@ mod tests {
         tracker.set_active_task(task_id);
 
         // Record some costs
-        tracker.record_llm_cost(1000, 500, "claude-3-5-sonnet").unwrap();
-        tracker.record_llm_cost(2000, 1000, "claude-3-5-sonnet").unwrap();
+        tracker
+            .record_llm_cost(1000, 500, "claude-3-5-sonnet")
+            .unwrap();
+        tracker
+            .record_llm_cost(2000, 1000, "claude-3-5-sonnet")
+            .unwrap();
 
         // Check summary
         let summary = tracker.get_summary();
@@ -734,7 +755,10 @@ mod tests {
         let mut tracker = CostTracker::new();
         let result = tracker.record_llm_cost(1000, 500, "claude-3-5-sonnet");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), CostTrackerError::NoActiveTask));
+        assert!(matches!(
+            result.unwrap_err(),
+            CostTrackerError::NoActiveTask
+        ));
     }
 
     #[test]
@@ -760,7 +784,9 @@ mod tests {
 
         // Record costs up to warning threshold (75% = 375,000 tokens)
         // First call: 100k tokens
-        tracker.record_llm_cost(50_000, 50_000, "claude-3-5-sonnet").unwrap();
+        tracker
+            .record_llm_cost(50_000, 50_000, "claude-3-5-sonnet")
+            .unwrap();
 
         // Second call: 350k tokens (total 400k = 80%)
         // This should trigger a warning
@@ -778,7 +804,9 @@ mod tests {
         let task_id = Uuid::new_v4();
         tracker.set_active_task(task_id);
 
-        tracker.record_llm_cost(1000, 500, "claude-3-5-sonnet").unwrap();
+        tracker
+            .record_llm_cost(1000, 500, "claude-3-5-sonnet")
+            .unwrap();
 
         // Reset task costs
         tracker.reset_task_costs(task_id);
@@ -797,7 +825,9 @@ mod tests {
         let task_id = Uuid::new_v4();
         tracker.set_active_task(task_id);
 
-        tracker.record_llm_cost(1000, 500, "claude-3-5-sonnet").unwrap();
+        tracker
+            .record_llm_cost(1000, 500, "claude-3-5-sonnet")
+            .unwrap();
 
         // Clear all
         tracker.clear();
@@ -827,18 +857,38 @@ mod tests {
     #[test]
     fn test_model_pricing() {
         // Test various models
-        let record_sonnet = CostRecord::new(Uuid::new_v4(), "claude-3-5-sonnet".to_string(), 1_000_000, 1_000_000);
+        let record_sonnet = CostRecord::new(
+            Uuid::new_v4(),
+            "claude-3-5-sonnet".to_string(),
+            1_000_000,
+            1_000_000,
+        );
         assert!((record_sonnet.cost_usd - 18.0).abs() < 0.001); // $3 + $15
 
-        let record_opus = CostRecord::new(Uuid::new_v4(), "claude-3-opus".to_string(), 1_000_000, 1_000_000);
+        let record_opus = CostRecord::new(
+            Uuid::new_v4(),
+            "claude-3-opus".to_string(),
+            1_000_000,
+            1_000_000,
+        );
         assert!((record_opus.cost_usd - 90.0).abs() < 0.001); // $15 + $75
 
         // gpt-4o-2024-08-06 matches the pricing check for GPT-4o
-        let record_gpt4o = CostRecord::new(Uuid::new_v4(), "gpt-4o-2024-08-06".to_string(), 1_000_000, 1_000_000);
+        let record_gpt4o = CostRecord::new(
+            Uuid::new_v4(),
+            "gpt-4o-2024-08-06".to_string(),
+            1_000_000,
+            1_000_000,
+        );
         assert!((record_gpt4o.cost_usd - 20.0).abs() < 0.001); // $5 + $15
 
         // gpt-4o-mini matches the pricing check for GPT-4o Mini
-        let record_gpt4o_mini = CostRecord::new(Uuid::new_v4(), "gpt-4o-mini".to_string(), 1_000_000, 1_000_000);
+        let record_gpt4o_mini = CostRecord::new(
+            Uuid::new_v4(),
+            "gpt-4o-mini".to_string(),
+            1_000_000,
+            1_000_000,
+        );
         assert!((record_gpt4o_mini.cost_usd - 0.75).abs() < 0.001); // $0.15 + $0.60
     }
 }

@@ -226,12 +226,17 @@ async fn main() {
         }
         "inject" => {
             if args.len() < 4 {
-                Err(CliError::MissingArgument("task-id and instruction".to_string()))
+                Err(CliError::MissingArgument(
+                    "task-id and instruction".to_string(),
+                ))
             } else {
                 match Uuid::parse_str(&args[2]) {
                     Ok(task_id) => {
                         let instruction = args[3..].join(" ");
-                        let cmd = CliCommand::TaskInjectInstruction { task_id, instruction };
+                        let cmd = CliCommand::TaskInjectInstruction {
+                            task_id,
+                            instruction,
+                        };
                         send_command(&socket_path, cmd).await
                     }
                     Err(e) => Err(CliError::InvalidUuid(e.to_string())),
@@ -267,7 +272,11 @@ async fn main() {
                                 _ => i += 1,
                             }
                         }
-                        let scope = swell_core::TaskScope { files, directories, allowed_operations: vec![] };
+                        let scope = swell_core::TaskScope {
+                            files,
+                            directories,
+                            allowed_operations: vec![],
+                        };
                         let cmd = CliCommand::TaskModifyScope { task_id, scope };
                         send_command(&socket_path, cmd).await
                     }

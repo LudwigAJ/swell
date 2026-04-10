@@ -402,20 +402,42 @@ impl CostGuard {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum CliCommand {
-    TaskCreate { description: String },
-    TaskApprove { task_id: Uuid },
-    TaskReject { task_id: Uuid, reason: String },
-    TaskCancel { task_id: Uuid },
+    TaskCreate {
+        description: String,
+    },
+    TaskApprove {
+        task_id: Uuid,
+    },
+    TaskReject {
+        task_id: Uuid,
+        reason: String,
+    },
+    TaskCancel {
+        task_id: Uuid,
+    },
     TaskList,
-    TaskWatch { task_id: Uuid },
+    TaskWatch {
+        task_id: Uuid,
+    },
     /// Pause a task (operator intervention)
-    TaskPause { task_id: Uuid, reason: String },
+    TaskPause {
+        task_id: Uuid,
+        reason: String,
+    },
     /// Resume a paused task (operator intervention)
-    TaskResume { task_id: Uuid },
+    TaskResume {
+        task_id: Uuid,
+    },
     /// Inject instructions into a running task (operator intervention)
-    TaskInjectInstruction { task_id: Uuid, instruction: String },
+    TaskInjectInstruction {
+        task_id: Uuid,
+        instruction: String,
+    },
     /// Modify task scope boundaries (operator intervention)
-    TaskModifyScope { task_id: Uuid, scope: TaskScope },
+    TaskModifyScope {
+        task_id: Uuid,
+        scope: TaskScope,
+    },
 }
 
 /// A correlation ID used to track related events across the system.

@@ -55,8 +55,8 @@ pub use semantic::{
 pub mod procedural;
 
 pub use procedural::{
-    BetaPosterior, ProceduralStore, Procedure, ProcedureQuery, ProcedureResult, ProcedureStep,
-    SqliteProceduralStore,
+    BetaPosterior, ConfidenceLevel, ProceduralStore, Procedure, ProcedureQuery,
+    ProcedureResult, ProcedureStep, SqliteProceduralStore,
 };
 
 // Meta-cognitive memory module - Self-knowledge for model performance tracking,

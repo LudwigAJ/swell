@@ -188,7 +188,10 @@ pub async fn handle_command(
                 }
             }
         }
-        CliCommand::TaskInjectInstruction { task_id, instruction } => {
+        CliCommand::TaskInjectInstruction {
+            task_id,
+            instruction,
+        } => {
             let orch = orchestrator.lock().await;
             match orch.inject_instruction(task_id, instruction.clone()).await {
                 Ok(()) => {
@@ -204,7 +207,10 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Failed to inject instruction");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Failed to inject instruction: {}", e), correlation_id)
+                        .emit_error(
+                            format!("Failed to inject instruction: {}", e),
+                            correlation_id,
+                        )
                         .await
                 }
             }
@@ -217,8 +223,11 @@ pub async fn handle_command(
                     let correlation_id = EventEmitter::new_correlation_id();
                     DaemonEvent::TaskProgress {
                         id: task_id,
-                        message: format!("Scope modified: {} files, {} directories", 
-                            scope.files.len(), scope.directories.len()),
+                        message: format!(
+                            "Scope modified: {} files, {} directories",
+                            scope.files.len(),
+                            scope.directories.len()
+                        ),
                         correlation_id,
                     }
                 }
@@ -779,10 +788,15 @@ mod tests {
 
     fn create_test_task_in_executing_state(orch: &Arc<Mutex<Orchestrator>>) -> Uuid {
         let task_id = futures::executor::block_on(async {
-            orch.lock().await.create_task("Test task".to_string()).await.id
+            orch.lock()
+                .await
+                .create_task("Test task".to_string())
+                .await
+                .id
         });
         let plan = create_test_plan(task_id);
-        futures::executor::block_on(async { orch.lock().await.set_plan(task_id, plan).await }).unwrap();
+        futures::executor::block_on(async { orch.lock().await.set_plan(task_id, plan).await })
+            .unwrap();
         futures::executor::block_on(async {
             let sm = orch.lock().await.state_machine();
             let mut sm_guard = sm.write().await;
@@ -796,10 +810,15 @@ mod tests {
 
     fn create_test_task_in_validating_state(orch: &Arc<Mutex<Orchestrator>>) -> Uuid {
         let task_id = futures::executor::block_on(async {
-            orch.lock().await.create_task("Test task".to_string()).await.id
+            orch.lock()
+                .await
+                .create_task("Test task".to_string())
+                .await
+                .id
         });
         let plan = create_test_plan(task_id);
-        futures::executor::block_on(async { orch.lock().await.set_plan(task_id, plan).await }).unwrap();
+        futures::executor::block_on(async { orch.lock().await.set_plan(task_id, plan).await })
+            .unwrap();
         futures::executor::block_on(async {
             let sm = orch.lock().await.state_machine();
             let mut sm_guard = sm.write().await;
@@ -1010,7 +1029,12 @@ mod tests {
         }
 
         // Verify instruction was stored
-        let instructions = orch.lock().await.get_injected_instructions(task_id).await.unwrap();
+        let instructions = orch
+            .lock()
+            .await
+            .get_injected_instructions(task_id)
+            .await
+            .unwrap();
         assert_eq!(instructions.len(), 1);
         assert_eq!(instructions[0], "Remember to check the logs first");
     }
@@ -1031,7 +1055,12 @@ mod tests {
             handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
         }
 
-        let instructions = orch.lock().await.get_injected_instructions(task_id).await.unwrap();
+        let instructions = orch
+            .lock()
+            .await
+            .get_injected_instructions(task_id)
+            .await
+            .unwrap();
         assert_eq!(instructions.len(), 3);
     }
 
@@ -1047,7 +1076,10 @@ mod tests {
             directories: vec!["src".to_string()],
             allowed_operations: vec![],
         };
-        let command = CliCommand::TaskModifyScope { task_id: fake_id, scope };
+        let command = CliCommand::TaskModifyScope {
+            task_id: fake_id,
+            scope,
+        };
 
         let event = handle_command(command, orch, emitter).await;
 
@@ -1071,7 +1103,10 @@ mod tests {
             directories: vec!["src".to_string(), "tests".to_string()],
             allowed_operations: vec![],
         };
-        let command = CliCommand::TaskModifyScope { task_id, scope: scope.clone() };
+        let command = CliCommand::TaskModifyScope {
+            task_id,
+            scope: scope.clone(),
+        };
         let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
 
         match event {
@@ -1100,7 +1135,10 @@ mod tests {
             directories: vec!["new_dir".to_string()],
             allowed_operations: vec![],
         };
-        let command = CliCommand::TaskModifyScope { task_id, scope: new_scope };
+        let command = CliCommand::TaskModifyScope {
+            task_id,
+            scope: new_scope,
+        };
         handle_command(command, Arc::clone(&orch), emitter).await;
 
         // Verify original scope was saved
@@ -1121,7 +1159,10 @@ mod tests {
         let command = parse_command(&json).unwrap();
 
         match command {
-            CliCommand::TaskPause { task_id: id, reason } => {
+            CliCommand::TaskPause {
+                task_id: id,
+                reason,
+            } => {
                 assert_eq!(id, task_id);
                 assert_eq!(reason, "test pause");
             }
@@ -1156,7 +1197,10 @@ mod tests {
         let command = parse_command(&json).unwrap();
 
         match command {
-            CliCommand::TaskInjectInstruction { task_id: id, instruction } => {
+            CliCommand::TaskInjectInstruction {
+                task_id: id,
+                instruction,
+            } => {
                 assert_eq!(id, task_id);
                 assert_eq!(instruction, "check logs");
             }

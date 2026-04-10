@@ -95,7 +95,10 @@ impl LangfuseConfig {
 
     /// Get the OTLP endpoint URL for traces
     fn otlp_endpoint(&self) -> String {
-        format!("{}/api/public/otel/v1/traces", self.host.trim_end_matches('/'))
+        format!(
+            "{}/api/public/otel/v1/traces",
+            self.host.trim_end_matches('/')
+        )
     }
 
     /// Get the ingestion endpoint URL
@@ -465,9 +468,7 @@ pub struct LangfuseClient {
 impl LangfuseClient {
     /// Create a new Langfuse client
     pub fn new(config: LangfuseConfig) -> Result<Self, LangfuseError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
 
         Ok(Self { client, config })
     }
@@ -479,7 +480,9 @@ impl LangfuseClient {
 
     /// Send a trace to Langfuse
     pub async fn send(&self, trace: Trace) -> Result<(), LangfuseError> {
-        let body = IngestionBody { traces: vec![trace] };
+        let body = IngestionBody {
+            traces: vec![trace],
+        };
 
         let response = self
             .client
@@ -601,9 +604,7 @@ pub struct FeedbackClient {
 impl FeedbackClient {
     /// Create a new feedback client
     pub fn new(config: LangfuseConfig) -> Result<Self, LangfuseError> {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?;
+        let client = Client::builder().timeout(Duration::from_secs(10)).build()?;
 
         Ok(Self { client, config })
     }
@@ -674,7 +675,9 @@ mod tests {
         assert!(auth.starts_with("Basic "));
         // Verify it's valid base64
         let encoded = auth.trim_start_matches("Basic ");
-        assert!(base64::engine::general_purpose::STANDARD.decode(encoded).is_ok());
+        assert!(base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .is_ok());
     }
 
     #[test]
@@ -723,12 +726,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_client_creation() {
-        let config = LangfuseConfig::new(
-            "https://cloud.langfuse.com",
-            "pk-test",
-            "sk-test",
-            "test",
-        );
+        let config =
+            LangfuseConfig::new("https://cloud.langfuse.com", "pk-test", "sk-test", "test");
 
         let client = LangfuseClient::new(config);
         assert!(client.is_ok());
@@ -736,12 +735,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_feedback_client_creation() {
-        let config = LangfuseConfig::new(
-            "https://cloud.langfuse.com",
-            "pk-test",
-            "sk-test",
-            "test",
-        );
+        let config =
+            LangfuseConfig::new("https://cloud.langfuse.com", "pk-test", "sk-test", "test");
 
         let client = FeedbackClient::new(config);
         assert!(client.is_ok());

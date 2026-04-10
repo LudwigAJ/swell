@@ -519,7 +519,10 @@ impl Agent for PlannerAgent {
             AgentRole::Planner,
             context.task.id,
             AgentCommentType::Start,
-            &format!("Starting plan generation for task: {}", context.task.description),
+            &format!(
+                "Starting plan generation for task: {}",
+                context.task.description
+            ),
         );
         start_comment.log();
 
@@ -606,18 +609,15 @@ impl Agent for PlannerAgent {
         };
 
         // Build structured handoff for GeneratorAgent
-        let mut handoff = AgentHandoff::new(
-            AgentRole::Planner,
-            AgentRole::Generator,
-            context.task.id,
-        )
-        .with_what_was_done(&format!(
-            "Created plan with {} step(s), estimated {} tokens, risk: {}",
-            plan.steps.len(),
-            plan.total_estimated_tokens,
-            plan.risk_assessment
-        ))
-        .with_whats_next("Implement each step in the plan using ReAct loop");
+        let mut handoff =
+            AgentHandoff::new(AgentRole::Planner, AgentRole::Generator, context.task.id)
+                .with_what_was_done(&format!(
+                    "Created plan with {} step(s), estimated {} tokens, risk: {}",
+                    plan.steps.len(),
+                    plan.total_estimated_tokens,
+                    plan.risk_assessment
+                ))
+                .with_whats_next("Implement each step in the plan using ReAct loop");
 
         // Add affected files as artifacts
         for step in &plan.steps {
@@ -1024,7 +1024,10 @@ impl Agent for GeneratorAgent {
             AgentRole::Generator,
             context.task.id,
             AgentCommentType::Start,
-            &format!("Starting code generation for task: {}", context.task.description),
+            &format!(
+                "Starting code generation for task: {}",
+                context.task.description
+            ),
         );
         start_comment.log();
 
@@ -1097,18 +1100,15 @@ impl Agent for GeneratorAgent {
         }
 
         // Build structured handoff for EvaluatorAgent
-        let mut handoff = AgentHandoff::new(
-            AgentRole::Generator,
-            AgentRole::Evaluator,
-            context.task.id,
-        )
-        .with_what_was_done(&format!(
-            "Implemented {} step(s) from plan, modified {} file(s)",
-            plan.steps.len(),
-            changed_files.len()
-        ))
-        .with_known_issue("Review any files that had compilation errors")
-        .with_whats_next("Run validation gates on changed files");
+        let mut handoff =
+            AgentHandoff::new(AgentRole::Generator, AgentRole::Evaluator, context.task.id)
+                .with_what_was_done(&format!(
+                    "Implemented {} step(s) from plan, modified {} file(s)",
+                    plan.steps.len(),
+                    changed_files.len()
+                ))
+                .with_known_issue("Review any files that had compilation errors")
+                .with_whats_next("Run validation gates on changed files");
 
         // Add changed files as artifacts
         for file in &changed_files {
@@ -1120,8 +1120,12 @@ impl Agent for GeneratorAgent {
         }
 
         // Add verification commands
-        handoff.verification.push("cargo clippy --workspace".to_string());
-        handoff.verification.push("cargo test --workspace".to_string());
+        handoff
+            .verification
+            .push("cargo clippy --workspace".to_string());
+        handoff
+            .verification
+            .push("cargo test --workspace".to_string());
 
         // Log handoff comment
         let handoff_comment = AgentComment::new(
@@ -2038,7 +2042,10 @@ impl Agent for EvaluatorAgent {
 
         // Build structured handoff summary (no next agent after evaluator)
         let known_issue = if !eval_result.errors.is_empty() {
-            format!("{} validation error(s) need resolution", eval_result.errors.len())
+            format!(
+                "{} validation error(s) need resolution",
+                eval_result.errors.len()
+            )
         } else {
             "No errors detected".to_string()
         };
@@ -5672,7 +5679,7 @@ mod tests {
 
         // Parse the output - it's now JSON with plan and handoff
         let output: serde_json::Value = serde_json::from_str(&result.output).unwrap();
-        
+
         // Extract the plan object from the output
         let plan_obj = output.get("plan").expect("plan should be in output");
         let plan: Plan = serde_json::from_value(plan_obj.clone()).unwrap();
@@ -5680,7 +5687,7 @@ mod tests {
         assert_eq!(plan.total_estimated_tokens, 8000);
         assert!(!plan.risk_assessment.is_empty());
         assert_eq!(plan.steps[0].affected_files.len(), 2);
-        
+
         // Verify handoff is also present
         assert!(output.get("handoff").is_some());
     }
@@ -7322,9 +7329,24 @@ fn deeply_nested() {
         let task_id = Uuid::new_v4();
 
         let start = AgentComment::new(AgentRole::Coder, task_id, AgentCommentType::Start, "Start");
-        let blocker = AgentComment::new(AgentRole::Coder, task_id, AgentCommentType::Blocker, "Blocker");
-        let handoff = AgentComment::new(AgentRole::Coder, task_id, AgentCommentType::Handoff, "Handoff");
-        let completion = AgentComment::new(AgentRole::Coder, task_id, AgentCommentType::Completion, "Completion");
+        let blocker = AgentComment::new(
+            AgentRole::Coder,
+            task_id,
+            AgentCommentType::Blocker,
+            "Blocker",
+        );
+        let handoff = AgentComment::new(
+            AgentRole::Coder,
+            task_id,
+            AgentCommentType::Handoff,
+            "Handoff",
+        );
+        let completion = AgentComment::new(
+            AgentRole::Coder,
+            task_id,
+            AgentCommentType::Completion,
+            "Completion",
+        );
 
         assert_eq!(start.comment_type, AgentCommentType::Start);
         assert_eq!(blocker.comment_type, AgentCommentType::Blocker);
