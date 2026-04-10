@@ -1,12 +1,12 @@
 {
   "featureId": "memory-pattern-learning",
-  "reviewedAt": "2026-04-10T14:35:00Z",
+  "reviewedAt": "2026-04-10T15:00:00Z",
   "commitId": "536231e",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "Round 13 re-review confirms all 3 prior blocking issues remain unfixed. The feature was committed at 536231e (Apr 9). Subsequent commits (provenance tracking 3e08435, staleness detection 0241792, repository scope 103568b, promotion thresholds 37b8f4a) added code to pattern_learning.rs but did not address these bugs. The anti-pattern name extraction at line 1145 still uses wrong index [3..] which captures the leading '*' from '**' prefix.",
+    "summary": "Round 20 re-review confirms all 3 prior blocking issues remain unfixed. The feature was committed at 536231e (Apr 9). No code changes to fix these specific bugs have been made. The anti-pattern name extraction at line 1145 still uses wrong index [3..] which captures the leading '*' from '**' prefix.",
     "issues": [
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
@@ -18,7 +18,7 @@
         "file": "crates/swell-memory/src/pattern_learning.rs",
         "line": 1145,
         "severity": "blocking",
-        "description": "Convention parsing uses wrong string slice index [3..] instead of [4..]. For line '- **name**: description', index 3 points to '*' (second asterisk in '**'), so `trimmed[3..colon_pos]` extracts '*name' with leading asterisk. Correct index should be [4..] to skip '- **' prefix. Same bug has persisted across 13 rounds of review."
+        "description": "Convention parsing uses wrong string slice index [3..] instead of [4..]. For line '- **name**: description', index 3 points to '*' (second asterisk in '**'), so `trimmed[3..colon_pos]` extracts '*name' with leading asterisk. Correct index should be [4..] to skip '- **' prefix. Same bug has persisted across 20 rounds of review."
       },
       {
         "file": "crates/swell-memory/src/pattern_learning.rs",
@@ -30,5 +30,5 @@
   },
   "sharedStateObservations": [],
   "addressesFailureFrom": ".factory/validation/memory/scrutiny/reviews/memory-pattern-learning.json",
-  "summary": "Round 13 review confirms all 3 blocking issues from prior rounds remain unfixed. No code changes to fix these specific bugs since commit 536231e (Apr 9). Feature builds and 42 swell-memory tests pass, but correctness bugs persist: 1) confidence calculation uses wrong denominator (sum of all frequencies vs actual per-pattern count), 2) convention name parsing extracts '*name' instead of 'name' due to off-by-one slice index, 3) anti-pattern retrieval is an empty stub. Worker followed Rust skill procedure correctly; the issues are pure code correctness bugs that tests don't catch."
+  "summary": "Round 20 review confirms all 3 blocking issues from prior rounds remain unfixed. No code changes to fix these specific bugs since commit 536231e (Apr 9). Feature builds and 29 pattern_learning tests pass, but correctness bugs persist: 1) confidence calculation uses wrong denominator (sum of all frequencies vs actual per-pattern count), 2) convention name parsing extracts '*name' instead of 'name' due to off-by-one slice index, 3) anti-pattern retrieval is an empty stub. Worker followed Rust skill procedure correctly; the issues are pure code correctness bugs that tests don't catch."
 }

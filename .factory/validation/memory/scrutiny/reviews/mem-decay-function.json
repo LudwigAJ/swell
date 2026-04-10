@@ -4,25 +4,52 @@
   "commitId": "5f0bfc1",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "Implementation correctly implements time-based decay with three tiers: Procedural (0.99/day slow), Environmental (0.95/day medium), and Buffer (0.90/day fast). Decay formula and retrieval probability adjustment work as specified. 19 unit tests provide good coverage. However, there is an architectural gap: Buffer decay rate cannot be obtained from any MemoryBlockType since the core enum doesn't include a Buffer variant.",
+    "summary": "Implementation correctly follows the specified decay formulas (Procedural: 0.99/day, Environmental: 0.95/day, Buffer: 0.90/day) with comprehensive test coverage (19 tests). However, there is a blocking bug in calculate_decay where negative elapsed time (future 'now' relative to 'last_reinforcement') produces a decay factor > 1.0, which violates the documented return range [0.0, 1.0].",
     "issues": [
       {
         "file": "crates/swell-memory/src/decay.rs",
-        "line": 96,
+        "line": 56,
         "severity": "blocking",
-        "description": "decay_rate_for_block_type() will panic if passed an unknown MemoryBlockType variant. The function should return Option<DecayRate> rather than DecayRate to handle extensible block types gracefully. Compare to the public API which correctly uses an exhaustive match - if a new block type is added to swell-core without updating this function, it will panic at runtime."
+        "description": "calculate_decay does not handle the case where now < last_reinforcement. When this occurs: (1) num_days() returns a negative value, (2) since negative < 365, the clamping branch is not taken, (3) base.powf(negative) returns a value > 1.0 (e.g., 0.99^-1 ≈ 1.01). This violates the documented contract that decay factor should be in [0.0, 1.0]. Fix: add early return or clamp for negative days_elapsed."
       },
       {
-        "file": "crates/swell-core/src/types.rs",
-        "line": null,
+        "file": "crates/swell-memory/src/decay.rs",
+        "line": 56,
         "severity": "non_blocking",
-        "description": "MemoryBlockType enum has no Buffer variant, but the feature description mentions 'buffer memories fast' and DecayRate::Buffer is implemented. This is an architectural gap: the decay module correctly implements Buffer decay but there's no way to obtain it from a MemoryBlockType. If Buffer memory type is needed, MemoryBlockType needs a Buffer variant added to swell-core."
+        "description": "days_since function has the same negative time issue as calculate_decay - it will return a negative value if now < last_reinforcement, which could cause issues in caller code."
+      },
+      {
+        "file": "crates/swell-memory/src/decay.rs",
+        "line": 107,
+        "severity": "non_blocking",
+        "description": "DecayedScore::new uses Utc::now() internally which makes unit testing non-deterministic. The with_decay_factor() method exists for testability but is less convenient. Consider adding a with_now parameter or extracting time to a trait for testability."
       }
     ]
   },
-  "sharedStateObservations": [],
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The worker correctly followed Rust conventions and coding patterns. No convention violations found.",
+      "evidence": "Worker used async_trait, proper error handling with Result, appropriate use of Arc<dyn Trait>, and followed the same code organization as other modules in swell-memory."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed the Rust skill correctly. The skillFeedback.confirmed deviations array was empty, indicating smooth adherence to the skill's procedure.",
+      "evidence": "Handoff shows skillFeedback: { followedProcedure: true, deviations: [] }. The implementation in decay.rs follows idiomatic Rust with proper ownership, error handling, and documentation."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The worker discovered that chrono::Duration is only available in test context for this crate (used #[cfg(test)] guard). This knowledge appears to be correctly applied.",
+      "evidence": "decay.rs line 14: '#[cfg(test)] use chrono::Duration;' - Duration is used only in tests, confirming the worker's understanding of the dependency structure."
+    },
+    {
+      "area": "services",
+      "observation": "No services or external dependencies were started by the worker that would require documentation in services.yaml.",
+      "evidence": "Transcript shows only local cargo commands (build, test, clippy) were run. No external services were started."
+    }
+  ],
   "addressesFailureFrom": null,
-  "summary": "Feature implementation is correct and complete. The three decay rates (procedural 0.99, environmental 0.95, buffer 0.90) are implemented as specified. Tests pass (19 decay tests, 588 workspace tests). The only notable issue is that decay_rate_for_block_type() will panic on unknown block types - it should return Option<DecayRate>. Additionally, there's no MemoryBlockType::Buffer in swell-core, creating a gap between the feature description (which mentions buffer memories) and the available block types."
+  "summary": "The mem-decay-function implementation correctly implements time-based decay with three tiers (procedural 0.99/day, environmental 0.95/day, buffer 0.90/day) and has 19 comprehensive unit tests. However, there is a blocking bug: calculate_decay does not handle the edge case where the current time is earlier than the last reinforcement timestamp, which would cause it to return a decay factor > 1.0, violating the documented contract. This should be fixed before the feature can be marked as passing. The worker followed proper Rust conventions and the skill procedure correctly."
 }

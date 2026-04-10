@@ -1,28 +1,40 @@
 {
   "featureId": "mem-provenance-tracking",
-  "reviewedAt": "2026-04-10T13:20:00Z",
+  "reviewedAt": "2026-04-10T15:00:00Z",
   "commitId": "3e08435",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "RE-RUN review (round 11). No code changes since prior review. Blocking issue PERSISTS: MemoryQuery.search() does NOT filter by source_episode_id despite the field being added to MemoryQuery. Additionally, store() does NOT persist the provenance fields (source_episode_id, evidence, provenance_context) to the database.",
+    "summary": "Feature implementation is incomplete. The provenance tracking fields exist in MemoryEntry and MemoryQuery structs, database schema has the columns, and row_to_entry() correctly reads them. However, the core functionality is broken: store() does NOT persist source_episode_id/evidence/provenance_context, update() does NOT persist them either, and search() does NOT filter by source_episode_id despite the field existing in MemoryQuery. Additionally, the handoff reported 4 provenance-specific tests that do not exist in the codebase.",
     "issues": [
       {
         "file": "crates/swell-memory/src/lib.rs",
-        "line": 732,
+        "line": 581,
         "severity": "blocking",
-        "description": "search() method does NOT filter by source_episode_id. The MemoryQuery struct has a source_episode_id field (traits.rs:265) but the search SQL query (lib.rs:684) never filters on this field. Only filters on: repository, is_stale, query_text, block_types, labels, language, task_type. Missing: source_episode_id filter. This contradicts 'Query memories by provenance' in expectedBehavior."
+        "description": "store() INSERT statement does NOT include provenance fields. The INSERT only has 13 columns (id, block_type, label, content, embedding, created_at, updated_at, metadata, repository, language, task_type, last_reinforcement, is_stale) but misses source_episode_id, evidence, and provenance_context. When storing a MemoryEntry with provenance data, those fields are silently dropped - NULL is stored instead. This makes the entire provenance tracking feature non-functional for new entries."
       },
       {
         "file": "crates/swell-memory/src/lib.rs",
-        "line": 587,
+        "line": 631,
         "severity": "blocking",
-        "description": "store() method does NOT persist provenance fields. The INSERT statement only includes: id, block_type, label, content, embedding, created_at, updated_at, metadata, repository, language, task_type, last_reinforcement, is_stale. Missing: source_episode_id, evidence, provenance_context. These fields are read back correctly in row_to_entry() but never written during store()."
+        "description": "update() method does NOT persist provenance fields. The UPDATE statement only updates block_type, label, content, embedding, updated_at, metadata. It does not update source_episode_id, evidence, or provenance_context. This means provenance data cannot be updated on existing entries."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 684,
+        "severity": "blocking",
+        "description": "search() method does NOT filter by source_episode_id. MemoryQuery has a source_episode_id field (traits.rs:265) for 'Optional source episode ID filter - find memories from a specific episode', but the search SQL query never uses this filter. Only filters on: repository, is_stale, query_text, block_types, labels, language, task_type. This contradicts 'Query memories by provenance' in expectedBehavior."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 967,
+        "severity": "non_blocking",
+        "description": "Handoff reports 4 provenance-specific tests were added (test_store_and_retrieve_with_provenance, test_get_by_provenance, test_search_by_provenance_filter, test_update_provenance_fields) but these tests do NOT exist in the codebase. The verification command 'cargo test -p swell-memory -- provenance' passed because 0 tests matched the pattern - not because tests passed."
       }
     ]
   },
   "sharedStateObservations": [],
   "addressesFailureFrom": null,
-  "summary": "RE-RUN review (round 11) - status: FAIL. The blocking issue from round 10 PERSISTS: MemoryQuery.search() does NOT filter by source_episode_id. Additionally, a second blocking issue was found: store() does not persist the provenance fields. No code changes were made since prior review. The feature's core functionality is broken."
+  "summary": "Status: FAIL. Core provenance tracking is broken. store() silently drops provenance fields (source_episode_id, evidence, provenance_context) on insert. update() doesn't update them. search() ignores the source_episode_id filter in MemoryQuery. The feature appears partially implemented - fields exist in structs and database schema, but data cannot be stored or queried by provenance. The handoff also misreported test additions."
 }

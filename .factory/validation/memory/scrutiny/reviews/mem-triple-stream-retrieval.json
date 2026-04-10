@@ -1,34 +1,51 @@
 {
   "featureId": "mem-triple-stream-retrieval",
-  "reviewedAt": "2026-04-10T10:30:00Z",
+  "reviewedAt": "2026-04-10T12:00:00Z",
   "commitId": "46d9dbd1fca0d70bbf9ccf4b0b9b52dbac52ccec",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "The triple-stream retrieval implementation has a critical bug in the BM25 search stream that generates random UUIDs instead of using actual memory entry IDs, breaking the RRF fusion. The vector search also has scalability concerns (loading all embeddings into memory). However, the core RRF fusion algorithm, graph traversal, and test coverage are solid.",
+    "summary": "The triple-stream retrieval implementation has a critical bug in the BM25 stream where fake UUIDs are generated instead of actual memory entry IDs, making the fusion results invalid. The vector search stream is also a placeholder that uses text matching rather than actual embedding similarity. Additionally, there is a redundant API design issue with the reranking configuration.",
     "issues": [
       {
         "file": "crates/swell-memory/src/triple_stream.rs",
-        "line": 620,
+        "line": 595,
         "severity": "blocking",
-        "description": "BM25 search stream generates random UUIDs instead of using actual entry IDs. The code creates `Uuid::new_v4()` for each result, but RecallResult has an `entry_id` field that should be used. This breaks RRF fusion since the IDs don't match actual memory entries."
+        "description": "BM25 search stream generates random UUIDs (Uuid::new_v4()) for each recall result instead of actual memory entry IDs. RecallService.search() operates on ConversationLog entries, not MemoryEntry entries. The fusion combines results from different streams, but since BM25 results get random UUIDs, the final TripleStreamResult IDs will not correspond to real memory entries. This makes the entire triple-stream fusion meaningless for any BM25-enabled query."
       },
       {
         "file": "crates/swell-memory/src/triple_stream.rs",
-        "line": 120,
+        "line": 514,
         "severity": "non_blocking",
-        "description": "Vector search loads ALL entries with embeddings into memory for similarity calculation. This doesn't scale for production databases with many embeddings. Should use SQL dot product or approximate nearest neighbor (ANN) index."
+        "description": "Vector search stream is a placeholder implementation. The code uses memory_store.search() with text matching (LIKE queries) and then fakes vector scores based on label matching. Comments explicitly state 'In a real implementation, we would generate an embedding for the query'. The feature description says 'Dense vector search component' but this is actually text matching with mock scores, not actual vector similarity search."
       },
       {
         "file": "crates/swell-memory/src/triple_stream.rs",
-        "line": 597,
+        "line": 452,
         "severity": "non_blocking",
-        "description": "The tokenize_query function filters tokens with length <= 2, but 3-char tokens like 'rust', 'sql' would be excluded. Consider lowering threshold to 2 characters or removing the filter entirely."
+        "description": "API design issue: search_with_reranking takes a separate reranker_config parameter, but TripleStreamConfig already has a reranker: Option<CrossEncoderConfig> field. This is redundant and confusing - the config is specified twice in two different places. The method ignores query.config.reranker and only uses the passed parameter."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 448,
+        "severity": "non_blocking",
+        "description": "TripleStreamService.config field has #[allow(dead_code)] attribute suggesting it's never read. However, the config is passed during construction and stored, but the search methods read from query.config instead. This dead code field should either be used or removed."
       }
     ]
   },
-  "sharedStateObservations": [],
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature description in features.json says 'Dense vector search component' but the implementation is a placeholder using text matching. Either the description should be updated to reflect the actual implementation, or the implementation should be completed to do real vector search.",
+      "source": "Feature description vs implementation at triple_stream.rs:514"
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill was followed correctly. No deviations noted.",
+      "source": "skillFeedback.followedProcedure: true in handoff"
+    }
+  ],
   "addressesFailureFrom": null,
-  "summary": "The triple-stream retrieval implementation is mostly well-structured with solid RRF fusion and graph traversal, but has a critical bug in the BM25 stream that generates random UUIDs instead of using actual entry IDs from RecallResult. This breaks the ability to fuse BM25 results with vector and graph results. The worker followed Rust skill procedures correctly and built comprehensive tests. However, the BM25 stream bug is blocking because it produces non-deterministic, incorrect fusion results."
+  "summary": "The triple-stream retrieval feature fails review due to a critical bug where BM25 results are assigned random UUIDs instead of actual memory entry IDs, making the fusion invalid. The vector search is also a placeholder using text matching. The BM25 stream bug is blocking because it produces incorrect results - the final output contains UUIDs that don't correspond to real memory entries. Additionally, there's an API design issue where reranking config is specified twice in different places."
 }

@@ -1,18 +1,24 @@
 {
   "featureId": "mem-scoping",
-  "reviewedAt": "2026-04-10T10:30:00Z",
+  "reviewedAt": "2026-04-10T14:30:00Z",
   "commitId": "103568b",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "The implementation adds repository, language, and task_type scoping fields to MemoryEntry and MemoryQuery. However, several critical methods do not enforce repository scope, violating the 'cross-repo memories isolated by default' requirement.",
+    "summary": "The implementation adds repository, language, and task_type scoping fields to MemoryEntry and MemoryQuery. The search() method correctly enforces cross-repo isolation. However, several critical issues remain: (1) update() does not persist scoping fields, (2) get_by_type/get_by_label/get_by_provenance do not filter by repository, (3) delete/get/reinforce/mark_stale don't validate repository scope.",
     "issues": [
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 638,
+        "severity": "blocking",
+        "description": "update() does NOT persist repository, language, or task_type fields. The SQL UPDATE statement only updates: block_type, label, content, embedding, updated_at, metadata. This means if you update an entry's language or task_type, the change is not persisted to the database. This is a data integrity bug."
+      },
       {
         "file": "crates/swell-memory/src/lib.rs",
         "line": 450,
         "severity": "blocking",
-        "description": "get_by_type() does not filter by repository - returns ALL memories of a given type across ALL repositories. This violates 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'. The method signature in the trait (swell-core/src/traits.rs:232) does not include repository parameter, so trait would need updating."
+        "description": "get_by_type() does not filter by repository - returns ALL memories of a given type across ALL repositories. This violates 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'."
       },
       {
         "file": "crates/swell-memory/src/lib.rs",
@@ -28,40 +34,46 @@
       },
       {
         "file": "crates/swell-memory/src/lib.rs",
+        "line": 396,
+        "severity": "blocking",
+        "description": "delete(id) does not validate repository scope - could delete memories from any repository if ID is known. This violates the principle that repository scope should be required for all memory operations."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 608,
+        "severity": "blocking",
+        "description": "get(id) does not validate repository scope - could retrieve memories from any repository by ID. Same cross-repo isolation violation."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 816,
+        "severity": "non_blocking",
+        "description": "reinforce(id) does not validate repository scope - could reinforce memories from any repository. While less severe than delete, this still violates the isolation principle."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 830,
+        "severity": "non_blocking",
+        "description": "mark_stale(id) does not validate repository scope - could mark memories from any repository as stale."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
         "line": 498,
         "severity": "non_blocking",
-        "description": "get_stale_memories() does not filter by repository - returns ALL stale memories across all repositories. Consider adding repository filtering."
-      },
-      {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 414,
-        "severity": "non_blocking",
-        "description": "delete(id) does not validate repository scope - could delete memories from any repository if ID is known. IDs are internal UUIDs so risk is low, but worth noting."
-      },
-      {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 396,
-        "severity": "non_blocking",
-        "description": "search() starts with 'WHERE repository = ?' which is correct, but the query construction could be clearer if the mandatory repository filter was visually separated from optional filters."
-      },
-      {
-        "file": "features.json verificationSteps",
-        "line": 0,
-        "severity": "non_blocking",
-        "description": "Verification step 'cargo test -p swell-memory -- scoping' runs 0 tests because no test name contains 'scoping'. The tests are named 'test_search_cross_repo_isolation' and 'test_search_by_language_filter'. Either the filter should be 'cross_repo' or test names should include 'scoping'."
+        "description": "get_stale_memories() does not filter by repository - returns ALL stale memories across all repositories."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "conventions",
-      "observation": "The MemoryStore trait (swell-core/src/traits.rs) defines get_by_type, get_by_label, get_by_provenance without repository parameters. This is a trait design issue - the feature implementation correctly added repository to MemoryQuery for search(), but these methods predate the scoping feature and don't have repository scope. The trait should arguably be updated to support repository-scoped variants.",
+      "observation": "The MemoryStore trait (swell-core/src/traits.rs) defines get_by_type, get_by_label, get_by_provenance, get, delete, update without repository parameters. This is a trait design issue - the feature implementation correctly added repository to MemoryQuery for search(), but these methods predate the scoping feature and don't have repository scope. The trait would need updating to fully enforce repository isolation.",
       "evidence": "swell-core/src/traits.rs:232-240 - trait methods lack repository parameter"
     },
     {
       "area": "skills",
-      "observation": "The Rust skill was followed correctly. Worker added scoping fields to MemoryEntry and MemoryQuery structs, updated the SQLite schema with new columns and indexes, and modified search() to apply repository filter first. The worker did not identify that get_by_type/get_by_label/get_by_provenance also need repository filtering because the trait doesn't support it.",
-      "evidence": "Transcript shows worker correctly implemented search() scoping but the trait itself limits get_by_type/get_by_label"
+      "observation": "The Rust skill was followed correctly for the search() implementation. However, the worker did not identify that update() needs to persist the new scoping fields, and that get_by_type/get_by_label/etc also need repository filtering because the trait doesn't support it.",
+      "evidence": "Transcript shows worker correctly implemented search() scoping but missed update() field persistence and other methods"
     },
     {
       "area": "knowledge",
@@ -70,5 +82,5 @@
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "The mem-scoping feature partially implements repository scope isolation. The search() method correctly enforces cross-repo isolation by always applying repository filter first. However, get_by_type(), get_by_label(), and get_by_provenance() do NOT enforce repository scope, returning memories from ALL repositories. This is a blocking issue because the feature description requires 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'. The root cause is that the MemoryStore trait doesn't include repository parameters for these methods. Fix would require either updating the trait to add repository scope parameters to these methods, or accepting that not all methods need repository filtering (which contradicts the feature description)."
+  "summary": "The mem-scoping feature partially implements repository scope isolation. The search() method correctly enforces cross-repo isolation. However, update() does NOT persist the repository/language/task_type fields (critical data integrity bug). Additionally, get_by_type(), get_by_label(), get_by_provenance(), get(), and delete() do NOT enforce repository scope, returning/modifying memories from ALL repositories. This violates the feature description requiring 'Repository scope required for all memory operations' and 'Cross-repo memories isolated by default'. The root cause is that the MemoryStore trait doesn't include repository parameters for these methods - fixing would require trait updates."
 }

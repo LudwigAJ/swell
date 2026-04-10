@@ -1,38 +1,34 @@
 {
   "featureId": "mem-operator-feedback",
-  "reviewedAt": "2026-04-10T08:30:00Z",
+  "reviewedAt": "2026-04-10T09:15:00Z",
   "commitId": "4d34266",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "Implementation fully covers the feature requirements. The operator_feedback.rs module (1074 lines) provides: (1) Parsing of CLAUDE.md and AGENTS.md files via OperatorFeedbackParser, (2) Higher confidence weights (0.95 base, 0.85 min) compared to learned patterns (0.4-0.7) via OPERATOR_FEEDBACK_BASE_CONFIDENCE and OPERATOR_FEEDBACK_MIN_CONFIDENCE constants, (3) mtime-based change detection via check_and_sync() and file_mtimes tracking. Integration with existing pattern_learning conventions system via patterns_to_conventions() method using pre-existing ConventionSource::FromOperatorFeedback enum variant (added in commit 3e08435). 19 tests cover parser, service, pattern types, and conventions.",
+    "summary": "Implementation provides pattern learning from CLAUDE.md and AGENTS.md files with higher trust weight (0.95 base confidence) than agent self-learned patterns (0.4-0.7). The implementation correctly integrates with the existing convention system via ConventionSource::FromOperatorFeedback and uses mtime-based change detection for sync.",
     "issues": [
       {
         "file": "crates/swell-memory/src/operator_feedback.rs",
-        "line": 336,
+        "line": 339,
         "severity": "non_blocking",
-        "description": "Dead code: condition `if line.starts_with('#') && (trimmed.is_empty() || !trimmed.is_empty())` - the second part `(trimmed.is_empty() || !trimmed.is_empty())` is always true. Should simply be `if line.starts_with('#')`."
+        "description": "extract_keywords() may add duplicate keywords if a code term also appears multiple times in the content. The code adds terms from code_terms array AND words appearing 2+ times - same word could be added twice. Consider using a HashSet or checking for duplicates before adding."
+      },
+      {
+        "file": "crates/swell-memory/src/operator_feedback.rs",
+        "line": 383,
+        "severity": "non_blocking",
+        "description": "extract_examples() only looks for backtick pairs on the same line, missing multi-line code blocks (```code```). Most markdown parsers support fenced code blocks - consider handling triple-backtick blocks in the future for completeness."
       }
     ]
   },
   "sharedStateObservations": [
     {
-      "area": "skills",
-      "observation": "Worker followed Rust skill correctly. Used async_trait, thiserror patterns, proper Result error handling with ? propagation. No procedure deviations noted.",
-      "evidence": "Transcript shows standard Rust development workflow: cargo build, cargo test, cargo clippy. Handoff confirms skillFeedback.followedProcedure would be true."
-    },
-    {
-      "area": "knowledge",
-      "observation": "Worker correctly used ConventionSource::FromOperatorFeedback which was added in prior feature (commit 3e08435 - provenance tracking). No gap - this was available in the codebase before this feature.",
-      "evidence": "grep shows FromOperatorFeedback in pattern_learning.rs which was part of 3e08435, before 4d34266."
-    },
-    {
       "area": "conventions",
-      "observation": "AGENTS.md correctly documents the memory system including pattern learning and skill extraction. Worker followed documented patterns for creating new modules.",
-      "evidence": "AGENTS.md Section 'Core Crates > swell-memory' documents the expected module structure and functionality."
+      "observation": "ConventionSource::FromOperatorFeedback was already defined in pattern_learning.rs before this feature. The worker correctly reused it rather than creating a duplicate enum variant.",
+      "evidence": "pattern_learning.rs defines 'FromOperatorFeedback' and operator_feedback.rs imports and uses it correctly"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature mem-operator-feedback passes scrutiny. Implementation correctly parses CLAUDE.md/AGENTS.md operator guidance files with 0.95 base confidence (vs 0.4-0.7 for learned patterns), provides mtime-based sync detection, and integrates with the existing pattern_learning conventions system. One minor dead code issue in parse_heading() at line 336 (always-true condition) but this is non-blocking. All 19 tests pass. Worker followed Rust skill and proper procedures."
+  "summary": "Feature implementation passes review. The operator feedback module correctly parses CLAUDE.md/AGENTS.md files with 0.95 base confidence (higher than learned patterns at 0.4-0.7), integrates with the existing convention system, and provides mtime-based change detection. Two minor non-blocking observations: potential duplicate keywords in extract_keywords(), and limited code block extraction. All 19 tests pass."
 }

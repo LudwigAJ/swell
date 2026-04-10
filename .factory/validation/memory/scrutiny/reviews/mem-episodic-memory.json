@@ -1,33 +1,34 @@
 {
   "featureId": "mem-episodic-memory",
-  "reviewedAt": "2026-04-10T08:45:00Z",
+  "reviewedAt": "2026-04-10T08:25:00Z",
   "commitId": "56b2d9e",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "The commit 56b2d9e only renamed the test module from 'tests' to 'episodic' - no actual feature implementation. The worker claimed the feature was 'already implemented' but the log_observation() convenience method is MISSING from EventLog.",
+    "summary": "The feature implementation is incomplete. While the EventLog struct provides methods for logging tool_invocation, decision, error, outcome, and state_transition events, the `log_observation()` method is missing despite ObservationPayload being defined. The feature description explicitly requires 'observation' as one of the immutable timestamped events.",
     "issues": [
       {
         "file": "crates/swell-memory/src/event_log.rs",
-        "line": 148,
+        "line": 125,
         "severity": "blocking",
-        "description": "log_observation() method is missing. EventType::Observation and ObservationPayload are defined but no convenience method exists to log observations. The feature description requires 'observation' to be stored as episodic memory and expectedBehavior states 'Stores observations and outcomes immutably' - but there's no way to log observations via the public API."
+        "description": "ObservationPayload struct is defined (lines 125-129) but no corresponding log_observation() method exists on EventLog. The feature description requires 'observation' as one of the immutable timestamped events ('tool_invocation, decision, observation, error, outcome stored as episodic memories'). The expectedBehavior states 'Stores observations and outcomes immutably' but only outcomes are actually storable via log_outcome()."
+      },
+      {
+        "file": "crates/swell-memory/src/event_log.rs",
+        "line": 468,
+        "severity": "non_blocking",
+        "description": "The test module contains 11 tests but none test observation logging. The test list in the handoff shows 'test_log_tool_invocation' twice, suggesting potential copy-paste error or duplicate test name."
       }
     ]
   },
   "sharedStateObservations": [
     {
-      "area": "conventions",
-      "observation": "Worker claimed in handoff that 'The EventLog struct provides methods like log_tool_invocation(), log_decision(), log_observation(), log_error(), log_outcome()' - but log_observation() does NOT exist in the codebase. The worker made a false statement about the implementation state.",
-      "evidence": "Handoff states log_observation() exists, but crates/swell-memory/src/event_log.rs EventLog impl block (lines 148-309) has no log_observation() method. Only log_tool_invocation, log_decision, log_error, log_outcome, log_state_transition are present."
-    },
-    {
       "area": "skills",
-      "observation": "The Rust skill was invoked but worker did not thoroughly verify the API surface - they claimed the feature was 'already implemented' without checking if all documented methods existed.",
-      "evidence": "Transcript shows worker read event_log.rs but concluded implementation was complete without verifying log_observation() existed."
+      "observation": "The Rust skill (.factory/skills/rust/SKILL.md) was loaded by the worker but the skillFeedback indicates procedure was followed. However, the implementation appears incomplete - a log_observation method should follow the same pattern as log_tool_invocation, log_decision, log_error, etc. If the existing implementation was already complete as claimed, the observation logging would have been present.",
+      "evidence": "EventLog has log_tool_invocation (line 224), log_decision (line 251), log_error (line 276), log_outcome (line 302), log_state_transition (line 325) but no log_observation method. ObservationPayload exists at line 125."
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "FAIL - The log_observation() convenience method is missing from EventLog. Commit 56b2d9e only renamed the test module - no actual implementation was added. The feature cannot fulfill its contract to 'store observations immutably' without this method."
+  "summary": "The worker claimed the feature was 'already implemented' and only renamed the test module from 'tests' to 'episodic'. However, inspection reveals the log_observation() method is completely missing from EventLog, despite ObservationPayload being defined and observation being explicitly listed in the feature description. This is a blocking issue - the API is incomplete and cannot be used to store observations as episodic memories."
 }

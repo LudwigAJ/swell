@@ -1,40 +1,57 @@
 {
   "featureId": "mem-contrastive-learning",
-  "reviewedAt": "2026-04-10T10:05:00Z",
-  "commitId": "e243129d6c9b7f3ca1a49ed62691f7479ab0716c",
+  "reviewedAt": "2026-04-10T12:00:00Z",
+  "commitId": "e243129",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "Feature implementation is complete and functional. Created contrastive_learning.rs module with data types (SuccessTrajectory, FailureTrajectory, ContrastivePair), ContrastiveAnalyzer for pair extraction, ContrastiveTrainer for loss computation, and ContrastiveLearningService for high-level operations. 25 unit tests cover the functionality. The implementation correctly handles positive pairs (minimize distance) and negative pairs (maximize distance beyond margin).",
+    "summary": "The contrastive learning implementation provides data structures and basic loss computation, but has a critical issue in the `analyze()` method which returns hardcoded placeholder values instead of actual computed distances. This makes analysis results unreliable and contradicts the expected behavior of analyzing trajectories without modifying embeddings.",
     "issues": [
       {
         "file": "crates/swell-memory/src/contrastive_learning.rs",
-        "line": 199,
-        "severity": "non_blocking",
-        "description": "ContrastiveAnalyzer.store field is marked #[allow(dead_code)] but never used. The store is passed to the constructor but never referenced in any methods. Either remove the field or document why it's being stored (future integration hook?)."
+        "line": 681,
+        "severity": "blocking",
+        "description": "The `analyze()` method returns hardcoded `loss: 0.0` and `positive_avg_distance: 0.5` / `negative_avg_distance: 0.5` placeholder values instead of computing actual distances from embeddings. This makes the analysis results meaningless - any analysis will show loss 0.0 and fixed distances regardless of actual embedding relationships."
       },
       {
         "file": "crates/swell-memory/src/contrastive_learning.rs",
-        "line": 518,
-        "severity": "non_blocking",
-        "description": "ContrastiveTrainer::analyze() method returns hardcoded placeholder distances (0.5) instead of computing actual distances from embeddings. The method signature takes pairs but ignores them. Either implement properly or remove the method."
+        "line": 668,
+        "severity": "blocking",
+        "description": "The `analyze()` method cannot access embeddings to compute real distances because it only takes `&[ContrastivePair]` without a store reference. The method comment says 'We need embeddings to compute actual distances' but no solution is implemented. The method should either accept embeddings as a parameter or fetch them from the store."
       },
       {
         "file": "crates/swell-memory/src/contrastive_learning.rs",
-        "line": 362,
+        "line": 481,
         "severity": "non_blocking",
-        "description": "rand_index() function uses time-based subsec_nanos() for randomness which is predictable. Consider using a proper random number generator (e.g., rand crate) for reservoir sampling, though this is not a security-critical path."
+        "description": "The `FailureReason::as_str()` method manually returns string slices instead of using serde serialization. While functionally correct, this creates redundancy and could lead to inconsistencies if the enum variants are modified. Consider deriving Serialize or using a serde method."
+      },
+      {
+        "file": "crates/swell-memory/src/contrastive_learning.rs",
+        "line": 575,
+        "severity": "non_blocking",
+        "description": "In the `train()` method, embeddings not found in the store are silently skipped with `continue`. While reasonable, this could lead to partial training where only some embeddings are updated, potentially causing imbalance. A warning log would help diagnostics."
+      },
+      {
+        "file": "crates/swell-memory/src/contrastive_learning.rs",
+        "line": 550,
+        "severity": "non_blocking",
+        "description": "The `reservoir_sample` function has a comment 'Reservoir sampling helper' but doesn't actually implement proper reservoir sampling - it uses simple random indexing based on system time which is not deterministic and could cause different results on different runs."
       }
     ]
   },
   "sharedStateObservations": [
     {
-      "area": "skills",
-      "observation": "The Rust skill documentation does not mention async_trait pattern requirements, but the codebase uses #[async_trait] macro extensively. A developer new to the project might not know to use it without checking existing code.",
-      "evidence": "ContrastiveAnalyzer and ContrastiveLearningService are async but don't use #[async_trait] because they don't implement traits with async methods. However, other crates like pattern_learning.rs use #[async_trait] for trait impls."
+      "area": "knowledge",
+      "observation": "The `analyze_trajectories()` method was implemented with placeholder values because the worker did not have access to embeddings during analysis-only mode. This is a design issue - the method should accept an optional store reference or embeddings parameter to compute real distances.",
+      "evidence": "contrastive_learning.rs:681 - `analyze()` returns hardcoded values; transcript shows worker noted this as placeholder but shipped it anyway"
+    },
+    {
+      "area": "conventions",
+      "observation": "The `FailureReason::as_str()` method doesn't follow the same pattern as other enums in the codebase. Compare to `PairType` and `SuccessOutcome` which use `#[serde(rename_all = \"snake_case\")]` for automatic serialization.",
+      "evidence": "contrastive_learning.rs:481 - as_str() manually returns strings vs PairType which uses serde rename"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Review of mem-contrastive-learning feature: Implementation is complete and functional with 25 passing tests. The contrastive learning module correctly implements positive pair minimization (embeddings closer for similar successes) and negative pair maximization (embeddings farther apart for success-failure contrasts). Minor issues noted: unused store field in ContrastiveAnalyzer (marked with allow(dead_code)), placeholder implementation in analyze() method, and non-cryptographic randomness in rand_index(). These are non-blocking issues that don't affect core functionality. Skill procedure was followed correctly."
+  "summary": "Feature implementation provides core contrastive learning infrastructure with data types, loss computation, and pair extraction. However, the `analyze()` method returns placeholder values (0.0 loss, 0.5 distances) instead of actual computed metrics, making it unsuitable for real analysis. The feature builds and tests pass but the analysis functionality is incomplete/broken. Recommend fixing `analyze()` to either accept embeddings as a parameter or fetch them from the store before release."
 }

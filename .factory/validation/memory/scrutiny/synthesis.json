@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 20,
+  "round": 21,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test -p swell-memory", "exitCode": 0 },
@@ -8,58 +8,142 @@
     "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 2,
-    "passed": 0,
-    "failed": 2,
-    "failedFeatures": ["memory-skill-extraction", "memory-pattern-learning"]
+    "total": 25,
+    "passed": 14,
+    "failed": 11,
+    "failedFeatures": [
+      "memory-sqlite-store",
+      "memory-recall",
+      "memory-skill-extraction",
+      "memory-pattern-learning",
+      "mem-episodic-memory",
+      "mem-meta-cognitive",
+      "mem-decay-function",
+      "mem-scoping",
+      "mem-contrastive-learning",
+      "mem-triple-stream-retrieval",
+      "mem-provenance-tracking"
+    ]
   },
   "blockingIssues": [
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 107: ExtractionConfig::default() sets store_path to '.skills' but AGENTS.md specifies user-extensible skills should be in '.swell/skills/'. STILL NOT FIXED since round 1 (now round 20).",
-      "evidence": "crates/swell-memory/src/skill_extraction.rs:107: store_path: \".skills\".to_string()"
+      "description": "Line 125: ExtractionConfig::default() sets store_path to '.skills' but AGENTS.md specifies user-extensible skills should be in '.swell/skills/'. STILL NOT FIXED since round 1.",
+      "evidence": "crates/swell-memory/src/skill_extraction.rs:125: store_path: \".skills\".to_string()"
     },
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 139: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. STILL NOT FIXED since round 1 (now round 20).",
-      "evidence": "crates/swell-memory/src/skill_extraction.rs:139: #[allow(dead_code)]"
+      "description": "Line 141: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. STILL NOT FIXED since round 1.",
+      "evidence": "crates/swell-memory/src/skill_extraction.rs:141: #[allow(dead_code)]"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 20).",
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1.",
       "evidence": "crates/swell-memory/src/pattern_learning.rs:955: final_pattern.update_confidence(frequency_map.values().sum())"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 20).",
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1.",
       "evidence": "crates/swell-memory/src/pattern_learning.rs:1145: let name = trimmed[3..colon_pos].trim().to_string();"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1170: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 20).",
+      "description": "Line 1170: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1.",
       "evidence": "crates/swell-memory/src/pattern_learning.rs:1170-1172: Ok(Vec::new()) with 'For MVP, return empty' comment"
+    },
+    {
+      "featureId": "memory-sqlite-store",
+      "severity": "blocking",
+      "description": "Lines 779, 795: get_by_type() and get_by_label() do not filter by repository, allowing cross-repository data leakage.",
+      "evidence": "crates/swell-memory/src/lib.rs:779,795"
+    },
+    {
+      "featureId": "memory-recall",
+      "severity": "blocking",
+      "description": "Line 330: Pagination bug - truncate(query.limit) is applied before skip(query.offset), producing incorrect result counts when offset > 0.",
+      "evidence": "crates/swell-memory/src/recall.rs:330"
+    },
+    {
+      "featureId": "mem-episodic-memory",
+      "severity": "blocking",
+      "description": "EventLog has log_observation() method missing despite ObservationPayload being defined. Feature description requires 'observation' as one of the immutable timestamped events.",
+      "evidence": "crates/swell-memory/src/event_log.rs:125 (ObservationPayload defined but no log_observation method)"
+    },
+    {
+      "featureId": "mem-meta-cognitive",
+      "severity": "blocking",
+      "description": "Line 662: find_best_models SQL orders by success_count instead of composite_score. A model with more raw successes but terrible efficiency/speed would rank higher.",
+      "evidence": "crates/swell-memory/src/meta_cognitive.rs:662"
+    },
+    {
+      "featureId": "mem-decay-function",
+      "severity": "blocking",
+      "description": "Line 56: calculate_decay does not handle now < last_reinforcement. When num_days is negative, base.powf(negative) returns > 1.0, violating documented [0.0, 1.0] range.",
+      "evidence": "crates/swell-memory/src/decay.rs:56"
+    },
+    {
+      "featureId": "mem-scoping",
+      "severity": "blocking",
+      "description": "Line 638: update() does not persist repository, language, or task_type fields. Lines 450, 462, 472: get_by_type/get_by_label/get_by_provenance don't filter by repository.",
+      "evidence": "crates/swell-memory/src/lib.rs:450,462,472,638"
+    },
+    {
+      "featureId": "mem-scoping",
+      "severity": "blocking",
+      "description": "Lines 396, 608: delete() and get() don't validate repository scope - could access/modify memories from any repository by ID.",
+      "evidence": "crates/swell-memory/src/lib.rs:396,608"
+    },
+    {
+      "featureId": "mem-contrastive-learning",
+      "severity": "blocking",
+      "description": "Line 681: analyze() returns hardcoded loss: 0.0 and fixed distances (0.5) instead of actual computed values. Line 668: analyze() lacks access to embeddings.",
+      "evidence": "crates/swell-memory/src/contrastive_learning.rs:668,681"
+    },
+    {
+      "featureId": "mem-triple-stream-retrieval",
+      "severity": "blocking",
+      "description": "Line 595: BM25 search stream generates random UUIDs (Uuid::new_v4()) instead of actual memory entry IDs, making fusion results invalid.",
+      "evidence": "crates/swell-memory/src/triple_stream.rs:595"
+    },
+    {
+      "featureId": "mem-provenance-tracking",
+      "severity": "blocking",
+      "description": "Line 581: store() INSERT doesn't include provenance fields (source_episode_id, evidence, provenance_context) - silently drops them. Line 631: update() also doesn't persist them.",
+      "evidence": "crates/swell-memory/src/lib.rs:581,631"
+    },
+    {
+      "featureId": "mem-provenance-tracking",
+      "severity": "blocking",
+      "description": "Line 684: search() ignores source_episode_id filter in MemoryQuery despite the field existing for 'Optional source episode ID filter'.",
+      "evidence": "crates/swell-memory/src/lib.rs:684"
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "CRITICAL: 5 blocking issues have persisted for 20 rounds without resolution across 2 features (memory-skill-extraction, memory-pattern-learning). These are well-identified, localized bugs with exact line numbers and clear fix instructions. Validators pass but correctness bugs remain. The orchestrator created no fix feature - the suggested fix-memory-blocking-issues was never implemented. HIGH-PRIORITY: Assign a dedicated worker to fix-memory-blocking-issues with explicit requirement to fix each listed issue at the exact lines specified. Do not allow further scrutiny re-runs until the fix feature is completed.",
-      "evidence": "All 5 issues marked 'STILL NOT FIXED since round 1' with file:line evidence. No code changes made to address these issues across 20 rounds. Workers correctly implement features but introduce logic bugs that tests don't catch.",
+      "suggestion": "CRITICAL SYSTEMIC ISSUE: 5 blocking issues have persisted for 21 rounds without resolution in memory-skill-extraction and memory-pattern-learning. These are well-identified, localized bugs with exact line numbers. The Rust skill procedure produces working code that passes tests but contains logic bugs that tests don't catch. Recommend: (1) Create a dedicated fix-memory-blocking-issues feature with explicit fix instructions for each issue, (2) Consider adding specific code review checklist for slice indices, denominators, and stub implementations that commonly have bugs.",
+      "evidence": "All 5 issues marked 'STILL NOT FIXED since round 1' across 2 features. Tests pass but correctness bugs persist. Workers follow Rust skill correctly but miss these specific bugs.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Blocking issues are pure code correctness bugs that do not cause test failures. Consider adding specific validation checks or stricter code review requirements for features that have known blocking issues. Current scrutiny loop cycles without resolution because workers follow the same Rust skill procedure and produce the same buggy code.",
-      "evidence": "Feature builds and tests pass but correctness bugs persist (wrong slice index, unused field, wrong denominator). The 42 swell-memory tests pass despite these bugs.",
+      "suggestion": "MemoryStore trait (swell-core/src/traits.rs) defines get_by_type, get_by_label, get_by_provenance, get, delete without repository parameters, but scoping features require repository isolation. The trait design is inconsistent with the repository isolation requirement. Recommend: Update MemoryStore trait to include repository parameters for these methods.",
+      "evidence": "mem-scoping, memory-sqlite-store, mem-provenance-tracking all report that the trait doesn't support repository filtering for these methods. Feature implementations can't fully enforce isolation without trait changes.",
       "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Event log uses io::Result<()> while other swell-memory modules use SwellError. AGENTS.md doesn't specify which error type to use, creating inconsistency across features. Recommend: Document the error handling convention.",
+      "evidence": "mem-event-log-jsonl uses io::Result<()> but blocks.rs, recall.rs, semantic.rs use Result<T, SwellError>.",
+      "isSystemic": false
     }
   ],
   "rejectedObservations": [],
-  "previousRound": "5324274"
+  "previousRound": ".factory/validation/memory/scrutiny/synthesis.json (round 20)"
 }

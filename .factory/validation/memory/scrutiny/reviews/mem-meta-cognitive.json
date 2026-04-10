@@ -1,34 +1,45 @@
 {
   "featureId": "mem-meta-cognitive",
-  "reviewedAt": "2026-04-10T12:50:00Z",
+  "reviewedAt": "2026-04-10T16:40:00Z",
   "commitId": "374b407",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "Implementation fully covers the feature requirements. Created meta_cognitive.rs with TaskType enum, ModelPerformance struct for tracking model success/tokens/latency, PromptingStrategy struct for prompting templates with effectiveness scoring, SqliteMetaCognitiveStore for SQLite-backed persistence, and get_recommendation API for model/strategy recommendations. 25 unit tests all pass. Build and clippy clean.",
+    "summary": "Implementation is largely sound with 25 passing tests, but has one blocking issue: `find_best_models` orders results by `success_count` in SQL instead of by `composite_score`, undermining the recommendation quality since composite_score is the actual metric that combines success rate, efficiency, and speed.",
     "issues": [
       {
         "file": "crates/swell-memory/src/meta_cognitive.rs",
-        "line": 24,
-        "severity": "non_blocking",
-        "description": "TaskType enum is duplicated from swell-llm/src/router.rs. The meta_cognitive module comment states 'These align with the LLM router's task types but are defined here to allow the memory system to evolve independently.' This is a design choice, but may lead to drift over time. Consider if the memory system should import TaskType from swell-core or share via a common crate."
+        "line": 662,
+        "severity": "blocking",
+        "description": "find_best_models SQL query orders by `success_count DESC` instead of `composite_score`. The composite_score method exists precisely to provide a holistic ranking (combining success rate, efficiency, and speed), but this is never used for SQL-level ordering. A model with more raw successes but terrible efficiency/speed would rank higher than a more efficient model with slightly fewer successes. The function is called 'find_best_models' but doesn't find the 'best' models by the defined quality metric."
       },
       {
         "file": "crates/swell-memory/src/meta_cognitive.rs",
-        "line": 805,
-        "severity": "non_blocking",
-        "description": "get_recommendation accepts task_description parameter but never uses it (marked with _ underscore prefix). This parameter could be used for semantic matching in future enhancements."
+        "line": 804,
+        "severity": "non-blocking",
+        "description": "The `task_description` parameter in `get_recommendation` is prefixed with underscore, indicating it's unused. This is a design limitation - the description could theoretically be used for semantic matching or keyword extraction to improve recommendations, but currently isn't utilized."
+      },
+      {
+        "file": "crates/swell-memory/src/meta_cognitive.rs",
+        "line": 784,
+        "severity": "non-blocking",
+        "description": "find_strategies_for_task uses LIKE '%task_type%' for searching comma-separated task_types. While task types are lowercase single words so false positives are unlikely in practice, a normalized search (e.g., storing task_types as JSON array or using separate junction table) would be more robust."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "conventions",
-      "observation": "The meta-cognitive module uses magic numbers for composite scoring weights (e.g., 100_000.0 for token normalization, 60_000.0 for latency, and weight factors 0.3/0.2/0.5 for Fast tasks). AGENTS.md doesn't specify how such tuning parameters should be managed, but these appear to be reasonable heuristics that might need tuning based on real usage data.",
-      "evidence": "composite_score() function at line 144 - weights are hardcoded based on task type"
+      "observation": "The AGENTS.md in the mission directory documents general coding conventions and Rust patterns, but there's no specific guidance on implementing memory store modules. The worker correctly followed general patterns, but this lack of specific guidance could lead to inconsistent implementations across features.",
+      "evidence": "Mission AGENTS.md has 'Rust Patterns' section with async_trait, thiserror, #[tokio::test] patterns, but no specific guidance on memory store trait design or SQLite schema conventions."
+    },
+    {
+      "area": "skills",
+      "observation": "The worker used the 'Rust' skill and followed proper procedure (read mission.md, validation-contract.md, explored codebase, implemented module, added tests, ran build/test/clippy). No deviations noted in skillFeedback. The skill's procedure appears adequate for this task.",
+      "evidence": "Transcript skeleton shows: Skill('mission-worker-base'), Skill('Rust'), Read mission.md, Read validation-contract.md, Read features.json, explore codebase (LS, Read lib.rs), implement module, build and test."
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature mem-meta-cognitive passes review. Implementation adds TaskType enum, ModelPerformance for model tracking, PromptingStrategy for prompt templates, SqliteMetaCognitiveStore for persistence, and get_recommendation API. All 25 tests pass. Build and clippy clean. Code is well-structured with proper async patterns and error handling. Two non-blocking observations: TaskType duplication across crates (acknowledged in comments), and unused task_description parameter."
+  "summary": "The mem-meta-cognitive feature implements model performance tracking, prompting strategy storage, and recommendations with 25 passing tests. However, it fails review due to a blocking issue: `find_best_models` orders by raw `success_count` instead of the `composite_score` metric that properly weights success rate, efficiency, and speed. This means recommendations could suggest suboptimal models. The fix requires ordering results by composite_score (computed in application code after fetch, since SQL can't compute the weighted formula efficiently), or storing pre-computed composite_score in the database."
 }

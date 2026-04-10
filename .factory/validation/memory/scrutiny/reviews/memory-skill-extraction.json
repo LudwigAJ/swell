@@ -1,28 +1,28 @@
 {
   "featureId": "memory-skill-extraction",
-  "reviewedAt": "2026-04-10T15:30:00Z",
+  "reviewedAt": "2026-04-10T15:00:00Z",
   "commitId": "723e11b",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "Re-review after fix attempt. The blocking issues from the prior review are STILL PERSISTING. Line 107 ExtractionConfig::default() still sets store_path to '.skills' instead of '.swell/skills/'. Line 139 still has #[allow(dead_code)] attribute on TrajectoryAnalyzer and its store field is still never used for any database operations.",
+    "summary": "Re-review after fix attempt. The blocking issues from the prior review are STILL PERSISTING. The ExtractionConfig::default() still sets store_path to '.skills' instead of '.swell/skills/'. The TrajectoryAnalyzer still has #[allow(dead_code)] attribute and its store field is never used for any database operations.",
     "issues": [
       {
         "file": "crates/swell-memory/src/skill_extraction.rs",
-        "line": 107,
+        "line": 125,
         "severity": "blocking",
-        "description": "STILL PERSISTS: ExtractionConfig::default() sets store_path to '.skills' but should be '.swell/skills/' per AGENTS.md user-extensibility requirements. No change was made to this line."
+        "description": "STILL PERSISTS: ExtractionConfig::default() sets store_path to '.skills' but AGENTS.md specifies user-extensible skills should be in '.swell/skills/'. The feature description states 'Stores reusable procedures in .skills directory' but AGENTS.md section 'Project Structure' shows '.swell/' as the configuration directory with 'skills/' as a subdirectory. The default should be '.swell/skills' to align with project conventions."
       },
       {
         "file": "crates/swell-memory/src/skill_extraction.rs",
-        "line": 139,
+        "line": 141,
         "severity": "blocking",
-        "description": "STILL PERSISTS: TrajectoryAnalyzer still has #[allow(dead_code)] attribute. The store field is defined but never used - the analyzer's methods only process the input trajectory in memory without any database queries. The #[allow(dead_code)] remains unjustified."
+        "description": "STILL PERSISTS: TrajectoryAnalyzer has #[allow(dead_code)] attribute. The store field is defined at line 142 but never used - all analyzer methods (analyze, extract_file_patterns, extract_tool_patterns, extract_test_patterns, extract_validation_patterns, deduplicate_patterns) only operate on the in-memory TrajectoryData without any database queries. The #[allow(dead_code)] is unjustified and should either be removed (if the store will be used) or the field should be removed entirely."
       }
     ]
   },
   "sharedStateObservations": [],
   "addressesFailureFrom": ".factory/validation/memory/scrutiny/reviews/memory-skill-extraction.json",
-  "summary": "This is a re-run review. The prior blocking issues are STILL PERSISTING: (1) ExtractionConfig::default() store_path remains '.skills' instead of '.swell/skills/', (2) TrajectoryAnalyzer still has #[allow(dead_code)] and unused store field. No code changes were made to address these issues."
+  "summary": "This is a re-run review. The 2 prior blocking issues are STILL PERSISTING with no code changes: (1) ExtractionConfig::default() store_path remains '.skills' instead of '.swell/skills/', (2) TrajectoryAnalyzer still has #[allow(dead_code)] and unused store field. The code at commit 723e11b is unchanged."
 }

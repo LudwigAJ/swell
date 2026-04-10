@@ -1,21 +1,51 @@
 {
   "featureId": "memory-sqlite-store",
   "reviewedAt": "2026-04-10T00:00:00Z",
-  "commitId": "9229e2f",
+  "commitId": "not-applicable",
   "transcriptSkeletonReviewed": true,
-  "diffReviewed": true,
-  "status": "pass",
+  "diffReviewed": false,
+  "status": "fail",
   "codeReview": {
-    "summary": "Feature was already fully implemented by a prior worker. The worker session 82abe069 correctly verified the existing implementation. SqliteMemoryStore implements all required MemoryStore trait methods with complete CRUD, search, and filtering functionality.",
-    "issues": []
+    "summary": "The SqliteMemoryStore implementation provides CRUD, search, and type/label filtering, but has a critical cross-repository data leak issue. The get_by_type() and get_by_label() methods do not filter by repository, violating the stated requirement that repository scope is REQUIRED for all memory operations.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 779,
+        "severity": "blocking",
+        "description": "get_by_type() does not filter by repository. It queries across ALL repositories, allowing cross-repository data leakage. This violates the comment on MemoryQuery.repository which states 'Repository scope - REQUIRED for all memory operations'. If entries with the same block_type exist in multiple repositories, this method returns all of them."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 795,
+        "severity": "blocking",
+        "description": "get_by_label() does not filter by repository. It queries across ALL repositories, allowing cross-repository data leakage. This violates the stated repository isolation requirement. If entries with the same label exist in multiple repositories, this method returns all of them."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 626,
+        "severity": "non_blocking",
+        "description": "update() method does not update last_reinforcement or reset is_stale. When a memory is actively updated, it should be reinforced (similar to store() which sets last_reinforcement=now). Currently an updated memory could still become stale even after being modified."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 470,
+        "severity": "non_blocking",
+        "description": "string_to_block_type() silently defaults unknown block type strings to MemoryBlockType::Project. If the database contains a block_type value not in the enum match arms, it returns Project rather than returning an error. This could silently lose data during schema evolution."
+      }
+    ]
   },
   "sharedStateObservations": [
     {
+      "area": "conventions",
+      "observation": "The MemoryStore trait defines get_by_type() and get_by_label() without repository parameters, but the comment on MemoryQuery.repository says 'Repository scope - REQUIRED for all memory operations'. This contradiction is not documented anywhere. The API is inconsistent - search() is repository-scoped but get_by_type/get_by_label are not.",
+      "evidence": "MemoryQuery struct comment (line 258-259 in swell-core/src/traits.rs) vs MemoryStore trait methods (lines 773-806 in lib.rs). The trait itself doesn't support repository filtering for these methods."
+    },
+    {
       "area": "skills",
-      "observation": "The skill 'rust-worker' specified in features.json does not exist in the skill registry. Worker had to deviate from procedure and verify existing implementation instead.",
-      "evidence": "Transcript shows: Tool Result: Error: Skill \"rust-worker\" not found. Handoff discoveredIssues confirms: 'The specified skill rust-worker does not exist in the skill registry.'"
+      "observation": "The worker noted the 'rust-worker' skill doesn't exist. Since the feature was already implemented, no new code was created. This is a skill registry issue, not an implementation issue.",
+      "evidence": "Handoff file shows: 'discoveredIssues: [{severity: non_blocking, description: The specified skill rust-worker does not exist in the skill registry. Feature was already implemented by a previous worker.}]'"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Review of memory-sqlite-store. The SqliteMemoryStore implementation is complete, correct, and fully implements the MemoryStore trait with CRUD operations (store/get/update/delete), search with multiple filters (query_text, block_types, labels, language, task_type), and get_by_type/get_by_label methods. All VAL-MEMORY-* assertions are covered by existing tests (5 passing). The worker session correctly verified pre-existing code when it discovered the rust-worker skill didn't exist. No blocking issues found."
+  "summary": "The SqliteMemoryStore is largely correctly implemented with CRUD operations, search, and type/label filtering. All 374 tests pass. However, there is a CRITICAL cross-repository data leak: get_by_type() and get_by_label() do not filter by repository, violating the stated repository isolation requirement. This means memories from different repositories could be inadvertently mixed when using these methods. The MemoryStore trait itself may need to be updated to include repository parameters for get_by_type and get_by_label."
 }

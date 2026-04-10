@@ -1,34 +1,33 @@
 {
   "featureId": "memory-recall",
-  "reviewedAt": "2026-04-10T13:20:00Z",
-  "commitId": "7b57129f527a3bd6ed9977f0c882632a275511bc",
+  "reviewedAt": "2026-04-10T17:05:00Z",
+  "commitId": "7b57129",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "Implementation fully covers feature description: BM25 keyword search over structured conversation logs with temporal query support. All 8 tests pass. Code quality is good.",
+    "summary": "The memory-recall feature implements BM25 keyword search and temporal queries for conversation logs, but contains a blocking pagination bug where limit is applied before offset, causing incorrect result counts when offset > 0 and limit is smaller than the total result set.",
     "issues": [
       {
         "file": "crates/swell-memory/src/recall.rs",
-        "line": 1,
-        "severity": "non_blocking",
-        "description": "Recall module is not re-exported via pub use. Consumers must use fully qualified path swell_memory::recall::RecallService rather than swell_memory::RecallService. Consider adding 'pub use recall::{ConversationLog, ConversationAction, RecallQuery, RecallResult, Bm25Params, RecallService};' to lib.rs if public API is desired."
-      },
-      {
-        "file": "crates/swell-memory/src/lib.rs",
-        "line": 85,
-        "severity": "non_blocking",
-        "description": "Duplicate schema initialization: init_conversation_logs_schema() is called from both SqliteMemoryStore::init_schema() and recall.rs:SqliteMemoryStore::init_conversation_logs_schema(). The recall.rs static method exists but is redundant since init_schema() handles it. Could be removed to reduce duplication, though it doesn't cause functional issues since CREATE TABLE IF NOT EXISTS is idempotent."
+        "line": 330,
+        "severity": "blocking",
+        "description": "Pagination bug: `truncate(query.limit)` is applied before `skip(query.offset)`. With 15 candidates, limit=10, offset=5: truncate(10) gives indices 0-9, then skip(5) yields only indices 5-9 (5 items) instead of indices 5-14 (10 items). The correct order should be: skip(offset) first, then truncate(limit)."
       }
     ]
   },
   "sharedStateObservations": [
     {
-      "area": "services",
-      "observation": "Worker attempted to read .factory/services.yaml but the file doesn't exist. Transcript shows: 'Error: Error reading file: ENOENT: no such file or directory, access '/Users/ludwigjonsson/.factory/services.yaml''. This is consistent across all memory feature workers. The services.yaml file should either be created with documented services or AGENTS.md should clarify that it doesn't exist yet.",
-      "evidence": "Transcript shows File read for '.factory/services.yaml' failed with ENOENT. Worker proceeded without this file."
+      "area": "conventions",
+      "observation": "The transcript shows the worker discovered `.factory/services.yaml` doesn't exist at the expected path but continued without documenting this gap. The file location should be verified and documented if it's supposed to exist.",
+      "evidence": "Transcript shows: 'Error: Error reading file: ENOENT: no such file or directory, access /Users/ludwigjonsson/.factory/services.yaml'"
+    },
+    {
+      "area": "skills",
+      "observation": "The worker followed the Rust skill procedure correctly. No deviations noted in skillFeedback.",
+      "evidence": "skillFeedback.followedProcedure: true, deviations: []"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature memory-recall passes scrutiny. Implementation correctly provides: (1) ConversationLog struct for agent interactions with all expected fields (id, session_id, task_id, agent_id, agent_role, action, content, timestamp, metadata); (2) BM25 keyword search via tokenize/extract_terms/calculate_bm25_score with configurable k1/b parameters; (3) Temporal queries via start_time/end_time filters; (4) RecallService high-level API. All 8 tests pass. Build and clippy clean. No blocking issues found."
+  "summary": "Feature implements ConversationLog struct, BM25 keyword search with proper IDF formula, temporal queries with time range filtering, RecallService API, and comprehensive tests. All 8 tests pass. However, there is a blocking pagination bug in recall_search where the order of operations (truncate before skip) produces incorrect result counts when offset is used with a limit smaller than the total results."
 }
