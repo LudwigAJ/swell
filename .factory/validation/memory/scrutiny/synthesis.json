@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 6,
+  "round": 7,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -20,31 +20,31 @@
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 107: ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. Extracted skills will not be discoverable by the system's skill discovery mechanism. STILL NOT FIXED since round 1 (now round 6).",
+      "description": "Line 107: ExtractionConfig defaults store_path to `.skills` but AGENTS.md specifies user-extensible skills should be in `.swell/skills/`. Extracted skills will not be discoverable by the system's skill discovery mechanism. STILL NOT FIXED since round 1 (now round 7).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs line 107: store_path: \".skills\".to_string()"
     },
     {
       "featureId": "memory-skill-extraction",
       "severity": "blocking",
-      "description": "Line 139: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. The analyzer only processes input trajectory in memory without querying historical data. STILL NOT FIXED since round 1 (now round 6).",
+      "description": "Line 139: TrajectoryAnalyzer has #[allow(dead_code)] attribute and its store field is never used for database lookups. The analyzer only processes input trajectory in memory without querying historical data. STILL NOT FIXED since round 1 (now round 7).",
       "evidence": "crates/swell-memory/src/skill_extraction.rs line 139: #[allow(dead_code)] on TrajectoryAnalyzer struct"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 6).",
+      "description": "Line 955: Confidence calculation uses sum of all pattern frequencies (frequency_map.values().sum()) as denominator instead of per-pattern frequency. STILL NOT FIXED since round 1 (now round 7).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs line 955: final_pattern.update_confidence(frequency_map.values().sum())"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 6).",
+      "description": "Line 1145: Convention parsing uses wrong string slice index [3..] instead of [4..]. For input '- **name**: description', position 0='-', 1=' ', 2='*', 3='*', 4='n'. Name starts at index 4. STILL NOT FIXED since round 1 (now round 7).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs line 1145: let name = trimmed[3..colon_pos].trim().to_string();"
     },
     {
       "featureId": "memory-pattern-learning",
       "severity": "blocking",
-      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 6).",
+      "description": "Line 1173: get_anti_patterns_for_error is an unimplemented stub returning empty vec with comment 'For MVP, return empty'. STILL NOT FIXED since round 1 (now round 7).",
       "evidence": "crates/swell-memory/src/pattern_learning.rs lines 1173-1176: Ok(Vec::new()) with 'For MVP, return empty' comment"
     }
   ],
@@ -52,20 +52,14 @@
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "CRITICAL: These blocking issues have persisted for 6 rounds without resolution. The orchestrator should create dedicated fix features for each blocking issue rather than expecting implementation workers to self-correct. The issues are: (1) memory-skill-extraction store_path should be `.swell/skills/`, (2) memory-skill-extraction TrajectoryAnalyzer dead code, (3) memory-pattern-learning confidence calculation, (4) memory-pattern-learning convention parsing slice index, (5) memory-pattern-learning anti-pattern stub.",
-      "evidence": "All 5 issues marked 'STILL NOT FIXED' in rounds 1-6. No progress has been made despite multiple review cycles.",
+      "suggestion": "CRITICAL: These 5 blocking issues have persisted for 7 rounds without resolution. The orchestrator should create a dedicated, HIGH-PRIORITY fix feature for each blocking issue that gets auto-assigned rather than expecting implementation workers to self-correct. These are simple, localized fixes that have been identified but never addressed.",
+      "evidence": "All 5 issues marked 'STILL NOT FIXED' in rounds 1-7. No code changes have been made to address these issues.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
       "suggestion": "The skill store path convention is unclear: skill extraction outputs to `.skills/` but AGENTS.md documents `.swell/skills/` as the user-extensible skill directory. Clarify the intended behavior: (a) skill_extraction.rs should use `.swell/skills/` as the default store path, or (b) AGENTS.md should document both locations with different purposes.",
-      "evidence": "memory-skill-extraction stores to `.skills/` (line 125) but AGENTS.md line ~210 states 'Users can add new skills to .swell/skills/ - no code changes needed.'",
-      "isSystemic": false
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "The convention parsing format used internally by memory-pattern-learning is not documented anywhere. This markdown format with '### TypeName' headers and '- **name**: description' bullet points should be documented in shared state if workers are expected to follow it.",
-      "evidence": "pattern_learning.rs lines 1130-1146 show parsing expects specific markdown format. No documentation exists in AGENTS.md or library.",
+      "evidence": "memory-skill-extraction stores to `.skills/` (line 107) but AGENTS.md line ~210 states 'Users can add new skills to .swell/skills/ - no code changes needed.'",
       "isSystemic": false
     }
   ],
@@ -75,5 +69,5 @@
       "reason": "Skill creation is out of scope for memory milestone fixes - this is a future improvement, not a blocking issue"
     }
   ],
-  "previousRound": "7c7a170"
+  "previousRound": "5c01dd8"
 }
