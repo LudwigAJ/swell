@@ -57,6 +57,13 @@ pub use flakiness::{
     TestResultRecord,
 };
 
+// Re-export multi-signal validation for use by other crates
+pub mod multi_signal;
+pub use multi_signal::{
+    MultiSignalOutcome, MultiSignalOutcomeBuilder, MultiSignalValidator, OutcomeLevel,
+    SignalConfig, SignalContribution, SignalSeverity, SignalWeights, ValidationSignal,
+};
+
 // ============================================================================
 // Lint Gate
 // ============================================================================
