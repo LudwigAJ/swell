@@ -1,6 +1,6 @@
 {
   "milestone": "memory",
-  "round": 3,
+  "round": 4,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -20,8 +20,8 @@
     }
   },
   "reviewsSummary": {
-    "total": 2,
-    "passed": 0,
+    "total": 5,
+    "passed": 3,
     "failed": 2,
     "failedFeatures": [
       "memory-skill-extraction",
@@ -77,5 +77,5 @@
     }
   ],
   "rejectedObservations": [],
-  "previousRound": "c782d0d"
+  "previousRound": "1f4c211"
 }
