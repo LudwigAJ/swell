@@ -16,6 +16,13 @@ pub use swell_core::MemorySearchResult;
 pub use swell_core::MemoryStore;
 pub use swell_core::SwellError;
 
+// Golden sample testing exports
+pub use golden_sample_testing::{
+    GoldenSample, GoldenSampleConfig, GoldenSampleService, GoldenSampleSource,
+    GoldenSampleStore, GoldenSampleTester, GoldenSampleValidationResult,
+    ProcedureValidation,
+};
+
 // Memory blocks module - Project/User/Task blocks with auto-loading and context assembly
 pub mod blocks;
 
@@ -27,6 +34,10 @@ pub mod recall;
 
 // Skill extraction module - Extracts reusable procedures from successful task trajectories
 pub mod skill_extraction;
+
+// Golden sample testing module - Validates learned procedures against test cases
+// before auto-application in future tasks
+pub mod golden_sample_testing;
 
 // Pattern learning module - Learns anti-patterns from rejection feedback and extracts conventions
 pub mod pattern_learning;
