@@ -1,0 +1,86 @@
+{
+  "milestone": "prompts",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": false,
+      "command": "cargo test --workspace",
+      "exitCode": "timeout",
+      "notes": "Test suite timed out after 600 seconds. However, all tests that completed before timeout passed. Build passes. Issue appears environmental rather than code failure."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0,
+      "notes": "Fixed redundant closure error in swell-skills/src/loader.rs before passing."
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace",
+      "exitCode": 0,
+      "notes": "Lint passed after fix."
+    },
+    "build": {
+      "passed": true,
+      "command": "cargo build --workspace",
+      "exitCode": 0,
+      "notes": "Build succeeds."
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 3,
+    "failed": 1,
+    "failedFeatures": ["prompts-multi-run-validation"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "prompts-multi-run-validation",
+      "severity": "blocking",
+      "file": "crates/swell-orchestrator/src/agents.rs",
+      "line": 1653,
+      "description": "FlakinessDetector.record() is never called. The flakiness_detector field exists on EvaluatorAgent and is locked in run_multi_validation, but the actual record() method is never invoked. Expected behavior states 'FlakinessDetector integrated into EvaluatorAgent workflow' but it's only a field, not used."
+    },
+    {
+      "featureId": "prompts-multi-run-validation",
+      "severity": "blocking",
+      "file": "crates/swell-orchestrator/src/agents.rs",
+      "line": 1644,
+      "description": "gate_flaffiness_rates only tracks 'all' or 'failed' keys instead of actual gate names (LintGate, TestGate, SecurityGate, AiReviewGate). Expected behavior states 'Track flakiness rate per validation gate' but current implementation only tracks overall pass/fail."
+    },
+    {
+      "featureId": "prompts-multi-run-validation",
+      "severity": "blocking",
+      "file": "crates/swell-orchestrator/src/agents.rs",
+      "line": 1374,
+      "description": "Behavioral invariant 'Multi-run validation reports statistical confidence' is satisfied unconditionally (always sets satisfied=true) rather than actually verifying that multi_run_result contains valid statistical confidence data."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the domain naming convention for audit entries. Workers have used 'swell' as the domain but this isn't documented. Add guidance on what domain values should be used (e.g., 'swell' for core operations).",
+      "evidence": "audit-hash-chained-log implementation hardcodes domain: \"swell\".to_string() in all audit entries",
+      "isSystemic": false
+    },
+    {
+      "target": "skills/rust",
+      "suggestion": "Add flakiness detection patterns and statistical confidence calculation approaches (Wilson score interval) to the Rust skill documentation. Workers implementing these features have had to derive these algorithms from scratch.",
+      "evidence": "prompts-multi-run-validation worker implemented Wilson score interval and flakiness scoring from scratch. The agent-evaluation skill doesn't document these patterns.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Feature prompts-quality-improvement used 'Rust' skill instead of 'prompt-engineering-expert' as mentioned in feature description",
+      "reason": "Not a gap - feature.json shows skillName='Rust' which was the assigned skill. The feature description mentions prompt-engineering-expert principles but workers are expected to draw from multiple skills as needed."
+    },
+    {
+      "observation": "agent-audit-trail skill references companion skills (SOUL.md, TOOLS.md) that don't exist in SWELL",
+      "reason": "Not a gap - this is expected behavior. SWELL workers correctly implemented only the core audit logging functionality without non-existent dependencies."
+    }
+  ],
+  "previousRound": null
+}

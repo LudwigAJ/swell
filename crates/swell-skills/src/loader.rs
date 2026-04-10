@@ -146,7 +146,7 @@ impl SkillsLoader {
         // Read all entries in the skills directory
         let mut read_dir = fs::read_dir(dir)
             .await
-            .map_err(|e| SkillsError::IoError(e))?;
+            .map_err(SkillsError::IoError)?;
 
         while let Some(entry) = read_dir.next_entry().await.map_err(SkillsError::IoError)? {
             let path = entry.path();
