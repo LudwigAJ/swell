@@ -2,15 +2,11 @@
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
-use opentelemetry::trace::Tracer;
 use opentelemetry::global;
+use opentelemetry::trace::Tracer;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use swell_core::{
-    opentelemetry::LatencyTracker,
-    LlmToolCall,
-    SwellError,
-};
+use swell_core::{opentelemetry::LatencyTracker, LlmToolCall, SwellError};
 use tracing::{debug, warn};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";

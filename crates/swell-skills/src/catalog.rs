@@ -184,7 +184,9 @@ impl AsyncSkillCatalog {
         let skill_md_path = entry.location.join("SKILL.md");
 
         if !skill_md_path.exists() {
-            return Err(SkillsError::SkillFileNotFound(entry.location.display().to_string()));
+            return Err(SkillsError::SkillFileNotFound(
+                entry.location.display().to_string(),
+            ));
         }
 
         let content = tokio::fs::read_to_string(&skill_md_path).await?;

@@ -210,11 +210,7 @@ pub struct GenAiSpanBuilder {
 
 impl GenAiSpanBuilder {
     /// Create a new builder for a GenAI span
-    pub fn new(
-        operation_name: &str,
-        provider: LlmProvider,
-        model: &str,
-    ) -> Self {
+    pub fn new(operation_name: &str, provider: LlmProvider, model: &str) -> Self {
         Self {
             operation_name: operation_name.to_string(),
             provider,

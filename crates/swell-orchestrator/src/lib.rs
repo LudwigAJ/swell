@@ -23,14 +23,14 @@ pub mod state_machine;
 pub mod task_graph;
 
 pub use agents::{
-    AgentHandle, AgentPool, ChangeOperation, CodeIssue, CoderAgent, CondensationLevel,
-    CondensationResult, ConfidenceLevel, ContextCondensation, ContextItem, ContextItemType,
-    ContextWindow, CoverageMapping, DocChange, DocChangeType, DocWriterAgent, EvaluationResult,
-    EvaluatorAgent, FileChange, GeneratorAgent, IssueCategory, IssueSeverity, PlannerAgent,
-    ReactLoop, ReactLoopState, ReactLoopSummary, ReactPhase, ReactStep, RefactorOpportunity,
-    RefactorPlan, RefactorerAgent, RequirementCoverage, ReviewResult, ReviewerAgent,
-    SystemPromptBuilder, SystemPromptConfig, TestPattern, TestSpec, TestWriterAgent,
-    DEFAULT_REACT_MAX_ITERATIONS,
+    AgentComment, AgentCommentType, AgentHandle, AgentHandoff, AgentPool, ChangeOperation,
+    CodeIssue, CoderAgent, CondensationLevel, CondensationResult, ConfidenceLevel,
+    ContextCondensation, ContextItem, ContextItemType, ContextWindow, CoverageMapping, DocChange,
+    DocChangeType, DocWriterAgent, EvaluationResult, EvaluatorAgent, FileChange, GeneratorAgent,
+    HandoffArtifact, IssueCategory, IssueSeverity, PlannerAgent, ReactLoop, ReactLoopState,
+    ReactLoopSummary, ReactPhase, ReactStep, RefactorOpportunity, RefactorPlan, RefactorerAgent,
+    RequirementCoverage, ReviewResult, ReviewerAgent, SystemPromptBuilder, SystemPromptConfig,
+    TestPattern, TestSpec, TestWriterAgent, DEFAULT_REACT_MAX_ITERATIONS,
 };
 pub use alerts::{
     create_alert_manager, create_alert_manager_with_config, Alert, AlertCategory, AlertManager,

@@ -23,10 +23,7 @@ pub enum SkillsError {
 
     /// Invalid skill directory structure
     #[error("Invalid skill directory {reason}: {reason}")]
-    InvalidSkillDirectory {
-        location: String,
-        reason: String,
-    },
+    InvalidSkillDirectory { location: String, reason: String },
 
     /// Skills root directory not found
     #[error("Skills root directory not found: {0}")]

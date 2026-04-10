@@ -18,8 +18,8 @@ const SKILL_FILE_NAME: &str = "SKILL.md";
 
 /// Default directories to scan for skills
 const DEFAULT_SKILLS_DIRS: &[&str] = &[
-    ".swell/skills",      // Project-local skills
-    ".swell/skills.d",    // Alternative location
+    ".swell/skills",   // Project-local skills
+    ".swell/skills.d", // Alternative location
 ];
 
 /// Home directory skills location
@@ -144,9 +144,9 @@ impl SkillsLoader {
         }
 
         // Read all entries in the skills directory
-        let mut read_dir = fs::read_dir(dir).await.map_err(|e| {
-            SkillsError::IoError(e)
-        })?;
+        let mut read_dir = fs::read_dir(dir)
+            .await
+            .map_err(|e| SkillsError::IoError(e))?;
 
         while let Some(entry) = read_dir.next_entry().await.map_err(SkillsError::IoError)? {
             let path = entry.path();
@@ -245,8 +245,8 @@ fn parse_frontmatter(content: &str, file_path: &Path) -> Result<SkillFrontmatter
             let frontmatter_str = &after_first_dash[..end_pos];
 
             // Parse the YAML
-            let frontmatter: SkillFrontmatter = serde_yaml::from_str(frontmatter_str)
-                .map_err(|e| SkillsError::YamlParseError {
+            let frontmatter: SkillFrontmatter =
+                serde_yaml::from_str(frontmatter_str).map_err(|e| SkillsError::YamlParseError {
                     location: file_path.display().to_string(),
                     source: e,
                 })?;
@@ -271,7 +271,7 @@ fn parse_frontmatter(content: &str, file_path: &Path) -> Result<SkillFrontmatter
         None => Err(SkillsError::YamlParseError {
             location: file_path.display().to_string(),
             source: serde_yaml::from_str::<SkillFrontmatter>("  [invalid").unwrap_err(),
-        })
+        }),
     }
 }
 

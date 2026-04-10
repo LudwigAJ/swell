@@ -2,15 +2,11 @@
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
-use opentelemetry::trace::Tracer;
 use opentelemetry::global;
+use opentelemetry::trace::Tracer;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use swell_core::{
-    opentelemetry::LatencyTracker,
-    LlmToolCall,
-    SwellError,
-};
+use swell_core::{opentelemetry::LatencyTracker, LlmToolCall, SwellError};
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
@@ -206,9 +202,10 @@ impl LlmBackend for OpenAIBackend {
             )));
         }
 
-        let api_response: Response = response.json().await.map_err(|e| {
-            SwellError::LlmError(format!("Failed to parse response: {}", e))
-        })?;
+        let api_response: Response = response
+            .json()
+            .await
+            .map_err(|e| SwellError::LlmError(format!("Failed to parse response: {}", e)))?;
 
         let _latency_ms = latency.elapsed_ms();
 
@@ -221,17 +218,21 @@ impl LlmBackend for OpenAIBackend {
 
         let content = choice.message.content.unwrap_or_default();
 
-        let tool_calls: Option<Vec<LlmToolCall>> = choice.message.tool_calls.map(|calls: Vec<ResponseToolCall>| {
-            calls
-                .into_iter()
-                .map(|call| LlmToolCall {
-                    id: call.id,
-                    name: call.function.name,
-                    arguments: serde_json::from_str(&call.function.arguments)
-                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
-                })
-                .collect()
-        });
+        let tool_calls: Option<Vec<LlmToolCall>> =
+            choice
+                .message
+                .tool_calls
+                .map(|calls: Vec<ResponseToolCall>| {
+                    calls
+                        .into_iter()
+                        .map(|call| LlmToolCall {
+                            id: call.id,
+                            name: call.function.name,
+                            arguments: serde_json::from_str(&call.function.arguments)
+                                .unwrap_or(serde_json::Value::Object(serde_json::Map::new())),
+                        })
+                        .collect()
+                });
 
         let input_tokens = api_response.usage.prompt_tokens;
         let output_tokens = api_response.usage.completion_tokens;

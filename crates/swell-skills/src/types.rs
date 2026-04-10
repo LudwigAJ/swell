@@ -91,9 +91,9 @@ fn extract_keywords(description: &str) -> Vec<String> {
 
     // Remove common stop words
     let stop_words: std::collections::HashSet<&str> = [
-        "the", "and", "for", "when", "with", "from", "this", "that", "also",
-        "are", "was", "were", "been", "have", "has", "had", "but", "not",
-        "you", "your", "can", "use", "using", "used", "etc",
+        "the", "and", "for", "when", "with", "from", "this", "that", "also", "are", "was", "were",
+        "been", "have", "has", "had", "but", "not", "you", "your", "can", "use", "using", "used",
+        "etc",
     ]
     .into_iter()
     .collect();

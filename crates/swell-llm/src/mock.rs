@@ -3,14 +3,11 @@
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition};
 use async_trait::async_trait;
 use opentelemetry::trace::{Span, Tracer};
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{global, KeyValue};
 use std::sync::atomic::{AtomicU64, Ordering};
 use swell_core::{
-    opentelemetry::gen_ai,
-    opentelemetry::pricing,
-    opentelemetry::GenAiSpanExt,
-    opentelemetry::LatencyTracker,
-    SwellError,
+    opentelemetry::gen_ai, opentelemetry::pricing, opentelemetry::GenAiSpanExt,
+    opentelemetry::LatencyTracker, SwellError,
 };
 
 static CALL_COUNT: AtomicU64 = AtomicU64::new(0);
