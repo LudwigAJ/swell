@@ -14,6 +14,7 @@ pub mod branch_strategy;
 pub mod commit_strategy;
 pub mod conflict_resolution;
 pub mod credential_proxy;
+pub mod egress;
 pub mod executor;
 pub mod hybrid;
 pub mod mcp;
@@ -36,12 +37,12 @@ pub use conflict_resolution::{
     ConflictResolverConfig, FileOwner, ResolutionResult, ResolutionStrategy,
 };
 pub use credential_proxy::{
-    AccessToken, Credential, CredentialProxy, CredentialProxyError, CredentialProvider,
+    AccessToken, Credential, CredentialProvider, CredentialProxy, CredentialProxyError,
     CredentialScope, EnvCredentialProvider,
 };
-pub use vault::{
-    AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType,
-    VaultClient, VaultClientConfig, VaultCredentialProvider, VaultDynamicSecret, VaultError,
+pub use egress::{
+    presets, Destination, EgressCheckResult, EgressDecision, EgressFilter, EgressFilterConfig,
+    EgressRule, IpNetwork,
 };
 pub use executor::ToolExecutor;
 pub use hybrid::{
@@ -49,14 +50,18 @@ pub use hybrid::{
     ToolExecutorTrait,
 };
 pub use os_sandbox::{
-    detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox, FilesystemPermission,
-    LandlockSandbox, NetworkPolicy, OsSandbox, OsSandboxConfig, PlatformSandbox,
-    SandboxAvailability, SandboxType, SeatbeltSandbox,
+    detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox,
+    FilesystemPermission, LandlockSandbox, NetworkPolicy, OsSandbox, OsSandboxConfig,
+    PlatformSandbox, SandboxAvailability, SandboxType, SeatbeltSandbox,
 };
 pub use pr_creation::{
     EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
 };
 pub use registry::{ToolRegistration, ToolRegistry};
+pub use vault::{
+    AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType, VaultClient,
+    VaultClientConfig, VaultCredentialProvider, VaultDynamicSecret, VaultError,
+};
 pub use worktree_isolation::{WorktreeIsolation, WorktreeIsolationConfig};
 pub use worktree_pool::{WorktreeAllocation, WorktreePool, WorktreePoolConfig};
 
