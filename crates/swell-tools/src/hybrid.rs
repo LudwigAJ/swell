@@ -475,7 +475,9 @@ mod tests {
     #[tokio::test]
     async fn test_hybrid_executor_routes_low_risk_locally() {
         let registry = Arc::new(ToolRegistry::new());
-        registry.register(ReadFileTool::new()).await;
+        registry
+            .register(ReadFileTool::new(), crate::registry::ToolCategory::File)
+            .await;
 
         let local = LocalExecutor::new(registry.clone());
         let remote = RemoteExecutor::with_default_config();

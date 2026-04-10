@@ -66,7 +66,7 @@ pub use secret_scanning::{
     install_precommit_hook, DetectedSecret, SecretScanResult, SecretScanner,
     SecretScannerConfig, SecretScannerError, SecretScannerType,
 };
-pub use registry::{ToolRegistration, ToolRegistry};
+pub use registry::{ToolCategory, ToolRegistry, CategoryInfo, ToolRegistration};
 pub use vault::{
     AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType, VaultClient,
     VaultClientConfig, VaultCredentialProvider, VaultDynamicSecret, VaultError,
@@ -87,7 +87,9 @@ mod tests {
     #[tokio::test]
     async fn test_registry_registration() {
         let registry = ToolRegistry::new();
-        registry.register(tools::ReadFileTool::new()).await;
+        registry
+            .register(tools::ReadFileTool::new(), registry::ToolCategory::File)
+            .await;
         assert_eq!(registry.list().await.len(), 1);
     }
 }

@@ -130,7 +130,9 @@ mod tests {
     #[tokio::test]
     async fn test_executor_permission_denied() {
         let registry = ToolRegistry::new();
-        registry.register(ReadFileTool::new()).await;
+        registry
+            .register(ReadFileTool::new(), crate::registry::ToolCategory::File)
+            .await;
 
         let executor = ToolExecutor::new(registry);
 

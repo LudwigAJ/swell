@@ -706,7 +706,7 @@ impl McpManager {
         let tools = client.get_all_tools().await;
         for info in tools {
             let wrapper = McpToolWrapper::new(info, client.clone());
-            registry.register(wrapper).await;
+            registry.register(wrapper, crate::registry::ToolCategory::Mcp).await;
         }
 
         Ok(())
