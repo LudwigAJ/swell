@@ -1,12 +1,16 @@
 pub mod audit;
 pub mod circuit_breaker;
 pub mod error;
+pub mod events;
 pub mod kill_switch;
 pub mod opentelemetry;
 pub mod tracing_json;
 pub mod traits;
 pub mod types;
 
+pub use events::{
+    ObservableEvent, Outcome, SpanId, ToolInvocation, TraceId,
+};
 pub use audit::{
     verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,
     ChainVerificationResult, GENESIS_HASH,
