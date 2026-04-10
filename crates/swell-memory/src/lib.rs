@@ -19,6 +19,9 @@ pub use swell_core::SwellError;
 // Memory blocks module - Project/User/Task blocks with auto-loading and context assembly
 pub mod blocks;
 
+// Event log module - Append-only JSONL event log with schema versioning for immutable audit trail
+pub mod event_log;
+
 // Recall module - BM25 keyword search and temporal queries for conversation logs
 pub mod recall;
 
