@@ -979,17 +979,19 @@ impl PatternLearningAnalyzer {
 pub struct PatternLearningService {
     store: SqliteMemoryStore,
     config: PatternLearningConfig,
+    repository: String,
 }
 
 impl PatternLearningService {
-    pub fn new(store: SqliteMemoryStore, config: PatternLearningConfig) -> Self {
-        Self { store, config }
+    pub fn new(store: SqliteMemoryStore, config: PatternLearningConfig, repository: String) -> Self {
+        Self { store, config, repository }
     }
 
-    pub fn with_default_config(store: SqliteMemoryStore) -> Self {
+    pub fn with_default_config(store: SqliteMemoryStore, repository: String) -> Self {
         Self {
             store,
             config: PatternLearningConfig::default(),
+            repository,
         }
     }
 
@@ -1055,7 +1057,7 @@ impl PatternLearningService {
         // Try to find existing conventions block and update it, or create new one
         let existing = self
             .store
-            .get_by_label(self.config.convention_block_label.clone())
+            .get_by_label(self.config.convention_block_label.clone(), self.repository.clone())
             .await?;
 
         if let Some(mut entry) = existing.into_iter().next() {
@@ -1102,7 +1104,7 @@ impl PatternLearningService {
     pub async fn get_conventions(&self) -> Result<Vec<Convention>, SwellError> {
         let entries = self
             .store
-            .get_by_label(self.config.convention_block_label.clone())
+            .get_by_label(self.config.convention_block_label.clone(), self.repository.clone())
             .await?;
 
         let mut conventions = Vec::new();
@@ -1381,7 +1383,7 @@ mod tests {
 
         let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
-        let service = PatternLearningService::with_default_config(store);
+        let service = PatternLearningService::with_default_config(store, "test-repo".to_string());
 
         // Should return empty vec when no conventions stored yet
         let conventions = service.get_conventions().await.unwrap();

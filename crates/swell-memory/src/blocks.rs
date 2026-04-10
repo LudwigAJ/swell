@@ -63,7 +63,7 @@ impl MemoryBlockLoader for DefaultBlockLoader {
 
         // Load Project block (architecture, conventions)
         // Find the project block that matches the repository scope
-        let project_entries = store.get_by_type(MemoryBlockType::Project).await?;
+        let project_entries = store.get_by_type(MemoryBlockType::Project, repository_scope.to_string()).await?;
 
         // Find the project block that matches the repository scope
         for entry in &project_entries {
@@ -80,7 +80,7 @@ impl MemoryBlockLoader for DefaultBlockLoader {
 
         // Load User block (preferences)
         if let Some(uid) = user_id {
-            let user_entries = store.get_by_label(format!("user:{}", uid)).await?;
+            let user_entries = store.get_by_label(format!("user:{}", uid), repository_scope.to_string()).await?;
             if !user_entries.is_empty() {
                 blocks.user = Some(user_entries.into_iter().next().unwrap());
             }
@@ -88,7 +88,7 @@ impl MemoryBlockLoader for DefaultBlockLoader {
 
         // Load Task block (context)
         if let Some(tid) = task_id {
-            let task_entries = store.get_by_label(format!("task:{}", tid)).await?;
+            let task_entries = store.get_by_label(format!("task:{}", tid), repository_scope.to_string()).await?;
             if !task_entries.is_empty() {
                 blocks.task = Some(task_entries.into_iter().next().unwrap());
             }
@@ -225,6 +225,11 @@ pub fn create_project_block(
 
 /// Helper to create a User memory entry
 pub fn create_user_block(user_id: &str, preferences: &str) -> MemoryEntry {
+    create_user_block_with_repo(user_id, preferences, "")
+}
+
+/// Helper to create a User memory entry with repository scope
+pub fn create_user_block_with_repo(user_id: &str, preferences: &str, repository: &str) -> MemoryEntry {
     let now = chrono::Utc::now();
     MemoryEntry {
         id: Uuid::new_v4(),
@@ -238,7 +243,7 @@ pub fn create_user_block(user_id: &str, preferences: &str) -> MemoryEntry {
             "user_id": user_id,
             "description": "User preferences and settings"
         }),
-        repository: String::new(), // User blocks are not scoped to repository
+        repository: repository.to_string(),
         language: None,
         task_type: None,
         last_reinforcement: Some(now),
@@ -251,6 +256,11 @@ pub fn create_user_block(user_id: &str, preferences: &str) -> MemoryEntry {
 
 /// Helper to create a Task memory entry
 pub fn create_task_block(task_id: Uuid, context: &str) -> MemoryEntry {
+    create_task_block_with_repo(task_id, context, "")
+}
+
+/// Helper to create a Task memory entry with repository scope
+pub fn create_task_block_with_repo(task_id: Uuid, context: &str, repository: &str) -> MemoryEntry {
     let now = chrono::Utc::now();
     MemoryEntry {
         id: Uuid::new_v4(),
@@ -264,7 +274,7 @@ pub fn create_task_block(task_id: Uuid, context: &str) -> MemoryEntry {
             "task_id": task_id.to_string(),
             "description": "Task-specific context and background"
         }),
-        repository: String::new(), // Task blocks are not scoped to repository
+        repository: repository.to_string(),
         language: None,
         task_type: None,
         last_reinforcement: Some(now),
@@ -358,13 +368,13 @@ mod tests {
         let project = create_project_block("test-repo", "Simple architecture", "Rust conventions");
         store.store(project.clone()).await.unwrap();
 
-        // Store a user block
-        let user = create_user_block("testuser", "Test preferences");
+        // Store a user block (user blocks are stored with the repository scope)
+        let user = create_user_block_with_repo("testuser", "Test preferences", "test-repo");
         store.store(user.clone()).await.unwrap();
 
         // Store a task block
         let task_id = Uuid::new_v4();
-        let task_block = create_task_block(task_id, "Test task context");
+        let task_block = create_task_block_with_repo(task_id, "Test task context", "test-repo");
         store.store(task_block.clone()).await.unwrap();
 
         // Load blocks
@@ -407,10 +417,10 @@ mod tests {
         let project = create_project_block("my-repo", "arch", "conv");
         store.store(project).await.unwrap();
 
-        let user = create_user_block("testuser", "prefs");
+        let user = create_user_block_with_repo("testuser", "prefs", "my-repo");
         store.store(user).await.unwrap();
 
-        let task_block = create_task_block(task_id, "context");
+        let task_block = create_task_block_with_repo(task_id, "context", "my-repo");
         store.store(task_block).await.unwrap();
 
         let assembler = ContextAssembler::with_default_loader();

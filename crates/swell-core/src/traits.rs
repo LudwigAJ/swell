@@ -306,19 +306,21 @@ pub trait MemoryStore: Send + Sync {
     /// Search memories by text query (hybrid: vector + keyword)
     async fn search(&self, query: MemoryQuery) -> Result<Vec<MemorySearchResult>, SwellError>;
 
-    /// Get all memories of a specific type
+    /// Get all memories of a specific type within repository scope
     async fn get_by_type(
         &self,
         block_type: crate::MemoryBlockType,
+        repository: String,
     ) -> Result<Vec<MemoryEntry>, SwellError>;
 
-    /// Get all memories with a specific label
-    async fn get_by_label(&self, label: String) -> Result<Vec<MemoryEntry>, SwellError>;
+    /// Get all memories with a specific label within repository scope
+    async fn get_by_label(&self, label: String, repository: String) -> Result<Vec<MemoryEntry>, SwellError>;
 
-    /// Get all memories from a specific source episode (provenance tracking)
+    /// Get all memories from a specific source episode (provenance tracking) within repository scope
     async fn get_by_provenance(
         &self,
         source_episode_id: Uuid,
+        repository: String,
     ) -> Result<Vec<MemoryEntry>, SwellError>;
 }
 
