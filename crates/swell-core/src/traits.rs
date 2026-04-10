@@ -314,7 +314,11 @@ pub trait MemoryStore: Send + Sync {
     ) -> Result<Vec<MemoryEntry>, SwellError>;
 
     /// Get all memories with a specific label within repository scope
-    async fn get_by_label(&self, label: String, repository: String) -> Result<Vec<MemoryEntry>, SwellError>;
+    async fn get_by_label(
+        &self,
+        label: String,
+        repository: String,
+    ) -> Result<Vec<MemoryEntry>, SwellError>;
 
     /// Get all memories from a specific source episode (provenance tracking) within repository scope
     async fn get_by_provenance(

@@ -777,14 +777,13 @@ impl MemoryStore for SqliteMemoryStore {
         repository: String,
     ) -> Result<Vec<MemoryEntry>, SwellError> {
         let block_type_str = Self::block_type_to_string(block_type);
-        let rows = sqlx::query(
-            "SELECT * FROM memory_entries WHERE block_type = ? AND repository = ?",
-        )
-        .bind(block_type_str)
-        .bind(&repository)
-        .fetch_all(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let rows =
+            sqlx::query("SELECT * FROM memory_entries WHERE block_type = ? AND repository = ?")
+                .bind(block_type_str)
+                .bind(&repository)
+                .fetch_all(self.pool.as_ref())
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         let mut entries = Vec::new();
         for row in rows {
@@ -795,15 +794,17 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     /// Get all memories with a specific label within repository scope
-    async fn get_by_label(&self, label: String, repository: String) -> Result<Vec<MemoryEntry>, SwellError> {
-        let rows = sqlx::query(
-            "SELECT * FROM memory_entries WHERE label = ? AND repository = ?",
-        )
-        .bind(&label)
-        .bind(&repository)
-        .fetch_all(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+    async fn get_by_label(
+        &self,
+        label: String,
+        repository: String,
+    ) -> Result<Vec<MemoryEntry>, SwellError> {
+        let rows = sqlx::query("SELECT * FROM memory_entries WHERE label = ? AND repository = ?")
+            .bind(&label)
+            .bind(&repository)
+            .fetch_all(self.pool.as_ref())
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         let mut entries = Vec::new();
         for row in rows {
@@ -1307,11 +1308,17 @@ mod tests {
         store.store(entry1.clone()).await.unwrap();
         store.store(entry2.clone()).await.unwrap();
 
-        let projects = store.get_by_type(MemoryBlockType::Project, "test-repo".to_string()).await.unwrap();
+        let projects = store
+            .get_by_type(MemoryBlockType::Project, "test-repo".to_string())
+            .await
+            .unwrap();
         assert_eq!(projects.len(), 1);
         assert_eq!(projects[0].id, entry1.id);
 
-        let tasks = store.get_by_type(MemoryBlockType::Task, "test-repo".to_string()).await.unwrap();
+        let tasks = store
+            .get_by_type(MemoryBlockType::Task, "test-repo".to_string())
+            .await
+            .unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].id, entry2.id);
     }

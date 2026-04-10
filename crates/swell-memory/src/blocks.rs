@@ -63,7 +63,9 @@ impl MemoryBlockLoader for DefaultBlockLoader {
 
         // Load Project block (architecture, conventions)
         // Find the project block that matches the repository scope
-        let project_entries = store.get_by_type(MemoryBlockType::Project, repository_scope.to_string()).await?;
+        let project_entries = store
+            .get_by_type(MemoryBlockType::Project, repository_scope.to_string())
+            .await?;
 
         // Find the project block that matches the repository scope
         for entry in &project_entries {
@@ -80,7 +82,9 @@ impl MemoryBlockLoader for DefaultBlockLoader {
 
         // Load User block (preferences)
         if let Some(uid) = user_id {
-            let user_entries = store.get_by_label(format!("user:{}", uid), repository_scope.to_string()).await?;
+            let user_entries = store
+                .get_by_label(format!("user:{}", uid), repository_scope.to_string())
+                .await?;
             if !user_entries.is_empty() {
                 blocks.user = Some(user_entries.into_iter().next().unwrap());
             }
@@ -88,7 +92,9 @@ impl MemoryBlockLoader for DefaultBlockLoader {
 
         // Load Task block (context)
         if let Some(tid) = task_id {
-            let task_entries = store.get_by_label(format!("task:{}", tid), repository_scope.to_string()).await?;
+            let task_entries = store
+                .get_by_label(format!("task:{}", tid), repository_scope.to_string())
+                .await?;
             if !task_entries.is_empty() {
                 blocks.task = Some(task_entries.into_iter().next().unwrap());
             }
@@ -229,7 +235,11 @@ pub fn create_user_block(user_id: &str, preferences: &str) -> MemoryEntry {
 }
 
 /// Helper to create a User memory entry with repository scope
-pub fn create_user_block_with_repo(user_id: &str, preferences: &str, repository: &str) -> MemoryEntry {
+pub fn create_user_block_with_repo(
+    user_id: &str,
+    preferences: &str,
+    repository: &str,
+) -> MemoryEntry {
     let now = chrono::Utc::now();
     MemoryEntry {
         id: Uuid::new_v4(),

@@ -13,9 +13,7 @@
 
 use async_trait::async_trait;
 use std::sync::Arc;
-use swell_core::{
-    PermissionTier, SwellError, ToolOutput, ToolRiskLevel,
-};
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
 use tracing::{info, warn};
 
 /// Risk classification for tool operations
@@ -113,16 +111,15 @@ impl LocalExecutor {
             "LocalExecutor: executing tool"
         );
 
-        let tool = self
-            .registry
-            .get(&input.tool_name)
-            .await
-            .ok_or_else(|| {
-                SwellError::ToolExecutionFailed(format!("Tool not found: {}", input.tool_name))
-            })?;
+        let tool = self.registry.get(&input.tool_name).await.ok_or_else(|| {
+            SwellError::ToolExecutionFailed(format!("Tool not found: {}", input.tool_name))
+        })?;
 
         // Check permission tier
-        if !matches!(tool.permission_tier(), PermissionTier::Auto | PermissionTier::Ask) {
+        if !matches!(
+            tool.permission_tier(),
+            PermissionTier::Auto | PermissionTier::Ask
+        ) {
             warn!(
                 tool = %input.tool_name,
                 tier = ?tool.permission_tier(),
@@ -334,7 +331,11 @@ impl HybridExecutor {
         remote: Arc<dyn ToolExecutorTrait>,
         config: HybridConfig,
     ) -> Self {
-        Self { local, remote, config }
+        Self {
+            local,
+            remote,
+            config,
+        }
     }
 
     /// Execute a tool, routing to the appropriate executor based on risk classification
@@ -421,8 +422,8 @@ impl Clone for HybridExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::ReadFileTool;
     use crate::registry::ToolRegistry;
+    use crate::tools::ReadFileTool;
 
     fn create_test_executor_input(tool_name: &str, risk_class: RiskClass) -> ExecutorInput {
         ExecutorInput {
@@ -568,7 +569,8 @@ mod tests {
     #[tokio::test]
     async fn test_hybrid_executor_clone() {
         let registry = Arc::new(ToolRegistry::new());
-        let hybrid = HybridExecutor::with_defaults(registry, Some("http://localhost:9090".to_string()));
+        let hybrid =
+            HybridExecutor::with_defaults(registry, Some("http://localhost:9090".to_string()));
         let cloned = hybrid.clone();
         assert!(cloned.config.sandbox_endpoint.is_some());
     }

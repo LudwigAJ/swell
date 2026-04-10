@@ -21,6 +21,7 @@ pub mod mcp;
 pub mod os_sandbox;
 pub mod pr_creation;
 pub mod registry;
+pub mod secret_scanning;
 pub mod tools;
 pub mod vault;
 pub mod worktree_isolation;
@@ -56,6 +57,10 @@ pub use os_sandbox::{
 };
 pub use pr_creation::{
     EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
+};
+pub use secret_scanning::{
+    install_precommit_hook, DetectedSecret, SecretScanResult, SecretScanner,
+    SecretScannerConfig, SecretScannerError, SecretScannerType,
 };
 pub use registry::{ToolRegistration, ToolRegistry};
 pub use vault::{

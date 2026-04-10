@@ -983,8 +983,16 @@ pub struct PatternLearningService {
 }
 
 impl PatternLearningService {
-    pub fn new(store: SqliteMemoryStore, config: PatternLearningConfig, repository: String) -> Self {
-        Self { store, config, repository }
+    pub fn new(
+        store: SqliteMemoryStore,
+        config: PatternLearningConfig,
+        repository: String,
+    ) -> Self {
+        Self {
+            store,
+            config,
+            repository,
+        }
     }
 
     pub fn with_default_config(store: SqliteMemoryStore, repository: String) -> Self {
@@ -1057,7 +1065,10 @@ impl PatternLearningService {
         // Try to find existing conventions block and update it, or create new one
         let existing = self
             .store
-            .get_by_label(self.config.convention_block_label.clone(), self.repository.clone())
+            .get_by_label(
+                self.config.convention_block_label.clone(),
+                self.repository.clone(),
+            )
             .await?;
 
         if let Some(mut entry) = existing.into_iter().next() {
@@ -1104,7 +1115,10 @@ impl PatternLearningService {
     pub async fn get_conventions(&self) -> Result<Vec<Convention>, SwellError> {
         let entries = self
             .store
-            .get_by_label(self.config.convention_block_label.clone(), self.repository.clone())
+            .get_by_label(
+                self.config.convention_block_label.clone(),
+                self.repository.clone(),
+            )
             .await?;
 
         let mut conventions = Vec::new();

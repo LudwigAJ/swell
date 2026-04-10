@@ -115,13 +115,15 @@ impl Default for OsSandboxConfig {
 impl OsSandboxConfig {
     /// Add an allowed directory with read-only permission
     pub fn with_allowed_dir_ro(mut self, path: impl Into<PathBuf>) -> Self {
-        self.allowed_dirs.insert(path.into(), FilesystemPermission::ReadOnly);
+        self.allowed_dirs
+            .insert(path.into(), FilesystemPermission::ReadOnly);
         self
     }
 
     /// Add an allowed directory with read-write permission
     pub fn with_allowed_dir_rw(mut self, path: impl Into<PathBuf>) -> Self {
-        self.allowed_dirs.insert(path.into(), FilesystemPermission::ReadWrite);
+        self.allowed_dirs
+            .insert(path.into(), FilesystemPermission::ReadWrite);
         self
     }
 
@@ -196,7 +198,11 @@ pub trait OsSandbox: Send + Sync {
     fn id(&self) -> &str;
 
     /// Execute a command in the sandbox
-    async fn execute(&self, cmd: &str, args: Option<&[String]>) -> Result<SandboxOutput, SwellError>;
+    async fn execute(
+        &self,
+        cmd: &str,
+        args: Option<&[String]>,
+    ) -> Result<SandboxOutput, SwellError>;
 
     /// Execute with full SandboxCommand
     async fn execute_full(&self, cmd: SandboxCommand) -> Result<SandboxOutput, SwellError>;
@@ -233,7 +239,9 @@ pub async fn detect_available_sandbox() -> SandboxAvailability {
         SandboxAvailability {
             is_available: false,
             sandbox_type: None,
-            description: "no Linux sandbox available (bubblewrap not installed, landlock not supported)".to_string(),
+            description:
+                "no Linux sandbox available (bubblewrap not installed, landlock not supported)"
+                    .to_string(),
         }
     }
 
@@ -292,7 +300,9 @@ pub fn detect_available_sandbox_sync() -> SandboxAvailability {
         SandboxAvailability {
             is_available: false,
             sandbox_type: None,
-            description: "no Linux sandbox available (bubblewrap not installed, landlock not supported)".to_string(),
+            description:
+                "no Linux sandbox available (bubblewrap not installed, landlock not supported)"
+                    .to_string(),
         }
     }
 
@@ -404,7 +414,10 @@ impl BubblewrapSandbox {
             if let Ok(uid) = std::env::var("UID") {
                 bwrap_args.push("--map-root-user".to_string());
                 bwrap_args.push(format!("--uid {}", uid));
-                bwrap_args.push(format!("--gid {}", std::env::var("GID").unwrap_or_else(|_| uid.clone())));
+                bwrap_args.push(format!(
+                    "--gid {}",
+                    std::env::var("GID").unwrap_or_else(|_| uid.clone())
+                ));
             }
         }
 
@@ -453,7 +466,11 @@ impl OsSandbox for BubblewrapSandbox {
             .unwrap_or(false)
     }
 
-    async fn execute(&self, cmd: &str, args: Option<&[String]>) -> Result<SandboxOutput, SwellError> {
+    async fn execute(
+        &self,
+        cmd: &str,
+        args: Option<&[String]>,
+    ) -> Result<SandboxOutput, SwellError> {
         let bwrap_path = which("bwrap").await.ok_or_else(|| {
             SwellError::ToolExecutionFailed("bubblewrap (bwrap) not found in PATH".to_string())
         })?;
@@ -473,7 +490,9 @@ impl OsSandbox for BubblewrapSandbox {
             .args(&bwrap_args)
             .output()
             .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("bwrap execution failed: {}", e)))?;
+            .map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("bwrap execution failed: {}", e))
+            })?;
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -545,10 +564,16 @@ impl SeatbeltSandbox {
             match perm {
                 FilesystemPermission::ReadOnly => {
                     profile.push_str(&format!("(allow file-read* (literal \"{}\"))\n", path_str));
-                    profile.push_str(&format!("(allow file-read-metadata* (literal \"{}\"))\n", path_str));
+                    profile.push_str(&format!(
+                        "(allow file-read-metadata* (literal \"{}\"))\n",
+                        path_str
+                    ));
                 }
                 FilesystemPermission::ReadWrite => {
-                    profile.push_str(&format!("(allow file-read* file-write* (literal \"{}\"))\n", path_str));
+                    profile.push_str(&format!(
+                        "(allow file-read* file-write* (literal \"{}\"))\n",
+                        path_str
+                    ));
                 }
                 FilesystemPermission::NoAccess => {
                     profile.push_str(&format!("(deny file-read* (literal \"{}\"))\n", path_str));
@@ -597,7 +622,11 @@ impl OsSandbox for SeatbeltSandbox {
             .unwrap_or(false)
     }
 
-    async fn execute(&self, cmd: &str, args: Option<&[String]>) -> Result<SandboxOutput, SwellError> {
+    async fn execute(
+        &self,
+        cmd: &str,
+        args: Option<&[String]>,
+    ) -> Result<SandboxOutput, SwellError> {
         let sandbox_profile = self.build_sandbox_profile();
 
         tracing::debug!(
@@ -684,10 +713,7 @@ impl LandlockSandbox {
             .iter()
             .map(|(path, perm)| format!("{}:{}", path.display(), perm.as_sandbox_arg()))
             .collect();
-        env.insert(
-            "SWELL_LANDLOCK_PATHS".to_string(),
-            allowed_paths.join(","),
-        );
+        env.insert("SWELL_LANDLOCK_PATHS".to_string(), allowed_paths.join(","));
 
         // Network policy
         env.insert(
@@ -713,7 +739,11 @@ impl OsSandbox for LandlockSandbox {
         is_landlock_available()
     }
 
-    async fn execute(&self, cmd: &str, args: Option<&[String]>) -> Result<SandboxOutput, SwellError> {
+    async fn execute(
+        &self,
+        cmd: &str,
+        args: Option<&[String]>,
+    ) -> Result<SandboxOutput, SwellError> {
         // Landlock requires a wrapper or privileged process to set up restrictions
         // For this implementation, we'll use a simple approach with unshare
         let start = Instant::now();
@@ -731,7 +761,9 @@ impl OsSandbox for LandlockSandbox {
             .envs(self.build_landlock_env())
             .output()
             .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("landlock execution failed: {}", e)))?;
+            .map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("landlock execution failed: {}", e))
+            })?;
 
         let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -766,10 +798,9 @@ impl OsSandbox for LandlockSandbox {
             command.current_dir(dir);
         }
 
-        let output = command
-            .output()
-            .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("landlock execution failed: {}", e)))?;
+        let output = command.output().await.map_err(|e| {
+            SwellError::ToolExecutionFailed(format!("landlock execution failed: {}", e))
+        })?;
 
         let duration_ms = start.elapsed().as_millis() as u64;
 

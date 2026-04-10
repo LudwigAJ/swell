@@ -163,7 +163,9 @@ impl WorktreeIsolation {
         env.insert("SWELL_WORKTREE".to_string(), worktree_str.to_string());
         env.insert(
             "SWELL_WORKTREE_ROOT".to_string(),
-            self.config.worktree_path.canonicalize()
+            self.config
+                .worktree_path
+                .canonicalize()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| worktree_str.to_string()),
         );
@@ -258,10 +260,9 @@ impl WorktreeIsolation {
         let root = self.get_filesystem_root();
 
         // Canonicalize both paths for accurate comparison
-        if let (Ok(root_canonical), Ok(path_canonical)) = (
-            root.canonicalize(),
-            path.to_path_buf().canonicalize(),
-        ) {
+        if let (Ok(root_canonical), Ok(path_canonical)) =
+            (root.canonicalize(), path.to_path_buf().canonicalize())
+        {
             // Check if path starts with root
             path_canonical.starts_with(&root_canonical)
         } else {
@@ -318,10 +319,7 @@ mod tests {
     #[tokio::test]
     async fn test_worktree_isolation_default() {
         let isolation = WorktreeIsolation::default();
-        assert_eq!(
-            isolation.config().worktree_path,
-            PathBuf::from(".")
-        );
+        assert_eq!(isolation.config().worktree_path, PathBuf::from("."));
     }
 
     #[tokio::test]
@@ -438,8 +436,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_filesystem_root_default() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let config = WorktreeIsolationConfig::default()
-            .with_worktree_path(temp_dir.path());
+        let config = WorktreeIsolationConfig::default().with_worktree_path(temp_dir.path());
 
         let isolation = WorktreeIsolation::new(config);
         let root = isolation.get_filesystem_root();
@@ -450,8 +447,7 @@ mod tests {
     #[tokio::test]
     async fn test_is_path_in_scope() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let config = WorktreeIsolationConfig::default()
-            .with_worktree_path(temp_dir.path());
+        let config = WorktreeIsolationConfig::default().with_worktree_path(temp_dir.path());
 
         let isolation = WorktreeIsolation::new(config);
 
@@ -486,18 +482,17 @@ mod tests {
         let isolation = create_test_isolation();
         let cloned = isolation.clone();
 
-        assert_eq!(isolation.config().worktree_path, cloned.config().worktree_path);
+        assert_eq!(
+            isolation.config().worktree_path,
+            cloned.config().worktree_path
+        );
     }
 
     #[tokio::test]
     async fn test_multiple_env_vars() {
         let config = WorktreeIsolationConfig::default()
             .with_worktree_path("/test")
-            .with_env_vars([
-                ("VAR1", "value1"),
-                ("VAR2", "value2"),
-                ("VAR3", "value3"),
-            ]);
+            .with_env_vars([("VAR1", "value1"), ("VAR2", "value2"), ("VAR3", "value3")]);
 
         let isolation = WorktreeIsolation::new(config);
         let env = isolation.get_env_vars().await;

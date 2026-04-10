@@ -223,7 +223,11 @@ impl VaultClient {
     }
 
     /// Authenticate with AppRole
-    pub async fn authenticate_approle(&self, role_id: &str, secret_id: &str) -> Result<(), VaultError> {
+    pub async fn authenticate_approle(
+        &self,
+        role_id: &str,
+        secret_id: &str,
+    ) -> Result<(), VaultError> {
         let url = format!("{}/v1/auth/approle/login", self.config.address);
 
         let body = serde_json::json!({
@@ -231,16 +235,13 @@ impl VaultClient {
             "secret_id": secret_id
         });
 
-        let response = self
-            .http_client
-            .post(&url)
-            .json(&body)
-            .send()
-            .await?;
+        let response = self.http_client.post(&url).json(&body).send().await?;
 
         if response.status().is_success() {
-            let auth_response: VaultResponse<serde_json::Value> =
-                response.json().await.map_err(|e| VaultError::InvalidResponse(e.to_string()))?;
+            let auth_response: VaultResponse<serde_json::Value> = response
+                .json()
+                .await
+                .map_err(|e| VaultError::InvalidResponse(e.to_string()))?;
 
             if let Some(auth) = auth_response.auth {
                 let mut token_guard = self.token.write().await;
@@ -262,7 +263,9 @@ impl VaultClient {
     /// Read a KV secret
     pub async fn read_secret(&self, path: &str) -> Result<Option<KvSecret>, VaultError> {
         let token = self.token.read().await;
-        let token = token.as_ref().ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
+        let token = token
+            .as_ref()
+            .ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
 
         let url = format!(
             "{}/v1/{}/data/{}",
@@ -313,7 +316,9 @@ impl VaultClient {
     /// List secrets at a path
     pub async fn list_secrets(&self, path: &str) -> Result<Vec<String>, VaultError> {
         let token = self.token.read().await;
-        let token = token.as_ref().ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
+        let token = token
+            .as_ref()
+            .ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
 
         let url = format!(
             "{}/v1/{}/metadata/{}",
@@ -356,7 +361,9 @@ impl VaultClient {
         path: &str,
     ) -> Result<DynamicSecretResponse<T>, VaultError> {
         let token = self.token.read().await;
-        let token = token.as_ref().ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
+        let token = token
+            .as_ref()
+            .ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
 
         let url = format!("{}/v1/{}", self.config.address, path);
 
@@ -398,7 +405,9 @@ impl VaultClient {
     /// Renew a lease
     pub async fn renew_lease(&self, lease_id: &str, increment: u64) -> Result<(), VaultError> {
         let token = self.token.read().await;
-        let token = token.as_ref().ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
+        let token = token
+            .as_ref()
+            .ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
 
         let url = format!("{}/v1/system/leases/renew", self.config.address);
 
@@ -435,7 +444,9 @@ impl VaultClient {
     /// Revoke a lease
     pub async fn revoke_lease(&self, lease_id: &str) -> Result<(), VaultError> {
         let token = self.token.read().await;
-        let token = token.as_ref().ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
+        let token = token
+            .as_ref()
+            .ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
 
         let url = format!("{}/v1/system/leases/revoke", self.config.address);
 
@@ -575,7 +586,9 @@ impl<T: Clone + for<'de> Deserialize<'de>> VaultDynamicSecret<T> {
 
             Ok(data)
         } else {
-            Err(VaultError::InvalidResponse("No data in dynamic secret response".into()))
+            Err(VaultError::InvalidResponse(
+                "No data in dynamic secret response".into(),
+            ))
         }
     }
 
@@ -593,7 +606,9 @@ impl<T: Clone + for<'de> Deserialize<'de>> VaultDynamicSecret<T> {
             debug!(lease_id = lease, "Renewed dynamic secret lease");
             Ok(())
         } else {
-            Err(VaultError::InvalidResponse("No active lease to renew".into()))
+            Err(VaultError::InvalidResponse(
+                "No active lease to renew".into(),
+            ))
         }
     }
 
@@ -665,7 +680,11 @@ impl VaultCredentialProvider {
     }
 
     /// Authenticate with AppRole
-    pub async fn authenticate_approle(&self, role_id: &str, secret_id: &str) -> Result<(), VaultError> {
+    pub async fn authenticate_approle(
+        &self,
+        role_id: &str,
+        secret_id: &str,
+    ) -> Result<(), VaultError> {
         self.client.authenticate_approle(role_id, secret_id).await
     }
 
@@ -866,7 +885,9 @@ impl VaultCredentialProviderBuilder {
 
     /// Build the provider
     pub async fn build(self) -> Result<VaultCredentialProvider, VaultError> {
-        let config = self.config.ok_or_else(|| VaultError::ConnectionError("No address configured".into()))?;
+        let config = self
+            .config
+            .ok_or_else(|| VaultError::ConnectionError("No address configured".into()))?;
         let provider = VaultCredentialProvider::new(config)?;
 
         // Authenticate based on method
@@ -957,8 +978,8 @@ mod tests {
 
     #[test]
     fn test_builder_address() {
-        let _builder = VaultCredentialProviderBuilder::default()
-            .address("https://vault.example.com", "token");
+        let _builder =
+            VaultCredentialProviderBuilder::default().address("https://vault.example.com", "token");
 
         // Just verify builder doesn't panic
         assert!(true);
@@ -966,8 +987,11 @@ mod tests {
 
     #[test]
     fn test_builder_approle() {
-        let _builder = VaultCredentialProviderBuilder::default()
-            .approle("https://vault.example.com", "role-id", "secret-id");
+        let _builder = VaultCredentialProviderBuilder::default().approle(
+            "https://vault.example.com",
+            "role-id",
+            "secret-id",
+        );
 
         // Just verify builder doesn't panic
         assert!(true);
@@ -975,8 +999,7 @@ mod tests {
 
     #[test]
     fn test_builder_default_ttl() {
-        let _builder = VaultCredentialProviderBuilder::default()
-            .default_ttl(7200);
+        let _builder = VaultCredentialProviderBuilder::default().default_ttl(7200);
 
         // Just verify builder doesn't panic
         assert!(true);

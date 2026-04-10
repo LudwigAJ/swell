@@ -127,7 +127,9 @@ impl CredentialScope {
         if self.resource_restrictions.is_empty() {
             return true;
         }
-        self.resource_restrictions.iter().any(|r| resource.starts_with(r))
+        self.resource_restrictions
+            .iter()
+            .any(|r| resource.starts_with(r))
     }
 }
 
@@ -288,7 +290,7 @@ impl EnvCredentialProvider {
             return Some(env_var.clone());
         }
         // Default mapping: upper case with underscores
-        let default = key.to_uppercase().replace('-', "_").replace('.', "_");
+        let default = key.to_uppercase().replace(['-', '.'], "_");
         // If the default transformation differs from the key, use it
         // Otherwise, use the key itself as the env var name
         if default != key {
@@ -401,14 +403,13 @@ impl CredentialProxy {
 
     /// Create a proxy with env vars provider and default mappings
     pub fn with_env_defaults() -> Self {
-        let provider = EnvCredentialProvider::new()
-            .with_mappings([
-                ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
-                ("OPENAI_API_KEY", "OPENAI_API_KEY"),
-                ("GITHUB_TOKEN", "GITHUB_TOKEN"),
-                ("AWS_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"),
-                ("AWS_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"),
-            ]);
+        let provider = EnvCredentialProvider::new().with_mappings([
+            ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
+            ("OPENAI_API_KEY", "OPENAI_API_KEY"),
+            ("GITHUB_TOKEN", "GITHUB_TOKEN"),
+            ("AWS_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"),
+            ("AWS_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"),
+        ]);
         Self::new(provider)
     }
 
@@ -468,9 +469,9 @@ impl CredentialProxy {
 
         // Validate scope permissions
         if !scope.allowed_operations.contains(&"read".to_string()) {
-            return Err(CredentialProxyError::ScopeMismatch(format!(
-                "Scope does not allow read operation"
-            )));
+            return Err(CredentialProxyError::ScopeMismatch(
+                "Scope does not allow read operation".to_string(),
+            ));
         }
 
         // Create access token (not the raw credential)
@@ -529,7 +530,10 @@ impl CredentialProxy {
     }
 
     /// Validate an access token
-    pub async fn validate_token(&self, token_id: &Uuid) -> Result<AccessToken, CredentialProxyError> {
+    pub async fn validate_token(
+        &self,
+        token_id: &Uuid,
+    ) -> Result<AccessToken, CredentialProxyError> {
         let tokens = self.tokens.read().await;
         let token = tokens.get(token_id).cloned().ok_or_else(|| {
             CredentialProxyError::NotFound(format!("Token not found: {}", token_id))
@@ -633,12 +637,11 @@ impl CredentialProxyBuilder {
 
     /// Use environment variable provider with default mappings
     pub fn with_env_provider(self) -> Self {
-        let provider = EnvCredentialProvider::new()
-            .with_mappings([
-                ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
-                ("OPENAI_API_KEY", "OPENAI_API_KEY"),
-                ("GITHUB_TOKEN", "GITHUB_TOKEN"),
-            ]);
+        let provider = EnvCredentialProvider::new().with_mappings([
+            ("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"),
+            ("OPENAI_API_KEY", "OPENAI_API_KEY"),
+            ("GITHUB_TOKEN", "GITHUB_TOKEN"),
+        ]);
         self.provider(provider)
     }
 
