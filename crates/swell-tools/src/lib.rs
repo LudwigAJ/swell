@@ -11,6 +11,7 @@
 //! - [`PrCreator`] - PR creation with metadata, evidence, and labels
 //! - Cedar policy engine for formally verifiable tool access control
 
+pub mod auto_masking;
 pub mod branch_strategy;
 pub mod cedar_policy;
 pub mod commit_strategy;
@@ -20,10 +21,10 @@ pub mod egress;
 pub mod executor;
 pub mod hybrid;
 pub mod mcp;
+pub mod opa_policy;
 pub mod os_sandbox;
 pub mod pr_creation;
 pub mod registry;
-pub mod auto_masking;
 pub mod secret_scanning;
 pub mod tools;
 pub mod vault;
@@ -40,6 +41,11 @@ pub use cedar_policy::{
     CedarDecision, CedarError, CedarPolicyBridge, CedarPolicyEngine, CedarRiskLevel,
     PolicyValidationError, PolicyValidationResult, PolicyValidator, ToolAuthorizationRequest,
     ToolOperation,
+};
+pub use opa_policy::{
+    create_opa_input, default_allow_policy, default_deny_policy, development_policy,
+    production_policy, OpaAction, OpaClient, OpaDecision, OpaError, OpaInput, OpaPolicyEngine,
+    OpaResource, OpaRiskLevel, OpaSubject, ToolOperation as OpaToolOperation,
 };
 pub use commit_strategy::{
     CommitMetadata, CommitRequest, CommitResult, CommitStrategy, CommitStrategyError,
