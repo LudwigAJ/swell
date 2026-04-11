@@ -90,6 +90,17 @@ This mission implements the core orchestration loop for SWELL - an autonomous co
 - Integration tests in `tests/` directory
 - Mock external dependencies (LLM backends)
 
+### JSON Parsing from CLI Output
+- ALWAYS verify the actual JSON structure of tool output before parsing. Run the tool and inspect raw output.
+- Clippy's `--message-format json` outputs `message` as an **object** with nested fields (`message.message`, `message.level`, `message.spans[].file_name`), NOT a plain string.
+- When parsing CLI JSON output, first check the actual structure, then use correct nested access (e.g., `json.get("message").and_then(|m| m.get("message")).and_then(|m| m.as_str())`).
+- Test assertions against actual output to ensure data is captured correctly.
+
+### Test Assertion Patterns
+- Avoid patterns like `!x == 0` which have unexpected operator precedence in Rust. This is parsed as `(!x) == 0`, not `!(x == 0)`.
+- Use explicit comparisons: `x != 0` instead of `!x == 0`, or wrap in parentheses: `!(x == 0)`.
+- Always verify assertion logic with test cases that cover the boundary conditions.
+
 ## Project Structure
 
 ```

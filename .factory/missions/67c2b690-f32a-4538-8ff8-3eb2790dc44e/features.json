@@ -1,6 +1,80 @@
 {
   "features": [
     {
+      "id": "fix-validation-lint-gate-json",
+      "description": "Fix LintGate JSON parsing: clippy outputs 'message' as an object with nested fields (message.message, message.level, message.spans[].file_name), not a string. Fix json.get(\"message\").and_then(|m| m.as_str()) to use m.get(\"message\") then as_str(). Also fix file/line field access (clippy uses \"spans[].file_name\" and \"spans[].line_start\" not \"file\" and \"line\").",
+      "skillName": "Rust",
+      "milestone": "validation-fix",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Clippy JSON message text accessed via message.message (nested)",
+        "Clippy level accessed via message.level (string, not nested)",
+        "File name accessed via message.spans[0].file_name",
+        "Line number accessed via message.spans[0].line_start"
+      ],
+      "verificationSteps": [
+        "cargo clippy --workspace -- -D warnings",
+        "cargo test -p swell-validation -- lint_gate"
+      ],
+      "fulfills": [],
+      "status": "pending"
+    },
+    {
+      "id": "fix-predictive-selection-assertion",
+      "description": "Fix test assertion at line 1578 in predictive_selection.rs: `!impact.lines_changed == 0` is parsed as `(!impact.lines_changed) == 0`, which always evaluates to true due to operator precedence. Change to `impact.lines_changed != 0`.",
+      "skillName": "Rust",
+      "milestone": "validation-fix",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Test assertion correctly checks that either modified_files is non-empty OR lines_changed is non-zero",
+        "Assertion fails when both are zero (no changes)"
+      ],
+      "verificationSteps": [
+        "cargo clippy --workspace -- -D warnings",
+        "cargo test -p swell-validation -- predictive_selection"
+      ],
+      "fulfills": [],
+      "status": "pending"
+    },
+    {
+      "id": "fix-calibrated-confidence-training",
+      "description": "Fix CalibrationModel::extract_features() hardcodes changed_file_count=0 and historical_defect_rate=0.0 during training. Also fix Predictor::predict() passes empty slice to changed_files_defect_rate() instead of actual files. Add changed_files field to ValidationRecord, populate it in record_outcome(), and use it in extract_features() and predict().",
+      "skillName": "Rust",
+      "milestone": "validation-fix",
+      "preconditions": [],
+      "expectedBehavior": [
+        "ValidationRecord has changed_files: Vec<String> field",
+        "record_outcome() copies changed_files from available context",
+        "extract_features() uses actual changed_file_count from record",
+        "Predictor::predict() accepts files parameter or stores it for enrichment",
+        "Changed files defect rate uses actual file list"
+      ],
+      "verificationSteps": [
+        "cargo clippy --workspace -- -D warnings",
+        "cargo test -p swell-validation -- calibrated_confidence"
+      ],
+      "fulfills": [],
+      "status": "pending"
+    },
+    {
+      "id": "fix-autonomous-coverage-hardcoded",
+      "description": "Fix val-autonomous-coverage: files_analyzed hardcoded to 0 in CoverageReport, calculate_coverage_metrics() returns hardcoded (0.75, 0.65, 0.80), run_static_coverage_analysis() returns empty Vec. Implement basic parsing of cargo llvm-cov JSON output or use glob to count analyzed Rust files, and return meaningful default values based on actual analysis.",
+      "skillName": "Rust",
+      "milestone": "validation-fix",
+      "preconditions": [],
+      "expectedBehavior": [
+        "files_analyzed counts actual Rust source files in workspace",
+        "calculate_coverage_metrics() tries cargo llvm-cov first, falls back to basic heuristics (parse test output for coverage hints)",
+        "run_static_coverage_analysis() returns real gaps from basic_static_analysis_static"
+      ],
+      "verificationSteps": [
+        "cargo clippy --workspace -- -D warnings",
+        "cargo test -p swell-validation -- autonomous_coverage"
+      ],
+      "fulfills": [],
+      "status": "pending"
+    },
+    {
       "id": "agent-skills-loader-unique",
       "description": "Implement Agent Skills loader following agentskills.io standard. Skills are directories with SKILL.md containing YAML frontmatter (name, description) plus optional scripts/, references/, assets/ directories. This enables model-driven skill discovery and activation.",
       "skillName": "Rust",
