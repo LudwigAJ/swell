@@ -467,10 +467,15 @@ impl CredentialProxy {
             .await?
             .ok_or_else(|| CredentialProxyError::NotFound(credential_key.to_string()))?;
 
-        // Validate scope permissions
-        if !scope.allowed_operations.contains(&"read".to_string()) {
+        // Validate scope has at least one allowed operation
+        // Note: Different scope types use different operations:
+        // - git scopes use: push, pull, fetch (not read)
+        // - LLM scopes use: chat, embed (not read)
+        // - API scopes use: read, write
+        // So we check that scope has ANY valid operation, not specifically "read"
+        if scope.allowed_operations.is_empty() {
             return Err(CredentialProxyError::ScopeMismatch(
-                "Scope does not allow read operation".to_string(),
+                "Scope has no allowed operations".to_string(),
             ));
         }
 
