@@ -54,7 +54,7 @@ impl Default for SessionHygieneConfig {
     fn default() -> Self {
         Self {
             checkpoint_interval_secs: 60 * 60, // 60 minutes
-            min_checkpoint_interval_secs: 300,  // 5 minutes minimum
+            min_checkpoint_interval_secs: 300, // 5 minutes minimum
             max_checkpoints_per_session: 0,    // Unlimited
             auto_checkpoint_enabled: true,
             progress_evaluation_enabled: true,
@@ -359,7 +359,10 @@ impl SessionHygiene {
 
     /// Get checkpoint count for a session
     pub fn get_checkpoint_count(&self, session_id: Uuid) -> usize {
-        self.checkpoint_counts.get(&session_id).copied().unwrap_or(0)
+        self.checkpoint_counts
+            .get(&session_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     // ========================================================================
@@ -459,7 +462,14 @@ impl SessionHygiene {
 
         // Evaluate progress
         let evaluation = if self.config.progress_evaluation_enabled {
-            ProgressEvaluation::new(session_id, completed_steps, total_steps, elapsed_secs, checkpoint_count, self.config.checkpoint_interval_secs)
+            ProgressEvaluation::new(
+                session_id,
+                completed_steps,
+                total_steps,
+                elapsed_secs,
+                checkpoint_count,
+                self.config.checkpoint_interval_secs,
+            )
         } else {
             ProgressEvaluation::for_session(session_id, elapsed_secs, checkpoint_count)
         };
@@ -533,7 +543,10 @@ impl SessionHygiene {
     }
 
     /// Get checkpoint history for a session with evaluations
-    pub fn get_checkpoint_history(&self, session_id: Uuid) -> Vec<(SessionCheckpoint, Option<ProgressEvaluation>)> {
+    pub fn get_checkpoint_history(
+        &self,
+        session_id: Uuid,
+    ) -> Vec<(SessionCheckpoint, Option<ProgressEvaluation>)> {
         self.checkpoints
             .get(&session_id)
             .map(|checkpoints| {
@@ -662,7 +675,10 @@ mod tests {
         assert!((evaluation.progress_ratio - 0.1).abs() < 0.001);
         // At 60 min with 60 min interval, expected is 0.5, actual 0.1 which is < 0.5 * 0.8 = 0.4
         assert!(!evaluation.is_on_track);
-        assert!(matches!(evaluation.health_status, ProgressHealth::Critical | ProgressHealth::Behind));
+        assert!(matches!(
+            evaluation.health_status,
+            ProgressHealth::Critical | ProgressHealth::Behind
+        ));
     }
 
     #[test]
@@ -680,7 +696,10 @@ mod tests {
     #[test]
     fn test_progress_health_display() {
         assert_eq!(format!("{}", ProgressHealth::OnTrack), "On Track");
-        assert_eq!(format!("{}", ProgressHealth::SlightlyBehind), "Slightly Behind");
+        assert_eq!(
+            format!("{}", ProgressHealth::SlightlyBehind),
+            "Slightly Behind"
+        );
         assert_eq!(format!("{}", ProgressHealth::Behind), "Behind");
         assert_eq!(format!("{}", ProgressHealth::Critical), "Critical");
     }
