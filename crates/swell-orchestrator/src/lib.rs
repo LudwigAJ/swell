@@ -31,6 +31,7 @@ pub mod session_hygiene;
 pub mod soft_limits;
 pub mod state_machine;
 pub mod stopping_conditions;
+pub mod subagent;
 pub mod task_board;
 pub mod task_graph;
 pub mod worker_pool;
@@ -116,6 +117,10 @@ pub use task_graph::TaskGraph;
 pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
+};
+pub use subagent::{
+    AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
+    MAX_SUBAGENT_DEPTH,
 };
 
 use std::sync::Arc;
