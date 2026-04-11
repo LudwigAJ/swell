@@ -155,7 +155,7 @@ Prefer channels over Arc<Mutex> for message-passing patterns.
 ```rust
 use sqlx::PgPool;
 
-let pool = PgPool::connect("postgres://user:pass@localhost/db").await?;
+let pool = PgPool::connect("postgres://user:changeme@localhost/db").await?;
 let users: Vec<(i32, String)> = sqlx::query_as(
     "SELECT id, name FROM users WHERE age > $1"
 ).bind(18).fetch_all(&pool).await?;

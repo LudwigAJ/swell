@@ -206,7 +206,7 @@ Use environment variables or test-specific config files:
 ```rust
 fn test_database_url() -> String {
     std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5433/test".into())
+        .unwrap_or_else(|_| "postgres://postgres:changeme@localhost:5433/test".into())
 }
 ```
 
