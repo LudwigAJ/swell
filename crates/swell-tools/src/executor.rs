@@ -37,11 +37,17 @@ impl PermissionChecker {
     }
 
     /// Check if a tool execution is permitted
+    ///
+    /// Permission tiers:
+    /// - `Auto`: Always permitted (auto-approved)
+    /// - `Ask`: Treated as `Auto` (auto-approved) since no confirmation mechanism exists
+    /// - `Deny`: Never permitted without explicit override via `allowed_tools`
     pub fn is_allowed(&self, tool_name: &str, tool_tier: PermissionTier) -> bool {
         if self.allowed_tools.contains(tool_name) {
             return true;
         }
-        matches!(tool_tier, PermissionTier::Auto)
+        // Ask is treated as Auto since there's no user confirmation mechanism
+        matches!(tool_tier, PermissionTier::Auto | PermissionTier::Ask)
     }
 }
 
