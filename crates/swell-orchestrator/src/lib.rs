@@ -17,11 +17,13 @@ pub mod backlog;
 pub mod drift_detector;
 pub mod execution;
 pub mod feature_leads;
+pub mod followup_generator;
 pub mod metrics;
 pub mod policy;
 pub mod retry_policy;
 pub mod scheduler;
 pub mod state_machine;
+pub mod task_board;
 pub mod task_graph;
 
 pub use agents::{
@@ -50,6 +52,10 @@ pub use feature_leads::{
     FeatureLead, FeatureLeadManager, FeatureLeadSpawner, StepResult,
     FEATURE_LEAD_STEP_THRESHOLD, MAX_ORCHESTRATOR_DEPTH,
 };
+pub use followup_generator::{
+    FollowUpContext, FollowUpGenerator, FollowUpGeneratorConfig, FollowUpOpportunity,
+    FollowUpOpportunityType, FollowUpProposal,
+};
 pub use metrics::{
     create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
     AlertSeverity, AlertThresholds, AlertType, MetricSample, MetricsAlert, MetricsCollector,
@@ -66,6 +72,10 @@ pub use scheduler::{
     Scheduler, SchedulerConfig, SchedulerStats, TaskPriority, DEFAULT_MAX_WORKERS, MAX_MAX_WORKERS,
 };
 pub use state_machine::TaskStateMachine;
+pub use task_board::{
+    CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry, TaskBoardStats,
+    create_task_board,
+};
 pub use task_graph::TaskGraph;
 
 use std::sync::Arc;
