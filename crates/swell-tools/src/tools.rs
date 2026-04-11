@@ -172,7 +172,7 @@ impl WriteFileTool {
         // For write operations, we need to check if the parent directory exists
         // and is within the workspace, since the file may not exist yet
         let parent = path.parent().unwrap_or(Path::new("."));
-        
+
         // Canonicalize parent - if parent doesn't exist, we need to check parent of parent
         // This handles the case where we're creating a new file in a new directory
         let canonical_parent = if parent.exists() {

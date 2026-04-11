@@ -57,6 +57,13 @@ pub use flakiness::{
     TestResultRecord,
 };
 
+// Re-export staged test executor for use by other crates
+pub mod staged_executor;
+pub use staged_executor::{
+    StageConfig, StageResult, StagedResult, StagedTestExecutor, Stage0Config, Stage1Config,
+    Stage2Config, Stage3Config, Stage4Config, TestStage,
+};
+
 // Re-export multi-signal validation for use by other crates
 pub mod multi_signal;
 pub use multi_signal::{
