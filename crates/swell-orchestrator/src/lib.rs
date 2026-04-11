@@ -17,6 +17,7 @@ pub mod backlog;
 pub mod drift_detector;
 pub mod execution;
 pub mod feature_leads;
+pub mod file_locks;
 pub mod followup_generator;
 pub mod frozen_spec;
 pub mod gap_analyzer;
@@ -59,6 +60,10 @@ pub use execution::ExecutionController;
 pub use feature_leads::{
     FeatureLead, FeatureLeadManager, FeatureLeadSpawner, StepResult, FEATURE_LEAD_STEP_THRESHOLD,
     MAX_ORCHESTRATOR_DEPTH,
+};
+pub use file_locks::{
+    FileLock, FileLockError, FileLockManager, LockAcquisitionResult, LockEvent, LockEventType,
+    LockStats,
 };
 pub use followup_generator::{
     FollowUpContext, FollowUpGenerator, FollowUpGeneratorConfig, FollowUpOpportunity,
