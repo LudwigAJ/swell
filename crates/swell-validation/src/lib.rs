@@ -64,6 +64,20 @@ pub use multi_signal::{
     SignalConfig, SignalContribution, SignalSeverity, SignalWeights, ValidationSignal,
 };
 
+// Re-export test planning for use by other crates
+pub mod test_planning;
+pub use test_planning::{
+    AcceptanceCriteriaParser, AcceptanceCriterion, CriterionCriticality, DiffContext,
+    DiffContextExtractor, RiskScorer, TestCase, TestPlan, TestPlanRequest, TestPlanningEngine,
+    TestRiskLevel,
+};
+
+// Re-export test generator for use by other crates
+pub mod test_generator;
+pub use test_generator::{
+    GeneratedTest, TestGenerator, TestGeneratorConfig, TestGeneratorOutput, TestType,
+};
+
 // ============================================================================
 // Lint Gate
 // ============================================================================
