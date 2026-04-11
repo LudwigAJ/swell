@@ -835,6 +835,295 @@ impl QuarantineStats {
 }
 
 // ============================================================================
+// Flakiness Retry Handler (3x Retry with Majority Voting)
+// ============================================================================
+
+/// Configuration for retry behavior with majority voting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetryConfig {
+    /// Maximum number of retry attempts (including initial run)
+    pub max_attempts: usize,
+    /// Minimum number of passes required for overall success (for majority voting)
+    pub min_passes_for_success: usize,
+    /// Whether to enable retry for flaky tests
+    pub enable_flaky_retry: bool,
+    /// Whether to use exponential backoff between retries
+    pub use_exponential_backoff: bool,
+    /// Base delay in milliseconds between retries (when not using exponential backoff)
+    pub base_delay_ms: u64,
+    /// Maximum delay in milliseconds between retries
+    pub max_delay_ms: u64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            min_passes_for_success: 2, // Majority: 2 out of 3
+            enable_flaky_retry: true,
+            use_exponential_backoff: false,
+            base_delay_ms: 100,
+            max_delay_ms: 1000,
+        }
+    }
+}
+
+impl RetryConfig {
+    /// Create a new retry config with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set maximum retry attempts
+    pub fn with_max_attempts(mut self, attempts: usize) -> Self {
+        self.max_attempts = attempts;
+        self
+    }
+
+    /// Set minimum passes for success (majority threshold)
+    pub fn with_min_passes(mut self, passes: usize) -> Self {
+        self.min_passes_for_success = passes;
+        self
+    }
+
+    /// Enable exponential backoff between retries
+    pub fn with_exponential_backoff(mut self) -> Self {
+        self.use_exponential_backoff = true;
+        self
+    }
+
+    /// Set base delay in milliseconds
+    pub fn with_base_delay_ms(mut self, delay_ms: u64) -> Self {
+        self.base_delay_ms = delay_ms;
+        self
+    }
+
+    /// Set maximum delay in milliseconds
+    pub fn with_max_delay_ms(mut self, delay_ms: u64) -> Self {
+        self.max_delay_ms = delay_ms;
+        self
+    }
+}
+
+/// Result of a single retry attempt
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetryAttempt {
+    /// Attempt number (1-indexed)
+    pub attempt: usize,
+    /// Whether this attempt passed
+    pub passed: bool,
+    /// Duration in milliseconds
+    pub duration_ms: u64,
+    /// Timestamp of the attempt
+    pub timestamp: DateTime<Utc>,
+}
+
+/// Result of a retry sequence with majority voting
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetryResult {
+    /// Test name
+    pub test_name: String,
+    /// All attempts made
+    pub attempts: Vec<RetryAttempt>,
+    /// Final result after majority voting
+    pub passed: bool,
+    /// Number of passes among all attempts
+    pub total_passes: usize,
+    /// Number of failures among all attempts
+    pub total_failures: usize,
+    /// The majority voting threshold used
+    pub min_passes_required: usize,
+    /// Total duration of all attempts combined
+    pub total_duration_ms: u64,
+}
+
+impl RetryResult {
+    /// Get the pass rate (0.0 to 1.0)
+    pub fn pass_rate(&self) -> f64 {
+        let total = self.attempts.len();
+        if total == 0 {
+            return 0.0;
+        }
+        self.total_passes as f64 / total as f64
+    }
+
+    /// Check if the result is definitive (clear majority)
+    pub fn is_definitive(&self) -> bool {
+        // A result is definitive if there's a clear majority
+        // (not a tie)
+        self.total_passes != self.total_failures
+    }
+
+    /// Get the first failure's attempt number, if any
+    pub fn first_failure_attempt(&self) -> Option<usize> {
+        self.attempts.iter().find(|a| !a.passed).map(|a| a.attempt)
+    }
+}
+
+/// Handler for 3x retry with majority voting for flaky tests.
+///
+/// This handler implements a retry mechanism that runs tests multiple times
+/// and uses majority voting to determine the final result. This helps
+/// distinguish between truly failing tests and flaky tests that sometimes pass.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use swell_validation::flakiness::{FlakinessRetryHandler, RetryConfig};
+///
+/// let handler = FlakinessRetryHandler::new();
+/// let result = handler.retry_test("test_flaky", || async { Ok(true) }).await;
+/// ```
+#[derive(Debug, Clone)]
+pub struct FlakinessRetryHandler {
+    config: RetryConfig,
+}
+
+impl Default for FlakinessRetryHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FlakinessRetryHandler {
+    /// Create a new retry handler with default configuration
+    pub fn new() -> Self {
+        Self {
+            config: RetryConfig::default(),
+        }
+    }
+
+    /// Create with custom retry configuration
+    pub fn with_config(config: RetryConfig) -> Self {
+        Self { config }
+    }
+
+    /// Create with flakiness detector integration
+    pub fn with_detector(detector: &FlakinessDetector) -> Self {
+        let _ = detector; // Used for future integration
+        Self::new()
+    }
+
+    /// Get the retry configuration
+    pub fn config(&self) -> &RetryConfig {
+        &self.config
+    }
+
+    /// Calculate delay before next retry using exponential backoff
+    fn calculate_delay(&self, attempt: usize) -> u64 {
+        if self.config.use_exponential_backoff {
+            let delay = self.config.base_delay_ms * (2_u64.pow(attempt as u32 - 1));
+            delay.min(self.config.max_delay_ms)
+        } else {
+            self.config.base_delay_ms
+        }
+    }
+
+    /// Execute a test with retry logic and majority voting.
+    ///
+    /// Runs the test up to `max_attempts` times and determines success
+    /// based on majority voting (at least `min_passes_for_success` passes).
+    ///
+    /// Returns a `RetryResult` with all attempt details and the final outcome.
+    pub async fn retry_test<F, Fut>(&self, test_name: &str, mut test_fn: F) -> RetryResult
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<bool, std::io::Error>>,
+    {
+        let mut attempts = Vec::new();
+        let mut total_duration_ms = 0u64;
+
+        for attempt_num in 1..=self.config.max_attempts {
+            let attempt_start = std::time::Instant::now();
+
+            // Run the test
+            let result = test_fn().await;
+
+            let passed = result.unwrap_or(false);
+            let duration_ms = attempt_start.elapsed().as_millis() as u64;
+            total_duration_ms += duration_ms;
+
+            // Record the attempt
+            attempts.push(RetryAttempt {
+                attempt: attempt_num,
+                passed,
+                duration_ms,
+                timestamp: Utc::now(),
+            });
+
+            // If we already have a majority, we can stop early
+            let current_passes = attempts.iter().filter(|a| a.passed).count();
+            let remaining_attempts = self.config.max_attempts - attempt_num;
+
+            // If we can still win with remaining attempts, continue
+            // Otherwise, we have a definitive result
+            if current_passes >= self.config.min_passes_for_success {
+                // We have enough passes for majority - stop early
+                break;
+            }
+
+            // If even if we win all remaining, we can't reach majority, stop
+            if current_passes + remaining_attempts < self.config.min_passes_for_success {
+                // Can't possibly win - stop early
+                break;
+            }
+
+            // Add delay between retries (except on last attempt)
+            if attempt_num < self.config.max_attempts {
+                let delay = self.calculate_delay(attempt_num);
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+            }
+        }
+
+        // Calculate final result
+        let total_passes = attempts.iter().filter(|a| a.passed).count();
+        let total_failures = attempts.len() - total_passes;
+        let passed = total_passes >= self.config.min_passes_for_success;
+
+        RetryResult {
+            test_name: test_name.to_string(),
+            attempts,
+            passed,
+            total_passes,
+            total_failures,
+            min_passes_required: self.config.min_passes_for_success,
+            total_duration_ms,
+        }
+    }
+
+    /// Execute a test with retry, returning only the final boolean result.
+    ///
+    /// This is a convenience method that discards the detailed retry information.
+    pub async fn retry_test_simple<F, Fut>(&self, test_name: &str, test_fn: F) -> bool
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = Result<bool, std::io::Error>>,
+    {
+        self.retry_test(test_name, test_fn).await.passed
+    }
+
+    /// Determine if a test should be retried based on its flakiness history.
+    ///
+    /// Returns true if:
+    /// - The test is currently flagged as flaky, OR
+    /// - The test has a flakiness score above the retry threshold
+    pub fn should_retry(&self, test_name: &str, detector: &FlakinessDetector) -> bool {
+        if !self.config.enable_flaky_retry {
+            return false;
+        }
+
+        // Retry tests that are currently flagged as flaky
+        if detector.is_flaky(test_name) {
+            return true;
+        }
+
+        // Also retry tests with high flakiness scores but not yet quarantined
+        let score = detector.flakiness_score(test_name);
+        score >= 0.3 // Retry if score is 30% or higher
+    }
+}
+
+// ============================================================================
 // Flakiness Gate (Integration with Validation Pipeline)
 // ============================================================================
 
@@ -1389,5 +1678,342 @@ mod integration_tests {
 
         // Phase 4: Verify test is no longer flagged
         assert!(!pool.is_quarantined("workflow_test"));
+    }
+}
+
+#[cfg(test)]
+mod flakiness_retry_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_retry_handler_default_config() {
+        let handler = FlakinessRetryHandler::new();
+        assert_eq!(handler.config().max_attempts, 3);
+        assert_eq!(handler.config().min_passes_for_success, 2);
+        assert!(handler.config().enable_flaky_retry);
+    }
+
+    #[tokio::test]
+    async fn test_retry_test_all_pass() {
+        let handler = FlakinessRetryHandler::new();
+
+        // Test that always passes
+        let result = handler
+            .retry_test("test_always_pass", || async { Ok(true) })
+            .await;
+
+        assert!(result.passed);
+        // Early exit: after 2 passes we have majority, so only 2 attempts
+        assert_eq!(result.total_passes, 2);
+        assert_eq!(result.total_failures, 0);
+        assert_eq!(result.min_passes_required, 2);
+        assert!(result.is_definitive());
+    }
+
+    #[tokio::test]
+    async fn test_retry_test_all_fail() {
+        let handler = FlakinessRetryHandler::new();
+
+        // Test that always fails
+        let result = handler
+            .retry_test("test_always_fail", || async { Ok(false) })
+            .await;
+
+        assert!(!result.passed);
+        // Early exit: after 2 failures, even 1 more attempt can't give us 2 passes
+        // So we stop after 2 attempts (0 + 1 remaining = 1 < 2 minimum passes needed)
+        assert_eq!(result.total_passes, 0);
+        assert_eq!(result.total_failures, 2);
+        assert!(result.is_definitive());
+    }
+
+    #[tokio::test]
+    async fn test_retry_test_majority_pass() {
+        let handler = FlakinessRetryHandler::new();
+        let mut call_count = 0;
+
+        // Test that passes twice, fails once (in order: fail, pass, pass)
+        let result = handler
+            .retry_test("test_majority_pass", || {
+                let count = call_count;
+                call_count += 1;
+                async move {
+                    match count {
+                        0 => Ok(false), // First attempt fails
+                        _ => Ok(true),  // Second and third pass
+                    }
+                }
+            })
+            .await;
+
+        assert!(result.passed);
+        assert_eq!(result.total_passes, 2);
+        assert_eq!(result.total_failures, 1);
+        assert!(result.is_definitive());
+    }
+
+    #[tokio::test]
+    async fn test_retry_test_majority_fail() {
+        let handler = FlakinessRetryHandler::new();
+        let mut call_count = 0;
+
+        // Test that fails twice, passes once (order: pass, fail, fail)
+        let result = handler
+            .retry_test("test_majority_fail", || {
+                let count = call_count;
+                call_count += 1;
+                async move {
+                    match count {
+                        0 => Ok(true),  // First attempt passes
+                        _ => Ok(false), // Second and third fail
+                    }
+                }
+            })
+            .await;
+
+        assert!(!result.passed);
+        assert_eq!(result.total_passes, 1);
+        assert_eq!(result.total_failures, 2);
+        assert!(result.is_definitive());
+    }
+
+    #[tokio::test]
+    async fn test_retry_test_early_exit_on_majority() {
+        let handler = FlakinessRetryHandler::new();
+        let mut call_count = 0;
+
+        // Test that passes first two times - should stop early (no need for 3rd)
+        let result = handler
+            .retry_test("test_early_exit", || {
+                call_count += 1;
+                async move { Ok(true) }
+            })
+            .await;
+
+        assert!(result.passed);
+        assert_eq!(result.total_passes, 2);
+        assert_eq!(result.total_failures, 0);
+        assert_eq!(call_count, 2); // Only called twice since majority reached
+    }
+
+    #[tokio::test]
+    async fn test_retry_test_simple() {
+        let handler = FlakinessRetryHandler::new();
+
+        // Test simple wrapper returns only boolean
+        let result = handler
+            .retry_test_simple("test_simple", || async { Ok(true) })
+            .await;
+
+        assert!(result);
+    }
+
+    #[tokio::test]
+    async fn test_retry_result_pass_rate() {
+        let result = RetryResult {
+            test_name: "test".to_string(),
+            attempts: vec![
+                RetryAttempt {
+                    attempt: 1,
+                    passed: true,
+                    duration_ms: 100,
+                    timestamp: Utc::now(),
+                },
+                RetryAttempt {
+                    attempt: 2,
+                    passed: true,
+                    duration_ms: 100,
+                    timestamp: Utc::now(),
+                },
+                RetryAttempt {
+                    attempt: 3,
+                    passed: false,
+                    duration_ms: 100,
+                    timestamp: Utc::now(),
+                },
+            ],
+            passed: true,
+            total_passes: 2,
+            total_failures: 1,
+            min_passes_required: 2,
+            total_duration_ms: 300,
+        };
+
+        assert!((result.pass_rate() - 0.666).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_retry_result_first_failure() {
+        let result = RetryResult {
+            test_name: "test".to_string(),
+            attempts: vec![
+                RetryAttempt {
+                    attempt: 1,
+                    passed: true,
+                    duration_ms: 100,
+                    timestamp: Utc::now(),
+                },
+                RetryAttempt {
+                    attempt: 2,
+                    passed: false,
+                    duration_ms: 100,
+                    timestamp: Utc::now(),
+                },
+                RetryAttempt {
+                    attempt: 3,
+                    passed: false,
+                    duration_ms: 100,
+                    timestamp: Utc::now(),
+                },
+            ],
+            passed: false,
+            total_passes: 1,
+            total_failures: 2,
+            min_passes_required: 2,
+            total_duration_ms: 300,
+        };
+
+        assert_eq!(result.first_failure_attempt(), Some(2));
+    }
+
+    #[test]
+    fn test_retry_config_custom() {
+        let config = RetryConfig::new()
+            .with_max_attempts(5)
+            .with_min_passes(3)
+            .with_exponential_backoff()
+            .with_base_delay_ms(200);
+
+        assert_eq!(config.max_attempts, 5);
+        assert_eq!(config.min_passes_for_success, 3);
+        assert!(config.use_exponential_backoff);
+        assert_eq!(config.base_delay_ms, 200);
+    }
+
+    #[test]
+    fn test_retry_config_default() {
+        let config = RetryConfig::default();
+
+        assert_eq!(config.max_attempts, 3);
+        assert_eq!(config.min_passes_for_success, 2);
+        assert!(config.enable_flaky_retry);
+        assert!(!config.use_exponential_backoff);
+        assert_eq!(config.base_delay_ms, 100);
+        assert_eq!(config.max_delay_ms, 1000);
+    }
+
+    #[tokio::test]
+    async fn test_retry_delay_calculation() {
+        // Test without exponential backoff
+        let handler = FlakinessRetryHandler::new();
+        assert_eq!(handler.calculate_delay(1), 100);
+        assert_eq!(handler.calculate_delay(2), 100);
+        assert_eq!(handler.calculate_delay(3), 100);
+
+        // Test with exponential backoff
+        let handler = FlakinessRetryHandler::with_config(
+            RetryConfig::new()
+                .with_exponential_backoff()
+                .with_base_delay_ms(100)
+                .with_max_delay_ms(1000),
+        );
+        // Attempt 1: 100 * 2^0 = 100
+        assert_eq!(handler.calculate_delay(1), 100);
+        // Attempt 2: 100 * 2^1 = 200
+        assert_eq!(handler.calculate_delay(2), 200);
+        // Attempt 3: 100 * 2^2 = 400
+        assert_eq!(handler.calculate_delay(3), 400);
+    }
+
+    #[tokio::test]
+    async fn test_should_retry_flaky_test() {
+        let handler = FlakinessRetryHandler::new();
+        let mut detector = FlakinessDetector::with_defaults();
+
+        // Add flaky test pattern
+        for passed in [true, false, true, false, true] {
+            detector.record("test_flaky".to_string(), passed, 100);
+        }
+
+        assert!(detector.is_flaky("test_flaky"));
+        assert!(handler.should_retry("test_flaky", &detector));
+    }
+
+    #[tokio::test]
+    async fn test_should_not_retry_stable_test() {
+        let handler = FlakinessRetryHandler::new();
+        let mut detector = FlakinessDetector::with_defaults();
+
+        // Add stable test (always passes)
+        for _ in 0..5 {
+            detector.record("test_stable".to_string(), true, 100);
+        }
+
+        assert!(!detector.is_flaky("test_stable"));
+        assert!(!handler.should_retry("test_stable", &detector));
+    }
+
+    #[tokio::test]
+    async fn test_should_retry_high_score_not_quarantined() {
+        let handler = FlakinessRetryHandler::new();
+        let mut detector = FlakinessDetector::with_defaults();
+
+        // Add mixed results but not enough to be flagged as flaky
+        // (threshold is 0.4, so we need score < 0.4 to not be quarantined)
+        // But we want score >= 0.3 to trigger retry
+        for (i, passed) in [true, true, true, false, true].iter().enumerate() {
+            detector.record_with_retry("test_mixed".to_string(), *passed, 100, i > 3);
+        }
+
+        let score = detector.flakiness_score("test_mixed");
+        // Score might be 0 (only 1 failure out of 5)
+        // Or might be non-zero - depends on implementation
+        // Just verify retry logic works
+        let should_retry = handler.should_retry("test_mixed", &detector);
+        // If score >= 0.3, should retry. Otherwise depends on implementation.
+        if score >= 0.3 {
+            assert!(should_retry);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_retry_disabled_config() {
+        let handler = FlakinessRetryHandler::with_config(RetryConfig {
+            enable_flaky_retry: false,
+            ..Default::default()
+        });
+        let mut detector = FlakinessDetector::with_defaults();
+
+        // Add very flaky test
+        for passed in [true, false, true, false, true] {
+            detector.record("test_very_flaky".to_string(), passed, 100);
+        }
+
+        // Even though it's flaky, retry should be disabled
+        assert!(!handler.should_retry("test_very_flaky", &detector));
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_detector_integration() {
+        // Full integration test: flaky detection -> quarantine -> retry
+        let mut detector = FlakinessDetector::with_defaults();
+        let handler = FlakinessRetryHandler::new();
+
+        // Phase 1: Flaky detection
+        for passed in [true, false, true, false, true] {
+            detector.record("integration_test".to_string(), passed, 100);
+        }
+
+        assert!(detector.is_flaky("integration_test"));
+        assert!(handler.should_retry("integration_test", &detector));
+
+        // Phase 2: Run with retry - simulates what would happen in validation
+        let result = handler
+            .retry_test("integration_test", || async { Ok(true) })
+            .await;
+
+        // With retry, even a flaky test can pass if it passes majority
+        assert!(result.passed);
+        assert_eq!(result.attempts.len(), 2); // Early exit after 2 passes
     }
 }

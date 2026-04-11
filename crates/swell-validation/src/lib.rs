@@ -53,15 +53,15 @@ pub use evidence::{
 pub mod flakiness;
 pub use flakiness::{
     FlakinessConfig, FlakinessDetector, FlakinessGate, FlakinessGateConfig, FlakinessReport,
-    QuarantineConfig, QuarantinePool, QuarantineStats, QuarantinedTest, TestFlakinessReport,
-    TestResultRecord,
+    FlakinessRetryHandler, QuarantineConfig, QuarantinePool, QuarantineStats, QuarantinedTest,
+    RetryAttempt, RetryConfig, RetryResult, TestFlakinessReport, TestResultRecord,
 };
 
 // Re-export staged test executor for use by other crates
 pub mod staged_executor;
 pub use staged_executor::{
-    StageConfig, StageResult, StagedResult, StagedTestExecutor, Stage0Config, Stage1Config,
-    Stage2Config, Stage3Config, Stage4Config, TestStage,
+    Stage0Config, Stage1Config, Stage2Config, Stage3Config, Stage4Config, StageConfig, StageResult,
+    StagedResult, StagedTestExecutor, TestStage,
 };
 
 // Re-export multi-signal validation for use by other crates
