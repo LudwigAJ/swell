@@ -101,6 +101,17 @@ pub use result_interpreter::{
     ResultInterpreterConfig, TestResultInfo, TestRunHistory,
 };
 
+// Re-export traceability store for full traceability chain
+// Note: TestCase and TestResult from traceability conflict with same names from test_planning and evidence
+pub mod traceability;
+pub use traceability::{
+    AcceptanceCriteria as TraceAcceptanceCriteria, ChainCounts, CriteriaCriticality,
+    CriteriaStatus, Evidence, EvidenceType, Goal, GoalStatus, InMemoryTraceabilityStore,
+    TestCase as TraceTestCase, TestCaseStatus, TestCaseType, TestResult as TraceTestResult,
+    TraceabilityChain, TraceabilityError, TraceabilityStore,
+};
+pub use traceability::sqlite_store::SqliteTraceabilityStore;
+
 // ============================================================================
 // Lint Gate
 // ============================================================================
