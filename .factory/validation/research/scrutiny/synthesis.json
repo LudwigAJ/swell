@@ -1,0 +1,103 @@
+{
+  "milestone": "research",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "notes": "Tests pass but some evidence_pipeline tests take 60+ seconds each (test_evidence_pipeline_chunking, test_evidence_pipeline_process). Tests did not fail, just slow."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 1,
+    "failed": 3,
+    "failedFeatures": [
+      "research-researcher-agent",
+      "research-web-search-tools",
+      "research-evidence-pipeline"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "research-researcher-agent",
+      "severity": "blocking",
+      "description": "Duplicate SearchDepth enum defined in agents.rs when search_router.rs already has a more sophisticated version. ResearcherAgent::classify_depth() is a simplified static version that doesn't reuse SearchRouter::classify_depth().",
+      "file": "crates/swell-orchestrator/src/agents.rs",
+      "line": 2175
+    },
+    {
+      "featureId": "research-researcher-agent",
+      "severity": "blocking",
+      "description": "ResearchResult, ResearchFinding, and SearchDepth are not exported from the orchestrator crate's lib.rs. Other agent result types (EvaluationResult, ReviewResult, RefactorResult, etc.) are exported. This breaks discoverability.",
+      "file": "crates/swell-orchestrator/src/lib.rs"
+    },
+    {
+      "featureId": "research-researcher-agent",
+      "severity": "blocking",
+      "description": "max_iterations is hardcoded to 5 in all builder methods. This magic number should be loaded from .swell/settings.json per project conventions in AGENTS.md.",
+      "file": "crates/swell-orchestrator/src/agents.rs",
+      "line": 2200
+    },
+    {
+      "featureId": "research-researcher-agent",
+      "severity": "blocking",
+      "description": "Web search tools (WebSearchTool, DomainSearchTool, FetchPageTool) exist in web_search.rs but are not registered in swell-tools/src/mod.rs. ResearcherAgent cannot access these tools.",
+      "file": "crates/swell-tools/src/mod.rs"
+    },
+    {
+      "featureId": "research-web-search-tools",
+      "severity": "blocking",
+      "description": "Web search tools are implemented but never registered in ToolRegistry. The feature expectedBehavior states 'Tools registered in ToolRegistry and available to ALL agents', but no registration code exists.",
+      "file": "crates/swell-tools/src/web_search.rs"
+    },
+    {
+      "featureId": "research-web-search-tools",
+      "severity": "blocking",
+      "description": "ResearcherAgent does not have web search tools instantiated or registered in its with_tools builder. The agent has no access to web search tools despite the feature description.",
+      "file": "crates/swell-orchestrator/src/agents.rs"
+    },
+    {
+      "featureId": "research-evidence-pipeline",
+      "severity": "blocking",
+      "description": "retrieve() method creates EvidenceResult with empty chunk data. The chunk field is populated with EvidenceChunk containing String::new() for text and empty provenance fields. The actual chunks stored in the pipeline's inverted_index are never looked up and returned. This makes retrieve() completely unusable.",
+      "file": "crates/swell-orchestrator/src/evidence_pipeline.rs",
+      "line": 440
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document how to register tools in ToolRegistry. The web search tools feature shows workers are implementing tools but not registering them. AGENTS.md should clarify: (1) how tools get registered, (2) that all tools must be registered to be accessible, (3) the pattern for registering tools in registry.rs vs elsewhere.",
+      "evidence": "research-web-search-tools review: 'Worker implemented web search tools as new module but AGENTS.md has no documentation about how tools should be registered in ToolRegistry'",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify when to reuse existing types vs create new ones. research-researcher-agent created a duplicate SearchDepth enum instead of reusing search_router::SearchDepth. AGENTS.md should include guidance: 'Before creating new types, search the codebase for existing equivalents'.",
+      "evidence": "research-researcher-agent review: 'SearchRouter in search_router.rs has sophisticated query classification... ResearcherAgent creates a simpler static classify_depth() that checks different conditions... The existence of SearchRouter wasn't leveraged'",
+      "isSystemic": true
+    },
+    {
+      "target": "skills/rust",
+      "suggestion": "Update skill to clarify error handling: SwellError from swell_core is the project's standard error type (wraps thiserror internally). Workers should use SwellError rather than creating custom thiserror types. The current skill mentions thiserror::Error which may mislead workers.",
+      "evidence": "research-researcher-agent review sharedStateObservations: 'Worker skill (rust) says to use thiserror::Error for errors, but SwellError is used directly from swell_core'",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

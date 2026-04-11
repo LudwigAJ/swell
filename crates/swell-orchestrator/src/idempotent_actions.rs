@@ -76,7 +76,11 @@ pub struct ActionKey {
 
 impl ActionKey {
     /// Create a new action key
-    pub fn new(task_id: Option<Uuid>, action_type: impl Into<String>, parameters: impl Into<String>) -> Self {
+    pub fn new(
+        task_id: Option<Uuid>,
+        action_type: impl Into<String>,
+        parameters: impl Into<String>,
+    ) -> Self {
         Self {
             task_id,
             action_type: action_type.into(),
@@ -90,7 +94,11 @@ impl ActionKey {
     }
 
     /// Create a key for a task action with parameters
-    pub fn for_task_with_params(task_id: Uuid, action_type: impl Into<String>, params: impl Into<String>) -> Self {
+    pub fn for_task_with_params(
+        task_id: Uuid,
+        action_type: impl Into<String>,
+        params: impl Into<String>,
+    ) -> Self {
         Self::new(Some(task_id), action_type, params)
     }
 }
@@ -443,16 +451,10 @@ impl Default for ActionDeduplicator {
 #[derive(Debug, thiserror::Error)]
 pub enum DuplicateAction {
     #[error("Action already running: {key:?} (started at {started_at})")]
-    AlreadyRunning {
-        key: ActionKey,
-        started_at: i64,
-    },
+    AlreadyRunning { key: ActionKey, started_at: i64 },
 
     #[error("Action already completed: {key:?} (completed at {completed_at})")]
-    AlreadyCompleted {
-        key: ActionKey,
-        completed_at: i64,
-    },
+    AlreadyCompleted { key: ActionKey, completed_at: i64 },
 }
 
 /// Result of an idempotent action execution
@@ -461,10 +463,7 @@ pub enum IdempotentResult<T> {
     /// Action executed successfully
     Success(T),
     /// Action was skipped because a duplicate is running
-    SkippedDuplicate {
-        key: ActionKey,
-        running_since: i64,
-    },
+    SkippedDuplicate { key: ActionKey, running_since: i64 },
     /// Action failed after all retries
     Failed {
         key: ActionKey,
@@ -489,10 +488,10 @@ pub async fn execute_idempotent<A: IdempotentAction>(
     // Try to acquire the action (deduplication check)
     match deduplicator.try_acquire(&key).await {
         Err(DuplicateAction::AlreadyRunning { started_at, .. }) => {
-            return IdempotentResult::SkippedDuplicate {
+            IdempotentResult::SkippedDuplicate {
                 key,
                 running_since: started_at,
-            };
+            }
         }
         Err(DuplicateAction::AlreadyCompleted { completed_at, .. }) => {
             // For idempotent actions that already completed, we return success
@@ -515,10 +514,10 @@ pub async fn execute_idempotent<A: IdempotentAction>(
                     },
                 };
             }
-            return IdempotentResult::SkippedDuplicate {
+            IdempotentResult::SkippedDuplicate {
                 key,
                 running_since: completed_at,
-            };
+            }
         }
         Ok(_execution) => {
             // Execute the action with retry logic
@@ -565,7 +564,8 @@ pub async fn execute_idempotent<A: IdempotentAction>(
                             backoff_ms = backoff_ms,
                             "Retrying action after backoff"
                         );
-                        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms as u64)).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(backoff_ms as u64))
+                            .await;
 
                         attempts += 1;
                     }
@@ -583,7 +583,7 @@ fn calculate_backoff(attempt: u32) -> i64 {
     // Add jitter: random 0-25% of base delay
 
     let base = 100;
-    let exponential = 2u64.pow(attempt.min(5) as u32);
+    let exponential = 2u64.pow(attempt.min(5));
     let delay_ms = (base * exponential).min(5000) as i64;
 
     // Add jitter (0-25% of delay)
@@ -621,11 +621,7 @@ where
     F: Fn() -> Result<T, String> + Send + Sync,
 {
     /// Create a new idempotent closure wrapper
-    pub fn new(
-        key: ActionKey,
-        closure: F,
-        is_idempotent: bool,
-    ) -> Self {
+    pub fn new(key: ActionKey, closure: F, is_idempotent: bool) -> Self {
         Self {
             key,
             closure,
@@ -963,10 +959,16 @@ mod tests {
         assert!(deduplicator.get_status(&key).await.is_none());
 
         deduplicator.try_acquire(&key).await.unwrap();
-        assert_eq!(deduplicator.get_status(&key).await, Some(ActionStatus::Running));
+        assert_eq!(
+            deduplicator.get_status(&key).await,
+            Some(ActionStatus::Running)
+        );
 
         deduplicator.complete(&key).await;
-        assert_eq!(deduplicator.get_status(&key).await, Some(ActionStatus::Completed));
+        assert_eq!(
+            deduplicator.get_status(&key).await,
+            Some(ActionStatus::Completed)
+        );
     }
 
     #[tokio::test]
@@ -1063,9 +1065,7 @@ mod tests {
         let dedup2 = deduplicator.clone();
         let key2 = key.clone();
 
-        let handle1 = tokio::spawn(async move {
-            dedup1.try_acquire(&key).await
-        });
+        let handle1 = tokio::spawn(async move { dedup1.try_acquire(&key).await });
 
         let handle2 = tokio::spawn(async move {
             // Small delay to ensure handle1 acquires first

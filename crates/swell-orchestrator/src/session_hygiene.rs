@@ -430,7 +430,7 @@ impl SessionHygiene {
         let checkpoint = SessionCheckpoint::new(session_id, elapsed_secs, checkpoint_number);
 
         // Store checkpoint
-        let checkpoints = self.checkpoints.entry(session_id).or_insert_with(Vec::new);
+        let checkpoints = self.checkpoints.entry(session_id).or_default();
         checkpoints.push(checkpoint.clone());
 
         // Prune old checkpoints if configured
@@ -480,9 +480,7 @@ impl SessionHygiene {
         }
 
         // Record checkpoint
-        let Some(mut checkpoint) = self.record_checkpoint(session_id) else {
-            return None;
-        };
+        let mut checkpoint = self.record_checkpoint(session_id)?;
 
         // Add evaluation to checkpoint
         checkpoint.progress_evaluation = Some(evaluation.clone());

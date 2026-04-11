@@ -22,7 +22,9 @@ use tracing::info;
 /// Rate limiter for controlling request frequency
 #[derive(Debug, Clone)]
 pub struct RateLimiter {
+    #[allow(dead_code)]
     requests_per_minute: u32,
+    #[allow(dead_code)]
     window_secs: u64,
     #[allow(dead_code)]
     domain: Option<String>,
@@ -85,6 +87,10 @@ pub struct ContentProvenance {
     pub title: String,
     pub fetched_at: DateTime<Utc>,
     pub content_hash: Option<String>,
+    /// Publication date extracted from the page (meta tags, schema.org, etc.)
+    /// This is optional because many pages don't have this information
+    #[serde(default)]
+    pub publication_date: Option<DateTime<Utc>>,
 }
 
 /// Extracted content from a web page
@@ -171,8 +177,9 @@ impl WebSearchTool {
     pub fn new() -> Self {
         Self {
             name: "web_search".to_string(),
-            description: "Search the web for information. Returns results with title, URL, and snippet."
-                .to_string(),
+            description:
+                "Search the web for information. Returns results with title, URL, and snippet."
+                    .to_string(),
             client: SearchClient::with_config(WebSearchConfig::default()),
             rate_limiter: RateLimiter::new(60),
         }
@@ -181,8 +188,9 @@ impl WebSearchTool {
     pub fn with_config(config: WebSearchConfig) -> Self {
         Self {
             name: "web_search".to_string(),
-            description: "Search the web for information. Returns results with title, URL, and snippet."
-                .to_string(),
+            description:
+                "Search the web for information. Returns results with title, URL, and snippet."
+                    .to_string(),
             client: SearchClient::with_config(config.clone()),
             rate_limiter: config.rate_limiter,
         }
@@ -195,13 +203,9 @@ impl WebSearchTool {
             urlencoding::encode(query)
         );
 
-        let response = self
-            .client
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("Search request failed: {}", e)))?;
+        let response = self.client.client.get(&url).send().await.map_err(|e| {
+            SwellError::ToolExecutionFailed(format!("Search request failed: {}", e))
+        })?;
 
         if !response.status().is_success() {
             return Err(SwellError::ToolExecutionFailed(format!(
@@ -210,10 +214,9 @@ impl WebSearchTool {
             )));
         }
 
-        let body = response
-            .text()
-            .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("Failed to read response: {}", e)))?;
+        let body = response.text().await.map_err(|e| {
+            SwellError::ToolExecutionFailed(format!("Failed to read response: {}", e))
+        })?;
 
         // Parse DuckDuckGo HTML results
         let results = self.parse_ddg_results(&body);
@@ -236,7 +239,11 @@ impl WebSearchTool {
                     let url = self.extract_url(line);
 
                     if !title.is_empty() && !url.is_empty() {
-                        results.push(SearchResult { title, url, snippet });
+                        results.push(SearchResult {
+                            title,
+                            url,
+                            snippet,
+                        });
                     }
                 }
             }
@@ -271,7 +278,7 @@ impl WebSearchTool {
             if let Some(tag_end) = after_snippet.find('>') {
                 let content = &after_snippet[tag_end + 1..];
                 if let Some(end) = content.find("</a>").or_else(|| content.find('<')) {
-                    return self.clean_html(&content[..end].trim());
+                    return self.clean_html(content[..end].trim());
                 }
             }
         }
@@ -458,13 +465,9 @@ impl DomainSearchTool {
             urlencoding::encode(&site_query)
         );
 
-        let response = self
-            .client
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("Search request failed: {}", e)))?;
+        let response = self.client.client.get(&url).send().await.map_err(|e| {
+            SwellError::ToolExecutionFailed(format!("Search request failed: {}", e))
+        })?;
 
         if !response.status().is_success() {
             return Err(SwellError::ToolExecutionFailed(format!(
@@ -473,10 +476,9 @@ impl DomainSearchTool {
             )));
         }
 
-        let body = response
-            .text()
-            .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("Failed to read response: {}", e)))?;
+        let body = response.text().await.map_err(|e| {
+            SwellError::ToolExecutionFailed(format!("Failed to read response: {}", e))
+        })?;
 
         // Parse and filter results
         let all_results = self.parse_ddg_results(&body);
@@ -499,7 +501,11 @@ impl DomainSearchTool {
                     let url = self.extract_url(line);
 
                     if !title.is_empty() && !url.is_empty() {
-                        results.push(SearchResult { title, url, snippet });
+                        results.push(SearchResult {
+                            title,
+                            url,
+                            snippet,
+                        });
                     }
                 }
             }
@@ -544,7 +550,7 @@ impl DomainSearchTool {
             if let Some(tag_end) = after_snippet.find('>') {
                 let content = &after_snippet[tag_end + 1..];
                 if let Some(end) = content.find("</a>").or_else(|| content.find('<')) {
-                    return self.clean_html(&content[..end].trim());
+                    return self.clean_html(content[..end].trim());
                 }
             }
         }
@@ -706,13 +712,10 @@ impl FetchPageTool {
             )));
         }
 
-        let response = self
-            .client
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("Fetch request failed: {}", e)))?;
+        let response =
+            self.client.client.get(url).send().await.map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Fetch request failed: {}", e))
+            })?;
 
         if !response.status().is_success() {
             return Err(SwellError::ToolExecutionFailed(format!(
@@ -721,13 +724,15 @@ impl FetchPageTool {
             )));
         }
 
-        let body = response
-            .text()
-            .await
-            .map_err(|e| SwellError::ToolExecutionFailed(format!("Failed to read response: {}", e)))?;
+        let body = response.text().await.map_err(|e| {
+            SwellError::ToolExecutionFailed(format!("Failed to read response: {}", e))
+        })?;
 
         // Extract title from HTML
         let title = self.extract_title(&body);
+
+        // Extract publication date from HTML
+        let publication_date = self.extract_publication_date(&body);
 
         // Extract main content
         let (text, code_blocks) = self.extract_content(&body);
@@ -737,6 +742,7 @@ impl FetchPageTool {
             title: title.clone(),
             fetched_at: Utc::now(),
             content_hash: None,
+            publication_date,
         };
 
         Ok(PageContent {
@@ -753,7 +759,7 @@ impl FetchPageTool {
             if let Some(tag_end) = after_title.find('>') {
                 let content = &after_title[tag_end + 1..];
                 if let Some(end) = content.find("</title>") {
-                    return self.clean_html(&content[..end].trim());
+                    return self.clean_html(content[..end].trim());
                 }
             }
         }
@@ -772,11 +778,70 @@ impl FetchPageTool {
         String::new()
     }
 
+    /// Extract publication date from HTML metadata
+    /// Looks for: article:published_time (Open Graph), datePublished (Schema.org), <time> elements
+    fn extract_publication_date(&self, html: &str) -> Option<DateTime<Utc>> {
+        // Try Open Graph article:published_time
+        if let Some(start) = html.find("article:published_time") {
+            let after_tag = &html[start..];
+            if let Some(content_start) = after_tag.find("content=\"") {
+                let content = &after_tag[content_start + 9..];
+                if let Some(end) = content.find('"') {
+                    let date_str = &content[..end];
+                    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_str) {
+                        return Some(dt.with_timezone(&Utc));
+                    }
+                }
+            }
+        }
+
+        // Try datePublished (Schema.org)
+        if let Some(start) = html.find("datePublished") {
+            let after_tag = &html[start..];
+            if let Some(content_start) = after_tag.find("content=\"") {
+                let content = &after_tag[content_start + 9..];
+                if let Some(end) = content.find('"') {
+                    let date_str = &content[..end];
+                    // Try RFC3339 first
+                    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_str) {
+                        return Some(dt.with_timezone(&Utc));
+                    }
+                    // Try ISO 8601 date-only
+                    if let Ok(dt) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                        return Some(dt.and_hms_opt(0, 0, 0)?.and_utc());
+                    }
+                }
+            }
+        }
+
+        // Try <time> element with datetime attribute
+        if let Some(start) = html.find("<time") {
+            let after_tag = &html[start..];
+            if let Some(datetime_start) = after_tag.find("datetime=\"") {
+                let datetime = &after_tag[datetime_start + 10..];
+                if let Some(end) = datetime.find('"') {
+                    let date_str = &datetime[..end];
+                    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(date_str) {
+                        return Some(dt.with_timezone(&Utc));
+                    }
+                    if let Ok(dt) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                        return Some(dt.and_hms_opt(0, 0, 0)?.and_utc());
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
     fn extract_content(&self, html: &str) -> (String, Vec<CodeBlock>) {
         let mut code_blocks = Vec::new();
 
         // Remove script and style tags first
-        let cleaned = self.remove_elements(html, &["script", "style", "nav", "header", "footer", "aside"]);
+        let cleaned = self.remove_elements(
+            html,
+            &["script", "style", "nav", "header", "footer", "aside"],
+        );
 
         // Extract code blocks before removing HTML
         let mut line_num = 0u32;
@@ -795,10 +860,7 @@ impl FetchPageTool {
         let text = self.html_to_text(&cleaned);
 
         // Clean up whitespace
-        let text = text
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
+        let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
 
         (text, code_blocks)
     }
@@ -808,10 +870,7 @@ impl FetchPageTool {
         let code = if let Some(pre_start) = line.find("<pre") {
             let after_pre = &line[pre_start..];
             // Find content between tags
-            let content = after_pre
-                .split(|c| c == '>' || c == '<')
-                .nth(1)?
-                .trim();
+            let content = after_pre.split(|c| ['>', '<'].contains(&c)).nth(1)?.trim();
             if let Some(end_idx) = content.find("</pre>") {
                 content[..end_idx].to_string()
             } else {
@@ -819,10 +878,7 @@ impl FetchPageTool {
             }
         } else if let Some(code_start) = line.find("<code") {
             let after_code = &line[code_start..];
-            let content = after_code
-                .split(|c| c == '>' || c == '<')
-                .nth(1)?
-                .trim();
+            let content = after_code.split(|c| ['>', '<'].contains(&c)).nth(1)?.trim();
             if let Some(end_idx) = content.find("</code>") {
                 content[..end_idx].to_string()
             } else {
@@ -853,7 +909,25 @@ impl FetchPageTool {
             let after_class = &line[class_pos + 7..];
             if let Some(class_end) = after_class.find('"') {
                 let classes = &after_class[..class_end];
-                for lang in &["rust", "python", "javascript", "typescript", "java", "go", "c", "cpp", "ruby", "bash", "sh", "json", "yaml", "toml", "sql", "html", "css"] {
+                for lang in &[
+                    "rust",
+                    "python",
+                    "javascript",
+                    "typescript",
+                    "java",
+                    "go",
+                    "c",
+                    "cpp",
+                    "ruby",
+                    "bash",
+                    "sh",
+                    "json",
+                    "yaml",
+                    "toml",
+                    "sql",
+                    "html",
+                    "css",
+                ] {
                     if classes.contains(lang) {
                         return Some(lang.to_string());
                     }
@@ -879,7 +953,11 @@ impl FetchPageTool {
                         // Find closing tag
                         let close_search = format!("</{}>", element);
                         if let Some(close_start) = after_tag.find(&close_search) {
-                            result = format!("{}{}", &result[..start], &after_tag[close_start + close_search.len()..]);
+                            result = format!(
+                                "{}{}",
+                                &result[..start],
+                                &after_tag[close_start + close_search.len()..]
+                            );
                         } else if let Some(next_open) = after_tag.find(&open_pattern) {
                             result = format!("{}{}", &result[..start], &after_tag[next_open..]);
                         } else {
@@ -942,7 +1020,7 @@ impl FetchPageTool {
             _ => {
                 // Try numeric entities
                 if entity.starts_with("&#") {
-                    if let Ok(code) = entity[2..entity.len()-1].parse::<u32>() {
+                    if let Ok(code) = entity[2..entity.len() - 1].parse::<u32>() {
                         if let Some(ch) = char::from_u32(code) {
                             return ch;
                         }
@@ -1149,6 +1227,7 @@ mod tests {
             title: "Example".to_string(),
             fetched_at: Utc::now(),
             content_hash: None,
+            publication_date: None,
         };
 
         let json = serde_json::to_string(&provenance).unwrap();

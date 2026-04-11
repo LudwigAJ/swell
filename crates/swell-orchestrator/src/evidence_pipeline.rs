@@ -330,7 +330,7 @@ impl EvidencePipeline {
 
             self.inverted_index
                 .entry(kw.to_string())
-                .or_insert_with(HashSet::new)
+                .or_default()
                 .insert(chunk.id);
         }
     }
@@ -342,7 +342,7 @@ impl EvidencePipeline {
         for chunk in chunks {
             url_to_chunks
                 .entry(chunk.provenance.url.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(chunk);
         }
 

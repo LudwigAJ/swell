@@ -305,7 +305,7 @@ impl PrStackManager {
     }
 
     /// Set dependency chain for PRs (each depends on previous)
-    fn set_pr_dependencies(prs: &mut Vec<Pr>) {
+    fn set_pr_dependencies(prs: &mut [Pr]) {
         for i in 1..prs.len() {
             let prev_id = prs[i - 1].id.clone();
             prs[i].depends_on.push(prev_id);
