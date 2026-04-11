@@ -24,6 +24,7 @@
 
 use async_trait::async_trait;
 use std::process::Stdio;
+use std::sync::Mutex;
 use std::time::Instant;
 use swell_core::{Sandbox, SandboxCommand, SandboxOutput, SwellError};
 use tokio::process::Command;
@@ -115,7 +116,7 @@ impl std::fmt::Display for GvisorNetworkMode {
 /// ```
 pub struct GvisorSandbox {
     config: GvisorConfig,
-    container_id: Option<String>,
+    container_id: Mutex<Option<String>>,
 }
 
 impl GvisorSandbox {
@@ -123,7 +124,7 @@ impl GvisorSandbox {
     pub fn new(config: GvisorConfig) -> Self {
         Self {
             config,
-            container_id: None,
+            container_id: Mutex::new(None),
         }
     }
 
@@ -135,7 +136,7 @@ impl GvisorSandbox {
                 image,
                 ..Default::default()
             },
-            container_id: None,
+            container_id: Mutex::new(None),
         }
     }
 
@@ -145,8 +146,8 @@ impl GvisorSandbox {
     }
 
     /// Get the container ID if the sandbox is running
-    pub fn container_id(&self) -> Option<&str> {
-        self.container_id.as_deref()
+    pub fn container_id(&self) -> Option<String> {
+        self.container_id.lock().unwrap().clone()
     }
 
     /// Check if gVisor runsc is available on this system
@@ -202,10 +203,10 @@ impl GvisorSandbox {
 
     /// Execute a command inside the gVisor container using docker exec
     async fn exec_in_container(&self, cmd: &SandboxCommand) -> Result<SandboxOutput, SwellError> {
-        let container_id = self
-            .container_id
-            .as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?;
+        let container_id = {
+            let guard = self.container_id.lock().unwrap();
+            guard.clone().ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?
+        };
 
         let start = Instant::now();
 
@@ -427,9 +428,9 @@ impl Sandbox for GvisorSandbox {
             "GvisorSandbox: container started"
         );
 
-        // Note: We can't store the container_id in the struct because self is immutable
-        // The container_id is returned but not stored for now
-        // In a real implementation, we'd use interior mutability (RefCell, Mutex, etc.)
+        // Store the container_id for subsequent operations
+        let mut guard = self.container_id.lock().unwrap();
+        *guard = Some(container_id);
         Ok(())
     }
 
@@ -439,9 +440,14 @@ impl Sandbox for GvisorSandbox {
             "GvisorSandbox: stopping container"
         );
 
-        if let Some(container_id) = &self.container_id {
+        let container_id = {
+            let guard = self.container_id.lock().unwrap();
+            guard.clone()
+        };
+
+        if let Some(container_id) = container_id {
             let output = Command::new("docker")
-                .args(["kill", container_id])
+                .args(["kill", &container_id])
                 .output()
                 .await
                 .map_err(|e| {
@@ -481,12 +487,12 @@ impl Sandbox for GvisorSandbox {
             "GvisorSandbox: write_file"
         );
 
-        let container_id = self
-            .container_id
-            .as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?;
+        let container_id = {
+            let guard = self.container_id.lock().unwrap();
+            guard.clone().ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?
+        };
 
-        self.write_file_to_container(container_id, path, content)
+        self.write_file_to_container(&container_id, path, content)
             .await
     }
 
@@ -497,18 +503,22 @@ impl Sandbox for GvisorSandbox {
             "GvisorSandbox: read_file"
         );
 
-        let container_id = self
-            .container_id
-            .as_ref()
-            .ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?;
+        let container_id = {
+            let guard = self.container_id.lock().unwrap();
+            guard.clone().ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?
+        };
 
-        self.read_file_from_container(container_id, path).await
+        self.read_file_from_container(&container_id, path).await
     }
 
     async fn is_running(&self) -> bool {
-        if let Some(container_id) = &self.container_id {
+        let container_id = {
+            let guard = self.container_id.lock().unwrap();
+            guard.clone()
+        };
+        if let Some(container_id) = container_id {
             let output = Command::new("docker")
-                .args(["inspect", "--format", "{{.State.Running}}", container_id])
+                .args(["inspect", "--format", "{{.State.Running}}", &container_id])
                 .output()
                 .await;
 
