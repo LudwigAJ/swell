@@ -1,0 +1,22 @@
+{
+  "featureId": "tools-search",
+  "reviewedAt": "2026-04-11T06:15:00Z",
+  "commitId": "85ada7b",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Fix commit 85ada7b adequately addresses the original blocking issues in symbol_search. The patterns now correctly handle pub/async/unsafe/extern modifiers before fn, generic functions with <T>, and the macro_rules! exclamation mark is corrected.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/tools.rs",
+        "line": 1044,
+        "severity": "suggestion",
+        "description": "The {symbol} interpolation in the function pattern format string is not regex-escaped. If a symbol name contains regex metacharacters (e.g., 'foo.*bar' or 'test[1]'), the pattern could fail or match unintended text. However, this is unlikely in practice since Rust symbol names typically don't contain regex metacharacters. Consider using regex::escape(symbol) for the function pattern as well."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": ".factory/validation/tools/scrutiny/reviews/tools-search.json",
+  "summary": "The fix commit 85ada7b correctly addresses all blocking issues from the original review: (1) Function patterns now handle pub/async/unsafe/extern modifiers via (pub\\s+|async\\s+|unsafe\\s+|extern\\s+)*fn\\s+{}\\b, (2) Word boundaries \\b instead of ^ anchors allow matching indented definitions and generic functions, (3) macro_rules! pattern now correctly uses ! instead of :. The single suggestion is non-blocking - it's about regex-escaping the symbol name in the function pattern, which is unlikely to cause issues in practice since Rust identifiers don't typically contain regex metacharacters."
+}

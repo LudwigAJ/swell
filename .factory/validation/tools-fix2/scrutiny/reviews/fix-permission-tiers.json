@@ -1,0 +1,15 @@
+{
+  "featureId": "fix-permission-tiers",
+  "reviewedAt": "2026-04-11T06:15:00Z",
+  "commitId": "b81ad90",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Fix correctly addresses the original issue where PermissionTier::Ask was blocked like Deny. The fix changes is_allowed() to treat Ask as Auto (auto-approve), consistent with hybrid.rs which already had this pattern. Documentation added explains the tier semantics.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": ".factory/validation/tools/scrutiny/reviews/tools-permission-tiers.json",
+  "summary": "Review PASS: Fix commit b81ad90 correctly addresses the blocking issue where PermissionTier::Ask was treated identically to Deny. The change adds Ask to the permitted tiers in is_allowed() and includes documentation. The fix is minimal (7 lines) and consistent with existing hybrid.rs behavior at line 121 which already used PermissionTier::Auto | PermissionTier::Ask. No new issues introduced."
+}
