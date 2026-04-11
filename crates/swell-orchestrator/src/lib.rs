@@ -16,6 +16,7 @@ pub mod autonomy;
 pub mod backlog;
 pub mod drift_detector;
 pub mod execution;
+pub mod feature_leads;
 pub mod metrics;
 pub mod policy;
 pub mod retry_policy;
@@ -45,6 +46,10 @@ pub use backlog::{
 };
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use execution::ExecutionController;
+pub use feature_leads::{
+    FeatureLead, FeatureLeadManager, FeatureLeadSpawner, StepResult,
+    FEATURE_LEAD_STEP_THRESHOLD, MAX_ORCHESTRATOR_DEPTH,
+};
 pub use metrics::{
     create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
     AlertSeverity, AlertThresholds, AlertType, MetricSample, MetricsAlert, MetricsCollector,
