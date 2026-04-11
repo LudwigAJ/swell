@@ -25,6 +25,8 @@ pub mod novelty_check;
 pub mod policy;
 pub mod retry_policy;
 pub mod scheduler;
+pub mod session_hygiene;
+pub mod soft_limits;
 pub mod state_machine;
 pub mod task_board;
 pub mod task_graph;
@@ -84,6 +86,14 @@ pub use retry_policy::{
 };
 pub use scheduler::{
     Scheduler, SchedulerConfig, SchedulerStats, TaskPriority, DEFAULT_MAX_WORKERS, MAX_MAX_WORKERS,
+};
+pub use soft_limits::{
+    create_soft_limits, create_soft_limits_with_config, ProgressTracker, SharedSoftLimits,
+    SoftLimitType, SoftLimitWarning, SoftLimits, SoftLimitsConfig,
+};
+pub use session_hygiene::{
+    ProgressEvaluation, ProgressHealth, SessionCheckpoint, SessionHygiene,
+    SessionHygieneConfig,
 };
 pub use state_machine::TaskStateMachine;
 pub use task_board::{

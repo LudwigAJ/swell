@@ -18,11 +18,11 @@
 //! let proposals = generator.generate_proposals(opportunities);
 //! ```
 
+use regex::Regex;
 use swell_core::{
-    Plan, Task, TaskState, TaskSource, ValidationResult, RiskLevel, PlanStep, StepStatus,
+    Plan, PlanStep, RiskLevel, StepStatus, Task, TaskSource, TaskState, ValidationResult,
 };
 use uuid::Uuid;
-use regex::Regex;
 
 /// A detected opportunity for a follow-up task
 #[derive(Debug, Clone)]
@@ -265,10 +265,7 @@ impl FollowUpGenerator {
     }
 
     /// Analyze validation result for opportunities
-    fn analyze_validation_result(
-        &self,
-        validation: &ValidationResult,
-    ) -> Vec<FollowUpOpportunity> {
+    fn analyze_validation_result(&self, validation: &ValidationResult) -> Vec<FollowUpOpportunity> {
         let mut opportunities = Vec::new();
 
         // Validation errors
@@ -339,11 +336,7 @@ impl FollowUpGenerator {
             || error_lower.contains("code smell")
             || error_lower.contains("duplicat")
         {
-            (
-                FollowUpOpportunityType::CodeSmell,
-                RiskLevel::Medium,
-                50,
-            )
+            (FollowUpOpportunityType::CodeSmell, RiskLevel::Medium, 50)
         } else {
             // Default to validation error with medium priority
             (
@@ -607,10 +600,7 @@ impl IsTerminal for TaskState {
     fn is_terminal(&self) -> bool {
         matches!(
             self,
-            TaskState::Accepted
-                | TaskState::Rejected
-                | TaskState::Failed
-                | TaskState::Escalated
+            TaskState::Accepted | TaskState::Rejected | TaskState::Failed | TaskState::Escalated
         )
     }
 }
@@ -624,10 +614,7 @@ mod tests {
     use super::*;
     use swell_core::{TaskSource, ValidationResult};
 
-    fn create_test_task_with_validation(
-        state: TaskState,
-        validation: ValidationResult,
-    ) -> Task {
+    fn create_test_task_with_validation(state: TaskState, validation: ValidationResult) -> Task {
         let mut task = Task::new("Test task".to_string());
         task.state = state;
         task.validation_result = Some(validation);
@@ -774,10 +761,7 @@ mod tests {
 
         assert_eq!(task.description, "Fix the bug");
         assert_eq!(task.state, TaskState::Created);
-        assert!(matches!(
-            task.source,
-            TaskSource::FailureDerived { .. }
-        ));
+        assert!(matches!(task.source, TaskSource::FailureDerived { .. }));
         assert!(task.dependencies.contains(&proposal.parent_task_id));
     }
 
@@ -789,10 +773,7 @@ mod tests {
             description: "Test proposal".to_string(),
             opportunity_type: FollowUpOpportunityType::TestGap,
             affected_items: vec!["src/lib.rs".to_string()],
-            initial_steps: vec![
-                "Write tests".to_string(),
-                "Run tests".to_string(),
-            ],
+            initial_steps: vec!["Write tests".to_string(), "Run tests".to_string()],
             risk_level: RiskLevel::Low,
             priority: 50,
         };
@@ -839,11 +820,7 @@ mod tests {
         ];
 
         for state in terminal_states {
-            assert!(
-                state.is_terminal(),
-                "Expected {:?} to be terminal",
-                state
-            );
+            assert!(state.is_terminal(), "Expected {:?} to be terminal", state);
         }
 
         let non_terminal_states = [
@@ -869,9 +846,8 @@ mod tests {
     fn test_extract_affected_items() {
         let generator = FollowUpGenerator::new();
 
-        let items = generator.extract_affected_items(
-            "Error in src/lib.rs:42:10 - something went wrong"
-        );
+        let items =
+            generator.extract_affected_items("Error in src/lib.rs:42:10 - something went wrong");
 
         assert!(items.iter().any(|i| i.contains("lib.rs")));
     }

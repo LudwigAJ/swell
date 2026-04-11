@@ -171,7 +171,10 @@ impl FeatureLead {
         );
 
         // Get the parent task to access the plan
-        let parent_task = self.parent_orchestrator.get_task(self.parent_task_id).await?;
+        let parent_task = self
+            .parent_orchestrator
+            .get_task(self.parent_task_id)
+            .await?;
 
         let plan = parent_task
             .plan
@@ -262,11 +265,7 @@ impl FeatureLead {
             return 100.0;
         }
 
-        let completed = self
-            .step_results
-            .iter()
-            .filter(|r| r.success)
-            .count() as f64;
+        let completed = self.step_results.iter().filter(|r| r.success).count() as f64;
 
         (completed / self.assigned_steps.len() as f64) * 100.0
     }
@@ -407,7 +406,12 @@ impl FeatureLeadSpawner for Orchestrator {
         // In a more sophisticated implementation, we'd spawn multiple
         let (feature_name, step_ids): (String, Vec<Uuid>) = segments[0].clone();
 
-        let lead = FeatureLead::new(task_id, feature_name.clone(), step_ids.clone(), parent_orchestrator);
+        let lead = FeatureLead::new(
+            task_id,
+            feature_name.clone(),
+            step_ids.clone(),
+            parent_orchestrator,
+        );
 
         info!(
             task_id = %task_id,

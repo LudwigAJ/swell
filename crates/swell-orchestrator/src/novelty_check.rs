@@ -73,7 +73,12 @@ impl NoveltyCheckResult {
     }
 
     /// Create a result indicating the task is a duplicate
-    pub fn duplicate(duplicate_of: Uuid, reason: String, max_similarity: f32, max_file_overlap: f32) -> Self {
+    pub fn duplicate(
+        duplicate_of: Uuid,
+        reason: String,
+        max_similarity: f32,
+        max_file_overlap: f32,
+    ) -> Self {
         Self {
             is_novel: false,
             max_similarity,
@@ -95,7 +100,12 @@ pub struct TrackedTask {
 
 impl TrackedTask {
     /// Create from a description and affected files
-    pub fn new(id: Uuid, description: String, affected_files: Vec<String>, is_failure_derived: bool) -> Self {
+    pub fn new(
+        id: Uuid,
+        description: String,
+        affected_files: Vec<String>,
+        is_failure_derived: bool,
+    ) -> Self {
         Self {
             id,
             description,
@@ -133,7 +143,12 @@ impl NoveltyChecker {
     ///
     /// Returns a [`NoveltyCheckResult`] indicating whether the task is novel
     /// and providing details about similarity and file overlap.
-    pub fn check(&self, description: &str, affected_files: &[String], is_failure_derived: bool) -> NoveltyCheckResult {
+    pub fn check(
+        &self,
+        description: &str,
+        affected_files: &[String],
+        is_failure_derived: bool,
+    ) -> NoveltyCheckResult {
         if !self.config.enabled {
             return NoveltyCheckResult::novel(0.0, 0.0);
         }
@@ -347,11 +362,7 @@ mod tests {
     fn test_novel_task_is_accepted() {
         let checker = NoveltyChecker::new();
 
-        let result = checker.check(
-            "Implement feature X",
-            &["src/x.rs".to_string()],
-            false,
-        );
+        let result = checker.check("Implement feature X", &["src/x.rs".to_string()], false);
 
         assert!(result.is_novel);
         assert!(result.duplicate_of.is_none());
@@ -381,7 +392,10 @@ mod tests {
         assert!(!result.is_novel);
         assert!(result.duplicate_of.is_some());
         assert!(result.rejection_reason.is_some());
-        assert!(result.rejection_reason.unwrap().contains("similar to existing task"));
+        assert!(result
+            .rejection_reason
+            .unwrap()
+            .contains("similar to existing task"));
     }
 
     #[test]
@@ -594,12 +608,8 @@ mod tests {
     #[test]
     fn test_novelty_check_result_duplicate() {
         let duplicate_id = Uuid::new_v4();
-        let result = NoveltyCheckResult::duplicate(
-            duplicate_id,
-            "Too similar".to_string(),
-            0.9,
-            0.1,
-        );
+        let result =
+            NoveltyCheckResult::duplicate(duplicate_id, "Too similar".to_string(), 0.9, 0.1);
 
         assert!(!result.is_novel);
         assert_eq!(result.duplicate_of, Some(duplicate_id));
@@ -625,12 +635,7 @@ mod tests {
 
     #[test]
     fn test_tracked_task_failure_derived() {
-        let task = TrackedTask::new(
-            Uuid::new_v4(),
-            "Fix error".to_string(),
-            vec![],
-            true,
-        );
+        let task = TrackedTask::new(Uuid::new_v4(), "Fix error".to_string(), vec![], true);
 
         assert!(task.is_failure_derived);
     }
@@ -684,11 +689,7 @@ mod tests {
     fn test_no_tracked_tasks() {
         let checker = NoveltyChecker::new();
 
-        let result = checker.check(
-            "Any description",
-            &["any_file.rs".to_string()],
-            false,
-        );
+        let result = checker.check("Any description", &["any_file.rs".to_string()], false);
 
         assert!(result.is_novel);
     }

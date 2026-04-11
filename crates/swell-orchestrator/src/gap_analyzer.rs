@@ -761,7 +761,10 @@ impl GapAnalyzer {
         // Group by category
         let mut by_category: HashMap<RequirementCategory, Vec<SpecRequirement>> = HashMap::new();
         for req in &filtered {
-            by_category.entry(req.category.clone()).or_default().push(req.clone());
+            by_category
+                .entry(req.category.clone())
+                .or_default()
+                .push(req.clone());
         }
 
         // Calculate category reports
@@ -861,7 +864,10 @@ impl GapAnalyzer {
         // Check for missing MustHave requirements
         let missing_must_have: Vec<_> = requirements
             .iter()
-            .filter(|r| r.priority == RequirementPriority::MustHave && r.status == ImplementationStatus::Missing)
+            .filter(|r| {
+                r.priority == RequirementPriority::MustHave
+                    && r.status == ImplementationStatus::Missing
+            })
             .collect();
 
         if !missing_must_have.is_empty() {
@@ -917,16 +923,15 @@ impl GapAnalyzer {
         }
 
         if recommendations.is_empty() {
-            recommendations.push("All MVP requirements are implemented or appropriately deferred".to_string());
+            recommendations
+                .push("All MVP requirements are implemented or appropriately deferred".to_string());
         }
 
         recommendations
     }
 
     /// Get requirements by category
-    pub fn get_requirements_by_category(
-        category: RequirementCategory,
-    ) -> Vec<SpecRequirement> {
+    pub fn get_requirements_by_category(category: RequirementCategory) -> Vec<SpecRequirement> {
         Self::get_spec_requirements()
             .into_iter()
             .filter(|r| r.category == category)
@@ -986,7 +991,8 @@ mod tests {
 
     #[test]
     fn test_orchestration_coverage() {
-        let requirements = GapAnalyzer::get_requirements_by_category(RequirementCategory::Orchestration);
+        let requirements =
+            GapAnalyzer::get_requirements_by_category(RequirementCategory::Orchestration);
 
         // Orchestration should have multiple requirements
         assert!(requirements.len() >= 10);
@@ -1084,7 +1090,12 @@ mod tests {
         let missing = GapAnalyzer::get_missing_requirements();
 
         // Missing should be empty or minimal
-        assert_eq!(missing.len(), 0, "Found missing requirements: {:?}", missing);
+        assert_eq!(
+            missing.len(),
+            0,
+            "Found missing requirements: {:?}",
+            missing
+        );
     }
 
     #[test]
