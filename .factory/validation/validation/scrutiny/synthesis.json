@@ -1,13 +1,13 @@
 {
   "milestone": "validation",
-  "round": 3,
-  "status": "fail",
+  "round": 4,
+  "status": "pass",
   "validatorsRun": {
     "test": {
       "passed": true,
       "command": "cargo test -p swell-validation --lib -- --skip test_run_mutation_testing",
       "exitCode": 0,
-      "note": "330 tests pass in 13.63s. test_run_mutation_testing times out (>60s) but is filtered out."
+      "note": "330 tests pass in ~13s. test_run_mutation_testing times out (>60s) but is filtered out."
     },
     "typecheck": {
       "passed": true,
@@ -22,66 +22,42 @@
   },
   "reviewsSummary": {
     "total": 4,
-    "passed": 0,
-    "failed": 4,
-    "failedFeatures": [
-      "validation-lint-gate",
-      "val-predictive-selection",
-      "val-calibrated-confidence",
-      "val-autonomous-coverage"
-    ]
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
   },
-  "blockingIssues": [
-    {
-      "featureId": "validation-lint-gate",
-      "severity": "blocking",
-      "description": "LintGate JSON parsing is fundamentally broken. Clippy outputs 'message' as an object with nested fields (message.message, message.level, message.spans[].file_name), but code uses json.get('message').and_then(|m| m.as_str()) which returns None because m is an object, not a string. Same nested path issues affect level (should be message.level), code (should be message.code.code), file (should be message.spans[0].file_name), and line (should be message.spans[0].line_start). All 5 blocking issues from round 2 still persist unfixed.",
-      "file": "crates/swell-validation/src/lib.rs",
-      "lines": [208, 209, 213, 217, 218]
-    },
-    {
-      "featureId": "val-predictive-selection",
-      "severity": "blocking",
-      "description": "Test assertion at line 1664 uses incorrect operator precedence: `!impact.lines_changed == 0` is parsed as `(!impact.lines_changed) == 0`, always evaluating to true because usize bitwise NOT never equals 0. Should use `!=` instead.",
-      "file": "crates/swell-validation/src/predictive_selection.rs",
-      "line": 1664
-    },
-    {
-      "featureId": "val-calibrated-confidence",
-      "severity": "blocking",
-      "description": "CalibrationModel::extract_features() hardcodes changed_file_count=0 and historical_defect_rate=0.0 during training, making those weights untrained. Also Predictor::predict() passes empty slice to changed_files_defect_rate(), so historical_defect_rate is always the overall rate instead of file-specific.",
-      "file": "crates/swell-validation/src/calibrated_confidence.rs",
-      "lines": [441, 500]
-    },
-    {
-      "featureId": "val-autonomous-coverage",
-      "severity": "blocking",
-      "description": "files_analyzed is hardcoded to 0, calculate_coverage_metrics always returns hardcoded defaults (0.75, 0.65, 0.80), and run_static_coverage_analysis returns empty Vec when llvm-cov succeeds. Actual llvm-cov coverage data is never parsed. The implementation provides scaffolding but the core coverage analysis is not functional.",
-      "file": "crates/swell-validation/src/autonomous_coverage.rs",
-      "lines": [370, 588, 314]
-    }
-  ],
+  "blockingIssues": [],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Add explicit guidance that workers should NOT mark features as 'completed' until blocking issues from prior scrutiny reviews are resolved. The validation-lint-gate was marked completed in round 2 but the blocking JSON parsing bug was never fixed. Workers should verify fix features exist or create them before marking complete.",
-      "evidence": "validation-lint-gate has been through 2 scrutiny rounds (round 2 and round 3) with the same blocking issues persisting. Worker marked it complete in round 2 without fixing the issue.",
+      "suggestion": "When fixing blocking issues from a prior scrutiny review, ensure the fix commit includes the actual code changes to resolve the issue - not just test additions. The validation-lint-gate round 3 reviewer noted the worker 'only added unit tests but did NOT modify the broken LintGate JSON parsing code'. Ensure fix features include the actual bug fix, not just tests.",
+      "evidence": "validation-lint-gate was reviewed in rounds 2 and 3 with blocking issues but fixes were not applied until round 4 fix commit a28709a which included actual code changes",
       "isSystemic": true
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Add guidance on handling nested JSON structures from tool output. Clippy's JSON format uses 'message' as an object with nested fields, not a string. Workers should verify actual output structure before parsing - use json.get('message').and_then(|m| m.get('message')).and_then(|m| m.as_str()) instead of json.get('message').and_then(|m| m.as_str()).",
-      "evidence": "validation-lint-gate feature had this issue - AGENTS.md was updated with guidance but implementation was not fixed",
-      "isSystemic": true
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Add guidance on testing assertion logic - avoid patterns like `!x == 0` which have unexpected operator precedence. Use explicit comparisons like `x != 0` instead.",
-      "evidence": "val-predictive-selection test assertion bug at line 1664",
-      "isSystemic": false
     }
   ],
   "rejectedObservations": [],
-  "previousRound": ".factory/validation/validation/scrutiny/synthesis.json"
+  "previousRound": ".factory/validation/validation/scrutiny/synthesis.json",
+  "fixVerification": {
+    "validation-lint-gate": {
+      "originalIssue": "JSON parsing broken - message is object not string",
+      "fixCommit": "a28709a",
+      "verification": "Code now correctly navigates nested paths: json.get('message').and_then(|m| m.get('message')), message.level, message.code.code, message.spans[0].file_name"
+    },
+    "val-predictive-selection": {
+      "originalIssue": "Operator precedence bug: !x == 0 always true",
+      "fixCommit": "a28709a",
+      "verification": "Line 1578 now uses impact.lines_changed != 0 instead of !impact.lines_changed == 0"
+    },
+    "val-calibrated-confidence": {
+      "originalIssue": "changed_file_count and historical_defect_rate hardcoded to 0",
+      "fixCommit": "a28709a",
+      "verification": "extract_features() now uses record.changed_files.len() and record.historical_defect_rate. predict() now uses &features.changed_files instead of empty slice"
+    },
+    "val-autonomous-coverage": {
+      "originalIssue": "files_analyzed hardcoded to 0, calculate_coverage_metrics hardcoded (0.75, 0.65, 0.80), run_static_coverage_analysis returned empty Vec",
+      "fixCommit": "a28709a",
+      "verification": "files_analyzed now computed from unique files in gaps. calculate_coverage_metrics runs cargo llvm-cov and parses JSON, returns (0.0, 0.0, 0.0) only when unavailable. run_static_coverage_analysis returns actual gaps from basic_static_analysis_static"
+    }
+  }
 }
