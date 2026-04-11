@@ -36,6 +36,7 @@ pub mod stacked_prs;
 pub mod state_machine;
 pub mod stopping_conditions;
 pub mod subagent;
+pub mod tiered_merge;
 pub mod task_board;
 pub mod task_graph;
 pub mod worker_pool;
@@ -127,6 +128,7 @@ pub use subagent::{
     AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
     MAX_SUBAGENT_DEPTH,
 };
+pub use tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
 pub use task_board::{
     create_task_board, CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry,
     TaskBoardStats,
