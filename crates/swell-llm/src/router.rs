@@ -430,6 +430,96 @@ impl ModelRouterBuilder {
         self
     }
 
+    /// Build the router with cross-provider model fallback chain:
+    /// Primary: Sonnet (Anthropic) → Fallback: GPT-4o (OpenAI) → Final Fallback: Haiku (Anthropic)
+    ///
+    /// This provides graceful degradation across providers:
+    /// - Sonnet is tried first (best for complex coding tasks)
+    /// - GPT-4o is tried second if Sonnet fails (cross-provider fallback)
+    /// - Haiku is tried last (fastest, cheapest, for simple tasks)
+    pub fn with_model_fallback_chain(
+        mut self,
+        sonnet_api_key: String,
+        gpt_4o_api_key: String,
+        haiku_api_key: String,
+    ) -> Self {
+        use crate::{AnthropicBackend, OpenAIBackend};
+
+        // Primary: Claude Sonnet
+        let sonnet = Arc::new(AnthropicBackend::new(
+            "claude-sonnet-4-20250514",
+            sonnet_api_key,
+        ));
+
+        // Fallback: GPT-4o (OpenAI)
+        let gpt_4o = Arc::new(
+            OpenAIBackend::new("gpt-4o", gpt_4o_api_key).unwrap(),
+        );
+
+        // Final fallback: Claude Haiku
+        let haiku = Arc::new(AnthropicBackend::new(
+            "claude-haiku-4-20250514",
+            haiku_api_key,
+        ));
+
+        // For Coding tasks: Sonnet → GPT-4o → Haiku
+        self.router.register(
+            TaskType::Coding,
+            "claude-sonnet-4-20250514",
+            sonnet.clone(),
+            vec![
+                ("gpt-4o".to_string(), gpt_4o.clone()),
+                ("claude-haiku-4-20250514".to_string(), haiku.clone()),
+            ],
+        );
+
+        // For Planning tasks: Sonnet → GPT-4o → Haiku
+        self.router.register(
+            TaskType::Planning,
+            "claude-sonnet-4-20250514",
+            sonnet.clone(),
+            vec![
+                ("gpt-4o".to_string(), gpt_4o.clone()),
+                ("claude-haiku-4-20250514".to_string(), haiku.clone()),
+            ],
+        );
+
+        // For Fast tasks: Haiku → Sonnet → GPT-4o (reversed priority for fast responses)
+        self.router.register(
+            TaskType::Fast,
+            "claude-haiku-4-20250514",
+            haiku.clone(),
+            vec![
+                ("claude-sonnet-4-20250514".to_string(), sonnet.clone()),
+                ("gpt-4o".to_string(), gpt_4o.clone()),
+            ],
+        );
+
+        // For Review tasks: Sonnet → GPT-4o → Haiku
+        self.router.register(
+            TaskType::Review,
+            "claude-sonnet-4-20250514",
+            sonnet.clone(),
+            vec![
+                ("gpt-4o".to_string(), gpt_4o.clone()),
+                ("claude-haiku-4-20250514".to_string(), haiku.clone()),
+            ],
+        );
+
+        // For Default tasks: Sonnet → GPT-4o → Haiku
+        self.router.register(
+            TaskType::Default,
+            "claude-sonnet-4-20250514",
+            sonnet,
+            vec![
+                ("gpt-4o".to_string(), gpt_4o),
+                ("claude-haiku-4-20250514".to_string(), haiku),
+            ],
+        );
+
+        self
+    }
+
     /// Build the final router
     pub fn build(self) -> ModelRouter {
         self.router

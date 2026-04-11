@@ -23,6 +23,7 @@ pub mod frozen_spec;
 pub mod gap_analyzer;
 pub mod hard_limits;
 pub mod metrics;
+pub mod model_fallback;
 pub mod novelty_check;
 pub mod policy;
 pub mod retry_policy;
