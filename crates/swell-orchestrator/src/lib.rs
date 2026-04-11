@@ -19,6 +19,7 @@ pub mod execution;
 pub mod feature_leads;
 pub mod followup_generator;
 pub mod gap_analyzer;
+pub mod hard_limits;
 pub mod metrics;
 pub mod novelty_check;
 pub mod policy;
@@ -51,8 +52,8 @@ pub use backlog::{
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use execution::ExecutionController;
 pub use feature_leads::{
-    FeatureLead, FeatureLeadManager, FeatureLeadSpawner, StepResult,
-    FEATURE_LEAD_STEP_THRESHOLD, MAX_ORCHESTRATOR_DEPTH,
+    FeatureLead, FeatureLeadManager, FeatureLeadSpawner, StepResult, FEATURE_LEAD_STEP_THRESHOLD,
+    MAX_ORCHESTRATOR_DEPTH,
 };
 pub use followup_generator::{
     FollowUpContext, FollowUpGenerator, FollowUpGeneratorConfig, FollowUpOpportunity,
@@ -62,13 +63,17 @@ pub use gap_analyzer::{
     CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
     RequirementCategory, RequirementPriority, SpecRequirement,
 };
-pub use novelty_check::{
-    levenshtein_distance, NoveltyCheckResult, NoveltyChecker, NoveltyCheckerConfig, TrackedTask,
+pub use hard_limits::{
+    create_hard_limits, create_hard_limits_with_config, HardLimitError, HardLimitWarning,
+    HardLimits, HardLimitsCheck, HardLimitsConfig, SharedHardLimits,
 };
 pub use metrics::{
     create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
     AlertSeverity, AlertThresholds, AlertType, MetricSample, MetricsAlert, MetricsCollector,
     MetricsWindow, OrchestratorMetrics, SharedMetricsCollector,
+};
+pub use novelty_check::{
+    levenshtein_distance, NoveltyCheckResult, NoveltyChecker, NoveltyCheckerConfig, TrackedTask,
 };
 pub use policy::{
     action, PolicyAction, PolicyCondition, PolicyDecision, PolicyEffect, PolicyEngine, PolicyFile,
@@ -82,8 +87,8 @@ pub use scheduler::{
 };
 pub use state_machine::TaskStateMachine;
 pub use task_board::{
-    CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry, TaskBoardStats,
-    create_task_board,
+    create_task_board, CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry,
+    TaskBoardStats,
 };
 pub use task_graph::TaskGraph;
 
