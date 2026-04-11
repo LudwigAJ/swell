@@ -129,6 +129,14 @@ pub use autonomous_coverage::{
     SurvivingMutation,
 };
 
+// Re-export self-improving tests for test value tracking and low-value test retirement
+pub mod self_improving_tests;
+pub use self_improving_tests::{
+    CostBenefitAnalysis, CostBenefitRecommendation, RetirementCandidate, RetirementPolicy,
+    TestBenefit, TestCost, TestValue, TestValueConfig, TestValueGate, TestValueSummary,
+    TestValueTracker, ValueComponents,
+};
+
 // ============================================================================
 // Lint Gate
 // ============================================================================

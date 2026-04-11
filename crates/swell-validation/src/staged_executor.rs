@@ -78,21 +78,21 @@ impl TestStage {
     pub fn continue_on_failure(&self) -> bool {
         match self {
             TestStage::Stage0Instant => false, // Stop on instant validation failure
-            TestStage::Stage1Unit => false,     // Stop on unit test failure
-            TestStage::Stage2Integration => true,  // Continue to integration even if unit fails
+            TestStage::Stage1Unit => false,    // Stop on unit test failure
+            TestStage::Stage2Integration => true, // Continue to integration even if unit fails
             TestStage::Stage3Comprehensive => true, // Continue to comprehensive
-            TestStage::Stage4Full => true,           // Continue to full pipeline
+            TestStage::Stage4Full => true,     // Continue to full pipeline
         }
     }
 
     /// Expected duration in milliseconds for this stage
     pub fn expected_duration_ms(&self) -> u64 {
         match self {
-            TestStage::Stage0Instant => 5_000,      // < 5 seconds
-            TestStage::Stage1Unit => 60_000,       // < 1 minute
-            TestStage::Stage2Integration => 120_000, // < 2 minutes
+            TestStage::Stage0Instant => 5_000,         // < 5 seconds
+            TestStage::Stage1Unit => 60_000,           // < 1 minute
+            TestStage::Stage2Integration => 120_000,   // < 2 minutes
             TestStage::Stage3Comprehensive => 300_000, // < 5 minutes
-            TestStage::Stage4Full => 600_000,       // < 10 minutes
+            TestStage::Stage4Full => 600_000,          // < 10 minutes
         }
     }
 }
@@ -470,7 +470,9 @@ impl StagedTestExecutor {
                     .output()
             })
             .await
-            .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
             .map_err(SwellError::IoError)?;
 
             if !check_result.status.success() {
@@ -503,7 +505,9 @@ impl StagedTestExecutor {
                     .output()
             })
             .await
-            .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
             .map_err(SwellError::IoError)?;
 
             if !fmt_result.status.success() {
@@ -621,7 +625,9 @@ impl StagedTestExecutor {
                     .output()
             })
             .await
-            .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
             .map_err(SwellError::IoError)?;
 
             if !output.status.success() {
@@ -674,7 +680,9 @@ impl StagedTestExecutor {
                     .output()
             })
             .await
-            .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
             .map_err(SwellError::IoError)?;
 
             if !output.status.success() {
@@ -708,7 +716,9 @@ impl StagedTestExecutor {
                     .output()
             })
             .await
-            .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
             .map_err(SwellError::IoError)?;
 
             if !output.status.success() {
@@ -742,7 +752,9 @@ impl StagedTestExecutor {
                     .output()
             })
             .await
-            .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
             .map_err(SwellError::IoError)?;
 
             if !output.status.success() {
@@ -794,7 +806,9 @@ impl StagedTestExecutor {
                     .output()
             })
             .await
-            .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
             .map_err(SwellError::IoError)?;
 
             if !output.status.success() {
@@ -824,7 +838,8 @@ impl StagedTestExecutor {
             all_messages.push(ValidationMessage {
                 level: swell_core::ValidationLevel::Info,
                 code: Some("STAGE4_SECURITY".to_string()),
-                message: "Security scan: configure external scanner for full validation".to_string(),
+                message: "Security scan: configure external scanner for full validation"
+                    .to_string(),
                 file: None,
                 line: None,
             });
@@ -862,11 +877,7 @@ impl StagedTestExecutor {
         }
 
         // If no summary, return first few lines of stderr
-        stderr
-            .lines()
-            .take(10)
-            .collect::<Vec<_>>()
-            .join("\n")
+        stderr.lines().take(10).collect::<Vec<_>>().join("\n")
     }
 }
 
@@ -904,7 +915,10 @@ mod staged_executor_tests {
         assert_eq!(TestStage::Stage0Instant.name(), "Stage 0: Instant");
         assert_eq!(TestStage::Stage1Unit.name(), "Stage 1: Unit");
         assert_eq!(TestStage::Stage2Integration.name(), "Stage 2: Integration");
-        assert_eq!(TestStage::Stage3Comprehensive.name(), "Stage 3: Comprehensive");
+        assert_eq!(
+            TestStage::Stage3Comprehensive.name(),
+            "Stage 3: Comprehensive"
+        );
         assert_eq!(TestStage::Stage4Full.name(), "Stage 4: Full");
     }
 
@@ -949,7 +963,10 @@ mod staged_executor_tests {
         assert_eq!(TestStage::Stage0Instant.expected_duration_ms(), 5_000);
         assert_eq!(TestStage::Stage1Unit.expected_duration_ms(), 60_000);
         assert_eq!(TestStage::Stage2Integration.expected_duration_ms(), 120_000);
-        assert_eq!(TestStage::Stage3Comprehensive.expected_duration_ms(), 300_000);
+        assert_eq!(
+            TestStage::Stage3Comprehensive.expected_duration_ms(),
+            300_000
+        );
         assert_eq!(TestStage::Stage4Full.expected_duration_ms(), 600_000);
     }
 
@@ -1015,7 +1032,10 @@ mod staged_executor_tests {
 
     #[test]
     fn test_stage_result_skipped() {
-        let result = StageResult::skipped(TestStage::Stage2Integration, "Previous stage failed".to_string());
+        let result = StageResult::skipped(
+            TestStage::Stage2Integration,
+            "Previous stage failed".to_string(),
+        );
 
         assert!(result.passed); // Skipped stages don't count as failures
         assert!(result.skipped);
@@ -1071,7 +1091,9 @@ mod staged_executor_tests {
         let executor = StagedTestExecutor::with_stages(vec![TestStage::Stage0Instant]);
         let context = create_test_context();
 
-        let result = executor.execute_stage(TestStage::Stage0Instant, &context).await;
+        let result = executor
+            .execute_stage(TestStage::Stage0Instant, &context)
+            .await;
 
         // Should succeed even if check fails (due to warnings in code)
         assert!(result.is_ok());
@@ -1088,7 +1110,9 @@ mod staged_executor_tests {
         let executor = StagedTestExecutor::with_config(config);
         let context = create_test_context();
 
-        let result = executor.execute_stage(TestStage::Stage0Instant, &context).await;
+        let result = executor
+            .execute_stage(TestStage::Stage0Instant, &context)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -1097,13 +1121,13 @@ mod staged_executor_tests {
         // Run just stages 0 and 1 to keep test fast
         // Note: Stage 0 may fail due to formatting issues in new code,
         // but continue_on_failure=false means execution stops on first failure
-        let executor = StagedTestExecutor::with_stages(vec![
-            TestStage::Stage0Instant,
-            TestStage::Stage1Unit,
-        ]);
+        let executor =
+            StagedTestExecutor::with_stages(vec![TestStage::Stage0Instant, TestStage::Stage1Unit]);
         let context = create_test_context();
 
-        let result = executor.execute_up_to(TestStage::Stage1Unit, &context).await;
+        let result = executor
+            .execute_up_to(TestStage::Stage1Unit, &context)
+            .await;
 
         assert!(result.is_ok());
         let staged_result = result.unwrap();

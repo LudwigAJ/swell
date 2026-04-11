@@ -32,8 +32,8 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
+use uuid::Uuid;
 
 /// Request to create a test plan
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,7 +252,8 @@ impl AcceptanceCriteriaParser {
 
             // Check if line contains acceptance criteria patterns
             if self.looks_like_criterion(trimmed) {
-                if let Some(criterion) = self.extract_criterion(trimmed, line_num, &current_section) {
+                if let Some(criterion) = self.extract_criterion(trimmed, line_num, &current_section)
+                {
                     criteria.push(criterion);
                 }
             }
@@ -272,10 +273,23 @@ impl AcceptanceCriteriaParser {
 
         // Check for explicit criterion markers
         let markers = [
-            "shall", "must", "should", "will", "can", "could",
-            "given", "when", "then", "expect",
-            "acceptance", "criterion", "requirement",
-            "verify", "validate", "ensure", "check",
+            "shall",
+            "must",
+            "should",
+            "will",
+            "can",
+            "could",
+            "given",
+            "when",
+            "then",
+            "expect",
+            "acceptance",
+            "criterion",
+            "requirement",
+            "verify",
+            "validate",
+            "ensure",
+            "check",
         ];
 
         markers.iter().any(|m| lower.contains(m)) && line.len() > 20
@@ -342,7 +356,9 @@ impl AcceptanceCriteriaParser {
         let lower = text.to_lowercase();
 
         // Extract action words
-        let action_words = ["validate", "verify", "check", "ensure", "test", "reject", "accept", "return"];
+        let action_words = [
+            "validate", "verify", "check", "ensure", "test", "reject", "accept", "return",
+        ];
         for word in action_words {
             if lower.contains(word) {
                 hints.push(format!("test_{}", word));
@@ -350,7 +366,9 @@ impl AcceptanceCriteriaParser {
         }
 
         // Extract key nouns (simple heuristic)
-        let nouns = ["user", "password", "auth", "token", "data", "file", "request", "response"];
+        let nouns = [
+            "user", "password", "auth", "token", "data", "file", "request", "response",
+        ];
         for noun in nouns {
             if lower.contains(noun) {
                 hints.push(format!("test_{}_handling", noun));
@@ -395,7 +413,11 @@ impl AcceptanceCriteriaParser {
             }
 
             // Check for numbered items
-            if trimmed.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+            if trimmed
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
                 && trimmed.contains('.')
             {
                 let parts: Vec<&str> = trimmed.splitn(2, '.').collect();
@@ -447,7 +469,10 @@ impl DiffContextExtractor {
             let trimmed = line.trim();
 
             // Track which file we're in
-            if trimmed.starts_with("diff --git") || trimmed.starts_with("--- ") || trimmed.starts_with("+++ ") {
+            if trimmed.starts_with("diff --git")
+                || trimmed.starts_with("--- ")
+                || trimmed.starts_with("+++ ")
+            {
                 if trimmed.starts_with("diff --git") {
                     in_diff = true;
                     if let Some(path) = self.extract_file_path(trimmed) {
@@ -494,10 +519,12 @@ impl DiffContextExtractor {
 
                 // Extract function changes
                 if trimmed.starts_with("+fn ") || trimmed.starts_with("+pub fn ") {
-                    ctx.functions_added.push(self.extract_function_name(trimmed));
+                    ctx.functions_added
+                        .push(self.extract_function_name(trimmed));
                 }
                 if trimmed.starts_with("-fn ") || trimmed.starts_with("-pub fn ") {
-                    ctx.functions_modified.push(self.extract_function_name(trimmed));
+                    ctx.functions_modified
+                        .push(self.extract_function_name(trimmed));
                 }
             }
 
@@ -528,12 +555,22 @@ impl DiffContextExtractor {
             if path == "/dev/null" {
                 // For /dev/null, get the other path from the first part
                 if parts.len() >= 3 {
-                    return Some(parts.get(1).unwrap_or(&"").trim_start_matches("a/").trim_start_matches("b/").to_string());
+                    return Some(
+                        parts
+                            .get(1)
+                            .unwrap_or(&"")
+                            .trim_start_matches("a/")
+                            .trim_start_matches("b/")
+                            .to_string(),
+                    );
                 }
                 return None;
             }
             // Strip a/ or b/ prefix
-            let path = path.strip_prefix("a/").or(path.strip_prefix("b/")).unwrap_or(path);
+            let path = path
+                .strip_prefix("a/")
+                .or(path.strip_prefix("b/"))
+                .unwrap_or(path);
             return Some(path.to_string());
         }
         None
@@ -542,8 +579,16 @@ impl DiffContextExtractor {
     /// Extract function name from line
     fn extract_function_name(&self, line: &str) -> String {
         let content = line.trim_start_matches(|c| ['+', '-', ' '].contains(&c));
-        let after_fn = content.strip_prefix("fn ").or(content.strip_prefix("pub fn ")).unwrap_or(content);
-        after_fn.split('(').next().unwrap_or(after_fn).trim().to_string()
+        let after_fn = content
+            .strip_prefix("fn ")
+            .or(content.strip_prefix("pub fn "))
+            .unwrap_or(content);
+        after_fn
+            .split('(')
+            .next()
+            .unwrap_or(after_fn)
+            .trim()
+            .to_string()
     }
 
     /// Detect risk indicators in diff lines
@@ -551,10 +596,29 @@ impl DiffContextExtractor {
         let lower = line.to_lowercase();
 
         let risk_patterns = [
-            ("security", vec!["password", "auth", "token", "encrypt", "credential", "secret"]),
-            ("error_handling", vec!["unwrap", "expect", "panic", "unwrap", "abort"]),
-            ("data_integrity", vec!["drop", "delete", "remove", "truncate", "clear"]),
-            ("concurrency", vec!["lock", "mutex", "atomic", "thread", "spawn"]),
+            (
+                "security",
+                vec![
+                    "password",
+                    "auth",
+                    "token",
+                    "encrypt",
+                    "credential",
+                    "secret",
+                ],
+            ),
+            (
+                "error_handling",
+                vec!["unwrap", "expect", "panic", "unwrap", "abort"],
+            ),
+            (
+                "data_integrity",
+                vec!["drop", "delete", "remove", "truncate", "clear"],
+            ),
+            (
+                "concurrency",
+                vec!["lock", "mutex", "atomic", "thread", "spawn"],
+            ),
             ("resource", vec!["alloc", "dealloc", "memory", "leak"]),
         ];
 
@@ -626,7 +690,12 @@ impl RiskScorer {
     }
 
     /// Score a test case based on change context
-    pub fn score_test(&self, test: &mut TestCase, context: &DiffContext, criteria: &[AcceptanceCriterion]) {
+    pub fn score_test(
+        &self,
+        test: &mut TestCase,
+        context: &DiffContext,
+        criteria: &[AcceptanceCriterion],
+    ) {
         let mut score = 0.0;
 
         // Factor 1: File risk
@@ -662,7 +731,9 @@ impl RiskScorer {
         let test_file_base = test_file.split('/').next_back().unwrap_or(test_file);
 
         // High-risk directories take precedence (highest priority)
-        let high_risk_dirs = ["auth", "security", "payment", "account", "admin", "critical"];
+        let high_risk_dirs = [
+            "auth", "security", "payment", "account", "admin", "critical",
+        ];
         for dir in high_risk_dirs {
             if test_file.contains(dir) {
                 return 0.65;
@@ -716,7 +787,11 @@ impl RiskScorer {
     }
 
     /// Calculate criteria-based risk
-    fn calculate_criteria_risk(&self, test_criteria: &[String], all_criteria: &[AcceptanceCriterion]) -> f64 {
+    fn calculate_criteria_risk(
+        &self,
+        test_criteria: &[String],
+        all_criteria: &[AcceptanceCriterion],
+    ) -> f64 {
         if test_criteria.is_empty() || all_criteria.is_empty() {
             return 0.7; // Default high risk for untested criteria
         }
@@ -748,7 +823,8 @@ impl RiskScorer {
 
     /// Calculate change magnitude risk
     fn calculate_magnitude_risk(&self, context: &DiffContext) -> f64 {
-        let total_files = context.files_added.len() + context.files_modified.len() + context.files_deleted.len();
+        let total_files =
+            context.files_added.len() + context.files_modified.len() + context.files_deleted.len();
 
         if context.lines_changed > 500 || total_files > 20 {
             0.8 // Large change = higher risk
@@ -775,7 +851,12 @@ impl RiskScorer {
     }
 
     /// Score all test cases
-    pub fn score_tests(&self, tests: &mut [TestCase], context: &DiffContext, criteria: &[AcceptanceCriterion]) {
+    pub fn score_tests(
+        &self,
+        tests: &mut [TestCase],
+        context: &DiffContext,
+        criteria: &[AcceptanceCriterion],
+    ) {
         for test in tests.iter_mut() {
             self.score_test(test, context, criteria);
         }
@@ -838,7 +919,8 @@ impl TestPlanningEngine {
         let mut test_cases = self.generate_candidate_tests(&request, &diff_context);
 
         // Step 4: Score and rank tests
-        self.risk_scorer.score_tests(&mut test_cases, &diff_context, &criteria);
+        self.risk_scorer
+            .score_tests(&mut test_cases, &diff_context, &criteria);
 
         // Step 5: Calculate coverage
         let (covered, uncovered) = self.calculate_coverage(&test_cases, &criteria);
@@ -880,7 +962,11 @@ impl TestPlanningEngine {
     }
 
     /// Generate candidate test cases from request and context
-    fn generate_candidate_tests(&self, request: &TestPlanRequest, context: &DiffContext) -> Vec<TestCase> {
+    fn generate_candidate_tests(
+        &self,
+        request: &TestPlanRequest,
+        context: &DiffContext,
+    ) -> Vec<TestCase> {
         let mut tests = Vec::new();
 
         // Generate tests based on changed files from diff context
@@ -937,7 +1023,10 @@ impl TestPlanningEngine {
         // Add specific tests based on file path
         let path_lower = file.to_lowercase();
 
-        if path_lower.contains("auth") || path_lower.contains("login") || path_lower.contains("password") {
+        if path_lower.contains("auth")
+            || path_lower.contains("login")
+            || path_lower.contains("password")
+        {
             tests.push(TestCase {
                 name: format!("test_{}_authentication", module_name),
                 file: Some(file.to_string()),
@@ -946,7 +1035,11 @@ impl TestPlanningEngine {
                 criteria: vec!["authentication".to_string(), "security".to_string()],
                 is_critical: true,
                 estimated_duration_ms: 50,
-                tags: vec!["auth".to_string(), "security".to_string(), change_type.to_string()],
+                tags: vec![
+                    "auth".to_string(),
+                    "security".to_string(),
+                    change_type.to_string(),
+                ],
             });
         }
 
@@ -963,7 +1056,10 @@ impl TestPlanningEngine {
             });
         }
 
-        if path_lower.contains("api") || path_lower.contains("endpoint") || path_lower.contains("route") {
+        if path_lower.contains("api")
+            || path_lower.contains("endpoint")
+            || path_lower.contains("route")
+        {
             tests.push(TestCase {
                 name: format!("test_{}_api_integration", module_name),
                 file: Some(file.to_string()),
@@ -972,7 +1068,11 @@ impl TestPlanningEngine {
                 criteria: vec!["api".to_string()],
                 is_critical: false,
                 estimated_duration_ms: 100,
-                tags: vec!["api".to_string(), "integration".to_string(), change_type.to_string()],
+                tags: vec![
+                    "api".to_string(),
+                    "integration".to_string(),
+                    change_type.to_string(),
+                ],
             });
         }
 
@@ -1001,7 +1101,11 @@ impl TestPlanningEngine {
             ("fail", "test_failure_modes", TestRiskLevel::High),
             ("auth", "test_authentication_flow", TestRiskLevel::Critical),
             ("login", "test_login_validation", TestRiskLevel::High),
-            ("password", "test_password_handling", TestRiskLevel::Critical),
+            (
+                "password",
+                "test_password_handling",
+                TestRiskLevel::Critical,
+            ),
             ("data", "test_data_integrity", TestRiskLevel::High),
             ("file", "test_file_operations", TestRiskLevel::Medium),
             ("config", "test_configuration", TestRiskLevel::Medium),
@@ -1077,7 +1181,11 @@ impl TestPlanningEngine {
     }
 
     /// Calculate which criteria are covered by tests
-    fn calculate_coverage(&self, tests: &[TestCase], criteria: &[AcceptanceCriterion]) -> (Vec<String>, Vec<String>) {
+    fn calculate_coverage(
+        &self,
+        tests: &[TestCase],
+        criteria: &[AcceptanceCriterion],
+    ) -> (Vec<String>, Vec<String>) {
         let mut covered = Vec::new();
         let mut uncovered = Vec::new();
 
@@ -1087,8 +1195,13 @@ impl TestPlanningEngine {
                     criterion.text.to_lowercase().contains(&tc.to_lowercase())
                         || tc.to_lowercase().contains(&criterion.text.to_lowercase())
                 }) || test.tags.iter().any(|tag| {
-                    criterion.category.to_lowercase().contains(&tag.to_lowercase())
-                        || tag.to_lowercase().contains(&criterion.category.to_lowercase())
+                    criterion
+                        .category
+                        .to_lowercase()
+                        .contains(&tag.to_lowercase())
+                        || tag
+                            .to_lowercase()
+                            .contains(&criterion.category.to_lowercase())
                 })
             });
 
@@ -1105,7 +1218,9 @@ impl TestPlanningEngine {
     /// Determine overall risk level from tests and context
     fn determine_overall_risk(&self, tests: &[TestCase], context: &DiffContext) -> TestRiskLevel {
         // Check if any critical tests exist
-        let has_critical = tests.iter().any(|t| t.risk_level == TestRiskLevel::Critical);
+        let has_critical = tests
+            .iter()
+            .any(|t| t.risk_level == TestRiskLevel::Critical);
         if has_critical {
             return TestRiskLevel::Critical;
         }
@@ -1144,7 +1259,9 @@ impl TestPlanningEngine {
             .iter()
             .enumerate()
             .map(|(idx, tc)| {
-                let dependencies: Vec<Uuid> = if idx > 0 && test_plan.test_cases[idx - 1].risk_level == TestRiskLevel::Critical {
+                let dependencies: Vec<Uuid> = if idx > 0
+                    && test_plan.test_cases[idx - 1].risk_level == TestRiskLevel::Critical
+                {
                     // Critical tests might need to run first, but we don't add hard dependencies
                     vec![]
                 } else {
@@ -1471,7 +1588,8 @@ mod test_planning_engine_tests {
         let request = TestPlanRequest {
             task_description: "Implement user authentication".to_string(),
             changed_files: vec!["src/auth.rs".to_string()],
-            diff_content: Some(r#"
+            diff_content: Some(
+                r#"
 diff --git a/src/auth.rs b/src/auth.rs
 --- a/src/auth.rs
 +++ b/src/auth.rs
@@ -1480,8 +1598,12 @@ diff --git a/src/auth.rs b/src/auth.rs
 +    validate_password_strength(password)?;
      Ok(())
  }
-            "#.to_string()),
-            spec_content: Some("The system shall authenticate users with email and password".to_string()),
+            "#
+                .to_string(),
+            ),
+            spec_content: Some(
+                "The system shall authenticate users with email and password".to_string(),
+            ),
         };
 
         let plan = engine.create_test_plan(request).await.unwrap();
@@ -1623,7 +1745,8 @@ diff --git a/src/auth/login.rs b/src/auth/login.rs
         "#;
 
         let request = TestPlanRequest {
-            task_description: "Implement secure user authentication with password validation".to_string(),
+            task_description: "Implement secure user authentication with password validation"
+                .to_string(),
             changed_files: vec!["src/auth/login.rs".to_string()],
             diff_content: Some(diff.to_string()),
             spec_content: Some(spec.to_string()),
@@ -1637,7 +1760,9 @@ diff --git a/src/auth/login.rs b/src/auth/login.rs
         // Verify tests are sorted by risk
         if test_plan.test_cases.len() > 1 {
             for i in 0..test_plan.test_cases.len() - 1 {
-                assert!(test_plan.test_cases[i].risk_score >= test_plan.test_cases[i + 1].risk_score);
+                assert!(
+                    test_plan.test_cases[i].risk_score >= test_plan.test_cases[i + 1].risk_score
+                );
             }
         }
 

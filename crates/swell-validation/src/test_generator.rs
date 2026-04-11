@@ -206,7 +206,11 @@ impl TestGenerator {
     }
 
     /// Generate unit tests from acceptance criteria
-    pub fn generate_unit_tests(&self, criteria: &[AcceptanceCriterion], _target_file: &str) -> Vec<GeneratedTest> {
+    pub fn generate_unit_tests(
+        &self,
+        criteria: &[AcceptanceCriterion],
+        _target_file: &str,
+    ) -> Vec<GeneratedTest> {
         let mut tests = Vec::new();
 
         for criterion in criteria {
@@ -214,7 +218,9 @@ impl TestGenerator {
                 || criterion.criticality == CriterionCriticality::ShouldHave
             {
                 if let Some(pattern) = self.find_matching_pattern(criterion) {
-                    if pattern.test_type == TestType::Unit || pattern.test_type == TestType::Property {
+                    if pattern.test_type == TestType::Unit
+                        || pattern.test_type == TestType::Property
+                    {
                         let test = self.generate_unit_test(criterion, pattern);
                         if test.confidence >= self.config.min_confidence {
                             tests.push(test);
@@ -233,26 +239,20 @@ impl TestGenerator {
     }
 
     /// Generate a single unit test
-    fn generate_unit_test(&self, criterion: &AcceptanceCriterion, pattern: &TestPattern) -> GeneratedTest {
+    fn generate_unit_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+        pattern: &TestPattern,
+    ) -> GeneratedTest {
         let test_name = self.generate_test_name(criterion);
         let module_path = format!("tests/unit_{}", self.sanitize_name(&test_name));
 
         let code = match pattern.name {
-            "authentication_unit" => {
-                self.generate_auth_test(criterion, &test_name)
-            }
-            "validation_unit" => {
-                self.generate_validation_test(criterion, &test_name)
-            }
-            "error_handling_unit" => {
-                self.generate_error_test(criterion, &test_name)
-            }
-            "security_unit" => {
-                self.generate_security_test(criterion, &test_name)
-            }
-            _ => {
-                self.generate_generic_unit_test(criterion, &test_name)
-            }
+            "authentication_unit" => self.generate_auth_test(criterion, &test_name),
+            "validation_unit" => self.generate_validation_test(criterion, &test_name),
+            "error_handling_unit" => self.generate_error_test(criterion, &test_name),
+            "security_unit" => self.generate_security_test(criterion, &test_name),
+            _ => self.generate_generic_unit_test(criterion, &test_name),
         };
 
         GeneratedTest {
@@ -520,7 +520,11 @@ mod {sanitized}_tests {{
     }
 
     /// Generate generic unit test
-    fn generate_generic_unit_test(&self, criterion: &AcceptanceCriterion, test_name: &str) -> String {
+    fn generate_generic_unit_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+        test_name: &str,
+    ) -> String {
         let criterion_text = &criterion.text;
         let sanitized = self.sanitize_name(test_name);
 
@@ -557,7 +561,10 @@ mod {sanitized}_tests {{
     }
 
     /// Generate integration tests from acceptance criteria
-    pub fn generate_integration_tests(&self, criteria: &[AcceptanceCriterion]) -> Vec<GeneratedTest> {
+    pub fn generate_integration_tests(
+        &self,
+        criteria: &[AcceptanceCriterion],
+    ) -> Vec<GeneratedTest> {
         let mut tests = Vec::new();
 
         for criterion in criteria {
@@ -614,7 +621,11 @@ mod {sanitized}_tests {{
     }
 
     /// Generate API integration test
-    fn generate_api_integration_test(&self, criterion: &AcceptanceCriterion, test_name: &str) -> String {
+    fn generate_api_integration_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+        test_name: &str,
+    ) -> String {
         let criterion_text = &criterion.text;
         let sanitized = self.sanitize_name(test_name);
 
@@ -683,7 +694,11 @@ mod {sanitized}_integration_tests {{
     }
 
     /// Generate data integration test
-    fn generate_data_integration_test(&self, criterion: &AcceptanceCriterion, test_name: &str) -> String {
+    fn generate_data_integration_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+        test_name: &str,
+    ) -> String {
         let criterion_text = &criterion.text;
         let sanitized = self.sanitize_name(test_name);
 
@@ -760,7 +775,11 @@ mod {sanitized}_data_integration_tests {{
     }
 
     /// Generate workflow integration test
-    fn generate_workflow_integration_test(&self, criterion: &AcceptanceCriterion, test_name: &str) -> String {
+    fn generate_workflow_integration_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+        test_name: &str,
+    ) -> String {
         let criterion_text = &criterion.text;
         let sanitized = self.sanitize_name(test_name);
 
@@ -865,7 +884,11 @@ mod {sanitized}_workflow_integration_tests {{
     }
 
     /// Generate concurrency property test
-    fn generate_concurrency_property_test(&self, criterion: &AcceptanceCriterion, test_name: &str) -> String {
+    fn generate_concurrency_property_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+        test_name: &str,
+    ) -> String {
         let criterion_text = &criterion.text;
         let sanitized = self.sanitize_name(test_name);
 
@@ -964,7 +987,11 @@ mod {sanitized}_property_tests {{
     }
 
     /// Generate performance property test
-    fn generate_performance_property_test(&self, criterion: &AcceptanceCriterion, test_name: &str) -> String {
+    fn generate_performance_property_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+        test_name: &str,
+    ) -> String {
         let criterion_text = &criterion.text;
         let sanitized = self.sanitize_name(test_name);
 
@@ -1086,7 +1113,11 @@ mod {sanitized}_performance_property_tests {{
     }
 
     /// Generate invariant property test
-    fn generate_invariant_property_test(&self, criterion: &AcceptanceCriterion, test_name: &str) -> String {
+    fn generate_invariant_property_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+        test_name: &str,
+    ) -> String {
         let criterion_text = &criterion.text;
         let sanitized = self.sanitize_name(test_name);
 
@@ -1193,7 +1224,13 @@ mod {sanitized}_invariant_property_tests {{
     /// Sanitize a name for use in Rust code
     fn sanitize_name(&self, name: &str) -> String {
         name.chars()
-            .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect()
     }
 
@@ -1232,9 +1269,8 @@ pub struct TestGeneratorOutput {
 impl TestGeneratorOutput {
     /// Calculate total generated tests
     pub fn calculate_totals(&mut self) {
-        self.total_generated = self.unit_tests.len()
-            + self.integration_tests.len()
-            + self.property_tests.len();
+        self.total_generated =
+            self.unit_tests.len() + self.integration_tests.len() + self.property_tests.len();
     }
 
     /// Get all generated tests as a flat list
@@ -1421,15 +1457,13 @@ mod test_generator_tests {
     #[test]
     fn test_generate_unit_tests_basic() {
         let generator = TestGenerator::with_defaults();
-        let criteria = vec![
-            AcceptanceCriterion {
-                id: "AC-1".to_string(),
-                text: "The system shall authenticate users with email and password".to_string(),
-                category: "authentication".to_string(),
-                criticality: CriterionCriticality::MustHave,
-                test_hints: vec!["auth".to_string()],
-            },
-        ];
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "The system shall authenticate users with email and password".to_string(),
+            category: "authentication".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["auth".to_string()],
+        }];
 
         let tests = generator.generate_unit_tests(&criteria, "src/auth.rs");
         assert!(!tests.is_empty());
@@ -1457,15 +1491,13 @@ mod test_generator_tests {
     #[test]
     fn test_generate_integration_tests_api() {
         let generator = TestGenerator::with_defaults();
-        let criteria = vec![
-            AcceptanceCriterion {
-                id: "AC-1".to_string(),
-                text: "The API shall accept POST requests at /api/users".to_string(),
-                category: "api".to_string(),
-                criticality: CriterionCriticality::MustHave,
-                test_hints: vec!["api".to_string()],
-            },
-        ];
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "The API shall accept POST requests at /api/users".to_string(),
+            category: "api".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["api".to_string()],
+        }];
 
         let tests = generator.generate_integration_tests(&criteria);
         assert!(!tests.is_empty());
@@ -1475,15 +1507,13 @@ mod test_generator_tests {
     #[test]
     fn test_generate_integration_tests_database() {
         let generator = TestGenerator::with_defaults();
-        let criteria = vec![
-            AcceptanceCriterion {
-                id: "AC-1".to_string(),
-                text: "Data shall be persisted to the database".to_string(),
-                category: "data".to_string(),
-                criticality: CriterionCriticality::MustHave,
-                test_hints: vec!["database".to_string()],
-            },
-        ];
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "Data shall be persisted to the database".to_string(),
+            category: "data".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["database".to_string()],
+        }];
 
         let tests = generator.generate_integration_tests(&criteria);
         assert!(!tests.is_empty());
@@ -1492,15 +1522,13 @@ mod test_generator_tests {
     #[test]
     fn test_generate_property_tests_concurrency() {
         let generator = TestGenerator::with_defaults();
-        let criteria = vec![
-            AcceptanceCriterion {
-                id: "AC-1".to_string(),
-                text: "The system shall handle concurrent requests safely".to_string(),
-                category: "concurrency".to_string(),
-                criticality: CriterionCriticality::MustHave,
-                test_hints: vec!["concurrent".to_string()],
-            },
-        ];
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "The system shall handle concurrent requests safely".to_string(),
+            category: "concurrency".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["concurrent".to_string()],
+        }];
 
         let tests = generator.generate_property_tests(&criteria);
         assert!(!tests.is_empty());
@@ -1510,15 +1538,13 @@ mod test_generator_tests {
     #[test]
     fn test_generate_property_tests_performance() {
         let generator = TestGenerator::with_defaults();
-        let criteria = vec![
-            AcceptanceCriterion {
-                id: "AC-1".to_string(),
-                text: "The system shall have performance that meets requirements".to_string(),
-                category: "performance".to_string(),
-                criticality: CriterionCriticality::ShouldHave,
-                test_hints: vec!["performance".to_string()],
-            },
-        ];
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "The system shall have performance that meets requirements".to_string(),
+            category: "performance".to_string(),
+            criticality: CriterionCriticality::ShouldHave,
+            test_hints: vec!["performance".to_string()],
+        }];
 
         let tests = generator.generate_property_tests(&criteria);
         assert!(!tests.is_empty());
@@ -1697,21 +1723,21 @@ mod test_generator_tests {
 
         let tests = generator.generate_unit_tests(&criteria, "src/test.rs");
         // NiceToHave should not generate tests by default
-        assert!(tests.iter().all(|t| t.covers_criteria.iter().any(|c| c != "AC-3")));
+        assert!(tests
+            .iter()
+            .all(|t| t.covers_criteria.iter().any(|c| c != "AC-3")));
     }
 
     #[test]
     fn test_integration_tests_contain_api_patterns() {
         let generator = TestGenerator::with_defaults();
-        let criteria = vec![
-            AcceptanceCriterion {
-                id: "AC-1".to_string(),
-                text: "The API shall accept POST requests".to_string(),
-                category: "api".to_string(),
-                criticality: CriterionCriticality::MustHave,
-                test_hints: vec![],
-            },
-        ];
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "The API shall accept POST requests".to_string(),
+            category: "api".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec![],
+        }];
 
         let tests = generator.generate_integration_tests(&criteria);
         assert!(!tests.is_empty());
@@ -1722,15 +1748,13 @@ mod test_generator_tests {
     #[test]
     fn test_property_tests_contain_property_checks() {
         let generator = TestGenerator::with_defaults();
-        let criteria = vec![
-            AcceptanceCriterion {
-                id: "AC-1".to_string(),
-                text: "System shall handle concurrent operations".to_string(),
-                category: "concurrency".to_string(),
-                criticality: CriterionCriticality::MustHave,
-                test_hints: vec![],
-            },
-        ];
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "System shall handle concurrent operations".to_string(),
+            category: "concurrency".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec![],
+        }];
 
         let tests = generator.generate_property_tests(&criteria);
         assert!(!tests.is_empty());
