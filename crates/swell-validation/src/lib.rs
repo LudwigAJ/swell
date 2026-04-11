@@ -41,6 +41,13 @@ use swell_core::{
 use swell_llm::{LlmBackend, LlmConfig, LlmMessage, LlmRole};
 use tokio::task;
 
+// Re-export calibrated confidence for calibrated validation confidence (V2)
+pub mod calibrated_confidence;
+pub use calibrated_confidence::{
+    CalibratedConfidence, CalibrationFeatures, CalibrationModel, CalibrationParams, DefectRecord,
+    DefectTracker, Predictor, RiskLevel, TrainingResult, ValidationRecord,
+};
+
 // Re-export confidence scoring for use by other crates
 pub mod confidence;
 pub use confidence::{
