@@ -17,7 +17,7 @@
         "cargo test -p swell-validation -- lint_gate"
       ],
       "fulfills": [],
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": "fix-predictive-selection-assertion",
@@ -34,7 +34,7 @@
         "cargo test -p swell-validation -- predictive_selection"
       ],
       "fulfills": [],
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": "fix-calibrated-confidence-training",
@@ -54,7 +54,7 @@
         "cargo test -p swell-validation -- calibrated_confidence"
       ],
       "fulfills": [],
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": "fix-autonomous-coverage-hardcoded",
@@ -72,7 +72,7 @@
         "cargo test -p swell-validation -- autonomous_coverage"
       ],
       "fulfills": [],
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": "agent-skills-loader-unique",

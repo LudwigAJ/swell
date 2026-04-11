@@ -1575,7 +1575,7 @@ index 1234567..abcdefg 100644
 "#;
 
         let impact = analyzer.analyze_diff(diff);
-        assert!(!impact.modified_files.is_empty() || !impact.lines_changed == 0);
+        assert!(!impact.modified_files.is_empty() || impact.lines_changed != 0);
     }
 
     #[test]

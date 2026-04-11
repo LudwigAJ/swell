@@ -356,6 +356,13 @@ impl AutonomousCoverageEngine {
             gaps.extend(static_gaps);
         }
 
+        // Count files analyzed from the gaps collected
+        let mut files_analyzed_set = std::collections::HashSet::new();
+        for gap in &gaps {
+            files_analyzed_set.insert(gap.file.clone());
+        }
+        let files_analyzed = files_analyzed_set.len();
+
         // Run mutation testing
         if self.config.enable_mutation_testing {
             let mutations = self.run_mutation_testing(workspace_path).await?;
@@ -383,7 +390,7 @@ impl AutonomousCoverageEngine {
             branch_coverage,
             function_coverage,
             overall_score,
-            files_analyzed: 0, // Would need to track this
+            files_analyzed,
             duration_ms,
         })
     }
@@ -394,34 +401,12 @@ impl AutonomousCoverageEngine {
         workspace_path: &str,
     ) -> Result<Vec<CoverageGap>, SwellError> {
         let path_string = workspace_path.to_string();
-        let path_for_spawn = path_string.clone();
 
-        // Run cargo test with coverage to get coverage info
-        let output = task::spawn_blocking(move || {
-            Command::new("cargo")
-                .args([
-                    "llvm-cov",
-                    "--html",
-                    "--output-dir",
-                    "cov-report",
-                    "--",
-                    "test",
-                    "--",
-                    "--nocapture",
-                ])
-                .current_dir(&path_for_spawn)
-                .output()
-        })
-        .await
-        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
-        .map_err(SwellError::IoError)?;
+        // Run basic static analysis to get coverage gaps
+        // This works regardless of whether llvm-cov is available
+        let static_gaps = Self::basic_static_analysis_static(&path_string).await?;
 
-        // If llvm-cov not available, fall back to basic analysis
-        if !output.status.success() {
-            return Self::basic_static_analysis_static(&path_string).await;
-        }
-
-        Ok(Vec::new())
+        Ok(static_gaps)
     }
 
     /// Basic static analysis when coverage tools not available
@@ -632,10 +617,7 @@ impl AutonomousCoverageEngine {
         let workspace_path = workspace_path.to_string();
 
         task::spawn_blocking(move || {
-            // Try to read coverage data if available
-            // For now, return reasonable defaults
-
-            // Attempt to use cargo llvm-cov
+            // Attempt to use cargo llvm-cov to get actual coverage data
             let output = Command::new("cargo")
                 .args(["llvm-cov", "report", "--json"])
                 .current_dir(&workspace_path)
@@ -643,17 +625,92 @@ impl AutonomousCoverageEngine {
 
             if let Ok(output) = output {
                 if output.status.success() {
-                    // Parse coverage from output if available
-                    // For now, return defaults
-                    let _stdout = String::from_utf8_lossy(&output.stdout);
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    // Try to parse coverage from JSON output
+                    if let Some(coverage) = Self::parse_llvm_cov_json(&stdout) {
+                        return coverage;
+                    }
                 }
             }
 
-            // Default coverage values (would be parsed from actual coverage tools)
-            (0.75, 0.65, 0.80)
+            // No coverage tool available or failed - return (0.0, 0.0, 0.0) to indicate unknown
+            (0.0, 0.0, 0.0)
         })
         .await
         .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))
+    }
+
+    /// Parse coverage data from cargo llvm-cov JSON output
+    fn parse_llvm_cov_json(json_str: &str) -> Option<(f64, f64, f64)> {
+        // Simple JSON parsing for llvm-cov output
+        // Expected format: { "data": [{ "totals": { "line": { "percent": X }, "branch": { "percent": Y }, "function": { "percent": Z } } }] }
+        let mut line_coverage = 0.0;
+        let mut branch_coverage = 0.0;
+        let mut function_coverage = 0.0;
+
+        // Look for "line" coverage percentage
+        if let Some(start) = json_str.find("\"line\"") {
+            if let Some(colon) = json_str[start..].find(':') {
+                let after_colon = &json_str[start + colon..start + colon + 50];
+                if let Some(val_start) = after_colon.find("percent") {
+                    if let Some(pcolon) = after_colon[val_start..].find(':') {
+                        let val_str = &after_colon[val_start + pcolon + 1..];
+                        let val: f64 = val_str
+                            .chars()
+                            .take_while(|c| c.is_numeric() || *c == '.' || *c == '-')
+                            .collect::<String>()
+                            .parse()
+                            .ok()?;
+                        line_coverage = val / 100.0; // Convert percentage to ratio
+                    }
+                }
+            }
+        }
+
+        // Look for "branch" coverage percentage
+        if let Some(start) = json_str.find("\"branch\"") {
+            if let Some(colon) = json_str[start..].find(':') {
+                let after_colon = &json_str[start + colon..start + colon + 50];
+                if let Some(val_start) = after_colon.find("percent") {
+                    if let Some(pcolon) = after_colon[val_start..].find(':') {
+                        let val_str = &after_colon[val_start + pcolon + 1..];
+                        let val: f64 = val_str
+                            .chars()
+                            .take_while(|c| c.is_numeric() || *c == '.' || *c == '-')
+                            .collect::<String>()
+                            .parse()
+                            .ok()?;
+                        branch_coverage = val / 100.0;
+                    }
+                }
+            }
+        }
+
+        // Look for "function" coverage percentage
+        if let Some(start) = json_str.find("\"function\"") {
+            if let Some(colon) = json_str[start..].find(':') {
+                let after_colon = &json_str[start + colon..start + colon + 50];
+                if let Some(val_start) = after_colon.find("percent") {
+                    if let Some(pcolon) = after_colon[val_start..].find(':') {
+                        let val_str = &after_colon[val_start + pcolon + 1..];
+                        let val: f64 = val_str
+                            .chars()
+                            .take_while(|c| c.is_numeric() || *c == '.' || *c == '-')
+                            .collect::<String>()
+                            .parse()
+                            .ok()?;
+                        function_coverage = val / 100.0;
+                    }
+                }
+            }
+        }
+
+        // Only return if we found at least one valid coverage value
+        if line_coverage > 0.0 || branch_coverage > 0.0 || function_coverage > 0.0 {
+            Some((line_coverage, branch_coverage, function_coverage))
+        } else {
+            None
+        }
     }
 
     /// Calculate overall coverage score

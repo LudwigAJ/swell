@@ -61,6 +61,10 @@ pub struct ValidationRecord {
     pub ai_review_confidence: f64,
     /// Whether defect was later found in post-merge
     pub had_post_merge_defect: bool,
+    /// Files that were changed in this validation
+    pub changed_files: Vec<String>,
+    /// Historical defect rate for similar changes
+    pub historical_defect_rate: f64,
 }
 
 /// Signal features used for prediction
@@ -82,6 +86,8 @@ pub struct CalibrationFeatures {
     pub warning_count: usize,
     /// Historical defect rate for similar changes
     pub historical_defect_rate: f64,
+    /// Changed files for defect rate lookup
+    pub changed_files: Vec<String>,
 }
 
 impl CalibrationFeatures {
@@ -524,10 +530,11 @@ impl CalibrationModel {
             test_score: record.test_pass_rate,
             security_score: 1.0 - (record.security_findings as f64 * 0.1).min(1.0),
             ai_review_confidence: record.ai_review_confidence,
-            changed_file_count: 0, // Not available in ValidationRecord
+            changed_file_count: record.changed_files.len(),
             error_count: record.error_count,
             warning_count: record.warning_count,
-            historical_defect_rate: 0.0, // Would need DefectTracker
+            historical_defect_rate: record.historical_defect_rate,
+            changed_files: record.changed_files.clone(),
         }
     }
 
@@ -622,7 +629,13 @@ impl Predictor {
     }
 
     /// Record a validation outcome for future training
-    pub fn record_outcome(&mut self, record: ValidationRecord) {
+    pub fn record_outcome(&mut self, mut record: ValidationRecord) {
+        // Compute historical defect rate before recording
+        let defect_rate = self
+            .defect_tracker
+            .changed_files_defect_rate(&record.changed_files);
+        record.historical_defect_rate = defect_rate;
+
         // The calibration model will be retrained when needed
         // For now, we just track it in the defect tracker if there was a defect
         if record.had_post_merge_defect {
@@ -632,7 +645,7 @@ impl Predictor {
                 detected_at: record.timestamp,
                 defect_count: 1,
                 severity: 3,
-                changed_files: vec![],
+                changed_files: record.changed_files.clone(),
                 validation_confidence: 0.5,
                 validation_passed: record.passed,
                 gates_run: vec![],
@@ -650,11 +663,11 @@ impl Predictor {
     }
 
     /// Predict validation pass probability for given features
-    pub fn predict(&self, features: CalibrationFeatures) -> CalibratedConfidence {
-        let mut features = features;
-
-        // Enrich with historical defect rate
-        features.historical_defect_rate = self.defect_tracker.changed_files_defect_rate(&[]);
+    pub fn predict(&self, mut features: CalibrationFeatures) -> CalibratedConfidence {
+        // Enrich with historical defect rate using the actual changed files
+        features.historical_defect_rate = self
+            .defect_tracker
+            .changed_files_defect_rate(&features.changed_files);
 
         self.calibration_model.predict(&features)
     }
@@ -715,6 +728,8 @@ mod tests {
                 security_findings: 0,
                 ai_review_confidence: 0.9,
                 had_post_merge_defect: false,
+                changed_files: vec!["src/lib.rs".to_string()],
+                historical_defect_rate: 0.0,
             },
             ValidationRecord {
                 id: "2".to_string(),
@@ -728,6 +743,8 @@ mod tests {
                 security_findings: 0,
                 ai_review_confidence: 0.8,
                 had_post_merge_defect: false,
+                changed_files: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
+                historical_defect_rate: 0.0,
             },
             ValidationRecord {
                 id: "3".to_string(),
@@ -741,6 +758,8 @@ mod tests {
                 security_findings: 2,
                 ai_review_confidence: 0.5,
                 had_post_merge_defect: true,
+                changed_files: vec!["src/lib.rs".to_string()],
+                historical_defect_rate: 0.1,
             },
             ValidationRecord {
                 id: "4".to_string(),
@@ -754,6 +773,8 @@ mod tests {
                 security_findings: 0,
                 ai_review_confidence: 0.95,
                 had_post_merge_defect: false,
+                changed_files: vec![],
+                historical_defect_rate: 0.0,
             },
             ValidationRecord {
                 id: "5".to_string(),
@@ -767,6 +788,8 @@ mod tests {
                 security_findings: 1,
                 ai_review_confidence: 0.6,
                 had_post_merge_defect: true,
+                changed_files: vec!["src/lib.rs".to_string(), "tests/test.rs".to_string()],
+                historical_defect_rate: 0.15,
             },
         ]
     }
@@ -782,6 +805,7 @@ mod tests {
             error_count: 0,
             warning_count: 0,
             historical_defect_rate: 0.1,
+            changed_files: vec!["src/lib.rs".to_string()],
         };
 
         let score = features.weighted_score();
@@ -868,6 +892,8 @@ mod tests {
             security_findings: 0,
             ai_review_confidence: 0.9,
             had_post_merge_defect: false,
+            changed_files: vec![],
+            historical_defect_rate: 0.0,
         }];
 
         let result = model.train(&records);
@@ -901,6 +927,7 @@ mod tests {
             error_count: 0,
             warning_count: 1,
             historical_defect_rate: 0.1,
+            changed_files: vec!["src/lib.rs".to_string()],
         };
 
         let confidence = model.predict(&features);
@@ -931,6 +958,8 @@ mod tests {
             security_findings: 0,
             ai_review_confidence: 0.9,
             had_post_merge_defect: false,
+            changed_files: vec!["src/lib.rs".to_string()],
+            historical_defect_rate: 0.0,
         });
 
         // Should have recorded a clean merge
@@ -954,6 +983,7 @@ mod tests {
             error_count: 0,
             warning_count: 0,
             historical_defect_rate: 0.0,
+            changed_files: vec!["src/lib.rs".to_string()],
         };
 
         let confidence = predictor.predict(features);

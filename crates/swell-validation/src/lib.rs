@@ -205,23 +205,75 @@ impl ValidationGate for LintGate {
             // Parse clippy output for errors
             for line in stdout.lines().chain(stderr.lines()) {
                 if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-                    if let Some(msg) = json.get("message").and_then(|m| m.as_str()) {
-                        let level = if json.get("level").and_then(|l| l.as_str()) == Some("error") {
-                            ValidationLevel::Error
-                        } else {
-                            ValidationLevel::Warning
-                        };
+                    // Clippy outputs `message` as an object with nested fields:
+                    // - message.message: the text message (string)
+                    // - message.level: "error", "warning", or "help" (string)
+                    // - message.spans: array of source locations
+                    // - message.rendered: rendered message (string, optional)
+                    //
+                    // Top-level `code` is an object with `code.code` and `code.explanation`
+                    //
+                    // For backwards compat, also handle when `message` is a plain string
+
+                    // Extract message text: try message.message first, then message.rendered, then message as string
+                    let message_text = json
+                        .get("message")
+                        .and_then(|m| m.get("message"))
+                        .and_then(|m| m.as_str())
+                        .or_else(|| {
+                            json.get("message")
+                                .and_then(|m| m.get("rendered"))
+                                .and_then(|m| m.as_str())
+                        })
+                        .or_else(|| json.get("message").and_then(|m| m.as_str()));
+
+                    if let Some(msg) = message_text {
+                        // Extract level: message.level (not top-level)
+                        let level = json
+                            .get("message")
+                            .and_then(|m| m.get("level"))
+                            .and_then(|l| l.as_str())
+                            .map(|l| {
+                                if l == "error" {
+                                    ValidationLevel::Error
+                                } else {
+                                    ValidationLevel::Warning
+                                }
+                            })
+                            .unwrap_or(ValidationLevel::Warning);
+
+                        // Extract code: message.code.code
+                        let code = json
+                            .get("message")
+                            .and_then(|m| m.get("code"))
+                            .and_then(|c| c.get("code"))
+                            .and_then(|c| c.as_str())
+                            .map(String::from);
+
+                        // Extract file: message.spans[0].file_name
+                        let file = json
+                            .get("message")
+                            .and_then(|m| m.get("spans"))
+                            .and_then(|s| s.get(0))
+                            .and_then(|sp| sp.get("file_name"))
+                            .and_then(|f| f.as_str())
+                            .map(String::from);
+
+                        // Extract line: message.spans[0].line_start
+                        let line = json
+                            .get("message")
+                            .and_then(|m| m.get("spans"))
+                            .and_then(|s| s.get(0))
+                            .and_then(|sp| sp.get("line_start"))
+                            .and_then(|l| l.as_u64())
+                            .map(|l| l as u32);
 
                         messages.push(ValidationMessage {
                             level,
-                            code: json
-                                .get("code")
-                                .and_then(|c| c.get("code"))
-                                .and_then(|c| c.as_str())
-                                .map(String::from),
+                            code,
                             message: msg.to_string(),
-                            file: json.get("file").and_then(|f| f.as_str()).map(String::from),
-                            line: json.get("line").and_then(|l| l.as_u64()).map(|l| l as u32),
+                            file,
+                            line,
                         });
                     }
                 }
