@@ -20,6 +20,7 @@ pub mod feature_leads;
 pub mod followup_generator;
 pub mod gap_analyzer;
 pub mod metrics;
+pub mod novelty_check;
 pub mod policy;
 pub mod retry_policy;
 pub mod scheduler;
@@ -60,6 +61,9 @@ pub use followup_generator::{
 pub use gap_analyzer::{
     CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
     RequirementCategory, RequirementPriority, SpecRequirement,
+};
+pub use novelty_check::{
+    levenshtein_distance, NoveltyCheckResult, NoveltyChecker, NoveltyCheckerConfig, TrackedTask,
 };
 pub use metrics::{
     create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
