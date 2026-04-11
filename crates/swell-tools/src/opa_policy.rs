@@ -14,7 +14,10 @@
 //! - [`OpaInput`] - Input document structure for OPA evaluation
 //! - [`OpaResult`] - Authorization result from OPA
 //! - [`OpaClient`] - HTTP client for OPA server or WASM module
+//!
+//! Note: This module reuses [`ToolOperation`] from [`crate::cedar_policy`] for consistency.
 
+use crate::cedar_policy::ToolOperation;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -92,60 +95,6 @@ impl std::fmt::Display for OpaRiskLevel {
     }
 }
 
-/// Tool operation being authorized
-#[derive(Debug, Clone)]
-pub enum ToolOperation {
-    /// Read a file
-    Read { path: std::path::PathBuf },
-    /// Write a file
-    Write { path: std::path::PathBuf },
-    /// Edit a file (diff-based modification)
-    Edit { path: std::path::PathBuf },
-    /// Execute a shell command
-    Shell { command: String },
-    /// Execute git operations
-    Git { operation: String },
-    /// Code search operations
-    Search { operation: String },
-}
-
-impl ToolOperation {
-    /// Get the risk level for this operation
-    pub fn risk_level(&self) -> OpaRiskLevel {
-        match self {
-            ToolOperation::Read { .. } | ToolOperation::Search { .. } => OpaRiskLevel::Low,
-            ToolOperation::Write { .. }
-            | ToolOperation::Edit { .. }
-            | ToolOperation::Git { .. } => OpaRiskLevel::Medium,
-            ToolOperation::Shell { .. } => OpaRiskLevel::High,
-        }
-    }
-
-    /// Get the operation type as string
-    pub fn operation_type(&self) -> &'static str {
-        match self {
-            ToolOperation::Read { .. } => "read",
-            ToolOperation::Write { .. } => "write",
-            ToolOperation::Edit { .. } => "edit",
-            ToolOperation::Shell { .. } => "shell",
-            ToolOperation::Git { .. } => "git",
-            ToolOperation::Search { .. } => "search",
-        }
-    }
-
-    /// Get the resource path as string
-    pub fn resource(&self) -> String {
-        match self {
-            ToolOperation::Read { path }
-            | ToolOperation::Write { path }
-            | ToolOperation::Edit { path } => path.display().to_string(),
-            ToolOperation::Shell { command } => command.clone(),
-            ToolOperation::Git { operation } => operation.clone(),
-            ToolOperation::Search { operation } => operation.clone(),
-        }
-    }
-}
-
 /// Input document sent to OPA for evaluation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OpaInput {
@@ -190,7 +139,7 @@ pub struct OpaSubject {
 
 impl OpaSubject {
     /// Create a new subject
-    pub fn new(agent_id: &str, role: &str, operation_risk: OpaRiskLevel) -> Self {
+    pub fn new(agent_id: &str, role: &str, operation_risk: crate::cedar_policy::CedarRiskLevel) -> Self {
         Self {
             agent_id: agent_id.to_string(),
             role: role.to_string(),
@@ -214,15 +163,9 @@ impl OpaAction {
     pub fn from_operation(op: &ToolOperation) -> Self {
         let action_type = op.operation_type().to_string();
         let params = match op {
-            ToolOperation::Read { path } => Some(HashMap::from([(
-                "path".to_string(),
-                path.display().to_string(),
-            )])),
-            ToolOperation::Write { path } => Some(HashMap::from([(
-                "path".to_string(),
-                path.display().to_string(),
-            )])),
-            ToolOperation::Edit { path } => Some(HashMap::from([(
+            ToolOperation::Read { path }
+            | ToolOperation::Write { path }
+            | ToolOperation::Edit { path } => Some(HashMap::from([(
                 "path".to_string(),
                 path.display().to_string(),
             )])),
@@ -237,6 +180,9 @@ impl OpaAction {
                 "operation".to_string(),
                 operation.clone(),
             )])),
+            ToolOperation::ReadOnly { tool_name } | ToolOperation::Destructive { tool_name } => {
+                Some(HashMap::from([("tool_name".to_string(), tool_name.clone())]))
+            }
         };
         Self {
             action_type,
@@ -267,6 +213,9 @@ impl OpaResource {
             ToolOperation::Shell { command } => ("command".to_string(), command.clone()),
             ToolOperation::Git { operation } => ("git".to_string(), operation.clone()),
             ToolOperation::Search { operation } => ("search".to_string(), operation.clone()),
+            ToolOperation::ReadOnly { tool_name } | ToolOperation::Destructive { tool_name } => {
+                ("tool".to_string(), tool_name.clone())
+            }
         };
         Self {
             resource_type,
@@ -663,20 +612,24 @@ mod tests {
 
     #[test]
     fn test_tool_operation_risk_level() {
+        use crate::cedar_policy::CedarRiskLevel;
+
         let read_op = ToolOperation::Read {
             path: std::path::PathBuf::from("/workspace/src/main.rs"),
         };
-        assert_eq!(read_op.risk_level(), OpaRiskLevel::Low);
+        assert_eq!(read_op.risk_level(), CedarRiskLevel::Low);
 
         let shell_op = ToolOperation::Shell {
             command: "rm -rf".to_string(),
         };
-        assert_eq!(shell_op.risk_level(), OpaRiskLevel::High);
+        assert_eq!(shell_op.risk_level(), CedarRiskLevel::High);
     }
 
     #[test]
     fn test_opa_subject_creation() {
-        let subject = OpaSubject::new("agent1", "planner", OpaRiskLevel::Medium);
+        use crate::cedar_policy::CedarRiskLevel;
+
+        let subject = OpaSubject::new("agent1", "planner", CedarRiskLevel::Medium);
 
         assert_eq!(subject.agent_id, "agent1");
         assert_eq!(subject.role, "planner");

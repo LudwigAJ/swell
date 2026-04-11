@@ -176,6 +176,43 @@ impl ToolOperation {
             ToolOperation::ReadOnly { .. } => CedarRiskLevel::Low,
         }
     }
+
+    /// Get the risk level as a string (for OPA compatibility)
+    pub fn risk_level_str(&self) -> &'static str {
+        match self.risk_level() {
+            CedarRiskLevel::Low => "low",
+            CedarRiskLevel::Medium => "medium",
+            CedarRiskLevel::High => "high",
+        }
+    }
+
+    /// Get the operation type as string (for OPA compatibility)
+    pub fn operation_type(&self) -> &'static str {
+        match self {
+            ToolOperation::Read { .. } => "read",
+            ToolOperation::Write { .. } => "write",
+            ToolOperation::Edit { .. } => "edit",
+            ToolOperation::Shell { .. } => "shell",
+            ToolOperation::Git { .. } => "git",
+            ToolOperation::Search { .. } => "search",
+            ToolOperation::ReadOnly { .. } => "read_only",
+            ToolOperation::Destructive { .. } => "destructive",
+        }
+    }
+
+    /// Get the resource path as string (for OPA compatibility)
+    pub fn resource(&self) -> String {
+        match self {
+            ToolOperation::Read { path }
+            | ToolOperation::Write { path }
+            | ToolOperation::Edit { path } => path.display().to_string(),
+            ToolOperation::Shell { command } => command.clone(),
+            ToolOperation::Git { operation } => operation.clone(),
+            ToolOperation::Search { operation } => operation.clone(),
+            ToolOperation::ReadOnly { tool_name } => tool_name.clone(),
+            ToolOperation::Destructive { tool_name } => tool_name.clone(),
+        }
+    }
 }
 
 /// Authorization request for tool operations
