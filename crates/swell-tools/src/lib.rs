@@ -33,6 +33,7 @@ pub mod secret_scanning;
 pub mod self_healing_ci;
 pub mod tools;
 pub mod vault;
+pub mod web_search;
 pub mod worktree_isolation;
 pub mod worktree_pool;
 
