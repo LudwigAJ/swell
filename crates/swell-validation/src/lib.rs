@@ -112,6 +112,15 @@ pub use traceability::{
 };
 pub use traceability::sqlite_store::SqliteTraceabilityStore;
 
+// Re-export predictive test selection for ML-based intelligent test prioritization
+pub mod predictive_selection;
+pub use predictive_selection::{
+    ChangeImpact, ChangeImpactAnalyzer, ChangePattern, ChangePattern::*, ImpactCategory,
+    PredictiveModel, PredictiveSelectionEngine, PredictiveSelectionResult, PredictionFeatures,
+    SelectedTest, SelectedTestSubset, SelectionConstraint, SelectionStrategy,
+    SelectionStrategy::*, TestHistoryRecord, TestPrediction, TestSubsetSelector,
+};
+
 // ============================================================================
 // Lint Gate
 // ============================================================================
