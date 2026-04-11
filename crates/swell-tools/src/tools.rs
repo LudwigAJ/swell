@@ -146,18 +146,68 @@ impl Default for ReadFileTool {
 #[derive(Debug, Clone)]
 pub struct WriteFileTool {
     max_size: usize,
+    workspace_path: Option<PathBuf>,
 }
 
 impl WriteFileTool {
     pub fn new() -> Self {
         Self {
             max_size: 10_000_000,
+            workspace_path: None,
         } // 10MB default
     }
 
     pub fn with_max_size(mut self, size: usize) -> Self {
         self.max_size = size;
         self
+    }
+
+    pub fn with_workspace_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.workspace_path = Some(path.into());
+        self
+    }
+
+    /// Validate that the path is within the workspace boundaries
+    fn validate_path(&self, path: &Path) -> Result<(), SwellError> {
+        // For write operations, we need to check if the parent directory exists
+        // and is within the workspace, since the file may not exist yet
+        let parent = path.parent().unwrap_or(Path::new("."));
+        
+        // Canonicalize parent - if parent doesn't exist, we need to check parent of parent
+        // This handles the case where we're creating a new file in a new directory
+        let canonical_parent = if parent.exists() {
+            parent.canonicalize().map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Cannot resolve workspace parent: {}", e))
+            })?
+        } else {
+            // For non-existent paths, find the nearest existing parent
+            let mut current = parent;
+            while !current.exists() {
+                current = current.parent().unwrap_or(Path::new("."));
+                if current.as_os_str().is_empty() {
+                    return Err(SwellError::ToolExecutionFailed(
+                        "Cannot resolve path: no existing parent found".to_string(),
+                    ));
+                }
+            }
+            current.canonicalize().map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Cannot resolve workspace: {}", e))
+            })?
+        };
+
+        if let Some(workspace) = &self.workspace_path {
+            let canonical_workspace = workspace.canonicalize().map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Cannot resolve workspace: {}", e))
+            })?;
+
+            if !canonical_parent.starts_with(&canonical_workspace) {
+                return Err(SwellError::ToolExecutionFailed(format!(
+                    "Path '{}' is outside workspace boundaries",
+                    path.display()
+                )));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -214,6 +264,9 @@ impl Tool for WriteFileTool {
 
         // Use atomic write with temporary file and rename for atomicity
         let path = Path::new(&args.path);
+
+        // Validate path is within workspace
+        self.validate_path(path)?;
 
         // Create a temporary file in the same directory to ensure atomic rename works
         let temp_dir = path.parent().unwrap_or(Path::new("."));
@@ -1192,6 +1245,25 @@ mod tests {
 
         let content = tokio::fs::read_to_string(&file_path).await.unwrap();
         assert_eq!(content, "Test content");
+    }
+
+    #[tokio::test]
+    async fn test_write_file_tool_workspace_validation() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.txt");
+
+        // Tool with workspace set to a different directory should fail
+        let tool = WriteFileTool::new().with_workspace_path("/tmp/nonexistent");
+
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file_path.to_str().unwrap(),
+                "content": "Test content"
+            }))
+            .await;
+
+        // Should fail because path is outside workspace
+        assert!(result.is_err());
     }
 
     #[tokio::test]
