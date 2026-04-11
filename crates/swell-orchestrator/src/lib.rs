@@ -18,6 +18,7 @@ pub mod drift_detector;
 pub mod execution;
 pub mod metrics;
 pub mod policy;
+pub mod retry_policy;
 pub mod scheduler;
 pub mod state_machine;
 pub mod task_graph;
@@ -52,6 +53,9 @@ pub use metrics::{
 pub use policy::{
     action, PolicyAction, PolicyCondition, PolicyDecision, PolicyEffect, PolicyEngine, PolicyFile,
     PolicyRule,
+};
+pub use retry_policy::{
+    RetryDecision, RetryPolicy, RetryState, MAX_RETRIES_BEFORE_ESCALATION, MODEL_SWITCH_RETRY_COUNT,
 };
 pub use scheduler::{
     Scheduler, SchedulerConfig, SchedulerStats, TaskPriority, DEFAULT_MAX_WORKERS, MAX_MAX_WORKERS,
@@ -263,11 +267,13 @@ impl Orchestrator {
             sm.reject_task(task_id)?;
             info!(task_id = %task_id, "Task rejected");
 
-            // Check for escalation
+            // Evaluate retry policy for escalation decision
+            let retry_policy = RetryPolicy::new();
             if let Ok(task) = sm.get_task(task_id) {
-                if task.iteration_count >= 3 {
+                let decision = retry_policy.evaluate_for_iteration(task.iteration_count);
+                if decision == RetryDecision::EscalateToHuman {
                     sm.escalate_task(task_id)?;
-                    warn!(task_id = %task_id, "Task escalated after 3 failures");
+                    warn!(task_id = %task_id, iteration_count = %task.iteration_count, "Task escalated to human after retry exhaustion");
                 }
             }
         }
@@ -751,7 +757,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_complete_task_escalates_after_3_failures() {
+    async fn test_complete_task_escalates_after_4_failures() {
         let orchestrator = Orchestrator::new();
 
         let task = orchestrator.create_task("Test".to_string()).await;
@@ -803,7 +809,27 @@ mod tests {
             assert_eq!(task.iteration_count, 2);
         }
 
-        // Retry and third failure: escalates (iteration_count=3 >= threshold)
+        // Retry and third failure: iteration_count=3, still Rejected (model switch retry)
+        {
+            let sm = orchestrator.state_machine();
+            let mut sm_guard = sm.write().await;
+            sm_guard.retry_task(task.id).unwrap();
+        }
+        orchestrator.start_task(task.id).await.unwrap();
+        orchestrator.start_validation(task.id).await.unwrap();
+        orchestrator
+            .complete_task(task.id, failed_result.clone())
+            .await
+            .unwrap();
+        {
+            let sm = orchestrator.state_machine();
+            let sm_guard = sm.read().await;
+            let task = sm_guard.get_task(task.id).unwrap();
+            assert_eq!(task.state, TaskState::Rejected);
+            assert_eq!(task.iteration_count, 3);
+        }
+
+        // Retry and fourth failure: escalates (iteration_count=4 >= threshold)
         {
             let sm = orchestrator.state_machine();
             let mut sm_guard = sm.write().await;
@@ -819,7 +845,7 @@ mod tests {
         // Task should now be Escalated
         let retrieved = orchestrator.get_task(task.id).await.unwrap();
         assert_eq!(retrieved.state, TaskState::Escalated);
-        assert_eq!(retrieved.iteration_count, 3);
+        assert_eq!(retrieved.iteration_count, 4);
     }
 
     // --- Full Lifecycle Integration Test ---

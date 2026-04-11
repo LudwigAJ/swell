@@ -120,7 +120,10 @@ pub enum PolicyConditionAlt {
     ToolCategory { value: String },
     /// Match by file path prefix - can be value: "..." or paths: ["...", "..."]
     #[serde(alias = "paths")]
-    PathPrefix { #[serde(flatten)] value: PathPrefixValue },
+    PathPrefix {
+        #[serde(flatten)]
+        value: PathPrefixValue,
+    },
     /// Match by file path suffix (extension)
     PathSuffix { suffixes: Vec<String> },
     /// Match by exact path
@@ -147,10 +150,12 @@ impl PolicyConditionAlt {
     /// Convert to standard PolicyCondition
     pub fn to_policy_condition(&self) -> PolicyCondition {
         match self {
-            PolicyConditionAlt::CommandMatch { pattern } => {
-                PolicyCondition::CommandMatch { pattern: pattern.clone() }
+            PolicyConditionAlt::CommandMatch { pattern } => PolicyCondition::CommandMatch {
+                pattern: pattern.clone(),
+            },
+            PolicyConditionAlt::ToolName { name } => {
+                PolicyCondition::ToolName { name: name.clone() }
             }
-            PolicyConditionAlt::ToolName { name } => PolicyCondition::ToolName { name: name.clone() },
             PolicyConditionAlt::ToolCategory { value } => {
                 PolicyCondition::ToolCategory {
                     category: match value.as_str() {
@@ -168,20 +173,20 @@ impl PolicyConditionAlt {
                 };
                 PolicyCondition::PathPrefix { paths }
             }
-            PolicyConditionAlt::PathSuffix { suffixes } => {
-                PolicyCondition::PathSuffix { suffixes: suffixes.clone() }
+            PolicyConditionAlt::PathSuffix { suffixes } => PolicyCondition::PathSuffix {
+                suffixes: suffixes.clone(),
+            },
+            PolicyConditionAlt::PathExact { path } => {
+                PolicyCondition::PathExact { path: path.clone() }
             }
-            PolicyConditionAlt::PathExact { path } => PolicyCondition::PathExact { path: path.clone() },
-            PolicyConditionAlt::RiskLevel { level } => {
-                PolicyCondition::RiskLevel {
-                    level: match level.as_str() {
-                        "low" => RiskLevelMatch::Low,
-                        "medium" => RiskLevelMatch::Medium,
-                        "high" => RiskLevelMatch::High,
-                        _ => RiskLevelMatch::Low,
-                    },
-                }
-            }
+            PolicyConditionAlt::RiskLevel { level } => PolicyCondition::RiskLevel {
+                level: match level.as_str() {
+                    "low" => RiskLevelMatch::Low,
+                    "medium" => RiskLevelMatch::Medium,
+                    "high" => RiskLevelMatch::High,
+                    _ => RiskLevelMatch::Low,
+                },
+            },
             PolicyConditionAlt::AgentRole { role } => {
                 PolicyCondition::AgentRole { role: role.clone() }
             }
@@ -411,7 +416,8 @@ impl PolicyEngine {
                 if let PolicyConditionAlt::CommandMatch { pattern } = cond {
                     match regex::Regex::new(pattern) {
                         Ok(re) => {
-                            self.compiled_patterns.insert(format!("{}_{}", rule.name, pattern), re);
+                            self.compiled_patterns
+                                .insert(format!("{}_{}", rule.name, pattern), re);
                         }
                         Err(e) => {
                             return Err(PolicyError::InvalidRule(format!(
