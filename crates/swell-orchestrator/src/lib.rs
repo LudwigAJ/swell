@@ -32,6 +32,7 @@ pub mod state_machine;
 pub mod stopping_conditions;
 pub mod task_board;
 pub mod task_graph;
+pub mod worker_pool;
 
 pub use agents::{
     AgentComment, AgentCommentType, AgentHandle, AgentHandoff, AgentPool, ChangeOperation,
@@ -107,6 +108,10 @@ pub use task_board::{
     TaskBoardStats,
 };
 pub use task_graph::TaskGraph;
+pub use worker_pool::{
+    SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
+    DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
+};
 
 use std::sync::Arc;
 use swell_core::{
