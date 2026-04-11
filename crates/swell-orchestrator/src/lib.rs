@@ -16,6 +16,7 @@ pub mod autonomy;
 pub mod backlog;
 pub mod drift_detector;
 pub mod execution;
+pub mod feature_flag;
 pub mod feature_leads;
 pub mod file_locks;
 pub mod followup_generator;
@@ -60,6 +61,9 @@ pub use backlog::{
 };
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use execution::ExecutionController;
+pub use feature_flag::{
+    FeatureFlag, FeatureFlagError, FeatureFlagManager, FlagSnapshot,
+};
 pub use feature_leads::{
     FeatureLead, FeatureLeadManager, FeatureLeadSpawner, StepResult, FEATURE_LEAD_STEP_THRESHOLD,
     MAX_ORCHESTRATOR_DEPTH,
