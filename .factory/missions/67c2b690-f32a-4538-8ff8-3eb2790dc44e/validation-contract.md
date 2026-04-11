@@ -292,3 +292,37 @@ Evidence: task continues from checkpoint after restart
 Multiple tasks can be queued and processed.
 Tool: cargo test (execution controller batch test)
 Evidence: execute_batch handles multiple tasks
+
+---
+
+## Area: Research Agent
+
+### VAL-RESEARCH-001: Researcher agent registration
+ResearcherAgent can be registered with the orchestrator and spawned when external information is needed.
+Tool: cargo test
+Evidence: researcher agent executes and returns research results
+
+### VAL-RESEARCH-002: Web search tool
+WebSearchTool executes searches and returns structured results with title, URL, snippet.
+Tool: cargo test
+Evidence: search returns results with required fields
+
+### VAL-RESEARCH-003: Fetch page tool
+FetchPageTool fetches web pages, extracts main content, and returns cleaned text with provenance.
+Tool: cargo test
+Evidence: page content extracted with URL and title
+
+### VAL-RESEARCH-004: Search depth routing
+Search router classifies queries into quick/deep search and routes accordingly.
+Tool: cargo test
+Evidence: routing decisions match expected complexity levels
+
+### VAL-RESEARCH-005: Provenance tracking
+All retrieved content includes source URL, title, fetch timestamp.
+Tool: cargo test
+Evidence: provenance fields present in all research results
+
+### VAL-RESEARCH-006: Orchestrator triggers research
+Orchestrator can spawn ResearcherAgent when task needs external information.
+Tool: cargo test
+Evidence: orchestrator spawns researcher on research-needed signal
