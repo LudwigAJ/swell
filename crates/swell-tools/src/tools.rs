@@ -1035,22 +1035,33 @@ impl SearchTool {
     /// Search for symbol definitions using grep
     async fn symbol_search(&self, symbol: &str, path: &str) -> Result<ToolOutput, SwellError> {
         // Common patterns for function/type definitions
+        // Uses extended regex (-E) with word boundaries (\b) to match:
+        // - Functions with modifiers: pub fn, async fn, unsafe fn, extern fn
+        // - Generic functions: fn foo<T>
+        // - All other definition types: struct, enum, impl, trait, type, const
+        // - Macros: macro_rules! (note the !, not :)
         let patterns = [
-            format!("^fn {} ", symbol),
-            format!("^struct {} ", symbol),
-            format!("^enum {} ", symbol),
-            format!("^impl {} ", symbol),
-            format!("^trait {} ", symbol),
-            format!("^type {} ", symbol),
-            format!("^const {} ", symbol),
-            format!("macro_rules! {} ", symbol),
+            // Functions with optional modifiers (pub, async, unsafe, extern)
+            // The \b word boundary before the symbol name ensures we match "fn symbol"
+            // but not "otherfn_symbol" or "some_fn_symbol"
+            format!(r#"(pub\s+|async\s+|unsafe\s+|extern\s+)*fn\s+{}\b"#, symbol),
+            // Type definitions - \b word boundary handles generics (fn foo<T>)
+            format!(r#"\bstruct {}\b"#, symbol),
+            format!(r#"\benum {}\b"#, symbol),
+            format!(r#"\bimpl {}\b"#, symbol),
+            format!(r#"\btrait {}\b"#, symbol),
+            format!(r#"\btype {}\b"#, symbol),
+            format!(r#"\bconst {}\b"#, symbol),
+            // Macros - macro_rules! has ! (not :)
+            format!(r#"macro_rules! {}\b"#, symbol),
         ];
 
         let mut all_matches: Vec<String> = Vec::new();
 
         for pattern in &patterns {
             let mut cmd = tokio::process::Command::new("grep");
-            cmd.args(["-n", "-r", "--"]);
+            // Use -E for extended regex so \b word boundaries work
+            cmd.args(["-n", "-r", "-E", "--"]);
             cmd.arg(pattern);
             cmd.arg(path);
 
@@ -1062,10 +1073,10 @@ impl SearchTool {
             }
         }
 
-        // Also do a simple grep for the symbol name
+        // Also do a simple grep for the symbol name as whole word
         let mut cmd = tokio::process::Command::new("grep");
         cmd.args(["-n", "-r", "-E", "--"]);
-        cmd.arg(format!("\\b{}\\b", regex::escape(symbol)));
+        cmd.arg(format!(r#"\b{}\b"#, regex::escape(symbol)));
         cmd.arg(path);
 
         if let Ok(output) = cmd.output().await {
