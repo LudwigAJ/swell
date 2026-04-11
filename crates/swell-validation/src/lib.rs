@@ -14,6 +14,15 @@
 //!
 //! Use [`ValidationPipeline`] to run all gates in order.
 //!
+//! # Result Interpreter
+//!
+//! Use [`ResultInterpreter`] to classify test failures into 5 categories with confidence scoring:
+//! - Implementation Bug
+//! - Test Bug
+//! - Environment Issue
+//! - Flaky
+//! - Unclear
+//!
 //! # Confidence Scoring
 //!
 //! Use [`ConfidenceScorer`] to compute confidence scores from validation signals.
@@ -83,6 +92,13 @@ pub use test_planning::{
 pub mod test_generator;
 pub use test_generator::{
     GeneratedTest, TestGenerator, TestGeneratorConfig, TestGeneratorOutput, TestType,
+};
+
+// Re-export result interpreter for use by other crates
+pub mod result_interpreter;
+pub use result_interpreter::{
+    BatchClassificationResult, ClassificationResult, FailureCategory, ResultInterpreter,
+    ResultInterpreterConfig, TestResultInfo, TestRunHistory,
 };
 
 // ============================================================================
