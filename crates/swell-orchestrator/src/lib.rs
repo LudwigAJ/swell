@@ -32,6 +32,7 @@ pub mod retry_policy;
 pub mod scheduler;
 pub mod session_hygiene;
 pub mod soft_limits;
+pub mod stacked_prs;
 pub mod state_machine;
 pub mod stopping_conditions;
 pub mod subagent;
@@ -61,9 +62,7 @@ pub use backlog::{
 };
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use execution::ExecutionController;
-pub use feature_flag::{
-    FeatureFlag, FeatureFlagError, FeatureFlagManager, FlagSnapshot,
-};
+pub use feature_flag::{FeatureFlag, FeatureFlagError, FeatureFlagManager, FlagSnapshot};
 pub use feature_leads::{
     FeatureLead, FeatureLeadManager, FeatureLeadSpawner, StepResult, FEATURE_LEAD_STEP_THRESHOLD,
     MAX_ORCHESTRATOR_DEPTH,
@@ -86,9 +85,9 @@ pub use hard_limits::{
     HardLimits, HardLimitsCheck, HardLimitsConfig, SharedHardLimits,
 };
 pub use idempotent_actions::{
-    ActionDeduplicator, ActionExecution, ActionKey, ActionStatus, DuplicateAction,
-    IdempotentAction, IdempotentClosure, IdempotentResult, MAX_ACTION_RETRIES, SharedDeduplicator,
-    TrackedAction, create_deduplicator, create_deduplicator_with_window, execute_idempotent,
+    create_deduplicator, create_deduplicator_with_window, execute_idempotent, ActionDeduplicator,
+    ActionExecution, ActionKey, ActionStatus, DuplicateAction, IdempotentAction, IdempotentClosure,
+    IdempotentResult, SharedDeduplicator, TrackedAction, MAX_ACTION_RETRIES,
 };
 pub use metrics::{
     create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
@@ -115,10 +114,18 @@ pub use soft_limits::{
     create_soft_limits, create_soft_limits_with_config, ProgressTracker, SharedSoftLimits,
     SoftLimitType, SoftLimitWarning, SoftLimits, SoftLimitsConfig,
 };
+pub use stacked_prs::{
+    FileChangeRisk, Pr, PrFileChange, PrStack, PrStackManager, StackedPrConfig, StackedPrError,
+    DEFAULT_MAX_PR_LINES, MIN_PR_LINES,
+};
 pub use state_machine::TaskStateMachine;
 pub use stopping_conditions::{
     create_stopping_conditions, HardLimitType, HardLimitsError, SharedStoppingConditions,
     StoppingCondition, StoppingConditions,
+};
+pub use subagent::{
+    AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
+    MAX_SUBAGENT_DEPTH,
 };
 pub use task_board::{
     create_task_board, CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry,
@@ -128,10 +135,6 @@ pub use task_graph::TaskGraph;
 pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
-};
-pub use subagent::{
-    AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
-    MAX_SUBAGENT_DEPTH,
 };
 
 use std::sync::Arc;
