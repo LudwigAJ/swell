@@ -473,6 +473,60 @@ impl VaultClient {
         Ok(())
     }
 
+    /// Lookup a lease to get its TTL
+    pub async fn lookup_lease(&self, lease_id: &str) -> Result<Option<u64>, VaultError> {
+        let token = self.token.read().await;
+        let token = token
+            .as_ref()
+            .ok_or_else(|| VaultError::AuthError("Not authenticated".into()))?;
+
+        let url = format!("{}/v1/sys/leases/lookup", self.config.address);
+
+        let body = serde_json::json!({
+            "lease_id": lease_id
+        });
+
+        let response = self
+            .http_client
+            .post(&url)
+            .header("X-Vault-Token", token.clone())
+            .json(&body)
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            #[derive(Deserialize)]
+            struct LeaseLookupResponse {
+                data: LeaseLookupData,
+            }
+            #[derive(Deserialize)]
+            struct LeaseLookupData {
+                ttl: u64,
+            }
+
+            let lookup_resp: LeaseLookupResponse = response
+                .json()
+                .await
+                .map_err(|e| VaultError::InvalidResponse(e.to_string()))?;
+
+            Ok(Some(lookup_resp.data.ttl))
+        } else if response.status().as_u16() == 404 {
+            Ok(None)
+        } else {
+            let status = response.status().as_u16();
+            let body: serde_json::Value = response.json().await.unwrap_or_default();
+            let message = body
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown error")
+                .to_string();
+            Err(VaultError::VaultApiError {
+                code: status as u64,
+                message,
+            })
+        }
+    }
+
     /// Get current token
     pub async fn get_token(&self) -> Option<String> {
         self.token.read().await.clone()
@@ -628,10 +682,19 @@ impl<T: Clone + for<'de> Deserialize<'de>> VaultDynamicSecret<T> {
 
     /// Get remaining lease time
     pub async fn get_lease_ttl(&self) -> Option<i64> {
-        // In a full implementation, we'd query Vault's lease lookup
-        // For now, we track this ourselves
-        let _lease_id = self.current_lease_id.read().await;
-        None // Would need Vault API call to get actual TTL
+        let lease_id = self.current_lease_id.read().await;
+        if let Some(ref lease) = *lease_id {
+            match self.client.lookup_lease(lease).await {
+                Ok(Some(ttl)) => Some(ttl as i64),
+                Ok(None) => None, // Lease not found (may have been revoked)
+                Err(e) => {
+                    warn!(lease_id = lease, error = %e, "Failed to lookup lease TTL");
+                    None
+                }
+            }
+        } else {
+            None
+        }
     }
 }
 
@@ -700,29 +763,38 @@ impl VaultCredentialProvider {
         cache.remove(key);
     }
 
-    /// Check if a credential is cached and valid
+    /// Check if a credential is cached and valid, evicting expired entries
     async fn is_cached(&self, key: &str) -> bool {
-        let cache = self.cache.read().await;
+        let mut cache = self.cache.write().await;
         if let Some(cached) = cache.get(key) {
             let now = Utc::now();
             let max_age = chrono::Duration::seconds(self.default_ttl_secs as i64);
             if now - cached.cached_at < max_age {
                 return cached.credential.is_valid();
+            } else {
+                // Evict expired entry to prevent memory leak
+                cache.remove(key);
             }
         }
         false
     }
 
-    /// Get a credential with caching
+    /// Get a credential with caching, evicting expired entries
     async fn get_cached(&self, key: &str) -> Option<Credential> {
-        let cache = self.cache.read().await;
-        cache.get(key).and_then(|c| {
-            if c.credential.is_valid() {
-                Some(c.credential.clone())
+        let mut cache = self.cache.write().await;
+        if let Some(cached) = cache.get(key) {
+            let now = Utc::now();
+            let max_age = chrono::Duration::seconds(self.default_ttl_secs as i64);
+            if now - cached.cached_at < max_age && cached.credential.is_valid() {
+                Some(cached.credential.clone())
             } else {
+                // Evict expired or invalid entry
+                cache.remove(key);
                 None
             }
-        })
+        } else {
+            None
+        }
     }
 
     /// Cache a credential
