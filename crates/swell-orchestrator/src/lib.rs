@@ -22,6 +22,7 @@ pub mod followup_generator;
 pub mod frozen_spec;
 pub mod gap_analyzer;
 pub mod hard_limits;
+pub mod idempotent_actions;
 pub mod metrics;
 pub mod model_fallback;
 pub mod novelty_check;
@@ -79,6 +80,11 @@ pub use gap_analyzer::{
 pub use hard_limits::{
     create_hard_limits, create_hard_limits_with_config, HardLimitError, HardLimitWarning,
     HardLimits, HardLimitsCheck, HardLimitsConfig, SharedHardLimits,
+};
+pub use idempotent_actions::{
+    ActionDeduplicator, ActionExecution, ActionKey, ActionStatus, DuplicateAction,
+    IdempotentAction, IdempotentClosure, IdempotentResult, MAX_ACTION_RETRIES, SharedDeduplicator,
+    TrackedAction, create_deduplicator, create_deduplicator_with_window, execute_idempotent,
 };
 pub use metrics::{
     create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
