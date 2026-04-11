@@ -1,0 +1,39 @@
+{
+  "featureId": "validation-evidence-pack",
+  "reviewedAt": "2026-04-11T09:45:00Z",
+  "commitId": "1bbbb4f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is functionally complete. EvidenceStore trait with InMemoryEvidenceStore and SqliteEvidenceStore correctly implements immutable evidence pack storage and retrieval. All 15 tests pass. Build succeeds.",
+    "issues": [
+      {
+        "file": "crates/swell-validation/src/evidence.rs",
+        "line": 512,
+        "severity": "non_blocking",
+        "description": "EvidenceStoreError::NotFound maps to SwellError::TaskNotFound(uuid::Uuid::nil()) which uses a nil UUID rather than the actual not-found ID. While technically functional, this loses information. Consider using a more appropriate error variant or including the ID in a custom error message."
+      },
+      {
+        "file": "crates/swell-validation/src/evidence.rs",
+        "line": 395,
+        "severity": "non_blocking",
+        "description": "Module comment on InMemoryEvidenceStore states 'This store is NOT truly immutable - it allows deletion' but no delete method is exposed through the EvidenceStore trait. Externally the store IS immutable. The comment is misleading though not a bug."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "The sqlx crate was added as a dependency to swell-validation/Cargo.toml but this command/service was not documented in .factory/services.yaml (which doesn't exist at the expected path). If sqlx requires any runtime services (like SQLite), this should be documented.",
+      "evidence": "crates/swell-validation/Cargo.toml adds: sqlx = { version = \"0.8\", features = [\"runtime-tokio-rustls\", \"sqlite\", \"uuid\", \"chrono\"] }"
+    },
+    {
+      "area": "conventions",
+      "observation": "The AGENTS.md does not document the pattern for adding new external dependencies (like sqlx). Workers adding dependencies may not know to document them.",
+      "evidence": "AGENTS.md exists in mission dir but does not cover dependency addition conventions"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature validation-evidence-pack passes review. The implementation adds EvidenceStore trait with two implementations (InMemoryEvidenceStore for testing, SqliteEvidenceStore for production) that correctly provide immutable evidence pack storage and retrieval. All required methods are implemented (store, get, get_by_task_id, get_latest, list_ids, count, exists). 15 tests pass covering both store implementations. Two minor non-blocking issues identified: error conversion using nil UUID, and a misleading comment about immutability."
+}

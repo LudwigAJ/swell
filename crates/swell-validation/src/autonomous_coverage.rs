@@ -342,7 +342,10 @@ impl AutonomousCoverageEngine {
     }
 
     /// Analyze coverage for a workspace
-    pub async fn analyze_coverage(&self, workspace_path: &str) -> Result<CoverageReport, SwellError> {
+    pub async fn analyze_coverage(
+        &self,
+        workspace_path: &str,
+    ) -> Result<CoverageReport, SwellError> {
         let start = Instant::now();
         let mut gaps = Vec::new();
         let mut mutation_results = Vec::new();
@@ -410,12 +413,7 @@ impl AutonomousCoverageEngine {
                 .output()
         })
         .await
-        .map_err(|e| {
-            SwellError::IoError(std::io::Error::other(format!(
-                "Task join error: {}",
-                e
-            )))
-        })?
+        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
         .map_err(SwellError::IoError)?;
 
         // If llvm-cov not available, fall back to basic analysis
@@ -448,13 +446,18 @@ impl AutonomousCoverageEngine {
 
             for path in paths {
                 let content = std::fs::read_to_string(&path).unwrap_or_default();
-                let file_name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let file_name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
 
                 // Look for functions that might need coverage
                 let lines: Vec<&str> = content.lines().collect();
 
                 let mut in_function = false;
                 let mut function_name = String::new();
+                #[allow(unused_variables)]
                 let mut function_line = 0u32;
 
                 for (idx, line) in lines.iter().enumerate() {
@@ -472,7 +475,10 @@ impl AutonomousCoverageEngine {
                             .trim_start_matches("fn ")
                             .trim()
                             .to_string();
-                        function_line = line_num;
+                        #[allow(unused_assignments)]
+                        {
+                            function_line = line_num;
+                        }
 
                         // Skip test functions
                         if function_name.starts_with("test_")
@@ -489,7 +495,7 @@ impl AutonomousCoverageEngine {
                         // Look for branching that might not be tested
                         if trimmed.contains("if ")
                             && !trimmed.contains("// test")
-                            && !content.contains(&format!("#[test]"))
+                            && !content.contains("#[test]")
                         {
                             let gap = Self::create_gap_for_branch_fn(
                                 &file_name,
@@ -511,12 +517,7 @@ impl AutonomousCoverageEngine {
             gaps
         })
         .await
-        .map_err(|e| {
-            SwellError::IoError(std::io::Error::other(format!(
-                "Task join error: {}",
-                e
-            )))
-        })
+        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))
     }
 
     /// Create a coverage gap for an untested branch (free function version for use in spawn_blocking)
@@ -617,10 +618,7 @@ impl AutonomousCoverageEngine {
         })
         .await
         .map_err(|e| {
-            SwellError::IoError(std::io::Error::other(format!(
-                "Task join error: {}",
-                e
-            )))
+            SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
         })?;
 
         Ok(results)
@@ -645,9 +643,9 @@ impl AutonomousCoverageEngine {
 
             if let Ok(output) = output {
                 if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
                     // Parse coverage from output if available
                     // For now, return defaults
+                    let _stdout = String::from_utf8_lossy(&output.stdout);
                 }
             }
 
@@ -655,12 +653,7 @@ impl AutonomousCoverageEngine {
             (0.75, 0.65, 0.80)
         })
         .await
-        .map_err(|e| {
-            SwellError::IoError(std::io::Error::other(format!(
-                "Task join error: {}",
-                e
-            )))
-        })
+        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))
     }
 
     /// Calculate overall coverage score
@@ -672,13 +665,16 @@ impl AutonomousCoverageEngine {
         mutation_results: &[MutationResult],
     ) -> f64 {
         // Weighted average of coverage metrics
-        let coverage_score = (line_coverage * 0.4) + (branch_coverage * 0.35) + (function_coverage * 0.25);
+        let coverage_score =
+            (line_coverage * 0.4) + (branch_coverage * 0.35) + (function_coverage * 0.25);
 
         // Factor in mutation score if available
         if !mutation_results.is_empty() {
-            let avg_mutation_score: f64 =
-                mutation_results.iter().map(|r| r.mutation_score).sum::<f64>()
-                    / mutation_results.len() as f64;
+            let avg_mutation_score: f64 = mutation_results
+                .iter()
+                .map(|r| r.mutation_score)
+                .sum::<f64>()
+                / mutation_results.len() as f64;
             (coverage_score * 0.7) + (avg_mutation_score * 0.3)
         } else {
             coverage_score
@@ -706,7 +702,10 @@ impl AutonomousCoverageEngine {
     }
 
     /// Generate a test for a specific gap
-    async fn generate_test_for_gap(&self, gap: &CoverageGap) -> Result<Vec<CoverageTest>, SwellError> {
+    async fn generate_test_for_gap(
+        &self,
+        gap: &CoverageGap,
+    ) -> Result<Vec<CoverageTest>, SwellError> {
         let mut tests = Vec::new();
 
         let test_name = format!(
@@ -739,7 +738,10 @@ impl AutonomousCoverageEngine {
 
     /// Generate test for untested function
     fn generate_function_test(&self, gap: &CoverageGap) -> String {
-        let func_name = gap.function_name.as_deref().unwrap_or("function_under_test");
+        let func_name = gap
+            .function_name
+            .as_deref()
+            .unwrap_or("function_under_test");
         let sanitized = func_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
 
         format!(
@@ -779,7 +781,10 @@ mod {sanitized}_coverage_tests {{
 
     /// Generate test for missing branch
     fn generate_branch_test(&self, gap: &CoverageGap) -> String {
-        let func_name = gap.function_name.as_deref().unwrap_or("function_under_test");
+        let func_name = gap
+            .function_name
+            .as_deref()
+            .unwrap_or("function_under_test");
         let sanitized = func_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
 
         format!(
@@ -820,7 +825,10 @@ mod {sanitized}_branch_tests {{
 
     /// Generate test for untested edge case
     fn generate_edge_case_test(&self, gap: &CoverageGap) -> String {
-        let func_name = gap.function_name.as_deref().unwrap_or("function_under_test");
+        let func_name = gap
+            .function_name
+            .as_deref()
+            .unwrap_or("function_under_test");
         let sanitized = func_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
 
         format!(
@@ -867,7 +875,10 @@ mod {sanitized}_edge_case_tests {{
 
     /// Generate test for untested error path
     fn generate_error_path_test(&self, gap: &CoverageGap) -> String {
-        let func_name = gap.function_name.as_deref().unwrap_or("function_under_test");
+        let func_name = gap
+            .function_name
+            .as_deref()
+            .unwrap_or("function_under_test");
         let sanitized = func_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
 
         format!(
@@ -917,7 +928,10 @@ mod {sanitized}_error_path_tests {{
 
     /// Generate test for untested loop iteration
     fn generate_loop_test(&self, gap: &CoverageGap) -> String {
-        let func_name = gap.function_name.as_deref().unwrap_or("function_under_test");
+        let func_name = gap
+            .function_name
+            .as_deref()
+            .unwrap_or("function_under_test");
         let sanitized = func_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
 
         format!(
@@ -954,7 +968,10 @@ mod {sanitized}_loop_tests {{
 
     /// Generate test for incomplete expression coverage
     fn generate_expression_test(&self, gap: &CoverageGap) -> String {
-        let func_name = gap.function_name.as_deref().unwrap_or("function_under_test");
+        let func_name = gap
+            .function_name
+            .as_deref()
+            .unwrap_or("function_under_test");
         let sanitized = func_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
 
         format!(
@@ -990,7 +1007,10 @@ mod {sanitized}_expression_tests {{
 
     /// Generate test for low mutation score
     fn generate_mutation_test(&self, gap: &CoverageGap) -> String {
-        let func_name = gap.function_name.as_deref().unwrap_or("function_under_test");
+        let func_name = gap
+            .function_name
+            .as_deref()
+            .unwrap_or("function_under_test");
         let sanitized = func_name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
 
         format!(
@@ -1103,10 +1123,7 @@ mod {sanitized}_mutation_tests {{
                 messages.push(ValidationMessage {
                     level: swell_core::ValidationLevel::Warning,
                     code: Some("COVERAGE_HIGH_GAPS".to_string()),
-                    message: format!(
-                        "Found {} high-priority coverage gaps",
-                        high_gaps.len()
-                    ),
+                    message: format!("Found {} high-priority coverage gaps", high_gaps.len()),
                     file: None,
                     line: None,
                 });
@@ -1407,20 +1424,18 @@ mod autonomous_coverage_tests {
         let engine = AutonomousCoverageEngine::new();
 
         let report = CoverageReport {
-            gaps: vec![
-                CoverageGap {
-                    id: "critical-gap".to_string(),
-                    file: "src/critical.rs".to_string(),
-                    line_start: 1,
-                    line_end: 1,
-                    function_name: Some("critical_function".to_string()),
-                    severity: GapSeverity::Critical,
-                    gap_type: GapType::UntestedFunction,
-                    description: "Critical function not tested".to_string(),
-                    suggested_patterns: vec![],
-                    risk_score: 1.0,
-                },
-            ],
+            gaps: vec![CoverageGap {
+                id: "critical-gap".to_string(),
+                file: "src/critical.rs".to_string(),
+                line_start: 1,
+                line_end: 1,
+                function_name: Some("critical_function".to_string()),
+                severity: GapSeverity::Critical,
+                gap_type: GapType::UntestedFunction,
+                description: "Critical function not tested".to_string(),
+                suggested_patterns: vec![],
+                risk_score: 1.0,
+            }],
             mutation_results: vec![],
             line_coverage: 0.9,
             branch_coverage: 0.8,
@@ -1488,14 +1503,12 @@ mod autonomous_coverage_tests {
             mutations_applied: 100,
             mutations_survived: 10,
             mutation_score: 0.9,
-            surviving_mutations: vec![
-                SurvivingMutation {
-                    file: "src/test.rs".to_string(),
-                    line: 42,
-                    mutation_type: MutationType::RelationalFlip,
-                    description: "x < y changed to x <= y".to_string(),
-                },
-            ],
+            surviving_mutations: vec![SurvivingMutation {
+                file: "src/test.rs".to_string(),
+                line: 42,
+                mutation_type: MutationType::RelationalFlip,
+                description: "x < y changed to x <= y".to_string(),
+            }],
         };
 
         assert_eq!(result.mutations_applied, 100);

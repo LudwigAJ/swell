@@ -1,0 +1,57 @@
+{
+  "featureId": "val-predictive-selection",
+  "reviewedAt": "2026-04-11T06:30:00Z",
+  "commitId": "9cc889f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The ML-based predictive test selection module implements core functionality but has one blocking bug in a test assertion and several non-blocking issues including unused code, potential double-counting in diff parsing, and missing integration points.",
+    "issues": [
+      {
+        "file": "crates/swell-validation/src/predictive_selection.rs",
+        "line": 1664,
+        "severity": "blocking",
+        "description": "Test assertion `assert!(!impact.modified_files.is_empty() || !impact.lines_changed == 0)` always passes due to operator precedence. `!impact.lines_changed == 0` is parsed as `(!impact.lines_changed) == 0`, and since `lines_changed` is `usize` (non-negative), the bitwise NOT will never equal 0. The assertion should use `!=` instead: `assert!(!impact.modified_files.is_empty() || impact.lines_changed != 0)`"
+      },
+      {
+        "file": "crates/swell-validation/src/predictive_selection.rs",
+        "line": 727,
+        "severity": "non_blocking",
+        "description": "In `analyze_diff`, the `lines_changed` accumulation appears to double-count. When saving previous file stats: `impact.lines_changed = impact.lines_added + impact.lines_deleted + lines_added + lines_deleted` adds `lines_added + lines_deleted` to what was already accumulated in `impact.lines_added + impact.lines_deleted`. The subsequent `impact.lines_added += lines_added` then adds them again. This could cause incorrect line counts for multi-file diffs."
+      },
+      {
+        "file": "crates/swell-validation/src/predictive_selection.rs",
+        "line": 113,
+        "severity": "non_blocking",
+        "description": "Field `recency_decay` is unused (marked with `#[allow(dead_code)]`). If this is intentional for future ML model training, it should be documented. If not, it should be removed."
+      },
+      {
+        "file": "crates/swell-validation/src/predictive_selection.rs",
+        "line": 555,
+        "severity": "non_blocking",
+        "description": "Field `source_patterns` in `ChangeImpactAnalyzer` is unused (marked with `#[allow(dead_code)]`). Either use it or remove it."
+      },
+      {
+        "file": "crates/swell-validation/src/predictive_selection.rs",
+        "line": 1096,
+        "severity": "non_blocking",
+        "description": "Function `select_for_coverage` exists but is not called - only `select_hybrid`, `select_within_time`, and `select_by_risk` are used. If `CoverageMaximized` strategy is meant to be functional, this should be integrated. Currently selecting `CoverageMaximized` strategy will panic at runtime due to unimplemented match arm."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker followed the Rust skill procedure correctly. No deviations noted in skillFeedback.",
+      "evidence": "skillFeedback.followedProcedure: true"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker used `#[allow(dead_code)]` on unused fields rather than addressing them. While not a violation, AGENTS.md doesn't specify guidance on placeholder code.",
+      "evidence": "Lines 113 and 555 have unused fields with #[allow(dead_code)]"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The predictive selection module implements the core ML-based test prioritization with PredictiveModel, ChangeImpactAnalyzer, TestSubsetSelector, and PredictiveSelectionEngine. However, the test at line 1664 has a bug that makes it always pass - the assertion logic uses incorrect operator precedence. Additionally, the `CoverageMaximized` selection strategy has an unimplemented match arm which will panic if used. The diff parsing logic also has potential double-counting issues. These issues must be fixed before the feature can be considered production-ready."
+}

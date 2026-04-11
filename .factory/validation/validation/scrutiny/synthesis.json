@@ -1,0 +1,56 @@
+{
+  "milestone": "validation",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": { "passed": false, "command": "cargo test --workspace", "exitCode": 1, "note": "Tests timed out after 600s but appeared to be passing before timeout" },
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 19,
+    "passed": 11,
+    "failed": 2,
+    "notReviewed": 6,
+    "failedFeatures": ["validation-lint-gate", "val-predictive-selection", "val-calibrated-confidence", "val-autonomous-coverage"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "validation-lint-gate",
+      "severity": "blocking",
+      "description": "LintGate JSON parsing is broken - clippy outputs messages as nested objects but code uses json.get(\"message\").as_str() which returns None on objects. No lint messages are ever captured."
+    },
+    {
+      "featureId": "val-predictive-selection",
+      "severity": "blocking",
+      "description": "Test assertion at line 1664 uses incorrect operator precedence: `!impact.lines_changed == 0` is parsed as `(!impact.lines_changed) == 0`, always evaluating to true. Should use `!=` instead."
+    },
+    {
+      "featureId": "val-calibrated-confidence",
+      "severity": "blocking",
+      "description": "CalibrationModel::extract_features() hardcodes changed_file_count=0 and historical_defect_rate=0.0 during training, making those weights untrained. Also Predictor::predict() passes empty slice to changed_files_defect_rate()."
+    },
+    {
+      "featureId": "val-autonomous-coverage",
+      "severity": "blocking",
+      "description": "files_analyzed hardcoded to 0, calculate_coverage_metrics returns hardcoded defaults (0.75, 0.65, 0.80), run_static_coverage_analysis always falls back to empty Vec - actual coverage data is not parsed from llvm-cov."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance on handling nested JSON structures from tool output. Clippy's JSON format uses `message` as an object with nested fields, not a string. Workers should verify actual output structure before parsing.",
+      "evidence": "validation-lint-gate and potentially other features that parse CLI tool output assumed incorrect JSON structure",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance on testing assertion logic - avoid patterns like `!x == 0` which have unexpected operator precedence. Use explicit comparisons instead.",
+      "evidence": "val-predictive-selection test assertion bug at line 1664",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

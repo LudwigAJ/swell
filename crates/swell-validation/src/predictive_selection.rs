@@ -28,7 +28,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use uuid::Uuid;
 
 // ============================================================================
 // Predictive Model
@@ -107,6 +106,7 @@ pub struct PredictiveModel {
     /// Default failure probability when no history
     default_failure_probability: f64,
     /// Decay factor for old history (0.0 to 1.0, lower = more weight on recent)
+    #[allow(dead_code)]
     recency_decay: f64,
 }
 
@@ -133,10 +133,7 @@ impl PredictiveModel {
     }
 
     /// Create with custom configuration
-    pub fn with_config(
-        default_failure_probability: f64,
-        recency_decay: f64,
-    ) -> Self {
+    pub fn with_config(default_failure_probability: f64, recency_decay: f64) -> Self {
         Self {
             default_failure_probability,
             recency_decay,
@@ -150,10 +147,16 @@ impl PredictiveModel {
         self.history.push(record.clone());
 
         // Update failure counts
-        let total = self.test_total_counts.entry(record.test_name.clone()).or_insert(0);
+        let total = self
+            .test_total_counts
+            .entry(record.test_name.clone())
+            .or_insert(0);
         *total += 1;
         if !record.passed {
-            let failures = self.test_failure_counts.entry(record.test_name.clone()).or_insert(0);
+            let failures = self
+                .test_failure_counts
+                .entry(record.test_name.clone())
+                .or_insert(0);
             *failures += 1;
         }
 
@@ -164,14 +167,17 @@ impl PredictiveModel {
 
         // Update function change frequency
         for func in &record.modified_functions {
-            *self.function_change_frequency.entry(func.clone()).or_insert(0) += 1;
+            *self
+                .function_change_frequency
+                .entry(func.clone())
+                .or_insert(0) += 1;
         }
     }
 
     /// Register a test as covering specific files
     pub fn register_file_coverage(&mut self, test_name: &str, files: &[String]) {
         for file in files {
-            let tests = self.file_test_coverage.entry(file.clone()).or_insert_with(HashSet::new);
+            let tests = self.file_test_coverage.entry(file.clone()).or_default();
             tests.insert(test_name.to_string());
         }
     }
@@ -179,7 +185,7 @@ impl PredictiveModel {
     /// Register a test as exercising specific functions
     pub fn register_function_coverage(&mut self, test_name: &str, functions: &[String]) {
         for func in functions {
-            let tests = self.function_test_coverage.entry(func.clone()).or_insert_with(HashSet::new);
+            let tests = self.function_test_coverage.entry(func.clone()).or_default();
             tests.insert(test_name.to_string());
         }
     }
@@ -192,21 +198,27 @@ impl PredictiveModel {
 
         // Determine if changes affect core modules
         let core_patterns = ["core", "auth", "payment", "data", "security", "kernel"];
-        let affects_core = change.modified_files.iter().any(|f| {
-            core_patterns.iter().any(|p| f.to_lowercase().contains(p))
-        });
+        let affects_core = change
+            .modified_files
+            .iter()
+            .any(|f| core_patterns.iter().any(|p| f.to_lowercase().contains(p)));
 
         // Determine if changes affect tests
-        let affects_tests = change.modified_files.iter().any(|f| {
-            f.ends_with("_test.rs") || f.ends_with(".test.ts") || f.contains("/tests/")
-        });
+        let affects_tests = change
+            .modified_files
+            .iter()
+            .any(|f| f.ends_with("_test.rs") || f.ends_with(".test.ts") || f.contains("/tests/"));
 
         // Determine if high-risk category
         let high_risk_patterns = ["auth", "security", "payment", "validation", "crypto"];
         let high_risk_category = change.modified_files.iter().any(|f| {
-            high_risk_patterns.iter().any(|p| f.to_lowercase().contains(p))
+            high_risk_patterns
+                .iter()
+                .any(|p| f.to_lowercase().contains(p))
         }) || change.modified_functions.iter().any(|f| {
-            high_risk_patterns.iter().any(|p| f.to_lowercase().contains(p))
+            high_risk_patterns
+                .iter()
+                .any(|p| f.to_lowercase().contains(p))
         });
 
         // Compute historical failure rate for affected tests
@@ -328,8 +340,7 @@ impl PredictiveModel {
         // Incorporate historical failure rate
         probability = probability * 0.7 + features.historical_failure_rate * 0.3;
 
-        // Clamp to [0, 1]
-        probability.max(0.0).min(1.0)
+        probability.clamp(0.0, 1.0)
     }
 
     /// Predict failure probability for all tests affected by a change
@@ -366,7 +377,11 @@ impl PredictiveModel {
 
     /// Get failure rate for a specific test
     pub fn get_test_failure_rate(&self, test_name: &str) -> Option<f64> {
-        let failures = self.test_failure_counts.get(test_name).copied().unwrap_or(0);
+        let failures = self
+            .test_failure_counts
+            .get(test_name)
+            .copied()
+            .unwrap_or(0);
         let total = self.test_total_counts.get(test_name).copied().unwrap_or(0);
         if total == 0 {
             None
@@ -422,9 +437,15 @@ impl PredictiveModel {
 
         if let Some(rate) = self.get_test_failure_rate(test_name) {
             if rate > 0.5 {
-                factors.push(format!("High historical failure rate ({:.1}%)", rate * 100.0));
+                factors.push(format!(
+                    "High historical failure rate ({:.1}%)",
+                    rate * 100.0
+                ));
             } else if rate > 0.2 {
-                factors.push(format!("Moderate historical failure rate ({:.1}%)", rate * 100.0));
+                factors.push(format!(
+                    "Moderate historical failure rate ({:.1}%)",
+                    rate * 100.0
+                ));
             }
         }
 
@@ -439,7 +460,8 @@ impl PredictiveModel {
     pub fn get_hotspot_files(&self, limit: usize) -> Vec<(String, usize)> {
         let mut files: Vec<_> = self.file_change_frequency.iter().collect();
         files.sort_by(|a, b| b.1.cmp(a.1));
-        files.into_iter()
+        files
+            .into_iter()
             .take(limit)
             .map(|(k, v)| (k.clone(), *v))
             .collect()
@@ -530,17 +552,27 @@ impl ImpactCategory {
 
         if lower.contains("auth") || lower.contains("login") || lower.contains("session") {
             ImpactCategory::Authentication
-        } else if lower.contains("data") || lower.contains("db") || lower.contains("store") || lower.contains("model") {
+        } else if lower.contains("data")
+            || lower.contains("db")
+            || lower.contains("store")
+            || lower.contains("model")
+        {
             ImpactCategory::Data
         } else if lower.contains("api") || lower.contains("endpoint") || lower.contains("route") {
             ImpactCategory::Api
-        } else if lower.contains("service") || lower.contains("logic") || lower.contains("business") {
+        } else if lower.contains("service") || lower.contains("logic") || lower.contains("business")
+        {
             ImpactCategory::BusinessLogic
-        } else if lower.contains("ui") || lower.contains("view") || lower.contains("component") || lower.contains("frontend") {
+        } else if lower.contains("ui")
+            || lower.contains("view")
+            || lower.contains("component")
+            || lower.contains("frontend")
+        {
             ImpactCategory::Ui
         } else if lower.contains("perf") || lower.contains("cache") || lower.contains("optim") {
             ImpactCategory::Performance
-        } else if lower.contains("security") || lower.contains("crypto") || lower.contains("valid") {
+        } else if lower.contains("security") || lower.contains("crypto") || lower.contains("valid")
+        {
             ImpactCategory::Security
         } else if lower.contains("config") || lower.contains("settings") || lower.contains("env") {
             ImpactCategory::Config
@@ -608,6 +640,7 @@ pub struct ChangeImpactAnalyzer {
     /// Known test file patterns
     test_patterns: Vec<String>,
     /// Known source file patterns
+    #[allow(dead_code)]
     source_patterns: Vec<String>,
 }
 
@@ -645,7 +678,7 @@ impl ChangeImpactAnalyzer {
         let mut impact = ChangeImpact::default();
 
         let mut current_file = None::<String>;
-        let mut in_hunk = false;
+        let mut _in_hunk = false;
         let mut lines_added = 0;
         let mut lines_deleted = 0;
 
@@ -653,8 +686,9 @@ impl ChangeImpactAnalyzer {
             // New file diff
             if line.starts_with("diff --git") {
                 // Save previous file stats
-                if let Some(ref file) = current_file {
-                    impact.lines_changed = impact.lines_added + impact.lines_deleted + lines_added + lines_deleted;
+                if let Some(ref _file) = current_file {
+                    impact.lines_changed =
+                        impact.lines_added + impact.lines_deleted + lines_added + lines_deleted;
                     impact.lines_added += lines_added;
                     impact.lines_deleted += lines_deleted;
                 }
@@ -678,13 +712,13 @@ impl ChangeImpactAnalyzer {
             }
             // Deleted file
             else if line.starts_with("deleted file mode") {
-                if let Some(ref file) = current_file {
-                    impact.deleted_files.push(file.clone());
+                if let Some(ref _file) = current_file {
+                    impact.deleted_files.push(_file.clone());
                 }
             }
             // Hunk header - indicates modifications
             else if line.starts_with("@@") {
-                in_hunk = true;
+                _in_hunk = true;
             }
             // Addition
             else if line.starts_with('+') && !line.starts_with("+++") {
@@ -724,12 +758,19 @@ impl ChangeImpactAnalyzer {
 
         for file in files {
             if file.starts_with("+") || file.starts_with("A ") {
-                impact.added_files.push(file.trim_start_matches("+ ").to_string());
+                impact
+                    .added_files
+                    .push(file.trim_start_matches("+ ").to_string());
             } else if file.starts_with("-") || file.starts_with("D ") {
-                impact.deleted_files.push(file.trim_start_matches("- ").to_string());
+                impact
+                    .deleted_files
+                    .push(file.trim_start_matches("- ").to_string());
             } else if file.starts_with("M ") || file.starts_with("M\t") || file.contains(" -> ") {
                 // Modified file
-                let clean = file.trim_start_matches("M ").trim_start_matches("M\t").to_string();
+                let clean = file
+                    .trim_start_matches("M ")
+                    .trim_start_matches("M\t")
+                    .to_string();
                 if let Some(ref arrow_part) = file.split(" -> ").nth(1) {
                     impact.modified_files.push(arrow_part.to_string());
                 } else {
@@ -760,9 +801,8 @@ impl ChangeImpactAnalyzer {
         let mut score: f64 = 0.0;
 
         // More files = higher risk
-        let total_files = impact.added_files.len()
-            + impact.modified_files.len()
-            + impact.deleted_files.len();
+        let total_files =
+            impact.added_files.len() + impact.modified_files.len() + impact.deleted_files.len();
         if total_files > 20 {
             score += 0.3;
         } else if total_files > 10 {
@@ -807,8 +847,7 @@ impl ChangeImpactAnalyzer {
             score -= 0.1;
         }
 
-        // Clamp to [0, 1]
-        score.max(0.0).min(1.0)
+        score.clamp(0.0, 1.0)
     }
 
     /// Determine impact categories from files
@@ -865,8 +904,15 @@ pub enum SelectionStrategy {
     Hybrid,
 }
 
+#[allow(clippy::derivable_impls)]
+impl Default for SelectionStrategy {
+    fn default() -> Self {
+        Self::Hybrid
+    }
+}
+
 /// Selection constraint
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct SelectionConstraint {
     /// Maximum number of tests to run
     pub max_tests: Option<usize>,
@@ -876,17 +922,6 @@ pub struct SelectionConstraint {
     pub min_coverage: Option<f64>,
     /// Required test categories
     pub required_categories: Vec<String>,
-}
-
-impl Default for SelectionConstraint {
-    fn default() -> Self {
-        Self {
-            max_tests: None,
-            max_time_ms: None,
-            min_coverage: None,
-            required_categories: Vec::new(),
-        }
-    }
 }
 
 /// Result of test subset selection
@@ -922,7 +957,7 @@ pub struct SelectedTest {
 }
 
 /// Test subset selector
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TestSubsetSelector {
     /// Selection strategy
     strategy: SelectionStrategy,
@@ -949,13 +984,14 @@ impl TestSubsetSelector {
 
     /// Register expected test duration
     pub fn register_duration(&mut self, test_name: &str, duration_ms: u64) {
-        self.test_durations.insert(test_name.to_string(), duration_ms);
+        self.test_durations
+            .insert(test_name.to_string(), duration_ms);
     }
 
     /// Register file coverage for a test
     pub fn register_coverage(&mut self, test_name: &str, files: &[String]) {
         for file in files {
-            let tests = self.file_coverage.entry(file.clone()).or_insert_with(HashSet::new);
+            let tests = self.file_coverage.entry(file.clone()).or_default();
             tests.insert(test_name.to_string());
         }
     }
@@ -971,9 +1007,7 @@ impl TestSubsetSelector {
             SelectionStrategy::CoverageMaximized => {
                 self.select_for_coverage(predictions, constraint)
             }
-            SelectionStrategy::TimeConstrained => {
-                self.select_within_time(predictions, constraint)
-            }
+            SelectionStrategy::TimeConstrained => self.select_within_time(predictions, constraint),
             SelectionStrategy::Hybrid => self.select_hybrid(predictions, constraint),
         }
     }
@@ -1005,7 +1039,11 @@ impl TestSubsetSelector {
             }
 
             if let Some(max_time) = constraint.max_time_ms {
-                let duration = self.test_durations.get(&pred.test_name).copied().unwrap_or(100);
+                let duration = self
+                    .test_durations
+                    .get(&pred.test_name)
+                    .copied()
+                    .unwrap_or(100);
                 if estimated_time + duration > max_time {
                     skipped.push(pred.test_name.clone());
                     continue;
@@ -1063,27 +1101,28 @@ impl TestSubsetSelector {
         // Sort by coverage potential (files covered / duration)
         let mut with_coverage: Vec<_> = predictions
             .iter()
-            .filter_map(|pred| {
+            .map(|pred| {
                 let files: Vec<_> = self
                     .file_coverage
                     .iter()
                     .filter(|(_, tests)| tests.contains(&pred.test_name))
                     .map(|(f, _)| f.clone())
                     .collect();
-                let duration = self.test_durations.get(&pred.test_name).copied().unwrap_or(100);
+                let duration = self
+                    .test_durations
+                    .get(&pred.test_name)
+                    .copied()
+                    .unwrap_or(100);
                 let coverage_score = if duration > 0 {
                     files.len() as f64 / duration as f64 * 1000.0
                 } else {
                     0.0
                 };
-                Some((pred, files, duration, coverage_score))
+                (pred, files, duration, coverage_score)
             })
             .collect();
 
-        with_coverage.sort_by(|a, b| {
-            b.3.partial_cmp(&a.3)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        with_coverage.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
 
         for (pred, files, duration, _) in with_coverage {
             // Skip if all files already covered - compute new files first
@@ -1122,10 +1161,7 @@ impl TestSubsetSelector {
                 priority_score: pred.failure_probability,
                 estimated_duration_ms: duration,
                 files_covered: files,
-                reason: format!(
-                    "Covers {} new file(s)",
-                    new_files_count
-                ),
+                reason: format!("Covers {} new file(s)", new_files_count),
             });
         }
 
@@ -1161,7 +1197,11 @@ impl TestSubsetSelector {
         let mut skipped = Vec::new();
 
         for pred in &sorted {
-            let duration = self.test_durations.get(&pred.test_name).copied().unwrap_or(100);
+            let duration = self
+                .test_durations
+                .get(&pred.test_name)
+                .copied()
+                .unwrap_or(100);
 
             // Check if we can fit this test
             if selected.len() >= max_tests {
@@ -1180,7 +1220,10 @@ impl TestSubsetSelector {
                 priority_score: pred.failure_probability,
                 estimated_duration_ms: duration,
                 files_covered: Vec::new(),
-                reason: format!("Within time budget, risk {:.0}%", pred.failure_probability * 100.0),
+                reason: format!(
+                    "Within time budget, risk {:.0}%",
+                    pred.failure_probability * 100.0
+                ),
             });
         }
 
@@ -1190,10 +1233,7 @@ impl TestSubsetSelector {
             selected_tests: selected,
             skipped_tests: skipped,
             strategy: SelectionStrategy::TimeConstrained,
-            rationale: format!(
-                "Selected tests to fit within {}ms time budget",
-                max_time
-            ),
+            rationale: format!("Selected tests to fit within {}ms time budget", max_time),
         }
     }
 
@@ -1218,7 +1258,11 @@ impl TestSubsetSelector {
                     .map(|(f, _)| f.clone())
                     .collect();
                 let coverage_score = files.len() as f64 / 100.0; // Normalize
-                let duration = self.test_durations.get(&pred.test_name).copied().unwrap_or(100);
+                let duration = self
+                    .test_durations
+                    .get(&pred.test_name)
+                    .copied()
+                    .unwrap_or(100);
                 let time_score = if max_time > 0 {
                     1.0 - (duration as f64 / max_time as f64).min(1.0)
                 } else {
@@ -1231,10 +1275,7 @@ impl TestSubsetSelector {
             })
             .collect();
 
-        scored.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut selected = Vec::new();
         let mut estimated_time = 0u64;
@@ -1540,10 +1581,7 @@ index 1234567..abcdefg 100644
     #[test]
     fn test_change_impact_analyzer_files() {
         let analyzer = ChangeImpactAnalyzer::new();
-        let files = vec![
-            "src/auth.rs".to_string(),
-            "src/user.rs".to_string(),
-        ];
+        let files = vec!["src/auth.rs".to_string(), "src/user.rs".to_string()];
 
         let impact = analyzer.analyze_files(&files);
         assert_eq!(impact.modified_files.len(), 2);

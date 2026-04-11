@@ -335,7 +335,11 @@ pub enum EvidenceType {
 
 impl Evidence {
     /// Create new evidence
-    pub fn new(result_id: Uuid, evidence_type: EvidenceType, artifact_path: impl Into<String>) -> Self {
+    pub fn new(
+        result_id: Uuid,
+        evidence_type: EvidenceType,
+        artifact_path: impl Into<String>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             result_id,
@@ -361,89 +365,121 @@ impl Evidence {
 #[async_trait]
 pub trait TraceabilityStore: Send + Sync {
     // --- Goal Operations ---
-    
+
     /// Create a new goal
     async fn create_goal(&self, goal: Goal) -> Result<Uuid, TraceabilityError>;
-    
+
     /// Get a goal by ID
     async fn get_goal(&self, id: Uuid) -> Result<Option<Goal>, TraceabilityError>;
-    
+
     /// Update a goal
     async fn update_goal(&self, goal: &Goal) -> Result<(), TraceabilityError>;
-    
+
     /// Get all goals for a task
     async fn get_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, TraceabilityError>;
-    
+
     // --- Criteria Operations ---
-    
+
     /// Add acceptance criteria to a goal
     async fn add_criteria(&self, criteria: AcceptanceCriteria) -> Result<Uuid, TraceabilityError>;
-    
+
     /// Get criteria by ID
-    async fn get_criteria(&self, id: Uuid) -> Result<Option<AcceptanceCriteria>, TraceabilityError>;
-    
+    async fn get_criteria(&self, id: Uuid)
+        -> Result<Option<AcceptanceCriteria>, TraceabilityError>;
+
     /// Update criteria
-    async fn update_criteria(&self, criteria: &AcceptanceCriteria) -> Result<(), TraceabilityError>;
-    
+    async fn update_criteria(&self, criteria: &AcceptanceCriteria)
+        -> Result<(), TraceabilityError>;
+
     /// Get criteria linked to a goal (forward: goal → criteria)
-    async fn get_criteria_for_goal(&self, goal_id: Uuid) -> Result<Vec<AcceptanceCriteria>, TraceabilityError>;
-    
+    async fn get_criteria_for_goal(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<Vec<AcceptanceCriteria>, TraceabilityError>;
+
     /// Get the goal that owns this criteria (backward: criteria → goal)
-    async fn get_goal_for_criteria(&self, criteria_id: Uuid) -> Result<Option<Goal>, TraceabilityError>;
-    
+    async fn get_goal_for_criteria(
+        &self,
+        criteria_id: Uuid,
+    ) -> Result<Option<Goal>, TraceabilityError>;
+
     // --- Test Case Operations ---
-    
+
     /// Add a test case to criteria
     async fn add_test_case(&self, test_case: TestCase) -> Result<Uuid, TraceabilityError>;
-    
+
     /// Get test case by ID
     async fn get_test_case(&self, id: Uuid) -> Result<Option<TestCase>, TraceabilityError>;
-    
+
     /// Update test case
     async fn update_test_case(&self, test_case: &TestCase) -> Result<(), TraceabilityError>;
-    
+
     /// Get test cases for criteria (forward: criteria → tests)
-    async fn get_tests_for_criteria(&self, criteria_id: Uuid) -> Result<Vec<TestCase>, TraceabilityError>;
-    
+    async fn get_tests_for_criteria(
+        &self,
+        criteria_id: Uuid,
+    ) -> Result<Vec<TestCase>, TraceabilityError>;
+
     /// Get the criteria that owns this test (backward: test → criteria)
-    async fn get_criteria_for_test(&self, test_id: Uuid) -> Result<Option<AcceptanceCriteria>, TraceabilityError>;
-    
+    async fn get_criteria_for_test(
+        &self,
+        test_id: Uuid,
+    ) -> Result<Option<AcceptanceCriteria>, TraceabilityError>;
+
     // --- Test Result Operations ---
-    
+
     /// Add a test result
     async fn add_result(&self, result: TestResult) -> Result<Uuid, TraceabilityError>;
-    
+
     /// Get result by ID
     async fn get_result(&self, id: Uuid) -> Result<Option<TestResult>, TraceabilityError>;
-    
+
     /// Get results for test (forward: test → results)
-    async fn get_results_for_test(&self, test_id: Uuid) -> Result<Vec<TestResult>, TraceabilityError>;
-    
+    async fn get_results_for_test(
+        &self,
+        test_id: Uuid,
+    ) -> Result<Vec<TestResult>, TraceabilityError>;
+
     /// Get the test that produced this result (backward: result → test)
-    async fn get_test_for_result(&self, result_id: Uuid) -> Result<Option<TestCase>, TraceabilityError>;
-    
+    async fn get_test_for_result(
+        &self,
+        result_id: Uuid,
+    ) -> Result<Option<TestCase>, TraceabilityError>;
+
     // --- Evidence Operations ---
-    
+
     /// Add evidence to a result
     async fn add_evidence(&self, evidence: Evidence) -> Result<Uuid, TraceabilityError>;
-    
+
     /// Get evidence by ID
     async fn get_evidence(&self, id: Uuid) -> Result<Option<Evidence>, TraceabilityError>;
-    
+
     /// Get evidence for result (forward: result → evidence)
-    async fn get_evidence_for_result(&self, result_id: Uuid) -> Result<Vec<Evidence>, TraceabilityError>;
-    
+    async fn get_evidence_for_result(
+        &self,
+        result_id: Uuid,
+    ) -> Result<Vec<Evidence>, TraceabilityError>;
+
     /// Get the result this evidence belongs to (backward: evidence → result)
-    async fn get_result_for_evidence(&self, evidence_id: Uuid) -> Result<Option<TestResult>, TraceabilityError>;
-    
+    async fn get_result_for_evidence(
+        &self,
+        evidence_id: Uuid,
+    ) -> Result<Option<TestResult>, TraceabilityError>;
+
     // --- Full Traceability Navigation ---
-    
+
     /// Get full traceability chain from goal (Goal → Criteria → Tests → Results → Evidence)
-    async fn get_full_chain(&self, goal_id: Uuid) -> Result<Option<TraceabilityChain>, TraceabilityError>;
-    
+    async fn get_full_chain(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<Option<TraceabilityChain>, TraceabilityError>;
+
     /// Get reverse traceability chain from evidence
-    async fn get_reverse_chain(&self, evidence_id: Uuid) -> Result<Option<TraceabilityChain>, TraceabilityError>;
-    
+    async fn get_reverse_chain(
+        &self,
+        evidence_id: Uuid,
+    ) -> Result<Option<TraceabilityChain>, TraceabilityError>;
+
     /// Count items in the traceability chain
     async fn count_chain_items(&self, goal_id: Uuid) -> Result<ChainCounts, TraceabilityError>;
 }
@@ -518,7 +554,9 @@ impl From<TraceabilityError> for crate::SwellError {
         match err {
             TraceabilityError::NotFound(_) => crate::SwellError::TaskNotFound(uuid::Uuid::nil()),
             TraceabilityError::StorageError(_) => crate::SwellError::DatabaseError(err.to_string()),
-            TraceabilityError::SerializationError(_) => crate::SwellError::ConfigError(err.to_string()),
+            TraceabilityError::SerializationError(_) => {
+                crate::SwellError::ConfigError(err.to_string())
+            }
             TraceabilityError::LinkError(_) => crate::SwellError::InvalidOperation(err.to_string()),
         }
     }
@@ -548,17 +586,17 @@ impl InMemoryTraceabilityStore {
 #[async_trait]
 impl TraceabilityStore for InMemoryTraceabilityStore {
     // --- Goal Operations ---
-    
+
     async fn create_goal(&self, goal: Goal) -> Result<Uuid, TraceabilityError> {
         let id = goal.id;
         self.goals.write().unwrap().insert(id, goal);
         Ok(id)
     }
-    
+
     async fn get_goal(&self, id: Uuid) -> Result<Option<Goal>, TraceabilityError> {
         Ok(self.goals.read().unwrap().get(&id).cloned())
     }
-    
+
     async fn update_goal(&self, goal: &Goal) -> Result<(), TraceabilityError> {
         let mut goals = self.goals.write().unwrap();
         if let std::collections::hash_map::Entry::Occupied(mut e) = goals.entry(goal.id) {
@@ -568,17 +606,21 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
             Err(TraceabilityError::NotFound(goal.id))
         }
     }
-    
+
     async fn get_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, TraceabilityError> {
         let goals = self.goals.read().unwrap();
-        Ok(goals.values().filter(|g| g.task_id == task_id).cloned().collect())
+        Ok(goals
+            .values()
+            .filter(|g| g.task_id == task_id)
+            .cloned()
+            .collect())
     }
-    
+
     // --- Criteria Operations ---
-    
+
     async fn add_criteria(&self, criteria: AcceptanceCriteria) -> Result<Uuid, TraceabilityError> {
         let id = criteria.id;
-        
+
         // Update goal's criteria list
         let mut goals = self.goals.write().unwrap();
         if let Some(goal) = goals.get_mut(&criteria.goal_id) {
@@ -586,34 +628,46 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
             goal.updated_at = Utc::now();
         } else {
             return Err(TraceabilityError::LinkError(format!(
-                "Goal {} not found", criteria.goal_id
+                "Goal {} not found",
+                criteria.goal_id
             )));
         }
-        
+
         self.criteria.write().unwrap().insert(id, criteria);
         Ok(id)
     }
-    
-    async fn get_criteria(&self, id: Uuid) -> Result<Option<AcceptanceCriteria>, TraceabilityError> {
+
+    async fn get_criteria(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<AcceptanceCriteria>, TraceabilityError> {
         Ok(self.criteria.read().unwrap().get(&id).cloned())
     }
-    
-    async fn update_criteria(&self, criteria: &AcceptanceCriteria) -> Result<(), TraceabilityError> {
+
+    async fn update_criteria(
+        &self,
+        criteria: &AcceptanceCriteria,
+    ) -> Result<(), TraceabilityError> {
         let mut criteria_map = self.criteria.write().unwrap();
-        if let std::collections::hash_map::Entry::Occupied(mut e) = criteria_map.entry(criteria.id) {
+        if let std::collections::hash_map::Entry::Occupied(mut e) = criteria_map.entry(criteria.id)
+        {
             e.insert(criteria.clone());
             Ok(())
         } else {
             Err(TraceabilityError::NotFound(criteria.id))
         }
     }
-    
-    async fn get_criteria_for_goal(&self, goal_id: Uuid) -> Result<Vec<AcceptanceCriteria>, TraceabilityError> {
+
+    async fn get_criteria_for_goal(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<Vec<AcceptanceCriteria>, TraceabilityError> {
         let goals = self.goals.read().unwrap();
         let criteria_map = self.criteria.read().unwrap();
-        
+
         if let Some(goal) = goals.get(&goal_id) {
-            Ok(goal.criteria_ids
+            Ok(goal
+                .criteria_ids
                 .iter()
                 .filter_map(|id| criteria_map.get(id).cloned())
                 .collect())
@@ -621,41 +675,45 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
             Err(TraceabilityError::NotFound(goal_id))
         }
     }
-    
-    async fn get_goal_for_criteria(&self, criteria_id: Uuid) -> Result<Option<Goal>, TraceabilityError> {
+
+    async fn get_goal_for_criteria(
+        &self,
+        criteria_id: Uuid,
+    ) -> Result<Option<Goal>, TraceabilityError> {
         let criteria_map = self.criteria.read().unwrap();
         let goals = self.goals.read().unwrap();
-        
+
         if let Some(criteria) = criteria_map.get(&criteria_id) {
             Ok(goals.get(&criteria.goal_id).cloned())
         } else {
             Err(TraceabilityError::NotFound(criteria_id))
         }
     }
-    
+
     // --- Test Case Operations ---
-    
+
     async fn add_test_case(&self, test_case: TestCase) -> Result<Uuid, TraceabilityError> {
         let id = test_case.id;
-        
+
         // Update criteria' test list
         let mut criteria_map = self.criteria.write().unwrap();
         if let Some(criteria) = criteria_map.get_mut(&test_case.criteria_id) {
             criteria.test_ids.push(id);
         } else {
             return Err(TraceabilityError::LinkError(format!(
-                "Criteria {} not found", test_case.criteria_id
+                "Criteria {} not found",
+                test_case.criteria_id
             )));
         }
-        
+
         self.tests.write().unwrap().insert(id, test_case);
         Ok(id)
     }
-    
+
     async fn get_test_case(&self, id: Uuid) -> Result<Option<TestCase>, TraceabilityError> {
         Ok(self.tests.read().unwrap().get(&id).cloned())
     }
-    
+
     async fn update_test_case(&self, test_case: &TestCase) -> Result<(), TraceabilityError> {
         let mut tests = self.tests.write().unwrap();
         if let std::collections::hash_map::Entry::Occupied(mut e) = tests.entry(test_case.id) {
@@ -665,13 +723,17 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
             Err(TraceabilityError::NotFound(test_case.id))
         }
     }
-    
-    async fn get_tests_for_criteria(&self, criteria_id: Uuid) -> Result<Vec<TestCase>, TraceabilityError> {
+
+    async fn get_tests_for_criteria(
+        &self,
+        criteria_id: Uuid,
+    ) -> Result<Vec<TestCase>, TraceabilityError> {
         let criteria_map = self.criteria.read().unwrap();
         let tests_map = self.tests.read().unwrap();
-        
+
         if let Some(criteria) = criteria_map.get(&criteria_id) {
-            Ok(criteria.test_ids
+            Ok(criteria
+                .test_ids
                 .iter()
                 .filter_map(|id| tests_map.get(id).cloned())
                 .collect())
@@ -679,48 +741,56 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
             Err(TraceabilityError::NotFound(criteria_id))
         }
     }
-    
-    async fn get_criteria_for_test(&self, test_id: Uuid) -> Result<Option<AcceptanceCriteria>, TraceabilityError> {
+
+    async fn get_criteria_for_test(
+        &self,
+        test_id: Uuid,
+    ) -> Result<Option<AcceptanceCriteria>, TraceabilityError> {
         let tests = self.tests.read().unwrap();
         let criteria_map = self.criteria.read().unwrap();
-        
+
         if let Some(test) = tests.get(&test_id) {
             Ok(criteria_map.get(&test.criteria_id).cloned())
         } else {
             Err(TraceabilityError::NotFound(test_id))
         }
     }
-    
+
     // --- Test Result Operations ---
-    
+
     async fn add_result(&self, result: TestResult) -> Result<Uuid, TraceabilityError> {
         let id = result.id;
-        
+
         // Update test's result list
         let mut tests = self.tests.write().unwrap();
         if let Some(test) = tests.get_mut(&result.test_id) {
             test.result_ids.push(id);
         } else {
             return Err(TraceabilityError::LinkError(format!(
-                "Test {} not found", result.test_id
+                "Test {} not found",
+                result.test_id
             )));
         }
-        
+
         self.results.write().unwrap().insert(id, result);
         Ok(id)
     }
-    
+
     async fn get_result(&self, id: Uuid) -> Result<Option<TestResult>, TraceabilityError> {
         Ok(self.results.read().unwrap().get(&id).cloned())
     }
-    
-    async fn get_results_for_test(&self, test_id: Uuid) -> Result<Vec<TestResult>, TraceabilityError> {
+
+    async fn get_results_for_test(
+        &self,
+        test_id: Uuid,
+    ) -> Result<Vec<TestResult>, TraceabilityError> {
         let tests = self.tests.read().unwrap();
         let results = self.results.read().unwrap();
-        
+
         if let Some(test) = tests.get(&test_id) {
             // Sort by executed_at descending (newest first)
-            let mut result_list: Vec<TestResult> = test.result_ids
+            let mut result_list: Vec<TestResult> = test
+                .result_ids
                 .iter()
                 .filter_map(|id| results.get(id).cloned())
                 .collect();
@@ -730,47 +800,55 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
             Err(TraceabilityError::NotFound(test_id))
         }
     }
-    
-    async fn get_test_for_result(&self, result_id: Uuid) -> Result<Option<TestCase>, TraceabilityError> {
+
+    async fn get_test_for_result(
+        &self,
+        result_id: Uuid,
+    ) -> Result<Option<TestCase>, TraceabilityError> {
         let results = self.results.read().unwrap();
         let tests = self.tests.read().unwrap();
-        
+
         if let Some(result) = results.get(&result_id) {
             Ok(tests.get(&result.test_id).cloned())
         } else {
             Err(TraceabilityError::NotFound(result_id))
         }
     }
-    
+
     // --- Evidence Operations ---
-    
+
     async fn add_evidence(&self, evidence: Evidence) -> Result<Uuid, TraceabilityError> {
         let id = evidence.id;
-        
+
         // Update result's evidence list
         let mut results = self.results.write().unwrap();
         if let Some(result) = results.get_mut(&evidence.result_id) {
             result.evidence_ids.push(id);
         } else {
             return Err(TraceabilityError::LinkError(format!(
-                "Result {} not found", evidence.result_id
+                "Result {} not found",
+                evidence.result_id
             )));
         }
-        
+
         self.evidence.write().unwrap().insert(id, evidence);
         Ok(id)
     }
-    
+
     async fn get_evidence(&self, id: Uuid) -> Result<Option<Evidence>, TraceabilityError> {
         Ok(self.evidence.read().unwrap().get(&id).cloned())
     }
-    
-    async fn get_evidence_for_result(&self, result_id: Uuid) -> Result<Vec<Evidence>, TraceabilityError> {
+
+    async fn get_evidence_for_result(
+        &self,
+        result_id: Uuid,
+    ) -> Result<Vec<Evidence>, TraceabilityError> {
         let results = self.results.read().unwrap();
         let evidence_map = self.evidence.read().unwrap();
-        
+
         if let Some(result) = results.get(&result_id) {
-            Ok(result.evidence_ids
+            Ok(result
+                .evidence_ids
                 .iter()
                 .filter_map(|id| evidence_map.get(id).cloned())
                 .collect())
@@ -778,92 +856,118 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
             Err(TraceabilityError::NotFound(result_id))
         }
     }
-    
-    async fn get_result_for_evidence(&self, evidence_id: Uuid) -> Result<Option<TestResult>, TraceabilityError> {
+
+    async fn get_result_for_evidence(
+        &self,
+        evidence_id: Uuid,
+    ) -> Result<Option<TestResult>, TraceabilityError> {
         let evidence_map = self.evidence.read().unwrap();
         let results = self.results.read().unwrap();
-        
+
         if let Some(evidence) = evidence_map.get(&evidence_id) {
             Ok(results.get(&evidence.result_id).cloned())
         } else {
             Err(TraceabilityError::NotFound(evidence_id))
         }
     }
-    
+
     // --- Full Traceability Navigation ---
-    
-    async fn get_full_chain(&self, goal_id: Uuid) -> Result<Option<TraceabilityChain>, TraceabilityError> {
-        let goal = self.get_goal(goal_id).await?.ok_or(TraceabilityError::NotFound(goal_id))?;
-        
+
+    async fn get_full_chain(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<Option<TraceabilityChain>, TraceabilityError> {
+        let goal = self
+            .get_goal(goal_id)
+            .await?
+            .ok_or(TraceabilityError::NotFound(goal_id))?;
+
         let criteria_list = self.get_criteria_for_goal(goal_id).await?;
         let mut criteria_chain = Vec::new();
-        
+
         for criteria in criteria_list {
             let test_list = self.get_tests_for_criteria(criteria.id).await?;
             let mut tests_chain = Vec::new();
-            
+
             for test in test_list {
                 let results = self.get_results_for_test(test.id).await?;
                 let mut evidence_list = Vec::new();
-                
+
                 // Get evidence for the most recent result
                 if let Some(latest_result) = results.first() {
                     evidence_list = self.get_evidence_for_result(latest_result.id).await?;
                 }
-                
+
                 tests_chain.push(TestInChain {
                     test_case: test,
                     results,
                     evidence: evidence_list,
                 });
             }
-            
+
             criteria_chain.push(CriteriaInChain {
                 criteria,
                 tests: tests_chain,
             });
         }
-        
+
         Ok(Some(TraceabilityChain {
             goal,
             criteria: criteria_chain,
         }))
     }
-    
-    async fn get_reverse_chain(&self, evidence_id: Uuid) -> Result<Option<TraceabilityChain>, TraceabilityError> {
+
+    async fn get_reverse_chain(
+        &self,
+        evidence_id: Uuid,
+    ) -> Result<Option<TraceabilityChain>, TraceabilityError> {
         // Navigate backwards: Evidence → Result → Test → Criteria → Goal
-        let _evidence = self.get_evidence(evidence_id).await?
+        let _evidence = self
+            .get_evidence(evidence_id)
+            .await?
             .ok_or(TraceabilityError::NotFound(evidence_id))?;
-        
-        let result = self.get_result_for_evidence(evidence_id).await?
+
+        let result = self
+            .get_result_for_evidence(evidence_id)
+            .await?
             .ok_or(TraceabilityError::NotFound(evidence_id))?;
-        
-        let test = self.get_test_for_result(result.id).await?
+
+        let test = self
+            .get_test_for_result(result.id)
+            .await?
             .ok_or(TraceabilityError::NotFound(result.id))?;
-        
-        let criteria = self.get_criteria_for_test(test.id).await?
+
+        let criteria = self
+            .get_criteria_for_test(test.id)
+            .await?
             .ok_or(TraceabilityError::NotFound(test.id))?;
-        
-        let goal = self.get_goal_for_criteria(criteria.id).await?
+
+        let goal = self
+            .get_goal_for_criteria(criteria.id)
+            .await?
             .ok_or(TraceabilityError::NotFound(criteria.id))?;
-        
+
         // Build forward chain for consistency
         self.get_full_chain(goal.id).await
     }
-    
+
     async fn count_chain_items(&self, goal_id: Uuid) -> Result<ChainCounts, TraceabilityError> {
         let chain = self.get_full_chain(goal_id).await?;
-        
+
         match chain {
             Some(c) => Ok(ChainCounts {
                 goals: 1,
                 criteria: c.criteria.len(),
                 tests: c.criteria.iter().map(|cv| cv.tests.len()).sum(),
-                results: c.criteria.iter()
+                results: c
+                    .criteria
+                    .iter()
                     .flat_map(|cv| cv.tests.iter())
                     .flat_map(|tv| tv.results.iter())
                     .count(),
-                evidence: c.criteria.iter()
+                evidence: c
+                    .criteria
+                    .iter()
                     .flat_map(|cv| cv.tests.iter())
                     .flat_map(|tv| tv.evidence.iter())
                     .count(),
@@ -874,7 +978,7 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
 }
 
 // ============================================================================
-// SQLite Store Implementation  
+// SQLite Store Implementation
 // ============================================================================
 
 pub mod sqlite_store {
@@ -891,13 +995,13 @@ pub mod sqlite_store {
         /// Create a new SQLite store
         pub async fn new<P: AsRef<Path>>(db_path: P) -> Result<Self, TraceabilityError> {
             let database_url = format!("sqlite:{}?mode=rwc", db_path.as_ref().display());
-            
+
             let pool = sqlx::sqlite::SqlitePoolOptions::new()
                 .max_connections(1)
                 .connect(&database_url)
                 .await
                 .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
-            
+
             let store = Self { pool };
             store.init_schema().await?;
             Ok(store)
@@ -910,7 +1014,7 @@ pub mod sqlite_store {
                 .connect(conn_str)
                 .await
                 .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
-            
+
             let store = Self { pool };
             store.init_schema().await?;
             Ok(store)
@@ -1015,14 +1119,14 @@ pub mod sqlite_store {
 
             // Indexes
             sqlx::query(
-                "CREATE INDEX IF NOT EXISTS idx_goals_task_id ON traceability_goals(task_id)"
+                "CREATE INDEX IF NOT EXISTS idx_goals_task_id ON traceability_goals(task_id)",
             )
             .execute(&self.pool)
             .await
             .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             sqlx::query(
-                "CREATE INDEX IF NOT EXISTS idx_criteria_goal_id ON traceability_criteria(goal_id)"
+                "CREATE INDEX IF NOT EXISTS idx_criteria_goal_id ON traceability_criteria(goal_id)",
             )
             .execute(&self.pool)
             .await
@@ -1036,7 +1140,7 @@ pub mod sqlite_store {
             .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             sqlx::query(
-                "CREATE INDEX IF NOT EXISTS idx_results_test_id ON traceability_results(test_id)"
+                "CREATE INDEX IF NOT EXISTS idx_results_test_id ON traceability_results(test_id)",
             )
             .execute(&self.pool)
             .await
@@ -1059,7 +1163,7 @@ pub mod sqlite_store {
         async fn create_goal(&self, goal: Goal) -> Result<Uuid, TraceabilityError> {
             let id = goal.id.to_string();
             let criteria_ids = Self::serialize_ids(&goal.criteria_ids);
-            
+
             sqlx::query(
                 r#"
                 INSERT INTO traceability_goals (id, task_id, description, created_at, updated_at, status, criteria_ids)
@@ -1082,7 +1186,7 @@ pub mod sqlite_store {
 
         async fn get_goal(&self, id: Uuid) -> Result<Option<Goal>, TraceabilityError> {
             let id_str = id.to_string();
-            
+
             let row: Option<(String, String, String, String, String, String, String)> =
                 sqlx::query_as(
                     "SELECT id, task_id, description, created_at, updated_at, status, criteria_ids FROM traceability_goals WHERE id = ?"
@@ -1095,8 +1199,10 @@ pub mod sqlite_store {
             match row {
                 Some((id, task_id, description, created_at, updated_at, status, criteria_ids)) => {
                     Ok(Some(Goal {
-                        id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        task_id: Uuid::parse_str(&task_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                        id: Uuid::parse_str(&id)
+                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                        task_id: Uuid::parse_str(&task_id)
+                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
                         description,
                         created_at: DateTime::parse_from_rfc3339(&created_at)
                             .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
@@ -1104,7 +1210,8 @@ pub mod sqlite_store {
                         updated_at: DateTime::parse_from_rfc3339(&updated_at)
                             .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
                             .with_timezone(&Utc),
-                        status: serde_json::from_str(&format!("\"{}\"", status)).unwrap_or(GoalStatus::Active),
+                        status: serde_json::from_str(&format!("\"{}\"", status))
+                            .unwrap_or(GoalStatus::Active),
                         criteria_ids: Self::deserialize_ids(&criteria_ids),
                     }))
                 }
@@ -1142,7 +1249,7 @@ pub mod sqlite_store {
 
         async fn get_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, TraceabilityError> {
             let task_id_str = task_id.to_string();
-            
+
             let rows: Vec<(String, String, String, String, String, String, String)> =
                 sqlx::query_as(
                     "SELECT id, task_id, description, created_at, updated_at, status, criteria_ids FROM traceability_goals WHERE task_id = ?"
@@ -1155,8 +1262,10 @@ pub mod sqlite_store {
             let mut goals = Vec::new();
             for (id, task_id, description, created_at, updated_at, status, criteria_ids) in rows {
                 goals.push(Goal {
-                    id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                    task_id: Uuid::parse_str(&task_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    id: Uuid::parse_str(&id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    task_id: Uuid::parse_str(&task_id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
                     description,
                     created_at: DateTime::parse_from_rfc3339(&created_at)
                         .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
@@ -1164,7 +1273,8 @@ pub mod sqlite_store {
                     updated_at: DateTime::parse_from_rfc3339(&updated_at)
                         .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
                         .with_timezone(&Utc),
-                    status: serde_json::from_str(&format!("\"{}\"", status)).unwrap_or(GoalStatus::Active),
+                    status: serde_json::from_str(&format!("\"{}\"", status))
+                        .unwrap_or(GoalStatus::Active),
                     criteria_ids: Self::deserialize_ids(&criteria_ids),
                 });
             }
@@ -1172,7 +1282,10 @@ pub mod sqlite_store {
             Ok(goals)
         }
 
-        async fn add_criteria(&self, criteria: AcceptanceCriteria) -> Result<Uuid, TraceabilityError> {
+        async fn add_criteria(
+            &self,
+            criteria: AcceptanceCriteria,
+        ) -> Result<Uuid, TraceabilityError> {
             let id = criteria.id.to_string();
             let test_ids = Self::serialize_ids(&criteria.test_ids);
 
@@ -1196,8 +1309,9 @@ pub mod sqlite_store {
             .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             // Update goal's criteria list
-            let mut goal = self.get_goal(criteria.goal_id).await?
-                .ok_or_else(|| TraceabilityError::LinkError(format!("Goal {} not found", criteria.goal_id)))?;
+            let mut goal = self.get_goal(criteria.goal_id).await?.ok_or_else(|| {
+                TraceabilityError::LinkError(format!("Goal {} not found", criteria.goal_id))
+            })?;
             goal.criteria_ids.push(criteria.id);
             goal.updated_at = Utc::now();
             self.update_goal(&goal).await?;
@@ -1205,9 +1319,12 @@ pub mod sqlite_store {
             Ok(criteria.id)
         }
 
-        async fn get_criteria(&self, id: Uuid) -> Result<Option<AcceptanceCriteria>, TraceabilityError> {
+        async fn get_criteria(
+            &self,
+            id: Uuid,
+        ) -> Result<Option<AcceptanceCriteria>, TraceabilityError> {
             let id_str = id.to_string();
-            
+
             let row: Option<(String, String, String, String, String, String, String, String)> =
                 sqlx::query_as(
                     "SELECT id, goal_id, text, category, criticality, status, created_at, test_ids FROM traceability_criteria WHERE id = ?"
@@ -1220,12 +1337,16 @@ pub mod sqlite_store {
             match row {
                 Some((id, goal_id, text, category, criticality, status, created_at, test_ids)) => {
                     Ok(Some(AcceptanceCriteria {
-                        id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        goal_id: Uuid::parse_str(&goal_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                        id: Uuid::parse_str(&id)
+                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                        goal_id: Uuid::parse_str(&goal_id)
+                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
                         text,
                         category,
-                        criticality: serde_json::from_str(&format!("\"{}\"", criticality)).unwrap_or(CriteriaCriticality::ShouldHave),
-                        status: serde_json::from_str(&format!("\"{}\"", status)).unwrap_or(CriteriaStatus::Pending),
+                        criticality: serde_json::from_str(&format!("\"{}\"", criticality))
+                            .unwrap_or(CriteriaCriticality::ShouldHave),
+                        status: serde_json::from_str(&format!("\"{}\"", status))
+                            .unwrap_or(CriteriaStatus::Pending),
                         created_at: DateTime::parse_from_rfc3339(&created_at)
                             .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
                             .with_timezone(&Utc),
@@ -1236,7 +1357,10 @@ pub mod sqlite_store {
             }
         }
 
-        async fn update_criteria(&self, criteria: &AcceptanceCriteria) -> Result<(), TraceabilityError> {
+        async fn update_criteria(
+            &self,
+            criteria: &AcceptanceCriteria,
+        ) -> Result<(), TraceabilityError> {
             let id = criteria.id.to_string();
             let test_ids = Self::serialize_ids(&criteria.test_ids);
 
@@ -1265,9 +1389,12 @@ pub mod sqlite_store {
             }
         }
 
-        async fn get_criteria_for_goal(&self, goal_id: Uuid) -> Result<Vec<AcceptanceCriteria>, TraceabilityError> {
+        async fn get_criteria_for_goal(
+            &self,
+            goal_id: Uuid,
+        ) -> Result<Vec<AcceptanceCriteria>, TraceabilityError> {
             let goal_id_str = goal_id.to_string();
-            
+
             let rows: Vec<(String, String, String, String, String, String, String, String)> =
                 sqlx::query_as(
                     "SELECT id, goal_id, text, category, criticality, status, created_at, test_ids FROM traceability_criteria WHERE goal_id = ?"
@@ -1280,12 +1407,16 @@ pub mod sqlite_store {
             let mut criteria_list = Vec::new();
             for (id, goal_id, text, category, criticality, status, created_at, test_ids) in rows {
                 criteria_list.push(AcceptanceCriteria {
-                    id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                    goal_id: Uuid::parse_str(&goal_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    id: Uuid::parse_str(&id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    goal_id: Uuid::parse_str(&goal_id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
                     text,
                     category,
-                    criticality: serde_json::from_str(&format!("\"{}\"", criticality)).unwrap_or(CriteriaCriticality::ShouldHave),
-                    status: serde_json::from_str(&format!("\"{}\"", status)).unwrap_or(CriteriaStatus::Pending),
+                    criticality: serde_json::from_str(&format!("\"{}\"", criticality))
+                        .unwrap_or(CriteriaCriticality::ShouldHave),
+                    status: serde_json::from_str(&format!("\"{}\"", status))
+                        .unwrap_or(CriteriaStatus::Pending),
                     created_at: DateTime::parse_from_rfc3339(&created_at)
                         .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
                         .with_timezone(&Utc),
@@ -1296,7 +1427,10 @@ pub mod sqlite_store {
             Ok(criteria_list)
         }
 
-        async fn get_goal_for_criteria(&self, criteria_id: Uuid) -> Result<Option<Goal>, TraceabilityError> {
+        async fn get_goal_for_criteria(
+            &self,
+            criteria_id: Uuid,
+        ) -> Result<Option<Goal>, TraceabilityError> {
             if let Some(criteria) = self.get_criteria(criteria_id).await? {
                 self.get_goal(criteria.goal_id).await
             } else {
@@ -1327,8 +1461,15 @@ pub mod sqlite_store {
             .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             // Update criteria' test list
-            let mut criteria = self.get_criteria(test_case.criteria_id).await?
-                .ok_or_else(|| TraceabilityError::LinkError(format!("Criteria {} not found", test_case.criteria_id)))?;
+            let mut criteria =
+                self.get_criteria(test_case.criteria_id)
+                    .await?
+                    .ok_or_else(|| {
+                        TraceabilityError::LinkError(format!(
+                            "Criteria {} not found",
+                            test_case.criteria_id
+                        ))
+                    })?;
             criteria.test_ids.push(test_case.id);
             self.update_criteria(&criteria).await?;
 
@@ -1337,7 +1478,7 @@ pub mod sqlite_store {
 
         async fn get_test_case(&self, id: Uuid) -> Result<Option<TestCase>, TraceabilityError> {
             let id_str = id.to_string();
-            
+
             let row: Option<(String, String, String, Option<String>, String, String, String, String)> =
                 sqlx::query_as(
                     "SELECT id, criteria_id, name, file_path, test_type, status, created_at, result_ids FROM traceability_tests WHERE id = ?"
@@ -1348,20 +1489,31 @@ pub mod sqlite_store {
                 .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             match row {
-                Some((id, criteria_id, name, file_path, test_type, status, created_at, result_ids)) => {
-                    Ok(Some(TestCase {
-                        id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        criteria_id: Uuid::parse_str(&criteria_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        name,
-                        file_path,
-                        test_type: serde_json::from_str(&format!("\"{}\"", test_type)).unwrap_or(TestCaseType::Unit),
-                        status: serde_json::from_str(&format!("\"{}\"", status)).unwrap_or(TestCaseStatus::Pending),
-                        created_at: DateTime::parse_from_rfc3339(&created_at)
-                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
-                            .with_timezone(&Utc),
-                        result_ids: Self::deserialize_ids(&result_ids),
-                    }))
-                }
+                Some((
+                    id,
+                    criteria_id,
+                    name,
+                    file_path,
+                    test_type,
+                    status,
+                    created_at,
+                    result_ids,
+                )) => Ok(Some(TestCase {
+                    id: Uuid::parse_str(&id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    criteria_id: Uuid::parse_str(&criteria_id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    name,
+                    file_path,
+                    test_type: serde_json::from_str(&format!("\"{}\"", test_type))
+                        .unwrap_or(TestCaseType::Unit),
+                    status: serde_json::from_str(&format!("\"{}\"", status))
+                        .unwrap_or(TestCaseStatus::Pending),
+                    created_at: DateTime::parse_from_rfc3339(&created_at)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
+                        .with_timezone(&Utc),
+                    result_ids: Self::deserialize_ids(&result_ids),
+                })),
                 None => Ok(None),
             }
         }
@@ -1395,9 +1547,12 @@ pub mod sqlite_store {
             }
         }
 
-        async fn get_tests_for_criteria(&self, criteria_id: Uuid) -> Result<Vec<TestCase>, TraceabilityError> {
+        async fn get_tests_for_criteria(
+            &self,
+            criteria_id: Uuid,
+        ) -> Result<Vec<TestCase>, TraceabilityError> {
             let criteria_id_str = criteria_id.to_string();
-            
+
             let rows: Vec<(String, String, String, Option<String>, String, String, String, String)> =
                 sqlx::query_as(
                     "SELECT id, criteria_id, name, file_path, test_type, status, created_at, result_ids FROM traceability_tests WHERE criteria_id = ?"
@@ -1408,14 +1563,20 @@ pub mod sqlite_store {
                 .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             let mut tests = Vec::new();
-            for (id, criteria_id, name, file_path, test_type, status, created_at, result_ids) in rows {
+            for (id, criteria_id, name, file_path, test_type, status, created_at, result_ids) in
+                rows
+            {
                 tests.push(TestCase {
-                    id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                    criteria_id: Uuid::parse_str(&criteria_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    id: Uuid::parse_str(&id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    criteria_id: Uuid::parse_str(&criteria_id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
                     name,
                     file_path,
-                    test_type: serde_json::from_str(&format!("\"{}\"", test_type)).unwrap_or(TestCaseType::Unit),
-                    status: serde_json::from_str(&format!("\"{}\"", status)).unwrap_or(TestCaseStatus::Pending),
+                    test_type: serde_json::from_str(&format!("\"{}\"", test_type))
+                        .unwrap_or(TestCaseType::Unit),
+                    status: serde_json::from_str(&format!("\"{}\"", status))
+                        .unwrap_or(TestCaseStatus::Pending),
                     created_at: DateTime::parse_from_rfc3339(&created_at)
                         .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
                         .with_timezone(&Utc),
@@ -1426,7 +1587,10 @@ pub mod sqlite_store {
             Ok(tests)
         }
 
-        async fn get_criteria_for_test(&self, test_id: Uuid) -> Result<Option<AcceptanceCriteria>, TraceabilityError> {
+        async fn get_criteria_for_test(
+            &self,
+            test_id: Uuid,
+        ) -> Result<Option<AcceptanceCriteria>, TraceabilityError> {
             if let Some(test) = self.get_test_case(test_id).await? {
                 self.get_criteria(test.criteria_id).await
             } else {
@@ -1456,8 +1620,9 @@ pub mod sqlite_store {
             .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             // Update test's result list
-            let mut test = self.get_test_case(result.test_id).await?
-                .ok_or_else(|| TraceabilityError::LinkError(format!("Test {} not found", result.test_id)))?;
+            let mut test = self.get_test_case(result.test_id).await?.ok_or_else(|| {
+                TraceabilityError::LinkError(format!("Test {} not found", result.test_id))
+            })?;
             test.result_ids.push(result.id);
             self.update_test_case(&test).await?;
 
@@ -1466,7 +1631,7 @@ pub mod sqlite_store {
 
         async fn get_result(&self, id: Uuid) -> Result<Option<TestResult>, TraceabilityError> {
             let id_str = id.to_string();
-            
+
             let row: Option<(String, String, i64, i64, Option<String>, String, String)> =
                 sqlx::query_as(
                     "SELECT id, test_id, passed, duration_ms, failure_message, executed_at, evidence_ids FROM traceability_results WHERE id = ?"
@@ -1477,26 +1642,37 @@ pub mod sqlite_store {
                 .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             match row {
-                Some((id, test_id, passed, duration_ms, failure_message, executed_at, evidence_ids)) => {
-                    Ok(Some(TestResult {
-                        id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        test_id: Uuid::parse_str(&test_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        passed: passed != 0,
-                        duration_ms: duration_ms as u64,
-                        failure_message,
-                        executed_at: DateTime::parse_from_rfc3339(&executed_at)
-                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
-                            .with_timezone(&Utc),
-                        evidence_ids: Self::deserialize_ids(&evidence_ids),
-                    }))
-                }
+                Some((
+                    id,
+                    test_id,
+                    passed,
+                    duration_ms,
+                    failure_message,
+                    executed_at,
+                    evidence_ids,
+                )) => Ok(Some(TestResult {
+                    id: Uuid::parse_str(&id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    test_id: Uuid::parse_str(&test_id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    passed: passed != 0,
+                    duration_ms: duration_ms as u64,
+                    failure_message,
+                    executed_at: DateTime::parse_from_rfc3339(&executed_at)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
+                        .with_timezone(&Utc),
+                    evidence_ids: Self::deserialize_ids(&evidence_ids),
+                })),
                 None => Ok(None),
             }
         }
 
-        async fn get_results_for_test(&self, test_id: Uuid) -> Result<Vec<TestResult>, TraceabilityError> {
+        async fn get_results_for_test(
+            &self,
+            test_id: Uuid,
+        ) -> Result<Vec<TestResult>, TraceabilityError> {
             let test_id_str = test_id.to_string();
-            
+
             let rows: Vec<(String, String, i64, i64, Option<String>, String, String)> =
                 sqlx::query_as(
                     "SELECT id, test_id, passed, duration_ms, failure_message, executed_at, evidence_ids FROM traceability_results WHERE test_id = ? ORDER BY executed_at DESC"
@@ -1507,10 +1683,14 @@ pub mod sqlite_store {
                 .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             let mut results = Vec::new();
-            for (id, test_id, passed, duration_ms, failure_message, executed_at, evidence_ids) in rows {
+            for (id, test_id, passed, duration_ms, failure_message, executed_at, evidence_ids) in
+                rows
+            {
                 results.push(TestResult {
-                    id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                    test_id: Uuid::parse_str(&test_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    id: Uuid::parse_str(&id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    test_id: Uuid::parse_str(&test_id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
                     passed: passed != 0,
                     duration_ms: duration_ms as u64,
                     failure_message,
@@ -1524,7 +1704,10 @@ pub mod sqlite_store {
             Ok(results)
         }
 
-        async fn get_test_for_result(&self, result_id: Uuid) -> Result<Option<TestCase>, TraceabilityError> {
+        async fn get_test_for_result(
+            &self,
+            result_id: Uuid,
+        ) -> Result<Option<TestCase>, TraceabilityError> {
             if let Some(result) = self.get_result(result_id).await? {
                 self.get_test_case(result.test_id).await
             } else {
@@ -1552,8 +1735,9 @@ pub mod sqlite_store {
             .map_err(|e| TraceabilityError::StorageError(e.to_string()))?;
 
             // Update result's evidence list
-            let mut result = self.get_result(evidence.result_id).await?
-                .ok_or_else(|| TraceabilityError::LinkError(format!("Result {} not found", evidence.result_id)))?;
+            let mut result = self.get_result(evidence.result_id).await?.ok_or_else(|| {
+                TraceabilityError::LinkError(format!("Result {} not found", evidence.result_id))
+            })?;
             result.evidence_ids.push(evidence.id);
             let result_id = result.id;
             let evidence_ids = Self::serialize_ids(&result.evidence_ids);
@@ -1570,7 +1754,7 @@ pub mod sqlite_store {
 
         async fn get_evidence(&self, id: Uuid) -> Result<Option<Evidence>, TraceabilityError> {
             let id_str = id.to_string();
-            
+
             let row: Option<(String, String, String, String, Option<String>, String)> =
                 sqlx::query_as(
                     "SELECT id, result_id, evidence_type, artifact_path, description, created_at FROM traceability_evidence WHERE id = ?"
@@ -1583,9 +1767,12 @@ pub mod sqlite_store {
             match row {
                 Some((id, result_id, evidence_type, artifact_path, description, created_at)) => {
                     Ok(Some(Evidence {
-                        id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        result_id: Uuid::parse_str(&result_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        evidence_type: serde_json::from_str(&format!("\"{}\"", evidence_type)).unwrap_or(EvidenceType::Custom),
+                        id: Uuid::parse_str(&id)
+                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                        result_id: Uuid::parse_str(&result_id)
+                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                        evidence_type: serde_json::from_str(&format!("\"{}\"", evidence_type))
+                            .unwrap_or(EvidenceType::Custom),
                         artifact_path,
                         description,
                         created_at: DateTime::parse_from_rfc3339(&created_at)
@@ -1597,9 +1784,12 @@ pub mod sqlite_store {
             }
         }
 
-        async fn get_evidence_for_result(&self, result_id: Uuid) -> Result<Vec<Evidence>, TraceabilityError> {
+        async fn get_evidence_for_result(
+            &self,
+            result_id: Uuid,
+        ) -> Result<Vec<Evidence>, TraceabilityError> {
             let result_id_str = result_id.to_string();
-            
+
             let rows: Vec<(String, String, String, String, Option<String>, String)> =
                 sqlx::query_as(
                     "SELECT id, result_id, evidence_type, artifact_path, description, created_at FROM traceability_evidence WHERE result_id = ?"
@@ -1612,9 +1802,12 @@ pub mod sqlite_store {
             let mut evidence_list = Vec::new();
             for (id, result_id, evidence_type, artifact_path, description, created_at) in rows {
                 evidence_list.push(Evidence {
-                    id: Uuid::parse_str(&id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                    result_id: Uuid::parse_str(&result_id).map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                    evidence_type: serde_json::from_str(&format!("\"{}\"", evidence_type)).unwrap_or(EvidenceType::Custom),
+                    id: Uuid::parse_str(&id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    result_id: Uuid::parse_str(&result_id)
+                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    evidence_type: serde_json::from_str(&format!("\"{}\"", evidence_type))
+                        .unwrap_or(EvidenceType::Custom),
                     artifact_path,
                     description,
                     created_at: DateTime::parse_from_rfc3339(&created_at)
@@ -1626,7 +1819,10 @@ pub mod sqlite_store {
             Ok(evidence_list)
         }
 
-        async fn get_result_for_evidence(&self, evidence_id: Uuid) -> Result<Option<TestResult>, TraceabilityError> {
+        async fn get_result_for_evidence(
+            &self,
+            evidence_id: Uuid,
+        ) -> Result<Option<TestResult>, TraceabilityError> {
             if let Some(evidence) = self.get_evidence(evidence_id).await? {
                 self.get_result(evidence.result_id).await
             } else {
@@ -1634,75 +1830,98 @@ pub mod sqlite_store {
             }
         }
 
-        async fn get_full_chain(&self, goal_id: Uuid) -> Result<Option<TraceabilityChain>, TraceabilityError> {
-            let goal = self.get_goal(goal_id).await?.ok_or(TraceabilityError::NotFound(goal_id))?;
-            
+        async fn get_full_chain(
+            &self,
+            goal_id: Uuid,
+        ) -> Result<Option<TraceabilityChain>, TraceabilityError> {
+            let goal = self
+                .get_goal(goal_id)
+                .await?
+                .ok_or(TraceabilityError::NotFound(goal_id))?;
+
             let criteria_list = self.get_criteria_for_goal(goal_id).await?;
             let mut criteria_chain = Vec::new();
-            
+
             for criteria in criteria_list {
                 let test_list = self.get_tests_for_criteria(criteria.id).await?;
                 let mut tests_chain = Vec::new();
-                
+
                 for test in test_list {
                     let results = self.get_results_for_test(test.id).await?;
                     let mut evidence_list = Vec::new();
-                    
+
                     if let Some(latest_result) = results.first() {
                         evidence_list = self.get_evidence_for_result(latest_result.id).await?;
                     }
-                    
+
                     tests_chain.push(TestInChain {
                         test_case: test,
                         results,
                         evidence: evidence_list,
                     });
                 }
-                
+
                 criteria_chain.push(CriteriaInChain {
                     criteria,
                     tests: tests_chain,
                 });
             }
-            
+
             Ok(Some(TraceabilityChain {
                 goal,
                 criteria: criteria_chain,
             }))
         }
 
-        async fn get_reverse_chain(&self, evidence_id: Uuid) -> Result<Option<TraceabilityChain>, TraceabilityError> {
-            let _evidence = self.get_evidence(evidence_id).await?
+        async fn get_reverse_chain(
+            &self,
+            evidence_id: Uuid,
+        ) -> Result<Option<TraceabilityChain>, TraceabilityError> {
+            let _evidence = self
+                .get_evidence(evidence_id)
+                .await?
                 .ok_or(TraceabilityError::NotFound(evidence_id))?;
-            
-            let result = self.get_result_for_evidence(evidence_id).await?
+
+            let result = self
+                .get_result_for_evidence(evidence_id)
+                .await?
                 .ok_or(TraceabilityError::NotFound(evidence_id))?;
-            
-            let test = self.get_test_for_result(result.id).await?
+
+            let test = self
+                .get_test_for_result(result.id)
+                .await?
                 .ok_or(TraceabilityError::NotFound(result.id))?;
-            
-            let criteria = self.get_criteria_for_test(test.id).await?
+
+            let criteria = self
+                .get_criteria_for_test(test.id)
+                .await?
                 .ok_or(TraceabilityError::NotFound(test.id))?;
-            
-            let goal = self.get_goal_for_criteria(criteria.id).await?
+
+            let goal = self
+                .get_goal_for_criteria(criteria.id)
+                .await?
                 .ok_or(TraceabilityError::NotFound(criteria.id))?;
-            
+
             self.get_full_chain(goal.id).await
         }
 
         async fn count_chain_items(&self, goal_id: Uuid) -> Result<ChainCounts, TraceabilityError> {
             let chain = self.get_full_chain(goal_id).await?;
-            
+
             match chain {
                 Some(c) => Ok(ChainCounts {
                     goals: 1,
                     criteria: c.criteria.len(),
                     tests: c.criteria.iter().map(|cv| cv.tests.len()).sum(),
-                    results: c.criteria.iter()
+                    results: c
+                        .criteria
+                        .iter()
                         .flat_map(|cv| cv.tests.iter())
                         .flat_map(|tv| tv.results.iter())
                         .count(),
-                    evidence: c.criteria.iter()
+                    evidence: c
+                        .criteria
+                        .iter()
                         .flat_map(|cv| cv.tests.iter())
                         .flat_map(|tv| tv.evidence.iter())
                         .count(),

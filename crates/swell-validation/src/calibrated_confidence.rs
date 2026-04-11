@@ -269,13 +269,15 @@ impl DefectTracker {
     pub fn file_defect_rate(&self, file: &str) -> f64 {
         // Find the most specific matching pattern
         let mut best_rate = self.overall_defect_rate;
-        
+
         for (pattern, rate) in &self.file_pattern_defect_rates {
-            if (file.contains(pattern.trim_start_matches("*.")) || pattern == "*") && *rate > best_rate {
+            if (file.contains(pattern.trim_start_matches("*.")) || pattern == "*")
+                && *rate > best_rate
+            {
                 best_rate = *rate;
             }
         }
-        
+
         best_rate
     }
 
@@ -302,7 +304,8 @@ impl DefectTracker {
 
     /// Get average severity of defects
     pub fn average_severity(&self) -> f64 {
-        let defects: Vec<&DefectRecord> = self.records.iter().filter(|r| r.defect_count > 0).collect();
+        let defects: Vec<&DefectRecord> =
+            self.records.iter().filter(|r| r.defect_count > 0).collect();
         if defects.is_empty() {
             return 0.0;
         }
@@ -324,12 +327,12 @@ impl DefectTracker {
 
         // Update file pattern rates
         let mut file_counts: HashMap<String, (usize, usize)> = HashMap::new(); // pattern -> (total, defective)
-        
+
         for record in &self.records {
             for file in &record.changed_files {
                 let extension = file.split('.').next_back().unwrap_or("*");
                 let pattern = format!("*.{}", extension);
-                
+
                 let entry = file_counts.entry(pattern).or_insert((0, 0));
                 entry.0 += 1;
                 if record.defect_count > 0 {
@@ -349,7 +352,7 @@ impl DefectTracker {
         // Update day of week rates
         let mut day_counts: [usize; 7] = [0; 7];
         let mut day_defects: [usize; 7] = [0; 7];
-        
+
         for record in &self.records {
             let day = record.merged_at.weekday().num_days_from_monday() as usize;
             day_counts[day] += 1;
@@ -410,7 +413,7 @@ impl CalibrationModel {
     /// Train the model on historical validation records
     pub fn train(&mut self, records: &[ValidationRecord]) -> TrainingResult {
         let sample_count = records.len();
-        
+
         if sample_count < self.min_samples {
             return TrainingResult {
                 success: false,
@@ -546,7 +549,11 @@ impl CalibrationModel {
     }
 
     /// Internal probability prediction with custom params
-    fn predict_probability_internal(&self, features: &CalibrationFeatures, params: &CalibrationParams) -> f64 {
+    fn predict_probability_internal(
+        &self,
+        features: &CalibrationFeatures,
+        params: &CalibrationParams,
+    ) -> f64 {
         let raw = self.predict_raw(features, params);
         self.sigmoid(&raw)
     }
@@ -631,7 +638,8 @@ impl Predictor {
                 gates_run: vec![],
             });
         } else if record.passed {
-            self.defect_tracker.record_clean_merge(record.id, record.timestamp);
+            self.defect_tracker
+                .record_clean_merge(record.id, record.timestamp);
         }
     }
 
@@ -644,15 +652,19 @@ impl Predictor {
     /// Predict validation pass probability for given features
     pub fn predict(&self, features: CalibrationFeatures) -> CalibratedConfidence {
         let mut features = features;
-        
+
         // Enrich with historical defect rate
         features.historical_defect_rate = self.defect_tracker.changed_files_defect_rate(&[]);
-        
+
         self.calibration_model.predict(&features)
     }
 
     /// Predict with file-specific risk
-    pub fn predict_for_files(&self, features: CalibrationFeatures, files: &[String]) -> CalibratedConfidence {
+    pub fn predict_for_files(
+        &self,
+        features: CalibrationFeatures,
+        files: &[String],
+    ) -> CalibratedConfidence {
         let mut features = features;
         features.historical_defect_rate = self.defect_tracker.changed_files_defect_rate(files);
         self.calibration_model.predict(&features)
@@ -774,7 +786,10 @@ mod tests {
 
         let score = features.weighted_score();
         // High-quality features should produce a high score (around 0.88-0.89 due to normalization)
-        assert!(score > 0.85, "High-quality features should produce high score");
+        assert!(
+            score > 0.85,
+            "High-quality features should produce high score"
+        );
     }
 
     #[test]
@@ -798,13 +813,13 @@ mod tests {
     #[test]
     fn test_defect_tracker_basic() {
         let mut tracker = DefectTracker::new();
-        
+
         assert_eq!(tracker.defect_rate(), 0.0);
         assert_eq!(tracker.record_count(), 0);
-        
+
         tracker.record_clean_merge("merge1".to_string(), Utc::now());
         tracker.record_clean_merge("merge2".to_string(), Utc::now());
-        
+
         assert_eq!(tracker.defect_rate(), 0.0);
         assert_eq!(tracker.record_count(), 2);
     }
@@ -812,7 +827,7 @@ mod tests {
     #[test]
     fn test_defect_tracker_with_defects() {
         let mut tracker = DefectTracker::new();
-        
+
         tracker.record_clean_merge("merge1".to_string(), Utc::now());
         tracker.record_defect(DefectRecord {
             merge_id: "merge2".to_string(),
@@ -825,7 +840,7 @@ mod tests {
             validation_passed: true,
             gates_run: vec![],
         });
-        
+
         assert_eq!(tracker.defect_rate(), 0.5);
         assert_eq!(tracker.records_with_defects(), 1);
         assert_eq!(tracker.average_severity(), 3.0);
@@ -840,7 +855,7 @@ mod tests {
     #[test]
     fn test_calibration_model_train_insufficient_data() {
         let mut model = CalibrationModel::new().with_min_samples(10);
-        
+
         let records = vec![ValidationRecord {
             id: "1".to_string(),
             task_id: "task1".to_string(),
@@ -854,7 +869,7 @@ mod tests {
             ai_review_confidence: 0.9,
             had_post_merge_defect: false,
         }];
-        
+
         let result = model.train(&records);
         assert!(!result.success);
         assert_eq!(result.samples_used, 1);
@@ -864,7 +879,7 @@ mod tests {
     fn test_calibration_model_train_sufficient_data() {
         let mut model = CalibrationModel::new().with_min_samples(3);
         let records = create_test_validation_records();
-        
+
         let result = model.train(&records);
         assert!(result.success);
         assert_eq!(result.samples_used, 5);
@@ -876,7 +891,7 @@ mod tests {
         let mut model = CalibrationModel::new().with_min_samples(3);
         let records = create_test_validation_records();
         model.train(&records);
-        
+
         let features = CalibrationFeatures {
             lint_score: 1.0,
             test_score: 1.0,
@@ -887,7 +902,7 @@ mod tests {
             warning_count: 1,
             historical_defect_rate: 0.1,
         };
-        
+
         let confidence = model.predict(&features);
         assert!(confidence.pass_probability >= 0.0);
         assert!(confidence.pass_probability <= 1.0);
@@ -903,7 +918,7 @@ mod tests {
     #[test]
     fn test_predictor_record_outcome() {
         let mut predictor = Predictor::new();
-        
+
         predictor.record_outcome(ValidationRecord {
             id: "1".to_string(),
             task_id: "task1".to_string(),
@@ -917,7 +932,7 @@ mod tests {
             ai_review_confidence: 0.9,
             had_post_merge_defect: false,
         });
-        
+
         // Should have recorded a clean merge
         assert_eq!(predictor.defect_tracker().record_count(), 1);
     }
@@ -926,10 +941,10 @@ mod tests {
     fn test_predictor_train_and_predict() {
         let mut predictor = Predictor::new().with_min_samples(3);
         let records = create_test_validation_records();
-        
+
         predictor.train(&records);
         assert!(predictor.is_ready());
-        
+
         let features = CalibrationFeatures {
             lint_score: 1.0,
             test_score: 1.0,
@@ -940,7 +955,7 @@ mod tests {
             warning_count: 0,
             historical_defect_rate: 0.0,
         };
-        
+
         let confidence = predictor.predict(features);
         assert!(confidence.pass_probability >= 0.0);
         assert!(confidence.pass_probability <= 1.0);
@@ -954,7 +969,7 @@ mod tests {
             risk_level: RiskLevel::Low,
             model_version: "1.0.0".to_string(),
         };
-        
+
         assert_eq!(confidence.risk_level, RiskLevel::Low);
         assert_eq!(confidence.model_version, "1.0.0");
     }
@@ -963,7 +978,7 @@ mod tests {
     fn test_defect_tracker_merge() {
         let mut tracker1 = DefectTracker::new();
         let mut tracker2 = DefectTracker::new();
-        
+
         tracker1.record_clean_merge("merge1".to_string(), Utc::now());
         tracker2.record_defect(DefectRecord {
             merge_id: "merge2".to_string(),
@@ -976,9 +991,9 @@ mod tests {
             validation_passed: true,
             gates_run: vec![],
         });
-        
+
         tracker1.merge(&tracker2);
-        
+
         assert_eq!(tracker1.record_count(), 2);
         assert_eq!(tracker1.defect_rate(), 0.5);
     }
@@ -986,7 +1001,7 @@ mod tests {
     #[test]
     fn test_defect_tracker_clear() {
         let mut tracker = DefectTracker::new();
-        
+
         tracker.record_defect(DefectRecord {
             merge_id: "merge1".to_string(),
             merged_at: Utc::now(),
@@ -998,9 +1013,9 @@ mod tests {
             validation_passed: true,
             gates_run: vec![],
         });
-        
+
         assert_eq!(tracker.record_count(), 1);
-        
+
         tracker.clear();
         assert_eq!(tracker.record_count(), 0);
         assert_eq!(tracker.defect_rate(), 0.0);

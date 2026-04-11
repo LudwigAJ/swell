@@ -1,0 +1,67 @@
+{
+  "featureId": "val-calibrated-confidence",
+  "reviewedAt": "2026-04-11T08:45:00.000Z",
+  "commitId": "07bb1ff",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation has structural issues that prevent the feature from working correctly. The model trains with hardcoded zero values for key features, and Predictor::predict() ignores file-specific defect rates.",
+    "issues": [
+      {
+        "file": "crates/swell-validation/src/calibrated_confidence.rs",
+        "line": 441,
+        "severity": "blocking",
+        "description": "CalibrationModel::extract_features() hardcodes changed_file_count=0 and historical_defect_rate=0.0. This means the model trains with these features always being 0, but CalibrationParams has weights for file_count_weight and uses changed_file_count in predict_raw(). The weights for these features will be essentially untrained/random."
+      },
+      {
+        "file": "crates/swell-validation/src/calibrated_confidence.rs",
+        "line": 500,
+        "severity": "blocking",
+        "description": "Predictor::predict() calls self.defect_tracker.changed_files_defect_rate(&[]) with an empty slice. This always returns overall_defect_rate, not file-specific rates. The predict_for_files() method exists and correctly uses the files parameter, but predict() does not. This makes the historical_defect_rate feature non-functional in the default predict() path."
+      },
+      {
+        "file": "crates/swell-validation/src/calibrated_confidence.rs",
+        "line": 79,
+        "severity": "non_blocking",
+        "description": "CalibrationFeatures::weighted_score() doesn't include changed_file_count or historical_defect_rate in its calculation. It only weights lint, test, security, ai_review, errors, and warnings. This method appears diagnostic but could be misleading since the model weights include changed_file_count."
+      },
+      {
+        "file": "crates/swell-validation/src/calibrated_confidence.rs",
+        "line": 464,
+        "severity": "non_blocking",
+        "description": "CalibrationModel::calculate_calibration_quality() returns a heuristic based on sample count and accuracy, not actual calibration quality (e.g., Expected Calibration Error). This is a placeholder implementation."
+      },
+      {
+        "file": "crates/swell-validation/src/calibrated_confidence.rs",
+        "line": 479,
+        "severity": "non_blocking",
+        "description": "Predictor::record_outcome() creates a DefectRecord with changed_files=vec![] and severity=3 (default) when recording defects. This prevents file-specific defect rate tracking from working correctly. The severity should be derived from ValidationRecord if available."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "No issues found. Worker followed Rust conventions from AGENTS.md and the Rust skill.",
+      "evidence": "Worker used async_trait, proper error handling with ?, and followed project patterns."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed the Rust skill procedure correctly.",
+      "evidence": "Transcript shows worker loaded Rust skill, skillFeedback.followedProcedure is true with no deviations."
+    },
+    {
+      "area": "services",
+      "observation": "No services were started by the worker that should be documented.",
+      "evidence": "Worker only ran cargo build, cargo test, and git commit - standard development commands."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker encountered and fixed compilation errors during implementation (chrono's Datelike trait, PredictionFeatures naming conflict). These were handled correctly.",
+      "evidence": "Transcript shows worker fixed Datelike import and renamed PredictionFeatures to CalibrationFeatures to avoid conflict with predictive_selection module."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The val-calibrated-confidence feature has two blocking bugs: (1) CalibrationModel trains with changed_file_count and historical_defect_rate hardcoded to 0, making those weights untrained; (2) Predictor::predict() passes an empty slice to changed_files_defect_rate(), so historical_defect_rate is always the overall rate. The feature compiles and tests pass, but the model will not properly use file-specific defect rates. These issues must be fixed for the feature to work as intended."
+}

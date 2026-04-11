@@ -495,10 +495,9 @@ impl TestValueTracker {
     /// Calculate value score for a test
     pub async fn calculate_test_value(&self, test_name: &str) -> Result<TestValue, SwellError> {
         let metrics_map = self.metrics.read().await;
-        let metrics = metrics_map
-            .get(test_name)
-            .cloned()
-            .ok_or_else(|| SwellError::InvalidOperation(format!("Test not found: {}", test_name)))?;
+        let metrics = metrics_map.get(test_name).cloned().ok_or_else(|| {
+            SwellError::InvalidOperation(format!("Test not found: {}", test_name))
+        })?;
 
         drop(metrics_map);
 
@@ -520,11 +519,11 @@ impl TestValueTracker {
         } else if avg_time >= config.slow_test_threshold_ms as f64 {
             // Linear scale from 0.5 at threshold to 0.0 at 10x threshold
             let ratio = avg_time / config.slow_test_threshold_ms as f64;
-            (1.0 / ratio).max(0.0).min(1.0) * 0.5
+            (1.0 / ratio).clamp(0.0, 1.0) * 0.5
         } else {
             // Exponential decay: fast tests get high scores
             let ratio = avg_time / config.slow_test_threshold_ms as f64;
-            ((1.0 - ratio) * 0.5 + 0.5).max(0.0).min(1.0)
+            ((1.0 - ratio) * 0.5 + 0.5).clamp(0.0, 1.0)
         };
 
         // Coverage score (0.0 to 1.0)
@@ -589,18 +588,21 @@ impl TestValueTracker {
     }
 
     /// Analyze cost/benefit for a test
-    pub async fn analyze_cost_benefit(&self, test_name: &str) -> Result<CostBenefitAnalysis, SwellError> {
+    pub async fn analyze_cost_benefit(
+        &self,
+        test_name: &str,
+    ) -> Result<CostBenefitAnalysis, SwellError> {
         let metrics_map = self.metrics.read().await;
-        let metrics = metrics_map
-            .get(test_name)
-            .cloned()
-            .ok_or_else(|| SwellError::InvalidOperation(format!("Test not found: {}", test_name)))?;
+        let metrics = metrics_map.get(test_name).cloned().ok_or_else(|| {
+            SwellError::InvalidOperation(format!("Test not found: {}", test_name))
+        })?;
 
         let config = &self.config;
 
         // Calculate cost
         let is_slow = metrics.is_slow(config.slow_test_threshold_ms);
-        let maintenance_burden = (1.0 - metrics.pass_rate()) * 0.5 + metrics.flakiness_index() * 0.5;
+        let maintenance_burden =
+            (1.0 - metrics.pass_rate()) * 0.5 + metrics.flakiness_index() * 0.5;
 
         let cost = TestCost {
             execution_time_ms: metrics.avg_execution_time(),
@@ -616,11 +618,12 @@ impl TestValueTracker {
             0.3 // Assume some coverage if unknown
         };
 
-        let days_active = metrics.age_days().max(1.0);
+        let _days_active = metrics.age_days().max(1.0);
         let bug_detection_rate = metrics.bugs_detected as f64 / (metrics.total_runs.max(1) as f64);
         let regression_prevention = metrics.pass_rate() * coverage_contribution;
 
-        let benefit_score = (coverage_contribution + bug_detection_rate + regression_prevention) / 3.0;
+        let benefit_score =
+            (coverage_contribution + bug_detection_rate + regression_prevention) / 3.0;
 
         let benefit = TestBenefit {
             coverage_contribution,
@@ -630,7 +633,7 @@ impl TestValueTracker {
         };
 
         // Calculate ratio (benefit / cost where cost is normalized 0-1)
-        let cost_normalized = (cost.execution_time_ms as f64 / 10000.0).min(1.0);
+        let cost_normalized = (cost.execution_time_ms / 10000.0).min(1.0);
         let ratio = if cost_normalized > 0.0 {
             benefit_score / cost_normalized
         } else {
@@ -674,7 +677,9 @@ impl TestValueTracker {
                 candidates.push(RetirementCandidate {
                     test_name: name.clone(),
                     value_score: value.score,
-                    reason: value.retirement_reason.unwrap_or_else(|| "Low value score".to_string()),
+                    reason: value
+                        .retirement_reason
+                        .unwrap_or_else(|| "Low value score".to_string()),
                     confidence: value.confidence,
                     potential_savings_ms: metrics.avg_execution_time(),
                     alternative_tests: self.find_alternative_tests(name, &metrics_map).await,
@@ -702,14 +707,13 @@ impl TestValueTracker {
     }
 
     /// Internal: Compute cost/benefit from metrics (without test name lookup)
-    async fn analyze_cost_benefit_internal(
-        &self,
-        metrics: &TestMetrics,
-    ) -> CostBenefitAnalysis {
+    #[allow(dead_code)]
+    async fn analyze_cost_benefit_internal(&self, metrics: &TestMetrics) -> CostBenefitAnalysis {
         let config = &self.config;
 
         let is_slow = metrics.is_slow(config.slow_test_threshold_ms);
-        let maintenance_burden = (1.0 - metrics.pass_rate()) * 0.5 + metrics.flakiness_index() * 0.5;
+        let maintenance_burden =
+            (1.0 - metrics.pass_rate()) * 0.5 + metrics.flakiness_index() * 0.5;
 
         let cost = TestCost {
             execution_time_ms: metrics.avg_execution_time(),
@@ -724,11 +728,11 @@ impl TestValueTracker {
             0.3
         };
 
-        let bug_detection_rate =
-            metrics.bugs_detected as f64 / (metrics.total_runs.max(1) as f64);
+        let bug_detection_rate = metrics.bugs_detected as f64 / (metrics.total_runs.max(1) as f64);
         let regression_prevention = metrics.pass_rate() * coverage_contribution;
 
-        let benefit_score = (coverage_contribution + bug_detection_rate + regression_prevention) / 3.0;
+        let benefit_score =
+            (coverage_contribution + bug_detection_rate + regression_prevention) / 3.0;
 
         let benefit = TestBenefit {
             coverage_contribution,
@@ -737,7 +741,7 @@ impl TestValueTracker {
             score: benefit_score,
         };
 
-        let cost_normalized = (cost.execution_time_ms as f64 / 10000.0).min(1.0);
+        let cost_normalized = (cost.execution_time_ms / 10000.0).min(1.0);
         let ratio = if cost_normalized > 0.0 {
             benefit_score / cost_normalized
         } else {
@@ -774,11 +778,9 @@ impl TestValueTracker {
 
         metrics_map
             .keys()
-            .filter(|name| {
-                name.starts_with(&module) && *name != test_name
-            })
-            .cloned()
+            .filter(|name| name.starts_with(&module) && *name != test_name)
             .take(3)
+            .cloned()
             .collect()
     }
 
@@ -824,9 +826,7 @@ impl TestValueTracker {
                     reason: value.retirement_reason.unwrap_or_default(),
                     confidence: value.confidence,
                     potential_savings_ms: metrics.avg_execution_time(),
-                    alternative_tests: self
-                        .find_alternative_tests(name, &metrics_map)
-                        .await,
+                    alternative_tests: self.find_alternative_tests(name, &metrics_map).await,
                 });
             }
 
@@ -964,7 +964,13 @@ impl swell_core::ValidationGate for TestValueGate {
                 message: format!(
                     "Slow tests detected ({}): {}",
                     summary.slow_tests.len(),
-                    summary.slow_tests.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                    summary
+                        .slow_tests
+                        .iter()
+                        .take(5)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
                 file: None,
                 line: None,
@@ -980,7 +986,13 @@ impl swell_core::ValidationGate for TestValueGate {
                 message: format!(
                     "Flaky tests detected ({}): {}",
                     summary.flaky_tests.len(),
-                    summary.flaky_tests.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+                    summary
+                        .flaky_tests
+                        .iter()
+                        .take(5)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
                 file: None,
                 line: None,
@@ -1092,7 +1104,11 @@ mod self_improving_tests {
 
         let metrics = tracker.get_metrics("test_module::test_rate").await.unwrap();
         let pass_rate = metrics.pass_rate();
-        assert!(pass_rate > 0.69 && pass_rate < 0.71, "Pass rate should be ~0.7, got {}", pass_rate);
+        assert!(
+            pass_rate > 0.69 && pass_rate < 0.71,
+            "Pass rate should be ~0.7, got {}",
+            pass_rate
+        );
     }
 
     #[tokio::test]
@@ -1108,9 +1124,16 @@ mod self_improving_tests {
                 .unwrap();
         }
 
-        let metrics = tracker.get_metrics("test_module::test_timing").await.unwrap();
+        let metrics = tracker
+            .get_metrics("test_module::test_timing")
+            .await
+            .unwrap();
         let avg_time = metrics.avg_execution_time();
-        assert!(avg_time > 54.9 && avg_time < 55.1, "Average time should be ~55, got {}", avg_time);
+        assert!(
+            avg_time > 54.9 && avg_time < 55.1,
+            "Average time should be ~55, got {}",
+            avg_time
+        );
     }
 
     #[tokio::test]
@@ -1140,12 +1163,22 @@ mod self_improving_tests {
                 .await
                 .unwrap();
         }
-        tracker.record_bug_detection("test_module::test_good").await.unwrap();
+        tracker
+            .record_bug_detection("test_module::test_good")
+            .await
+            .unwrap();
 
-        let value = tracker.calculate_test_value("test_module::test_good").await.unwrap();
+        let value = tracker
+            .calculate_test_value("test_module::test_good")
+            .await
+            .unwrap();
 
         // Should have high value
-        assert!(value.score > 0.5, "Good test should have score > 0.5, got {}", value.score);
+        assert!(
+            value.score > 0.5,
+            "Good test should have score > 0.5, got {}",
+            value.score
+        );
         assert!(!value.recommended_for_retirement);
     }
 
@@ -1197,9 +1230,9 @@ mod self_improving_tests {
         let candidates = tracker.find_retirement_candidates().await.unwrap();
 
         // Protected test should not be in candidates
-        assert!(
-            !candidates.iter().any(|c| c.test_name.contains("integration_"))
-        );
+        assert!(!candidates
+            .iter()
+            .any(|c| c.test_name.contains("integration_")));
     }
 
     #[tokio::test]
@@ -1213,7 +1246,10 @@ mod self_improving_tests {
                 .await
                 .unwrap();
         }
-        tracker.set_coverage("test_module::test_efficient", 5000).await.unwrap();
+        tracker
+            .set_coverage("test_module::test_efficient", 5000)
+            .await
+            .unwrap();
 
         let analysis = tracker
             .analyze_cost_benefit("test_module::test_efficient")
@@ -1258,8 +1294,14 @@ mod self_improving_tests {
             .record_test_run("test_module::test_bugs", true, 100)
             .await
             .unwrap();
-        tracker.record_bug_detection("test_module::test_bugs").await.unwrap();
-        tracker.record_bug_detection("test_module::test_bugs").await.unwrap();
+        tracker
+            .record_bug_detection("test_module::test_bugs")
+            .await
+            .unwrap();
+        tracker
+            .record_bug_detection("test_module::test_bugs")
+            .await
+            .unwrap();
 
         let metrics = tracker.get_metrics("test_module::test_bugs").await.unwrap();
         assert_eq!(metrics.bugs_detected, 2);
@@ -1287,7 +1329,10 @@ mod self_improving_tests {
             .await
             .unwrap();
 
-        let metrics = tracker.get_metrics("test_module::test_flaky").await.unwrap();
+        let metrics = tracker
+            .get_metrics("test_module::test_flaky")
+            .await
+            .unwrap();
         // Flakiness is manually tracked, not automatically detected from passes/fails
         assert_eq!(metrics.total_runs, 4);
     }
@@ -1311,25 +1356,20 @@ mod self_improving_tests {
 
         // Confidence should be 50% (5/10)
         let confidence = value.confidence;
-        assert!(confidence > 0.49 && confidence < 0.51, "Confidence should be ~0.5, got {}", confidence);
+        assert!(
+            confidence > 0.49 && confidence < 0.51,
+            "Confidence should be ~0.5, got {}",
+            confidence
+        );
     }
 
     #[tokio::test]
     async fn test_all_tests_retrieval() {
         let tracker = TestValueTracker::new(TestValueConfig::default());
 
-        tracker
-            .record_test_run("test_a", true, 100)
-            .await
-            .unwrap();
-        tracker
-            .record_test_run("test_b", true, 100)
-            .await
-            .unwrap();
-        tracker
-            .record_test_run("test_c", true, 100)
-            .await
-            .unwrap();
+        tracker.record_test_run("test_a", true, 100).await.unwrap();
+        tracker.record_test_run("test_b", true, 100).await.unwrap();
+        tracker.record_test_run("test_c", true, 100).await.unwrap();
 
         let all_tests = tracker.get_all_tests().await;
         assert_eq!(all_tests.len(), 3);
@@ -1367,6 +1407,9 @@ mod self_improving_tests {
 
         // Should have passed but with warnings
         assert!(!result.passed); // Because of slow test
-        assert!(result.messages.iter().any(|m| m.code == Some("SLOW_TESTS".to_string())));
+        assert!(result
+            .messages
+            .iter()
+            .any(|m| m.code == Some("SLOW_TESTS".to_string())));
     }
 }

@@ -90,7 +90,9 @@ pub struct TestAgentResult {
 /// ```
 pub struct TestStrategyPlanner {
     planning_engine: TestPlanningEngine,
+    #[allow(dead_code)]
     risk_scorer: RiskScorer,
+    #[allow(dead_code)]
     diff_extractor: DiffContextExtractor,
 }
 
@@ -262,6 +264,7 @@ pub struct TestStrategy {
 /// ```
 pub struct TestGeneratorAgent {
     generator: TestGenerator,
+    #[allow(dead_code)]
     config: TestGeneratorConfig,
 }
 
@@ -407,6 +410,7 @@ pub struct HealedTest {
 
 /// Healer agent for fixing broken tests
 pub struct TestHealerAgent {
+    #[allow(dead_code)]
     flakiness_threshold: f64,
 }
 
@@ -529,12 +533,12 @@ impl TestHealerAgent {
             }
             TestFailureType::AssertionFailure => {
                 let (expected, actual) = self.extract_expected_actual(error_output);
-                if expected.is_some() && actual.is_some() {
+                if let (Some(exp), Some(act)) = (expected, actual) {
                     format!(
                         "Assertion failed in {}: expected {:?} but got {:?}. Check the test setup and mock values.",
                         test_name,
-                        expected.unwrap(),
-                        actual.unwrap()
+                        exp,
+                        act
                     )
                 } else {
                     format!(
@@ -606,13 +610,12 @@ impl TestHealerAgent {
             TestFailureType::CompilationError => {
                 // For compilation errors, we can't automatically fix
                 // But we can wrap unwraps with proper error handling
-                let fixed = original_code
+                original_code
                     .replace(".unwrap()", ".unwrap_or_else(|e| panic!(e))")
                     .replace(
                         ".expect(",
                         "// TODO: Replace expect with proper error handling\n    .expect(",
-                    );
-                fixed
+                    )
             }
             TestFailureType::AssertionFailure => {
                 // For assertion failures, add more context

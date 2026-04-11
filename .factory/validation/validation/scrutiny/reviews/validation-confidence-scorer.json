@@ -1,0 +1,34 @@
+{
+  "featureId": "validation-confidence-scorer",
+  "reviewedAt": "2026-04-11T09:30:00Z",
+  "commitId": "15ecfd3",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The confidence scoring module is implemented with ConfidenceSignal aggregation, 0-1 score computation, and auto-merge thresholds. The implementation covers lint, test, security, and AI review signals. However, the feature description mentions 'mutation score' and 'static analysis' which are not first-class signals in the ConfidenceScorer builder - they would require using the generic with_signal() method. The module exports all necessary types and 9 tests pass.",
+    "issues": [
+      {
+        "file": "crates/swell-validation/src/confidence.rs",
+        "line": 161,
+        "severity": "non_blocking",
+        "description": "ConfidenceScorer builder has methods for lint, tests, security, and ai_review, but the feature description mentions 'Coverage, mutation score, static analysis'. Mutation score and static analysis are not first-class signals - they would need to be added via with_signal(). Consider adding dedicated with_mutation_score() and with_static_analysis() methods for consistency with the feature description."
+      },
+      {
+        "file": "crates/swell-validation/src/confidence.rs",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "The confidence module is a standalone component and is not integrated with ValidationPipeline. This appears intentional since ConfidenceScore could be computed after pipeline execution, but there's no documented integration path. If integration is expected, it should be implemented; if not, the module should document this design decision."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The transcript shows worker attempted to load 'rust-worker' skill which doesn't exist. AGENTS.md documents 'Rust' skill but worker tried the wrong name. The skillFeedback indicates this was recognized but caused confusion.",
+      "evidence": "Transcript: 'Error: Skill \"rust-worker\" not found' and 'The rust-worker skill doesn\\'t exist. Let me explore the existing validation code'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The validation-confidence-scorer feature implementation passes code review. The core functionality (signal aggregation, 0-1 score computation, auto-merge thresholds) is correctly implemented with 9 passing tests. Two non-blocking issues were identified: (1) mutation score and static analysis mentioned in the feature description are not first-class signals in the builder API, requiring use of generic with_signal() method; (2) the confidence module is standalone rather than integrated with ValidationPipeline. Neither issue blocks functionality but could be addressed for API completeness."
+}

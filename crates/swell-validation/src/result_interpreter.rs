@@ -227,60 +227,60 @@ impl EvidencePatterns {
     fn new() -> Self {
         // Implementation bug patterns - logic errors, runtime crashes
         let impl_bug = vec![
-            ("none", 0.8),                   // Option None unwrap
-            ("null", 0.8),                    // Null pointer
-            ("index out of bounds", 0.95),    // Array bounds
-            ("overflow", 0.9),                // Arithmetic overflow
-            ("out of bounds", 0.9),           // Collection bounds
-            ("deadlock", 0.95),               // Concurrency deadlock
-            ("failed to", 0.7),               // Operation failure
-            ("panicked at", 0.75),            // Panic without specific type
-            ("lock", 0.85),                   // Mutex/lock issues
-            ("mutex", 0.85),                  // Mutex issues
-            ("already borrowed", 0.9),        // Borrow checker violation
-            ("already mutex", 0.85),          // Mutex already locked
+            ("none", 0.8),                 // Option None unwrap
+            ("null", 0.8),                 // Null pointer
+            ("index out of bounds", 0.95), // Array bounds
+            ("overflow", 0.9),             // Arithmetic overflow
+            ("out of bounds", 0.9),        // Collection bounds
+            ("deadlock", 0.95),            // Concurrency deadlock
+            ("failed to", 0.7),            // Operation failure
+            ("panicked at", 0.75),         // Panic without specific type
+            ("lock", 0.85),                // Mutex/lock issues
+            ("mutex", 0.85),               // Mutex issues
+            ("already borrowed", 0.9),     // Borrow checker violation
+            ("already mutex", 0.85),       // Mutex already locked
         ];
 
         // Test bug patterns - assertion failures, wrong expectations
         let test_bug = vec![
-            ("assertion", 0.95),       // Assertion failure
-            ("assert_eq", 0.9),        // assert_eq! failure
-            ("assert_ne", 0.9),         // assert_ne! failure
-            ("assert!", 0.85),          // assert! failure
-            ("expected:", 0.8),         // Expected value mismatch
-            ("expected ", 0.7),         // Expected value mismatch
-            ("actual:", 0.8),           // Actual value shown
-            ("but got", 0.9),           // Expected vs actual
-            ("mismatch", 0.85),         // Value mismatch
-            ("result was", 0.7),        // Result mismatch
-            ("wrong", 0.6),             // Wrong value
-            ("incorrect", 0.6),         // Incorrect value
+            ("assertion", 0.95), // Assertion failure
+            ("assert_eq", 0.9),  // assert_eq! failure
+            ("assert_ne", 0.9),  // assert_ne! failure
+            ("assert!", 0.85),   // assert! failure
+            ("expected:", 0.8),  // Expected value mismatch
+            ("expected ", 0.7),  // Expected value mismatch
+            ("actual:", 0.8),    // Actual value shown
+            ("but got", 0.9),    // Expected vs actual
+            ("mismatch", 0.85),  // Value mismatch
+            ("result was", 0.7), // Result mismatch
+            ("wrong", 0.6),      // Wrong value
+            ("incorrect", 0.6),  // Incorrect value
         ];
 
         // Environment issue patterns - compilation, infrastructure, deps
         let env_issue = vec![
-            ("cannot find", 0.95),          // Missing file/module
-            ("link:", 0.9),                 // Linker error
-            ("library not found", 0.95),    // Missing library
-            ("depends on", 0.85),           // Dependency issue
-            ("could not compile", 0.95),    // Compilation error
-            ("compilation failed", 0.95),   // Compilation error
-            ("no such file", 0.9),          // File not found
-            ("permission denied", 0.85),    // Permission issue
-            ("network", 0.9),               // Network issue
-            ("timeout", 0.85),              // Timeout
-            ("connection refused", 0.9),    // Connection issue
+            ("cannot find", 0.95),        // Missing file/module
+            ("link:", 0.9),               // Linker error
+            ("library not found", 0.95),  // Missing library
+            ("depends on", 0.85),         // Dependency issue
+            ("could not compile", 0.95),  // Compilation error
+            ("compilation failed", 0.95), // Compilation error
+            ("no such file", 0.9),        // File not found
+            ("permission denied", 0.85),  // Permission issue
+            ("network", 0.9),             // Network issue
+            ("timeout", 0.85),            // Timeout
+            ("connection refused", 0.9),  // Connection issue
         ];
 
         // Flaky patterns - timing, race conditions, non-determinism
         let flaky = vec![
-            ("race condition", 0.95),       // Race condition
-            ("timing", 0.8),                // Timing issue
-            ("intermittently", 0.9),        // Intermittent failure
-            ("sometimes", 0.8),             // Non-deterministic
-            ("occasionally", 0.85),         // Occasional failure
-            ("flaky", 0.95),                // Explicitly called flaky
-            ("non-deterministic", 0.9),     // Non-deterministic
+            ("race condition", 0.95),   // Race condition
+            ("timing", 0.8),            // Timing issue
+            ("intermittently", 0.9),    // Intermittent failure
+            ("sometimes", 0.8),         // Non-deterministic
+            ("occasionally", 0.85),     // Occasional failure
+            ("flaky", 0.95),            // Explicitly called flaky
+            ("non-deterministic", 0.9), // Non-deterministic
         ];
 
         Self {
@@ -397,13 +397,8 @@ impl ResultInterpreter {
         }
 
         // Determine the category with highest score
-        let (category, max_score, evidence) = self.determine_category(
-            impl_score,
-            test_score,
-            env_score,
-            flaky_score,
-            &msg_lower,
-        );
+        let (category, max_score, evidence) =
+            self.determine_category(impl_score, test_score, env_score, flaky_score, &msg_lower);
 
         // Calculate confidence based on score strength and evidence
         let confidence = self.calculate_confidence(max_score, &evidence);
@@ -458,7 +453,10 @@ impl ResultInterpreter {
         let (category, max_score) = scores[0];
 
         // Generate evidence
-        let mut evidence = vec![format!("Best match: {:?} with score {:.2}", category, max_score)];
+        let mut evidence = vec![format!(
+            "Best match: {:?} with score {:.2}",
+            category, max_score
+        )];
 
         if max_score < 0.3 {
             evidence.push("Low pattern match score, classification uncertain".to_string());
@@ -613,7 +611,10 @@ impl BatchClassificationResult {
 
     /// Get results filtered by category
     pub fn filter_by_category(&self, category: FailureCategory) -> Vec<&ClassificationResult> {
-        self.results.iter().filter(|r| r.category == category).collect()
+        self.results
+            .iter()
+            .filter(|r| r.category == category)
+            .collect()
     }
 }
 
@@ -627,9 +628,15 @@ mod result_interpreter_tests {
 
     #[test]
     fn test_failure_category_names() {
-        assert_eq!(FailureCategory::ImplementationBug.name(), "Implementation Bug");
+        assert_eq!(
+            FailureCategory::ImplementationBug.name(),
+            "Implementation Bug"
+        );
         assert_eq!(FailureCategory::TestBug.name(), "Test Bug");
-        assert_eq!(FailureCategory::EnvironmentIssue.name(), "Environment Issue");
+        assert_eq!(
+            FailureCategory::EnvironmentIssue.name(),
+            "Environment Issue"
+        );
         assert_eq!(FailureCategory::Flaky.name(), "Flaky Test");
         assert_eq!(FailureCategory::Unclear.name(), "Unclear");
     }
@@ -649,7 +656,8 @@ mod result_interpreter_tests {
 
         let info = TestResultInfo {
             test_name: "test_index_bounds",
-            message: "thread 'test' panicked at 'index out of bounds: the len is 3 but the index is 99'",
+            message:
+                "thread 'test' panicked at 'index out of bounds: the len is 3 but the index is 99'",
             file: Some("src/array.rs"),
             line: Some(42),
             is_compilation_error: false,
@@ -660,7 +668,9 @@ mod result_interpreter_tests {
 
         assert_eq!(result.category, FailureCategory::ImplementationBug);
         assert!(result.confidence >= 0.7);
-        assert!(result.matched_patterns.contains(&"index out of bounds".to_string()));
+        assert!(result
+            .matched_patterns
+            .contains(&"index out of bounds".to_string()));
     }
 
     #[test]
@@ -781,9 +791,15 @@ mod result_interpreter_tests {
         let batch_result = interpreter.interpret_batch(&infos);
 
         assert_eq!(batch_result.results.len(), 3);
-        assert!(batch_result.category_counts.contains_key(&FailureCategory::ImplementationBug));
-        assert!(batch_result.category_counts.contains_key(&FailureCategory::TestBug));
-        assert!(batch_result.category_counts.contains_key(&FailureCategory::EnvironmentIssue));
+        assert!(batch_result
+            .category_counts
+            .contains_key(&FailureCategory::ImplementationBug));
+        assert!(batch_result
+            .category_counts
+            .contains_key(&FailureCategory::TestBug));
+        assert!(batch_result
+            .category_counts
+            .contains_key(&FailureCategory::EnvironmentIssue));
     }
 
     #[test]
@@ -980,7 +996,8 @@ mod result_interpreter_tests {
 
         let info = TestResultInfo {
             test_name: "test_dep",
-            message: "error: cannot find dependency `serde_json`\n\nCaused by:\n  Library not found",
+            message:
+                "error: cannot find dependency `serde_json`\n\nCaused by:\n  Library not found",
             file: Some("Cargo.toml"),
             line: None,
             is_compilation_error: true,
