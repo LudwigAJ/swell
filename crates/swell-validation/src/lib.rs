@@ -111,29 +111,37 @@ pub use result_interpreter::{
 // Re-export traceability store for full traceability chain
 // Note: TestCase and TestResult from traceability conflict with same names from test_planning and evidence
 pub mod traceability;
+pub use traceability::sqlite_store::SqliteTraceabilityStore;
 pub use traceability::{
     AcceptanceCriteria as TraceAcceptanceCriteria, ChainCounts, CriteriaCriticality,
     CriteriaStatus, Evidence, EvidenceType, Goal, GoalStatus, InMemoryTraceabilityStore,
     TestCase as TraceTestCase, TestCaseStatus, TestCaseType, TestResult as TraceTestResult,
     TraceabilityChain, TraceabilityError, TraceabilityStore,
 };
-pub use traceability::sqlite_store::SqliteTraceabilityStore;
 
 // Re-export predictive test selection for ML-based intelligent test prioritization
 pub mod predictive_selection;
 pub use predictive_selection::{
     ChangeImpact, ChangeImpactAnalyzer, ChangePattern, ChangePattern::*, ImpactCategory,
-    PredictiveModel, PredictiveSelectionEngine, PredictiveSelectionResult, PredictionFeatures,
-    SelectedTest, SelectedTestSubset, SelectionConstraint, SelectionStrategy,
-    SelectionStrategy::*, TestHistoryRecord, TestPrediction, TestSubsetSelector,
+    PredictionFeatures, PredictiveModel, PredictiveSelectionEngine, PredictiveSelectionResult,
+    SelectedTest, SelectedTestSubset, SelectionConstraint, SelectionStrategy, SelectionStrategy::*,
+    TestHistoryRecord, TestPrediction, TestSubsetSelector,
 };
 
 // Re-export autonomous coverage for mutation testing and coverage gap detection
 pub mod autonomous_coverage;
 pub use autonomous_coverage::{
-    AutonomousCoverageConfig, AutonomousCoverageEngine, CoverageGap, CoverageReport,
-    CoverageTest, CoverageThresholds, GapSeverity, GapType, MutationResult, MutationType,
-    SurvivingMutation,
+    AutonomousCoverageConfig, AutonomousCoverageEngine, CoverageGap, CoverageReport, CoverageTest,
+    CoverageThresholds, GapSeverity, GapType, MutationResult, MutationType, SurvivingMutation,
+};
+
+// Re-export multi-agent test roles for collaborative testing
+pub mod multi_agent_test_roles;
+pub use multi_agent_test_roles::{
+    CollaborationResult, HealedTest, QualityIssueSeverity, QualityLevel, StrategyType,
+    TestAgentResult, TestAgentRole, TestCollaborationOrchestrator, TestDiagnosis, TestFailureType,
+    TestGenerationOutput, TestGeneratorAgent, TestHealerAgent, TestQualityAssessment,
+    TestQualityIssue, TestReviewerAgent, TestStrategy, TestStrategyItem, TestStrategyPlanner,
 };
 
 // Re-export self-improving tests for test value tracking and low-value test retirement
