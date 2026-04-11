@@ -1,26 +1,52 @@
 {
   "featureId": "tools-search",
-  "reviewedAt": "2026-04-11T00:00:00Z",
+  "reviewedAt": "2026-04-11T05:30:00Z",
   "commitId": "491e98c",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "SearchTool implementation verified. The feature was already implemented by a prior worker - this worker correctly identified and verified the existing implementation. All verification steps passed: build, tests, clippy, and workspace tests. The commit 491e98c contains a minor fix (removing unused `mut` in test) unrelated to the core feature.",
-    "issues": []
+    "summary": "SearchTool implementation exists in crates/swell-tools/src/tools.rs but has correctness issues in symbol_search. The grep and glob operations work for basic cases, but symbol_search has critical bugs that cause it to miss valid Rust symbol definitions.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/tools.rs",
+        "line": 672,
+        "severity": "blocking",
+        "description": "symbol_search patterns don't match common Rust syntax. Patterns like '^fn {} ' fail to match 'async fn', 'pub fn', 'extern fn', 'unsafe fn', and generic functions 'fn foo<T>()'. The '^' anchor only matches start of line, but Rust modifiers come before 'fn'."
+      },
+      {
+        "file": "crates/swell-tools/src/tools.rs",
+        "line": 672,
+        "severity": "blocking",
+        "description": "The macro_rules! pattern 'macro_rules! {} ' is missing the '!' in the format string. It should be 'macro_rules! {} ' but currently produces 'macro_rules: {} ' (colon instead of exclamation)."
+      },
+      {
+        "file": "crates/swell-tools/src/tools.rs",
+        "line": 688,
+        "severity": "non_blocking",
+        "description": "Duplicate detection in symbol_search uses all_matches.contains() which is O(n²). Could use a HashSet for better performance with large result sets."
+      },
+      {
+        "file": "crates/swell-tools/src/tools.rs",
+        "line": 606,
+        "severity": "non_blocking",
+        "description": "grep operation doesn't escape regex metacharacters in the pattern. If a user searches for something like 'foo.bar' or 'test[1]', grep may fail or return unexpected results."
+      },
+      {
+        "file": "crates/swell-tools/src/tools.rs",
+        "line": 648,
+        "severity": "non_blocking",
+        "description": "glob operation silently returns empty results when pattern is invalid. No error is reported, making debugging difficult for users."
+      }
+    ]
   },
   "sharedStateObservations": [
     {
       "area": "skills",
-      "observation": "Feature specifies skillName 'Rust' but worker reported 'rust-worker' skill not found. The actual skill directory is 'rust' (lowercase, no suffix). The mismatch between feature.skillName ('Rust') and available skills (rust) caused confusion. AGENTS.md and the skill directory both use 'rust' as the slug.",
-      "evidence": "features.json has skillName: 'Rust' but ~/.factory/skills/ contains 'rust' not 'Rust' or 'rust-worker'. Transcript shows: 'The rust-worker skill specified in the feature did not exist.'"
-    },
-    {
-      "area": "skills",
-      "observation": "Worker followed an appropriate deviation when the specified skill was unavailable - they explored the codebase directly and found the implementation already complete. This was a reasonable workaround.",
-      "evidence": "skillFeedback.deviations: { step: '1.1 Read Context + Invoke Worker Skill', whatIDidInstead: 'The rust-worker skill specified in the feature did not exist. Instead, I explored the codebase...', why: 'Skill not found - feature implementation was already complete' }"
+      "observation": "The worker noted 'rust-worker skill specified in the feature did not exist'. The skillFeedback indicates skill was not found, but the worker proceeded anyway. This is documented in handoff.",
+      "evidence": "handoff.skillFeedback.deviations[0]: 'The rust-worker skill specified in the feature did not exist.'"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature tools-search passes review. SearchTool (grep, glob, symbol_search) was already implemented in crates/swell-tools/src/tools.rs with adequate test coverage. The worker correctly verified existing implementation rather than duplicating work. Verification commands (cargo build, cargo test -p swell-tools -- search, cargo clippy) all passed. Minor observation: skill name mismatch between feature specification and available skills - no action required since implementation is complete."
+  "summary": "The SearchTool was already implemented before this worker session. The worker verified build and tests pass. However, code review reveals blocking bugs in symbol_search: patterns don't match common Rust syntax (async fn, pub fn, extern fn, unsafe fn, generics) due to incorrect regex anchoring, and the macro_rules! pattern has a typo (missing !). These bugs will cause symbol_search to miss valid definitions while still returning 'success: true'."
 }

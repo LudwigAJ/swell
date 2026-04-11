@@ -139,7 +139,11 @@ pub struct OpaSubject {
 
 impl OpaSubject {
     /// Create a new subject
-    pub fn new(agent_id: &str, role: &str, operation_risk: crate::cedar_policy::CedarRiskLevel) -> Self {
+    pub fn new(
+        agent_id: &str,
+        role: &str,
+        operation_risk: crate::cedar_policy::CedarRiskLevel,
+    ) -> Self {
         Self {
             agent_id: agent_id.to_string(),
             role: role.to_string(),
@@ -181,7 +185,10 @@ impl OpaAction {
                 operation.clone(),
             )])),
             ToolOperation::ReadOnly { tool_name } | ToolOperation::Destructive { tool_name } => {
-                Some(HashMap::from([("tool_name".to_string(), tool_name.clone())]))
+                Some(HashMap::from([(
+                    "tool_name".to_string(),
+                    tool_name.clone(),
+                )]))
             }
         };
         Self {

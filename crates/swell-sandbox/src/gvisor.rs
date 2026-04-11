@@ -205,7 +205,9 @@ impl GvisorSandbox {
     async fn exec_in_container(&self, cmd: &SandboxCommand) -> Result<SandboxOutput, SwellError> {
         let container_id = {
             let guard = self.container_id.lock().unwrap();
-            guard.clone().ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?
+            guard.clone().ok_or_else(|| {
+                SwellError::ToolExecutionFailed("Container not running".to_string())
+            })?
         };
 
         let start = Instant::now();
@@ -489,7 +491,9 @@ impl Sandbox for GvisorSandbox {
 
         let container_id = {
             let guard = self.container_id.lock().unwrap();
-            guard.clone().ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?
+            guard.clone().ok_or_else(|| {
+                SwellError::ToolExecutionFailed("Container not running".to_string())
+            })?
         };
 
         self.write_file_to_container(&container_id, path, content)
@@ -505,7 +509,9 @@ impl Sandbox for GvisorSandbox {
 
         let container_id = {
             let guard = self.container_id.lock().unwrap();
-            guard.clone().ok_or_else(|| SwellError::ToolExecutionFailed("Container not running".to_string()))?
+            guard.clone().ok_or_else(|| {
+                SwellError::ToolExecutionFailed("Container not running".to_string())
+            })?
         };
 
         self.read_file_from_container(&container_id, path).await

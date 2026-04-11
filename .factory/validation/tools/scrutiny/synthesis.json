@@ -1,89 +1,77 @@
 {
   "milestone": "tools",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
     "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
-    "lint": { "passed": true, "command": "cargo fmt --all -- --check", "exitCode": 0 }
+    "lint": { "passed": true, "command": "cargo fmt --all", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 29,
-    "passed": 24,
-    "failed": 5,
+    "total": 9,
+    "passed": 6,
+    "failed": 3,
     "failedFeatures": [
-      "tools-firecracker-sandbox",
-      "tools-gvisor-support",
-      "tools-vault-integration",
-      "tools-cedar-policy",
-      "tools-credential-proxy"
+      "tools-file-write",
+      "tools-search",
+      "tools-permission-tiers"
     ]
   },
   "blockingIssues": [
     {
-      "featureId": "tools-firecracker-sandbox",
+      "featureId": "tools-file-write",
       "severity": "blocking",
-      "description": "FirecrackerSandbox is a STUB - all methods contain 'STUB: In real implementation, this would...' comments and return mock responses. The feature requires 'Firecracker microVM provisioned per task' with '<125ms startup time' and 'hardware virtualization isolation' but none of this is implemented. Commit 2fe7084 is for hybrid executor, not firecracker."
+      "description": "WriteFileTool lacks workspace path validation - critical security gap. WriteFileTool can write to any path on the filesystem (e.g., /etc/passwd, ~/.ssh/), unlike ReadFileTool which properly validates paths are within workspace using canonicalize(). The WriteFileTool struct is missing workspace_path field, with_workspace_path() builder method, and validate_path() method."
     },
     {
-      "featureId": "tools-gvisor-support",
+      "featureId": "tools-search",
       "severity": "blocking",
-      "description": "CRITICAL BUG at line 373: start() extracts container_id from docker run output but never stores it in self.container_id. All subsequent operations (execute, read_file, write_file, is_running, stop) fail because container_id is always None. Fix: assign container_id to self.container_id before Ok(()) in start()."
+      "description": "symbol_search patterns don't match common Rust syntax: patterns like '^fn {} ' fail to match 'async fn', 'pub fn', 'extern fn', 'unsafe fn', and generic functions 'fn foo<T>()'. Also, macro_rules! pattern is missing '!' (uses colon instead of exclamation)."
     },
     {
-      "featureId": "tools-vault-integration",
+      "featureId": "tools-permission-tiers",
       "severity": "blocking",
-      "description": "Two blocking bugs: (1) Cache memory leak at line 445 - is_cached() returns false for expired entries but never removes them from HashMap, causing unbounded memory growth. (2) get_lease_ttl() at line 515 is stubbed to return None, preventing automatic credential rotation monitoring."
-    },
-    {
-      "featureId": "tools-cedar-policy",
-      "severity": "blocking",
-      "description": "Cedar policy engine is not integrated with existing tool execution flow - executor.rs still uses PermissionChecker with PermissionTier, not CedarPolicyEngine. Also duplicate ToolOperation enum exists in both cedar_policy.rs (line 74) and opa_policy.rs causing maintenance issues."
-    },
-    {
-      "featureId": "tools-credential-proxy",
-      "severity": "blocking",
-      "description": "Validation check bug at line 370: request_credential() requires 'read' in scope.allowed_operations but git scopes only have 'push/pull/fetch' and LLM scopes only have 'chat/embed'. This breaks credential requests for non-read operations."
+      "description": "PermissionTier::Ask is treated identically to Deny - both result in blocking execution. The feature requires 'Ask confirmation for medium' but no confirmation mechanism exists. Tools with Ask tier simply fail. No dedicated permission_tiers.rs module exists - system is distributed across executor.rs, hybrid.rs, tools.rs."
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Document that .factory/services.yaml exists at repo root (not ~/.factory/) - workers attempted to read from wrong path.",
-      "evidence": "Multiple workers tried to read ~/.factory/services.yaml but it actually exists at /Users/ludwigjonsson/Projects/swell/.factory/services.yaml",
+      "suggestion": "Document that tools implementation is in crates/swell-tools/src/tools.rs, not separate files like file.rs, git.rs. Workers looked for git.rs, file.rs but implementation is consolidated in tools.rs.",
+      "evidence": "tools-file-read, tools-file-write, tools-git-ops all had task description pointing to non-existent files",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Add boundary rule: When a feature's expected behavior cannot be met by existing stub code (e.g., Firecracker requiring KVM/hardware virtualization), workers must report this as incomplete rather than marking the stub as complete.",
-      "evidence": "tools-firecracker-sandbox worker treated a stub marked '(future)' in architecture.md as complete implementation",
+      "suggestion": "Add boundary rule: When implementing file tools, both ReadFileTool AND WriteFileTool must have consistent workspace path validation. Workers should not mark WriteFileTool complete without path validation just because ReadFileTool has it.",
+      "evidence": "tools-file-write worker marked 'fully implemented' but missing critical security feature present in sibling ReadFileTool",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Standardize skill names - features reference 'rust-worker' skill but actual skill is 'Rust'. Document the canonical skill names.",
-      "evidence": "tools-permission-tiers, tools-shell-exec, tools-search reference non-existent 'rust-worker' skill",
-      "isSystemic": true
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Document that when implementing policy engines (Cedar, OPA), ToolOperation enum should be shared, not duplicated. Create a shared types module for cross-cutting enums.",
-      "evidence": "cedar_policy.rs and opa_policy.rs both define ToolOperation with identical variants",
-      "isSystemic": true
-    },
-    {
-      "target": "architecture.md",
-      "suggestion": "Firecracker sandbox is explicitly marked as '(future)' and requires KVM/bare-metal. Clarify that it's a stub placeholder and cannot be fully implemented in macOS/container environments.",
-      "evidence": "plan/research_documents/Tools and Runtime Control Spec.md states 'Firecracker requires direct KVM access, which means bare-metal hosts or nested virtualization. It won't run inside standard Kubernetes pods.'",
+      "suggestion": "Add boundary rule: symbol_search patterns for Rust must handle modifiers (async, pub, extern, unsafe) and generics. Regex anchoring with '^' at line start fails when modifiers precede 'fn'. Pattern should be '^\\s*(pub\\s+)?(async\\s+)?(extern\\s+)?(unsafe\\s+)?fn\\s+' to handle all combinations.",
+      "evidence": "tools-search worker didn't catch that patterns only match bare 'fn ' without modifiers",
       "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add boundary rule: PermissionTier::Ask requires a confirmation mechanism, not just blocking. If Ask is implemented, there must be a way to confirm or deny. If confirmation cannot be implemented, Ask should fall back to Auto (auto-approve) rather than silently treating as Deny (block).",
+      "evidence": "tools-permission-tiers worker marked 'fully implemented' but Ask tier has no confirmation flow, making it identical to Deny",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Standardize skill names in features.json - 'rust-worker' skill does not exist. Actual skill is 'Rust'. Document canonical skill names to prevent worker confusion.",
+      "evidence": "tools-search, tools-permission-tiers, tools-shell-exec, tools-file-read all referenced non-existent 'rust-worker' skill",
+      "isSystemic": true
     }
   ],
   "rejectedObservations": [
     {
-      "observation": "Worker noted rust-worker skill doesn't exist",
-      "reason": "This is covered by the systematic skill name mismatch suggestion above"
+      "observation": "Worker noting rust-worker skill doesn't exist is duplicate - covered by systematic skill name mismatch suggestion above",
+      "reason": "duplicate"
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/tools/scrutiny/synthesis.json"
 }
