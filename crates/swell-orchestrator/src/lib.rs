@@ -18,6 +18,7 @@ pub mod drift_detector;
 pub mod execution;
 pub mod feature_leads;
 pub mod followup_generator;
+pub mod frozen_spec;
 pub mod gap_analyzer;
 pub mod hard_limits;
 pub mod metrics;
@@ -61,6 +62,7 @@ pub use followup_generator::{
     FollowUpContext, FollowUpGenerator, FollowUpGeneratorConfig, FollowUpOpportunity,
     FollowUpOpportunityType, FollowUpProposal,
 };
+pub use frozen_spec::{FrozenSpec, FrozenSpecRef};
 pub use gap_analyzer::{
     CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
     RequirementCategory, RequirementPriority, SpecRequirement,

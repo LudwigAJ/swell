@@ -1,7 +1,7 @@
 //! Execution controller for managing parallel agent execution.
 #![allow(clippy::should_implement_trait)]
 
-use crate::{GeneratorAgent, Orchestrator, MAX_CONCURRENT_AGENTS};
+use crate::{frozen_spec::FrozenSpecRef, GeneratorAgent, Orchestrator, MAX_CONCURRENT_AGENTS};
 use futures::stream::{self, StreamExt};
 use std::sync::Arc;
 use swell_core::traits::Agent;
@@ -13,6 +13,8 @@ use uuid::Uuid;
 pub struct ExecutionController {
     orchestrator: Arc<Orchestrator>,
     max_concurrent: usize,
+    /// Frozen specs indexed by task_id, created at execution start
+    frozen_specs: std::sync::RwLock<std::collections::HashMap<uuid::Uuid, FrozenSpecRef>>,
 }
 
 impl ExecutionController {
@@ -20,7 +22,24 @@ impl ExecutionController {
         Self {
             orchestrator,
             max_concurrent: MAX_CONCURRENT_AGENTS,
+            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
+    }
+
+    /// Get the frozen spec for a task, if it exists
+    pub fn get_frozen_spec(&self, task_id: uuid::Uuid) -> Option<FrozenSpecRef> {
+        self.frozen_specs
+            .read()
+            .ok()
+            .and_then(|map| map.get(&task_id).cloned())
+    }
+
+    /// Get all frozen specs
+    pub fn all_frozen_specs(&self) -> Vec<FrozenSpecRef> {
+        self.frozen_specs
+            .read()
+            .map(|map| map.values().cloned().collect())
+            .unwrap_or_default()
     }
 
     /// Execute a single task through the full pipeline
@@ -32,6 +51,13 @@ impl ExecutionController {
 
         // Step 2: Get task and create GeneratorAgent with checkpoint manager
         let task = self.orchestrator.get_task(task_id).await?;
+
+        // Create frozen spec snapshot BEFORE execution starts
+        // This ensures immutability: the spec cannot be modified during execution
+        let frozen_spec = FrozenSpecRef::from_task(&task);
+        if let Ok(mut specs) = self.frozen_specs.write() {
+            specs.insert(task_id, frozen_spec);
+        }
 
         // Create GeneratorAgent and wire it to the orchestrator's checkpoint manager
         // This ensures checkpoints are created after each tool call during execution
@@ -93,14 +119,6 @@ impl ExecutionController {
 
         results
     }
-
-    /// Clone for use in async contexts
-    pub fn clone(&self) -> Self {
-        Self {
-            orchestrator: self.orchestrator.clone(),
-            max_concurrent: self.max_concurrent,
-        }
-    }
 }
 
 impl Clone for ExecutionController {
@@ -108,6 +126,7 @@ impl Clone for ExecutionController {
         Self {
             orchestrator: self.orchestrator.clone(),
             max_concurrent: self.max_concurrent,
+            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
     }
 }
