@@ -1,23 +1,36 @@
-//! swell-sandbox - Sandbox management (Firecracker, gVisor, E2B)
+//! swell-sandbox - Sandbox management (gVisor, Firecracker stub)
 //!
 //! This crate provides sandboxed execution environments using various isolation
 //! technologies:
-//! - Firecracker microVMs for kernel-level isolation (requires KVM)
-//! - gVisor (runsc) for user-space syscall interception
-//! - Docker containers for lightweight isolation
+//! - **gVisor (runsc)** - ✅ **FULLY IMPLEMENTED** - User-space syscall interception via Docker
+//! - **Firecracker microVMs** - ❌ **STUB ONLY** - Requires KVM, not available on all platforms
 //!
-//! ## Usage
+//! ## Current Status
 //!
+//! ### gVisor (Recommended)
 //! ```rust,ignore
-//! use swell_sandbox::{FirecrackerSandbox, GvisorSandbox};
+//! use swell_sandbox::GvisorSandbox;
 //!
-//! // Firecracker (requires KVM)
-//! let firecracker = FirecrackerSandbox::with_params("vm-1".to_string(), 256);
-//!
-//! // gVisor (works with Docker)
 //! let config = GvisorConfig::default();
-//! let gvisor = GvisorSandbox::new(config);
+//! let sandbox = GvisorSandbox::new(config);
+//! sandbox.start().await?;
 //! ```
+//!
+//! ### Firecracker (STUB - NOT FUNCTIONAL)
+//! ```rust,ignore
+//! use swell_sandbox::FirecrackerSandbox; // DEPRECATED - returns mock responses only!
+//!
+//! // WARNING: This creates a STUB, NOT a real microVM
+//! let firecracker = FirecrackerSandbox::with_params("vm-1".to_string(), 256);
+//! // firecracker.start() will NOT create an actual microVM
+//! ```
+//!
+//! Firecracker requires KVM (Kernel-based Virtual Machine) which is not available on:
+//! - macOS (no native KVM support)
+//! - Most CI environments
+//! - Containers without nested virtualization
+//!
+//! For actual sandboxed execution, use [`GvisorSandbox`] which works via Docker.
 
 mod gvisor;
 
@@ -50,26 +63,74 @@ impl Default for SandboxConfig {
     }
 }
 
-/// A Firecracker-based sandbox implementation (stub).
+/// A Firecracker-based sandbox implementation (STUB - NOT FUNCTIONAL).
 ///
-/// This is a stub implementation that logs operations but doesn't actually
-/// create microVMs. Real implementation would require:
-/// - KVM access
-/// - Firecracker binary and VM images
-/// - Proper process isolation
+/// # ⚠️ Important Limitations
 ///
-/// For MVP, all methods return mock responses or Ok(()).
-pub struct FirecrackerSandbox {
+/// This is a **STUB implementation** that does NOT create actual Firecracker microVMs.
+/// All methods return mock responses or log operations without real isolation.
+///
+/// ## What This Stub Does
+/// - Logs sandbox operations (start, stop, execute, file operations)
+/// - Returns mock responses for all operations
+/// - Does NOT provide actual microVM isolation
+///
+/// ## Requirements for Real Implementation
+/// To implement actual Firecracker microVM support, the following are required:
+/// - **KVM access**: Firecracker requires Linux with Kernel-based Virtual Machine (KVM)
+///   - Not available on macOS natively (requires nested virtualization)
+///   - Not available in most CI environments
+/// - **Firecracker binary**: Must be installed on the host system
+/// - **VM images**: Kernel and root filesystem images for the guest VM
+/// - **Guest agent**: A running agent inside the VM to handle commands
+///
+/// ## Performance Targets (for real implementation)
+/// - Startup time: <125ms (per spec)
+/// - Memory overhead: <5 MiB per microVM
+/// - Hardware virtualization isolation via KVM
+///
+/// ## Current Status
+/// - **NOT IMPLEMENTED**: This is a stub for API compatibility
+/// - **USE gVisorSandbox INSTEAD**: For actual sandboxed execution
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use swell_sandbox::FirecrackerSandbox; // This is a STUB!
+///
+/// // This creates a STUB instance, NOT a real microVM
+/// let sandbox = FirecrackerSandbox::with_params("vm-1".to_string(), 256);
+/// // sandbox.start() will NOT create a real microVM
+/// ```
+///
+/// For actual sandboxed execution, use [`GvisorSandbox`] which provides
+/// working containerized isolation via Docker with gVisor runtime.
+pub struct FirecrackerSandboxStub {
     config: SandboxConfig,
+    /// Whether to return errors instead of mock responses.
+    /// When true, all operations return an error indicating stub status.
+    return_errors: bool,
 }
 
-impl FirecrackerSandbox {
-    /// Create a new FirecrackerSandbox with the given configuration
+impl FirecrackerSandboxStub {
+    /// Create a new FirecrackerSandboxStub with the given configuration
+    ///
+    /// # Warning
+    ///
+    /// This creates a **STUB** instance, not a real Firecracker microVM.
+    /// The returned sandbox does NOT provide actual isolation.
     pub fn new(config: SandboxConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            return_errors: false,
+        }
     }
 
-    /// Create a new FirecrackerSandbox with simple parameters
+    /// Create a new FirecrackerSandboxStub with simple parameters
+    ///
+    /// # Warning
+    ///
+    /// This creates a **STUB** instance, not a real Firecracker microVM.
     pub fn with_params(vm_id: String, memory_mb: u64) -> Self {
         Self {
             config: SandboxConfig {
@@ -77,6 +138,7 @@ impl FirecrackerSandbox {
                 memory_mb,
                 ..Default::default()
             },
+            return_errors: false,
         }
     }
 
@@ -84,33 +146,74 @@ impl FirecrackerSandbox {
     pub fn config(&self) -> &SandboxConfig {
         &self.config
     }
+
+    /// Set whether to return errors instead of mock responses.
+    ///
+    /// When enabled, all operations will return a [`SwellError::SandboxError`]
+    /// indicating that Firecracker is not implemented.
+    ///
+    /// Default is false (returns mock responses for backward compatibility).
+    pub fn set_return_errors(&mut self, return_errors: bool) {
+        self.return_errors = return_errors;
+    }
+
+    fn stub_error(&self, operation: &str) -> SwellError {
+        SwellError::SandboxError(format!(
+            "FirecrackerSandbox is a STUB - {} not implemented. \
+             Use GvisorSandbox for actual sandboxed execution. \
+             Firecracker requires KVM which is not available on this platform.",
+            operation
+        ))
+    }
 }
 
+/// Type alias for backward compatibility.
+/// In previous versions, this was a seemingly-functional sandbox.
+/// Now it is explicitly a stub - see [`FirecrackerSandboxStub`] for details.
+#[deprecated(
+    since = "0.1.0",
+    note = "FirecrackerSandbox is a STUB and does not provide actual microVM isolation. \
+            Use GvisorSandbox for actual sandboxed execution."
+)]
+pub type FirecrackerSandbox = FirecrackerSandboxStub;
+
 #[async_trait]
-impl Sandbox for FirecrackerSandbox {
+impl Sandbox for FirecrackerSandboxStub {
     fn id(&self) -> &str {
         &self.config.vm_id
     }
 
     async fn start(&self) -> Result<(), SwellError> {
-        tracing::info!(
+        tracing::warn!(
             vm_id = %self.config.vm_id,
             memory_mb = %self.config.memory_mb,
             vcpu_count = %self.config.vcpu_count,
-            "FirecrackerSandbox: starting (STUB)"
+            "FirecrackerSandbox: STUB - not starting real microVM"
         );
+
+        if self.return_errors {
+            return Err(self.stub_error("start"));
+        }
+
         // STUB: In real implementation, this would:
-        // 1. Download/create VM image if needed
-        // 2. Start Firecracker process with KVM
-        // 3. Wait for guest agent to be ready
+        // 1. Check KVM availability
+        // 2. Download/create VM image if needed
+        // 3. Start Firecracker process with KVM
+        // 4. Wait for guest agent to be ready
+        // 5. Achieve <125ms startup time
         Ok(())
     }
 
     async fn stop(&self) -> Result<(), SwellError> {
-        tracing::info!(
+        tracing::warn!(
             vm_id = %self.config.vm_id,
-            "FirecrackerSandbox: stopping (STUB)"
+            "FirecrackerSandbox: STUB - not stopping real microVM"
         );
+
+        if self.return_errors {
+            return Err(self.stub_error("stop"));
+        }
+
         // STUB: In real implementation, this would:
         // 1. Send graceful shutdown to guest
         // 2. Force kill if needed
@@ -119,16 +222,21 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn execute(&self, cmd: SandboxCommand) -> Result<SandboxOutput, SwellError> {
-        tracing::info!(
+        tracing::warn!(
             vm_id = %self.config.vm_id,
             command = %cmd.command,
             args = ?cmd.args,
-            "FirecrackerSandbox: execute (STUB)"
+            "FirecrackerSandbox: STUB - not executing in real microVM"
         );
+
+        if self.return_errors {
+            return Err(self.stub_error("execute"));
+        }
+
         // STUB: In real implementation, this would:
         // 1. Serialize command and send to guest agent via vsock
         // 2. Wait for response with timeout
-        // 3. Return actual output
+        // 3. Return actual output with real execution time
         Ok(SandboxOutput {
             exit_code: 0,
             stdout: format!(
@@ -141,29 +249,41 @@ impl Sandbox for FirecrackerSandbox {
     }
 
     async fn write_file(&self, path: &str, content: &[u8]) -> Result<(), SwellError> {
-        tracing::info!(
+        tracing::warn!(
             vm_id = %self.config.vm_id,
             path = %path,
             size = %content.len(),
-            "FirecrackerSandbox: write_file (STUB)"
+            "FirecrackerSandbox: STUB - not writing to real microVM"
         );
+
+        if self.return_errors {
+            return Err(self.stub_error("write_file"));
+        }
+
         // STUB: In real implementation, this would send file content via guest agent
         Ok(())
     }
 
     async fn read_file(&self, path: &str) -> Result<Vec<u8>, SwellError> {
-        tracing::info!(
+        tracing::warn!(
             vm_id = %self.config.vm_id,
             path = %path,
-            "FirecrackerSandbox: read_file (STUB)"
+            "FirecrackerSandbox: STUB - not reading from real microVM"
         );
+
+        if self.return_errors {
+            return Err(self.stub_error("read_file"));
+        }
+
         // STUB: In real implementation, this would request file via guest agent
         Ok(b"STUB: file content would be here".to_vec())
     }
 
     async fn is_running(&self) -> bool {
         // STUB: In real implementation, check guest agent health
-        true
+        // For stub, we return true if return_errors is false
+        // (to maintain backward compatibility with tests)
+        !self.return_errors
     }
 }
 
