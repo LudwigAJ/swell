@@ -10,7 +10,7 @@
 //! ```rust
 //! use swell_orchestrator::{FeatureFlagManager, FeatureFlag};
 //!
-//! let manager = FeatureFlagManager::new();
+//! let mut manager = FeatureFlagManager::new();
 //!
 //! // Create a flag with 0% rollout (disabled by default)
 //! manager.create_flag("my_feature", "My feature description", 0).unwrap();
@@ -288,14 +288,15 @@ impl FeatureFlag {
 /// ```rust
 /// use swell_orchestrator::FeatureFlagManager;
 ///
-/// let manager = FeatureFlagManager::new();
+/// let mut manager = FeatureFlagManager::new();
 ///
 /// // Create flags
-/// manager.create_flag("dark_mode", "Dark mode UI", 0).unwrap();
+/// manager.create_flag("dark_mode", "Dark mode UI", 100).unwrap(); // Start enabled
 /// manager.create_flag("new_algorithm", "New ranking algorithm", 10).unwrap();
 ///
 /// // Check flags
 /// assert!(manager.is_enabled("dark_mode", Some("user123")));
+/// assert!(!manager.is_enabled("new_algorithm", Some("user123")));
 ///
 /// // Gradual rollout
 /// manager.set_rollout("new_algorithm", 50).unwrap();
