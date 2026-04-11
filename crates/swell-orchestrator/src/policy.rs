@@ -102,6 +102,94 @@ pub enum PolicyCondition {
     Always,
 }
 
+/// A policy rule condition (alternative YAML format with value field)
+/// This supports the format:
+///   - type: command_match, pattern: "..." (struct format with named field)
+///   - type: tool_category, value: "read" (simple value format)
+///   - type: path_prefix, value: "crates/" (simple value format)
+///   - type: path_prefix, paths: ["a/", "b/"] (array format)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub enum PolicyConditionAlt {
+    /// Match by command pattern (regex) - struct format: pattern: "..."
+    CommandMatch { pattern: String },
+    /// Match by tool name - struct format: name: "..."
+    ToolName { name: String },
+    /// Match by tool category - simple format: value: "read"
+    ToolCategory { value: String },
+    /// Match by file path prefix - can be value: "..." or paths: ["...", "..."]
+    #[serde(alias = "paths")]
+    PathPrefix { #[serde(flatten)] value: PathPrefixValue },
+    /// Match by file path suffix (extension)
+    PathSuffix { suffixes: Vec<String> },
+    /// Match by exact path
+    PathExact { path: String },
+    /// Match by risk level
+    RiskLevel { level: String },
+    /// Match by agent role
+    AgentRole { role: String },
+    /// Always match (for default rules)
+    Always,
+}
+
+/// Helper for path_prefix value which can be a string or object with paths array
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PathPrefixValue {
+    /// Single path prefix string
+    Single(String),
+    /// Array of path prefixes
+    Array { paths: Vec<String> },
+}
+
+impl PolicyConditionAlt {
+    /// Convert to standard PolicyCondition
+    pub fn to_policy_condition(&self) -> PolicyCondition {
+        match self {
+            PolicyConditionAlt::CommandMatch { pattern } => {
+                PolicyCondition::CommandMatch { pattern: pattern.clone() }
+            }
+            PolicyConditionAlt::ToolName { name } => PolicyCondition::ToolName { name: name.clone() },
+            PolicyConditionAlt::ToolCategory { value } => {
+                PolicyCondition::ToolCategory {
+                    category: match value.as_str() {
+                        "read" => ToolCategory::Read,
+                        "write" => ToolCategory::Write,
+                        "destructive" => ToolCategory::Destructive,
+                        _ => ToolCategory::Read, // Default to read for unknown categories
+                    },
+                }
+            }
+            PolicyConditionAlt::PathPrefix { value } => {
+                let paths = match value {
+                    PathPrefixValue::Single(s) => vec![s.clone()],
+                    PathPrefixValue::Array { paths } => paths.clone(),
+                };
+                PolicyCondition::PathPrefix { paths }
+            }
+            PolicyConditionAlt::PathSuffix { suffixes } => {
+                PolicyCondition::PathSuffix { suffixes: suffixes.clone() }
+            }
+            PolicyConditionAlt::PathExact { path } => PolicyCondition::PathExact { path: path.clone() },
+            PolicyConditionAlt::RiskLevel { level } => {
+                PolicyCondition::RiskLevel {
+                    level: match level.as_str() {
+                        "low" => RiskLevelMatch::Low,
+                        "medium" => RiskLevelMatch::Medium,
+                        "high" => RiskLevelMatch::High,
+                        _ => RiskLevelMatch::Low,
+                    },
+                }
+            }
+            PolicyConditionAlt::AgentRole { role } => {
+                PolicyCondition::AgentRole { role: role.clone() }
+            }
+            PolicyConditionAlt::Always => PolicyCondition::Always,
+        }
+    }
+}
+
 /// Risk level for matching
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -131,12 +219,20 @@ pub enum PolicyEffect {
 /// A single policy rule
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyRule {
+    /// Optional ID for the rule (e.g., "deny-rm-rf-root")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     /// Human-readable name for the rule
     pub name: String,
     /// The effect of this rule (allow or deny)
     pub effect: PolicyEffect,
-    /// The condition that triggers this rule
-    pub condition: PolicyCondition,
+    /// The condition that triggers this rule (single condition, legacy format)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub condition: Option<PolicyCondition>,
+    /// Conditions that all must match for the rule to apply (array format)
+    /// When multiple conditions are specified, ALL must match (AND logic)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<PolicyConditionAlt>,
     /// Optional description explaining the rule
     #[serde(default)]
     pub description: Option<String>,
@@ -296,7 +392,8 @@ impl PolicyEngine {
         // Pre-compile regex patterns
         self.compiled_patterns.clear();
         for rule in &policy.rules {
-            if let PolicyCondition::CommandMatch { pattern } = &rule.condition {
+            // Legacy single condition format
+            if let Some(PolicyCondition::CommandMatch { pattern }) = &rule.condition {
                 match regex::Regex::new(pattern) {
                     Ok(re) => {
                         self.compiled_patterns.insert(rule.name.clone(), re);
@@ -306,6 +403,22 @@ impl PolicyEngine {
                             "Invalid regex pattern '{}' in rule '{}': {}",
                             pattern, rule.name, e
                         )));
+                    }
+                }
+            }
+            // New conditions array format
+            for cond in &rule.conditions {
+                if let PolicyConditionAlt::CommandMatch { pattern } = cond {
+                    match regex::Regex::new(pattern) {
+                        Ok(re) => {
+                            self.compiled_patterns.insert(format!("{}_{}", rule.name, pattern), re);
+                        }
+                        Err(e) => {
+                            return Err(PolicyError::InvalidRule(format!(
+                                "Invalid regex pattern '{}' in rule '{}': {}",
+                                pattern, rule.name, e
+                            )));
+                        }
                     }
                 }
             }
@@ -379,7 +492,7 @@ impl PolicyEngine {
         sorted_rules.sort_by(|a, b| b.priority.cmp(&a.priority));
 
         for rule in sorted_rules {
-            if self.condition_matches(&rule.condition, action) {
+            if self.rule_matches(rule, action) {
                 debug!(rule = %rule.name, effect = ?rule.effect, "Rule matched");
                 match rule.effect {
                     PolicyEffect::Deny => {
@@ -446,9 +559,34 @@ impl PolicyEngine {
         self.evaluate(action).0.is_denied()
     }
 
+    /// Check if all conditions in a rule match the action (AND logic)
+    /// Supports both single condition (legacy) and conditions array (new YAML format)
+    fn rule_matches(&self, rule: &PolicyRule, action: &PolicyAction) -> bool {
+        // Check single condition (legacy format)
+        if let Some(condition) = &rule.condition {
+            return self.condition_matches(condition, action);
+        }
+
+        // Check conditions array (new YAML format)
+        // All conditions must match for the rule to apply (AND logic)
+        if rule.conditions.is_empty() {
+            // No conditions specified - rule never matches
+            return false;
+        }
+
+        for cond in &rule.conditions {
+            let std_cond = cond.to_policy_condition();
+            if !self.condition_matches(&std_cond, action) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Evaluate a condition against an action
     fn condition_matches(&self, condition: &PolicyCondition, action: &PolicyAction) -> bool {
         match condition {
+            // Always matches everything (used for catch-all rules)
             PolicyCondition::Always => true,
 
             PolicyCondition::CommandMatch { pattern } => {
@@ -565,38 +703,46 @@ mod tests {
             default_effect: PolicyEffect::Deny,
             rules: vec![
                 PolicyRule {
+                    id: None,
                     name: "deny dangerous commands".to_string(),
                     effect: PolicyEffect::Deny,
-                    condition: PolicyCondition::CommandMatch {
+                    condition: Some(PolicyCondition::CommandMatch {
                         pattern: r"(rm -rf|DROP TABLE|TRUNCATE)".to_string(),
-                    },
+                    }),
+                    conditions: vec![],
                     description: Some("Block dangerous shell commands".to_string()),
                     priority: 100,
                 },
                 PolicyRule {
+                    id: None,
                     name: "allow read tools".to_string(),
                     effect: PolicyEffect::Allow,
-                    condition: PolicyCondition::ToolCategory {
+                    condition: Some(PolicyCondition::ToolCategory {
                         category: ToolCategory::Read,
-                    },
+                    }),
+                    conditions: vec![],
                     description: Some("Allow all read operations".to_string()),
                     priority: 50,
                 },
                 PolicyRule {
+                    id: None,
                     name: "allow workspace files".to_string(),
                     effect: PolicyEffect::Allow,
-                    condition: PolicyCondition::PathPrefix {
+                    condition: Some(PolicyCondition::PathPrefix {
                         paths: vec!["/workspace/src".to_string(), "/workspace/tests".to_string()],
-                    },
+                    }),
+                    conditions: vec![],
                     description: Some("Allow access to workspace files".to_string()),
                     priority: 10,
                 },
                 PolicyRule {
+                    id: None,
                     name: "deny high risk".to_string(),
                     effect: PolicyEffect::Deny,
-                    condition: PolicyCondition::RiskLevel {
+                    condition: Some(PolicyCondition::RiskLevel {
                         level: RiskLevelMatch::High,
-                    },
+                    }),
+                    conditions: vec![],
                     description: Some("Block high risk operations".to_string()),
                     priority: 80,
                 },
@@ -901,5 +1047,263 @@ rules:
 
         let action = action::file_access_many(vec!["/a.rs", "/b.rs"]);
         assert_eq!(action.paths.len(), 2);
+    }
+
+    // =========================================================================
+    // policy_gates tests - YAML policy loading with deny-first semantics
+    // =========================================================================
+
+    #[test]
+    fn test_policy_gates_yaml_loading() {
+        // Test loading from actual YAML format like default.yaml
+        let yaml = r#"
+version: "1.0"
+default_effect: deny
+
+rules:
+  - id: deny-rm-rf
+    name: deny rm -rf
+    effect: deny
+    priority: 100
+    conditions:
+      - type: command_match
+        pattern: "rm\\s+-rf"
+
+  - id: allow-read
+    name: allow read operations
+    effect: allow
+    priority: 10
+    conditions:
+      - type: tool_category
+        value: "read"
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+        assert!(engine.is_loaded());
+
+        let policy = engine.get_policy().unwrap();
+        assert_eq!(policy.version, "1.0");
+        assert_eq!(policy.default_effect, PolicyEffect::Deny);
+        assert_eq!(policy.rules.len(), 2);
+    }
+
+    #[test]
+    fn test_policy_gates_deny_first_semantics() {
+        // Test that deny takes precedence over allow even when both match
+        let yaml = r#"
+version: "1.0"
+default_effect: allow
+
+rules:
+  - id: allow-all
+    name: allow all
+    effect: allow
+    priority: 10
+    conditions:
+      - type: always
+
+  - id: deny-all
+    name: deny all
+    effect: deny
+    priority: 100
+    conditions:
+      - type: always
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+
+        let action = PolicyAction::command("any command".to_string());
+        let (decision, rule) = engine.evaluate(&action);
+        assert_eq!(decision, PolicyDecision::Deny);
+        assert_eq!(rule, Some("deny all".to_string()));
+    }
+
+    #[test]
+    fn test_policy_gates_multi_condition_and_logic() {
+        // Test that multiple conditions use AND logic - all must match
+        let yaml = r#"
+version: "1.0"
+default_effect: deny
+
+rules:
+  - id: allow-workspace-read
+    name: allow workspace read
+    effect: allow
+    priority: 50
+    conditions:
+      - type: tool_category
+        value: "read"
+      - type: path_prefix
+        paths: ["/workspace/"]
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+
+        // Read tool + workspace path = allowed
+        let action = PolicyAction::tool(
+            "file_read".to_string(),
+            ToolCategory::Read,
+            vec!["/workspace/src/main.rs".to_string()],
+        );
+        let (decision, _) = engine.evaluate(&action);
+        assert_eq!(decision, PolicyDecision::Allow);
+
+        // Read tool but non-workspace path = denied (second condition fails)
+        let action = PolicyAction::tool(
+            "file_read".to_string(),
+            ToolCategory::Read,
+            vec!["/etc/passwd".to_string()],
+        );
+        let (decision, _) = engine.evaluate(&action);
+        assert_eq!(decision, PolicyDecision::Deny);
+
+        // Write tool + workspace path = denied (first condition fails)
+        let action = PolicyAction::tool(
+            "file_write".to_string(),
+            ToolCategory::Write,
+            vec!["/workspace/src/main.rs".to_string()],
+        );
+        let (decision, _) = engine.evaluate(&action);
+        assert_eq!(decision, PolicyDecision::Deny);
+    }
+
+    #[test]
+    fn test_policy_gates_enforcement_on_operations() {
+        // Test that policy is actually enforced on operations
+        let yaml = r#"
+version: "1.0"
+default_effect: deny
+
+rules:
+  - id: deny-dangerous
+    name: deny dangerous commands
+    effect: deny
+    priority: 100
+    conditions:
+      - type: command_match
+        pattern: "(rm -rf|DROP|DESTROY)"
+
+  - id: allow-safe
+    name: allow safe commands
+    effect: allow
+    priority: 10
+    conditions:
+      - type: command_match
+        pattern: "(ls|echo|pwd)"
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+
+        // Dangerous command should be denied
+        let dangerous_action = PolicyAction::command("rm -rf /workspace".to_string());
+        assert!(engine.is_denied(&dangerous_action));
+        assert!(!engine.is_allowed(&dangerous_action));
+
+        // Safe command should be allowed
+        let safe_action = PolicyAction::command("ls -la".to_string());
+        assert!(engine.is_allowed(&safe_action));
+        assert!(!engine.is_denied(&safe_action));
+    }
+
+    #[test]
+    fn test_policy_gates_default_effect_deny() {
+        // Test that default deny works when no rule matches
+        // This test creates a rule that matches "echo" commands but NOT other commands
+        // so we can verify that unmatched commands get default deny
+        let yaml = r#"
+version: "1.0"
+default_effect: deny
+
+rules:
+  - id: allow-echo
+    name: allow echo
+    effect: allow
+    priority: 10
+    conditions:
+      - type: command_match
+        pattern: "^echo "
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+
+        // Echo command should be allowed (rule matches)
+        let echo_action = PolicyAction::command("echo hello".to_string());
+        let (decision, _) = engine.evaluate(&echo_action);
+        assert_eq!(decision, PolicyDecision::Allow);
+
+        // Unknown command should be denied (no rule matched, default deny)
+        let unknown_action = PolicyAction::command("unknown command".to_string());
+        let (decision, rule) = engine.evaluate(&unknown_action);
+        assert_eq!(decision, PolicyDecision::Deny);
+        assert!(rule.is_none()); // No rule matched
+    }
+
+    #[test]
+    fn test_policy_gates_path_prefix_matching() {
+        // Test path prefix matching from actual default.yaml
+        let yaml = r#"
+version: "1.0"
+default_effect: deny
+
+rules:
+  - id: allow-workspace
+    name: allow workspace files
+    effect: allow
+    priority: 20
+    conditions:
+      - type: path_prefix
+        paths: ["crates/", "src/", "tests/"]
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+
+        // Files under crates/ should be allowed
+        let action = PolicyAction::file_access(vec!["crates/swell-core/src/lib.rs".to_string()]);
+        assert!(engine.is_allowed(&action));
+
+        // Files not under allowed paths should be denied
+        let action = PolicyAction::file_access(vec!["etc/config.json".to_string()]);
+        assert!(engine.is_denied(&action));
+    }
+
+    #[test]
+    fn test_policy_gates_priority_ordering() {
+        // Test that higher priority rules take precedence
+        let yaml = r#"
+version: "1.0"
+default_effect: deny
+
+rules:
+  - id: low-priority-allow
+    name: low priority allow
+    effect: allow
+    priority: 10
+    conditions:
+      - type: always
+
+  - id: high-priority-deny
+    name: high priority deny
+    effect: deny
+    priority: 100
+    conditions:
+      - type: always
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+
+        let action = PolicyAction::command("test".to_string());
+        let (decision, rule) = engine.evaluate(&action);
+        assert_eq!(decision, PolicyDecision::Deny);
+        assert_eq!(rule, Some("high priority deny".to_string()));
+    }
+
+    #[test]
+    fn test_policy_gates_unknown_action_default_deny() {
+        // Test that unknown actions use default effect
+        let engine = PolicyEngine::new(); // No policy loaded
+
+        let action = PolicyAction::command("any command".to_string());
+        let (decision, _) = engine.evaluate(&action);
+        assert_eq!(decision, PolicyDecision::Deny); // Default deny when no policy loaded
     }
 }
