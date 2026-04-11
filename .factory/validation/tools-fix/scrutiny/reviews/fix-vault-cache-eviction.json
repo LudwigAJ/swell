@@ -1,0 +1,21 @@
+{
+  "featureId": "fix-vault-cache-eviction",
+  "reviewedAt": "2026-04-11T05:30:00Z",
+  "commitId": "994f599",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Fix comprehensively addresses both blocking bugs from the prior review. Cache eviction now properly removes expired entries in is_cached() and get_cached(). get_lease_ttl() now queries Vault's sys/leases/lookup API via the new lookup_lease() method. All verification steps passed.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "The prior review noted that worker attempted to read .factory/services.yaml and it didn't exist. The file now exists at the repo root (verified at /Users/ludwigjonsson/Projects/swell/.factory/services.yaml). This issue appears resolved.",
+      "evidence": "File exists with documented services: swell-daemon, build, test, lint commands"
+    }
+  ],
+  "addressesFailureFrom": ".factory/validation/tools/scrutiny/reviews/tools-vault-integration.json",
+  "summary": "Fix is complete and passes review. Both blocking bugs from tools-vault-integration are resolved: (1) Cache eviction now works correctly - is_cached() and get_cached() now evict expired entries using write() locks and cache.remove(key). (2) get_lease_ttl() now returns actual TTL by calling the new lookup_lease() method which queries Vault's /v1/sys/leases/lookup API. All 11 vault tests pass, clippy passes with no warnings. Worker followed Rust skill correctly."
+}

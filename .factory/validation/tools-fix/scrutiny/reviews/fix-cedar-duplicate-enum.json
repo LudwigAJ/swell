@@ -1,0 +1,28 @@
+{
+  "featureId": "fix-cedar-duplicate-enum",
+  "reviewedAt": "2026-04-11T05:23:00.000Z",
+  "commitId": "9274b52",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly consolidates the duplicate ToolOperation enum by removing it from opa_policy.rs and importing from cedar_policy.rs. New compatibility methods (operation_type, resource, risk_level_str) were added to ToolOperation in cedar_policy.rs to maintain OPA compatibility. OpaSubject::new() was updated to accept CedarRiskLevel. All changes are consistent and tests pass.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/opa_policy.rs",
+        "line": 55,
+        "severity": "non_blocking",
+        "description": "OpaRiskLevel enum is still defined but no longer used internally. It remains for API compatibility but OpaSubject::new() now accepts CedarRiskLevel. This is a minor code smell - consider whether OpaRiskLevel should be retained for external API compatibility or deprecated."
+      },
+      {
+        "file": "crates/swell-tools/src/opa_policy.rs",
+        "line": 139,
+        "severity": "non_blocking",
+        "description": "Breaking API change: OpaSubject::new() now takes CedarRiskLevel instead of OpaRiskLevel. If called from external code outside the crate, this would require callers to update. However, based on the codebase structure, this appears to be internal-only usage."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The fix-cedar-duplicate-enum feature successfully consolidates the duplicate ToolOperation enum. The worker removed the duplicate enum from opa_policy.rs, imported it from cedar_policy.rs, and added compatibility methods (operation_type, resource, risk_level_str) to maintain OPA functionality. OpaSubject::new() was updated to accept CedarRiskLevel. All 326 swell-tools tests pass and the workspace builds successfully. The changes are correct and complete."
+}

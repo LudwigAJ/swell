@@ -1,0 +1,22 @@
+{
+  "featureId": "fix-gvisor-container-id",
+  "reviewedAt": "2026-04-11T05:22:00.000Z",
+  "commitId": "dfe81ed",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly addresses the bug where container_id was never stored after start(). The implementation uses Mutex<Option<String>> for interior mutability, and properly stores the container ID in start() and accesses it in all dependent methods (stop, exec_in_container, write_file, read_file, is_running). The fix is minimal, focused, and all validation passes.",
+    "issues": [
+      {
+        "file": "crates/swell-sandbox/src/gvisor.rs",
+        "line": 460,
+        "severity": "non_blocking",
+        "description": "stop() does not reset container_id to None after killing the container. This means container_id() will still return Some(id) after stop() is called, which is misleading. Consider adding 'let mut guard = self.container_id.lock().unwrap(); *guard = None;' after the successful kill at line 464."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Fix for tools-gvisor-support: container_id never stored after start(). The fix changes container_id from Option<String> to Mutex<Option<String>> for interior mutability, and properly stores the ID returned from docker run in start(). All dependent methods now correctly access the stored container_id via the mutex. Build, tests, and clippy all pass. One minor observation: stop() does not reset container_id to None after killing the container, but this is non-blocking since no subsequent operations should occur after stop() anyway."
+}

@@ -1,6 +1,6 @@
 {
   "milestone": "tools-fix",
-  "round": 1,
+  "round": 2,
   "status": "pass",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -15,64 +15,14 @@
   },
   "blockingIssues": [],
   "appliedUpdates": [],
-  "suggestedGuidanceUpdates": [],
-  "rejectedObservations": [],
-  "previousRound": null,
-  "featureReviews": [
+  "suggestedGuidanceUpdates": [
     {
-      "featureId": "fix-gvisor-container-id",
-      "commitId": "dfe81ed",
-      "status": "pass",
-      "nonBlockingIssues": [
-        {
-          "file": "crates/swell-sandbox/src/gvisor.rs",
-          "line": 460,
-          "severity": "non_blocking",
-          "description": "stop() does not reset container_id to None after killing the container. This means container_id() will still return Some(id) after stop() is called, which is misleading. Consider adding 'let mut guard = self.container_id.lock().unwrap(); *guard = None;' after the successful kill at line 464."
-        }
-      ],
-      "summary": "Fix for tools-gvisor-support: container_id never stored after start(). The fix changes container_id from Option<String> to Mutex<Option<String>> for interior mutability, and properly stores the ID returned from docker run in start(). All dependent methods now correctly access the stored container_id via the mutex."
-    },
-    {
-      "featureId": "fix-vault-cache-eviction",
-      "commitId": "994f599",
-      "status": "pass",
-      "nonBlockingIssues": [],
-      "summary": "Fixed cache memory leak (expired entries now evicted on access) and get_lease_ttl() stub (now queries Vault's sys/leases/lookup API). All 11 vault tests pass."
-    },
-    {
-      "featureId": "fix-credential-proxy-scopes",
-      "commitId": "b1ebae3",
-      "status": "pass",
-      "nonBlockingIssues": [],
-      "summary": "Changed validation from requiring 'read' operation to accepting any non-empty allowed_operations. Git scopes (push/pull/fetch) and LLM scopes (chat/embed) now work correctly."
-    },
-    {
-      "featureId": "fix-cedar-duplicate-enum",
-      "commitId": "9274b52",
-      "status": "pass",
-      "nonBlockingIssues": [
-        {
-          "file": "crates/swell-tools/src/opa_policy.rs",
-          "line": 55,
-          "severity": "non_blocking",
-          "description": "OpaRiskLevel enum is still defined but no longer used internally. It remains for API compatibility but OpaSubject::new() now accepts CedarRiskLevel. Consider whether to deprecate."
-        },
-        {
-          "file": "crates/swell-tools/src/opa_policy.rs",
-          "line": 139,
-          "severity": "non_blocking",
-          "description": "Breaking API change: OpaSubject::new() now takes CedarRiskLevel instead of OpaRiskLevel. If called from external code, would require updates. However appears internal-only."
-        }
-      ],
-      "summary": "Consolidated duplicate ToolOperation enum by removing from opa_policy.rs and importing from cedar_policy.rs. Added compatibility methods to maintain OPA functionality."
-    },
-    {
-      "featureId": "fix-firecracker-stubs",
-      "commitId": "d0deaee",
-      "status": "pass",
-      "nonBlockingIssues": [],
-      "summary": "Clarified FirecrackerSandbox is a STUB that does NOT provide actual microVM isolation. Renamed to FirecrackerSandboxStub, added deprecation warning, and comprehensive documentation about limitations and platform requirements."
+      "target": "AGENTS.md",
+      "suggestion": "Clarify the meaning of 'stub' in documentation: 'stub' means non-functional with mock responses, not just 'not yet implemented'. For swell-sandbox, FirecrackerSandboxStub returns mock responses and does not provide actual microVM isolation.",
+      "evidence": "fix-firecracker-stubs review found architecture.md and AGENTS.md both state 'swell-sandbox (stub for MVP)' but neither clarifies what 'stub' means in practice. Worker discovered stub was non-functional, not just 'not yet implemented'.",
+      "isSystemic": false
     }
-  ]
+  ],
+  "rejectedObservations": [],
+  "previousRound": ".factory/validation/tools-fix/scrutiny/synthesis.json"
 }
