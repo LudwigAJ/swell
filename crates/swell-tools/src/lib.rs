@@ -30,6 +30,7 @@ pub mod pr_creation;
 pub mod registry;
 pub mod resource_limits;
 pub mod secret_scanning;
+pub mod self_healing_ci;
 pub mod tools;
 pub mod vault;
 pub mod worktree_isolation;
@@ -92,6 +93,10 @@ pub use resource_limits::{
 pub use secret_scanning::{
     install_precommit_hook, DetectedSecret, SecretScanResult, SecretScanner, SecretScannerConfig,
     SecretScannerError, SecretScannerType,
+};
+pub use self_healing_ci::{
+    CiFailure, CiFailureAnalysis, CiFix, CiHealingResult, CiHealingTool, CiSeverity,
+    CodeChange, FailureCategory, FixType, RootCause,
 };
 pub use vault::{
     AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType, VaultClient,
