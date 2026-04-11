@@ -121,6 +121,14 @@ pub use predictive_selection::{
     SelectionStrategy::*, TestHistoryRecord, TestPrediction, TestSubsetSelector,
 };
 
+// Re-export autonomous coverage for mutation testing and coverage gap detection
+pub mod autonomous_coverage;
+pub use autonomous_coverage::{
+    AutonomousCoverageConfig, AutonomousCoverageEngine, CoverageGap, CoverageReport,
+    CoverageTest, CoverageThresholds, GapSeverity, GapType, MutationResult, MutationType,
+    SurvivingMutation,
+};
+
 // ============================================================================
 // Lint Gate
 // ============================================================================
