@@ -101,6 +101,11 @@ This mission implements the core orchestration loop for SWELL - an autonomous co
 - Use explicit comparisons: `x != 0` instead of `!x == 0`, or wrap in parentheses: `!(x == 0)`.
 - Always verify assertion logic with test cases that cover the boundary conditions.
 
+### Fix Feature Guidance
+- When fixing blocking issues from prior scrutiny, ensure the fix commit includes the actual code changes to resolve the issue, not just test additions.
+- Verify that the fix actually changes the reported behavior (not just that tests pass).
+- Fix features should include both the code fix AND tests that verify the fix works.
+
 ## Project Structure
 
 ```
