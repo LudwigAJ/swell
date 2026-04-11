@@ -18,6 +18,7 @@ pub mod drift_detector;
 pub mod execution;
 pub mod feature_leads;
 pub mod followup_generator;
+pub mod gap_analyzer;
 pub mod metrics;
 pub mod policy;
 pub mod retry_policy;
@@ -55,6 +56,10 @@ pub use feature_leads::{
 pub use followup_generator::{
     FollowUpContext, FollowUpGenerator, FollowUpGeneratorConfig, FollowUpOpportunity,
     FollowUpOpportunityType, FollowUpProposal,
+};
+pub use gap_analyzer::{
+    CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
+    RequirementCategory, RequirementPriority, SpecRequirement,
 };
 pub use metrics::{
     create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
