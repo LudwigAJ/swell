@@ -1,0 +1,51 @@
+{
+  "featureId": "tools-mcp-client",
+  "reviewedAt": "2026-04-11T12:30:00.000Z",
+  "commitId": "f6ed1d2",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "MCP client implementation is functionally complete and correct. Implements JSON-RPC 2.0 over stdio transport, protocol handshake, tool discovery (tools/list), and tool execution (tools/call). McpToolWrapper properly implements the Tool trait for ToolRegistry integration. McpManager provides deferred/lazy loading support. All verification steps pass (cargo build --workspace, cargo test -p swell-tools -- mcp with 5 tests, cargo clippy with no warnings).",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/mcp.rs",
+        "line": 380,
+        "severity": "non_blocking",
+        "description": "In call_tool(), the arguments parsing fallback could silently pass raw strings to the MCP server if JSON parsing fails: serde_json::from_str(args_str).unwrap_or(arguments). This is defensive but could cause unexpected behavior. Consider returning an error instead of falling back."
+      },
+      {
+        "file": "crates/swell-tools/src/mcp.rs",
+        "line": 47,
+        "severity": "non_blocking",
+        "description": "McpToolWrapper lacks #[derive(Debug)] since it contains McpClient which is Debug. This makes debugging harder but is not blocking."
+      },
+      {
+        "file": "crates/swell-tools/src/mcp.rs",
+        "line": 310,
+        "severity": "non_blocking",
+        "description": "list_tools_deferred() drops the read lock before calling list_tools() in the empty case, allowing a potential brief window for another task to populate tools. This results in at most one redundant fetch; correctness is maintained."
+      },
+      {
+        "file": "crates/swell-tools/src/mcp.rs",
+        "line": 311,
+        "severity": "non_blocking",
+        "description": "McpClient is Clone and shares underlying process via Arc<RwLock<Option<McpProcess>>>. Cloning creates shared state - if one clone calls disconnect(), all clones become disconnected. This follows Rust reference semantics but could surprise users expecting independent clones."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The transcript skeleton shows the worker used Skill 'rust-worker' but this skill file doesn't exist in .factory/skills/rust-worker/. The AGENTS.md documents skills in .factory/skills/ as the canonical location. The handoff indicates followedProcedure=true, so the skill was presumably loaded from elsewhere in the system.",
+      "evidence": "Transcript skeleton shows Skill with 'rust-worker'. File /Users/ludwigjonsson/.factory/skills/rust-worker/SKILL.md does not exist."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The MCP protocol initialization sequence (initialize → response → notifications/initialized) is implemented correctly but is a subtle protocol detail. No comment in the code explains WHY this sequence is required. Future developers might inadvertently 'simplify' this.",
+      "evidence": "mcp.rs:initialize_protocol() sends initialize, reads response, then sends notifications/initialized. MCP spec requires this exact sequence."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS - Feature 'tools-mcp-client' successfully implements MCP client for external tool servers with JSON-RPC over stdio transport, tool discovery via tools/list, tool execution via tools/call, McpToolWrapper integrating with ToolRegistry, and McpManager with deferred loading support. All verification steps pass (cargo build, cargo test with 5 MCP tests, cargo clippy). No blocking issues identified."
+}

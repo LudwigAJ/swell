@@ -484,7 +484,9 @@ mod tests {
     fn test_aws_access_key_masking() {
         let mut masker = AutoMasker::new();
         // Test custom pattern similar to AWS access key format
-        masker.add_pattern(SecretPattern::new("TestAKI", r"\b(TESTAKI[0-9A-Z]{16})\b", "[REDACTED]").unwrap());
+        masker.add_pattern(
+            SecretPattern::new("TestAKI", r"\b(TESTAKI[0-9A-Z]{16})\b", "[REDACTED]").unwrap(),
+        );
         let text = "AWS_ACCESS_KEY_ID=TESTAKI1234567890ABCDEF";
         let masked = masker.mask_secrets(text);
         assert!(!masked.contains("TESTAKI1234567890"));
@@ -498,7 +500,9 @@ mod tests {
         // Note: space before hex ensures it's at word boundary for regex
         let text = "SECRET: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
         let masked = masker.mask_secrets(text);
-        assert!(!masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"));
+        assert!(
+            !masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+        );
         assert!(masked.contains("[REDACTED"));
     }
 
@@ -506,7 +510,14 @@ mod tests {
     fn test_github_token_masking() {
         let mut masker = AutoMasker::new();
         // Test custom pattern similar to GitHub token
-        masker.add_pattern(SecretPattern::new("TestPat", r"\b(TESTPAT_[A-Za-z0-9_]{36,})\b", "[REDACTED Test Pat]").unwrap());
+        masker.add_pattern(
+            SecretPattern::new(
+                "TestPat",
+                r"\b(TESTPAT_[A-Za-z0-9_]{36,})\b",
+                "[REDACTED Test Pat]",
+            )
+            .unwrap(),
+        );
 
         let text = "TESTPAT_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890AB";
         let masked = masker.mask_secrets(text);
@@ -523,7 +534,8 @@ mod tests {
     fn test_password_in_url_masking() {
         let mut masker = AutoMasker::new();
         // Test custom pattern in URL format
-        masker.add_pattern(SecretPattern::new("TestCred", r"CRED_VALUE_\w+", "[REDACTED]").unwrap());
+        masker
+            .add_pattern(SecretPattern::new("TestCred", r"CRED_VALUE_\w+", "[REDACTED]").unwrap());
         let text = "https://user:CRED_VALUE_ABC123@example.com/api";
         let masked = masker.mask_secrets(text);
         assert!(!masked.contains("CRED_VALUE_ABC"));
@@ -535,7 +547,9 @@ mod tests {
     fn test_private_key_masking() {
         let mut masker = AutoMasker::new();
         // Test custom key pattern
-        masker.add_pattern(SecretPattern::new("TestKey", r"-----BEGIN TEST KEY-----", "[KEY REDACTED]").unwrap());
+        masker.add_pattern(
+            SecretPattern::new("TestKey", r"-----BEGIN TEST KEY-----", "[KEY REDACTED]").unwrap(),
+        );
         let text = r#"-----BEGIN TEST KEY-----
 MIIXBgIBAAKBgQCqGSIb3DQEB
 -----END TEST KEY-----"#;
@@ -556,9 +570,14 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
     fn test_multiple_secrets_masking() {
         let mut masker = AutoMasker::new();
         // Test custom patterns
-        masker.add_pattern(SecretPattern::new("Test1", r"\b(TESTKEY1[A-Z0-9]{16})\b", "[REDACTED]").unwrap());
-        masker.add_pattern(SecretPattern::new("Test2", r"\b(TESTKEY2[A-Za-z0-9_]{36,})\b", "[REDACTED]").unwrap());
-        let text = "Key1: TESTKEY1ABCDEFGHIJKLMNOP\nKey2: TESTKEY2_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890AB";
+        masker.add_pattern(
+            SecretPattern::new("Test1", r"\b(TESTKEY1[A-Z0-9]{16})\b", "[REDACTED]").unwrap(),
+        );
+        masker.add_pattern(
+            SecretPattern::new("Test2", r"\b(TESTKEY2[A-Za-z0-9_]{36,})\b", "[REDACTED]").unwrap(),
+        );
+        let text =
+            "Key1: TESTKEY1ABCDEFGHIJKLMNOP\nKey2: TESTKEY2_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890AB";
         let masked = masker.mask_secrets(text);
         assert!(!masked.contains("TESTKEY1ABC"));
         assert!(!masked.contains("TESTKEY2_ABC"));
@@ -569,7 +588,10 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
     fn test_mask_secrets_with_result() {
         let mut masker = AutoMasker::new();
         // Test custom pattern
-        masker.add_pattern(SecretPattern::new("TestPat", r"\b(MYPATTERN[A-Za-z0-9_]{36,})\b", "[REDACTED]").unwrap());
+        masker.add_pattern(
+            SecretPattern::new("TestPat", r"\b(MYPATTERN[A-Za-z0-9_]{36,})\b", "[REDACTED]")
+                .unwrap(),
+        );
         let text = "Token: MYPATTERN_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890AB";
         let result = masker.mask_secrets_with_result(text);
 
@@ -608,7 +630,10 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
     fn test_slack_token_masking() {
         let mut masker = AutoMasker::new();
         // Test custom pattern similar to Slack token
-        masker.add_pattern(SecretPattern::new("TestSlack", r"\b(TESTSLACK-[A-Za-z0-9-]+)\b", "[REDACTED]").unwrap());
+        masker.add_pattern(
+            SecretPattern::new("TestSlack", r"\b(TESTSLACK-[A-Za-z0-9-]+)\b", "[REDACTED]")
+                .unwrap(),
+        );
         let text = "TESTSLACK-1234567890123-1234567890123-abcdefghijklmnopqrstuvwx";
         let masked = masker.mask_secrets(text);
         assert!(!masked.contains("TESTSLACK-1234"));
@@ -619,7 +644,14 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
     fn test_stripe_api_key_masking() {
         let mut masker = AutoMasker::new();
         // Test custom pattern similar to Stripe key
-        masker.add_pattern(SecretPattern::new("TestStripe", r"\b(TESTKEY_[A-Za-z0-9]{24,})\b", "[REDACTED]").unwrap());
+        masker.add_pattern(
+            SecretPattern::new(
+                "TestStripe",
+                r"\b(TESTKEY_[A-Za-z0-9]{24,})\b",
+                "[REDACTED]",
+            )
+            .unwrap(),
+        );
         let text = "TESTKEY_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890AB";
         let masked = masker.mask_secrets(text);
         assert!(!masked.contains("TESTKEY_ABC"));
@@ -630,8 +662,12 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
     fn test_stats_tracking() {
         let mut masker = AutoMasker::new();
         // Test custom patterns
-        masker.add_pattern(SecretPattern::new("Test1", r"\b(PAT1[A-Za-z0-9_]{20,})\b", "[REDACTED]").unwrap());
-        masker.add_pattern(SecretPattern::new("Test2", r"\b(PAT2[A-Za-z0-9_]{20,})\b", "[REDACTED]").unwrap());
+        masker.add_pattern(
+            SecretPattern::new("Test1", r"\b(PAT1[A-Za-z0-9_]{20,})\b", "[REDACTED]").unwrap(),
+        );
+        masker.add_pattern(
+            SecretPattern::new("Test2", r"\b(PAT2[A-Za-z0-9_]{20,})\b", "[REDACTED]").unwrap(),
+        );
         masker.mask_secrets("PAT1_ABCDEFGHIJKLMNOPQRSTUV");
         masker.mask_secrets("PAT2_ABCDEFGHIJKLMNOPQRSTUV");
 
@@ -674,7 +710,9 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
     fn test_masking_result_struct() {
         let masker = AutoMasker::new();
         // Use built-in pattern that shouldn't be flagged
-        let result = masker.mask_secrets_with_result("-----BEGIN RSA PRIVATE KEY-----\nMIIXBgIBAAKB\n-----END RSA PRIVATE KEY-----");
+        let result = masker.mask_secrets_with_result(
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIXBgIBAAKB\n-----END RSA PRIVATE KEY-----",
+        );
 
         assert!(result.secrets_found >= 1);
         assert!(result.text.contains("[REDACTED]"));
@@ -776,7 +814,9 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         // Note: space before hex ensures it's at word boundary for regex
         let text = "SENDGRID: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
         let masked = masker.mask_secrets(text);
-        assert!(!masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"));
+        assert!(
+            !masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+        );
         assert!(masked.contains("[REDACTED"));
     }
 
@@ -787,7 +827,9 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         // Note: space before hex ensures it's at word boundary for regex
         let text = "DISCORD: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
         let masked = masker.mask_secrets(text);
-        assert!(!masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"));
+        assert!(
+            !masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+        );
         assert!(masked.contains("[REDACTED"));
     }
 
@@ -798,7 +840,9 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         // Note: space before hex ensures it's at word boundary for regex
         let text = "TWILIO: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
         let masked = masker.mask_secrets(text);
-        assert!(!masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"));
+        assert!(
+            !masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+        );
         assert!(masked.contains("[REDACTED"));
     }
 
@@ -809,7 +853,9 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         // Note: space before hex ensures it's at word boundary for regex
         let text = "NPM: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
         let masked = masker.mask_secrets(text);
-        assert!(!masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"));
+        assert!(
+            !masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+        );
         assert!(masked.contains("[REDACTED"));
     }
 
@@ -820,7 +866,9 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         // Note: space before hex ensures it's at word boundary for regex
         let text = "PYPI: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
         let masked = masker.mask_secrets(text);
-        assert!(!masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"));
+        assert!(
+            !masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+        );
         assert!(masked.contains("[REDACTED"));
     }
 
@@ -831,7 +879,9 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         // Note: space before hex ensures it's at word boundary for regex
         let text = "DOCKER: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
         let masked = masker.mask_secrets(text);
-        assert!(!masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"));
+        assert!(
+            !masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+        );
         assert!(masked.contains("[REDACTED"));
     }
 
@@ -842,7 +892,9 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         // Note: space before hex ensures it's at word boundary for regex
         let text = "GITLAB: 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
         let masked = masker.mask_secrets(text);
-        assert!(!masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"));
+        assert!(
+            !masked.contains("5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8")
+        );
         assert!(masked.contains("[REDACTED"));
     }
 

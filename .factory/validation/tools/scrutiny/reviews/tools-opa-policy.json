@@ -1,0 +1,62 @@
+{
+  "featureId": "tools-opa-policy",
+  "reviewedAt": "2026-04-11T00:45:00Z",
+  "commitId": "19cad5f32ddff1b062970ed0c74c8948dd401d49",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The OPA policy integration is implemented with proper types, error handling, and 12 unit tests. The code compiles and all tests pass. Notable issues: (1) The `create_opa_input` function uses `chrono::Utc::now()` but chrono is not explicitly imported in opa_policy.rs - yet it compiles (serde_json::json! macro behavior may be responsible). (2) WASM/bundle evaluation path is not implemented. (3) The OPA policy engine is not integrated into the tool executor - it's standalone code. (4) There's a duplicate `ToolOperation` enum between cedar_policy.rs and opa_policy.rs.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/opa_policy.rs",
+        "line": 634,
+        "severity": "non_blocking",
+        "description": "The `create_opa_input` function uses `chrono::Utc::now().to_rfc3339()` but chrono is not imported at the top of the file (only reqwest, serde, std, thiserror, and tracing are imported). Despite this, the code compiles - likely due to serde_json::json! macro behavior. Should add explicit `use chrono::Utc;` for clarity."
+      },
+      {
+        "file": "crates/swell-tools/src/opa_policy.rs",
+        "line": 323,
+        "severity": "non_blocking",
+        "description": "WASM evaluation is not implemented. The code returns `Err(OpaError::WasmError(\"WASM evaluation not yet implemented\"))` when bundle_path is set. If offline/bundle mode is a requirement, this needs to be implemented."
+      },
+      {
+        "file": "crates/swell-tools/src/opa_policy.rs",
+        "line": 74,
+        "severity": "non_blocking",
+        "description": "The `ToolOperation` enum in opa_policy.rs duplicates the one in cedar_policy.rs. They serve similar purposes but are separate types. This could cause confusion. Consider using a shared type or renaming to avoid ambiguity (e.g., `OpaToolOperation` is exported as an alias in lib.rs but the local enum is still named `ToolOperation`)."
+      },
+      {
+        "file": "crates/swell-tools/src",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "The OPA policy engine is not integrated into the tool execution pipeline. The cedar_policy module is used for tool authorization, but there's no code that calls `OpaPolicyEngine::evaluate` or `is_allowed` during tool execution. The feature description says 'infrastructure-level policy enforcement' but without integration, the OPA engine is effectively dead code that cannot be used to enforce policies."
+      },
+      {
+        "file": "crates/swell-tools/src/opa_policy.rs",
+        "line": 625,
+        "severity": "non_blocking",
+        "description": "The `create_opa_input` function is only called by tests, not by any integration point in the codebase. It's not clear if this function is intended to be called from outside the crate."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The AGENTS.md does not document the OPA policy integration or its expected usage. Workers implementing policy features would not know the conventions for integrating policy engines with tool execution.",
+      "evidence": "AGENTS.md exists at mission dir but contains no mention of OPA, Cedar, or policy enforcement patterns. The 'Commands' section only lists build/test/lint commands."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The worker spent time searching for 'opa-rs Rust Open Policy Agent crate integration' and fetching the opa-rs GitHub page, but no knowledge about OPA integration was recorded in .factory/library. Future workers implementing OPA features will need to re-research.",
+      "evidence": "Transcript shows: WebSearch for 'opa-rs Rust Open Policy Agent crate integration 2025' and FetchUrl of 'https://github.com/tamasfe/opa-rs'. Library has no OPA-related documentation."
+    },
+    {
+      "area": "skills",
+      "observation": "The worker followed the Rust skill (ownership, borrowing, error handling patterns) but did not follow any specific 'policy integration' skill because none exists. The skillFeedback in handoff shows followedProcedure: true, but this was self-assessed.",
+      "evidence": "Handoff shows skillName: 'Rust'. Skill feedback not included in handoff JSON. No policy-related skill exists in .factory/skills/."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The OPA policy feature is implemented with proper types and tests and compiles successfully. Issues include: missing explicit chrono import, unimplemented WASM mode, no tool executor integration (making OPA effectively unused), and duplicate ToolOperation types. The feature exports were added in commit but removed in working tree. AGENTS.md and library lack documentation on policy enforcement patterns."
+}

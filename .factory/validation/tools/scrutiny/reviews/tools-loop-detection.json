@@ -1,0 +1,15 @@
+{
+  "featureId": "tools-loop-detection",
+  "reviewedAt": "2026-04-11T00:00:00.000Z",
+  "commitId": "7d80c42",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Loop detection module implemented in swell-tools with comprehensive coverage of all four required loop patterns: SameToolRetry, Oscillation, ReplanningLoop, and NoProgressDoom. The implementation includes 14 unit tests covering all patterns, severity calculations, configuration, callbacks, and edge cases.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. Implementation fully covers the expected behavior: same-tool retry detection, oscillation pattern detection, re-planning loop detection, and no-progress doom detection with intervention callbacks. All 14 tests pass. No code issues found. The implementation follows existing project conventions and Rust idioms."
+}

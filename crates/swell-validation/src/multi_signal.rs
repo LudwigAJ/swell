@@ -261,7 +261,11 @@ impl SignalWeights {
 
     /// Normalize weights to sum to 1.0
     pub fn normalize(&mut self) {
-        let total = self.test + self.lint + self.types + self.static_analysis + self.llm_review
+        let total = self.test
+            + self.lint
+            + self.types
+            + self.static_analysis
+            + self.llm_review
             + self.spec_conformance;
         if total > 0.0 {
             let factor = 1.0 / total;
@@ -411,7 +415,10 @@ impl MultiSignalValidator {
     }
 
     /// Add multiple signals at once
-    pub fn add_signals(&mut self, signals: impl IntoIterator<Item = ValidationSignal>) -> &mut Self {
+    pub fn add_signals(
+        &mut self,
+        signals: impl IntoIterator<Item = ValidationSignal>,
+    ) -> &mut Self {
         for signal in signals {
             self.signals.push(signal);
         }
@@ -515,9 +522,15 @@ impl MultiSignalValidator {
                 contrib.weight *= factor;
                 contrib.weighted_contribution *= factor;
             }
-            contributions.values().map(|c| c.weighted_contribution).sum::<f64>()
+            contributions
+                .values()
+                .map(|c| c.weighted_contribution)
+                .sum::<f64>()
         } else {
-            contributions.values().map(|c| c.weighted_contribution).sum::<f64>()
+            contributions
+                .values()
+                .map(|c| c.weighted_contribution)
+                .sum::<f64>()
         };
 
         (final_score.clamp(0.0, 1.0), contributions)
@@ -528,13 +541,13 @@ impl MultiSignalValidator {
         let mut issues = Vec::new();
         for signal in &self.signals {
             if !signal.passed {
-                let severity = signal
-                    .severity
-                    .unwrap_or(if signal.source == "test" || signal.source == "types" {
+                let severity = signal.severity.unwrap_or(
+                    if signal.source == "test" || signal.source == "types" {
                         SignalSeverity::Critical
                     } else {
                         SignalSeverity::Warning
-                    });
+                    },
+                );
 
                 if severity == SignalSeverity::Critical {
                     issues.push(format!(
@@ -688,7 +701,8 @@ impl MultiSignalOutcomeBuilder {
 
     /// Add lint signal
     pub fn lint(mut self, passed: bool, warning_ratio: f64) -> Self {
-        self.signals.push(ValidationSignal::lint(passed, warning_ratio));
+        self.signals
+            .push(ValidationSignal::lint(passed, warning_ratio));
         self
     }
 
@@ -1012,7 +1026,10 @@ mod integration_tests {
             .spec_conformance(true, 0.9)
             .build();
 
-        assert!(outcome.passed, "Expected all passing signals to pass validation");
+        assert!(
+            outcome.passed,
+            "Expected all passing signals to pass validation"
+        );
         // Score = 0.9 * (0.30 + 0.20 + 0.15 + 0.15 + 0.10 + 0.10) = 0.9
         assert!(
             outcome.score > 0.85,
@@ -1030,7 +1047,13 @@ mod integration_tests {
             .spec_conformance(false, 0.0)
             .build();
 
-        assert!(!outcome.passed, "Expected all failing signals to fail validation");
-        assert_eq!(outcome.score, 0.0, "Expected zero score for all failing signals");
+        assert!(
+            !outcome.passed,
+            "Expected all failing signals to fail validation"
+        );
+        assert_eq!(
+            outcome.score, 0.0,
+            "Expected zero score for all failing signals"
+        );
     }
 }

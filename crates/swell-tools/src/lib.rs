@@ -95,8 +95,8 @@ pub use secret_scanning::{
     SecretScannerError, SecretScannerType,
 };
 pub use self_healing_ci::{
-    CiFailure, CiFailureAnalysis, CiFix, CiHealingResult, CiHealingTool, CiSeverity,
-    CodeChange, FailureCategory, FixType, RootCause,
+    CiFailure, CiFailureAnalysis, CiFix, CiHealingResult, CiHealingTool, CiSeverity, CodeChange,
+    FailureCategory, FixType, RootCause,
 };
 pub use vault::{
     AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType, VaultClient,

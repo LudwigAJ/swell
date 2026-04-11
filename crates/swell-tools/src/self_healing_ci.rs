@@ -19,9 +19,7 @@ pub struct CiHealingTool {
 
 impl CiHealingTool {
     pub fn new() -> Self {
-        Self {
-            max_retries: 3,
-        }
+        Self { max_retries: 3 }
     }
 
     pub fn with_max_retries(mut self, retries: usize) -> Self {
@@ -38,14 +36,8 @@ impl CiHealingTool {
             if let Some(errors) = parsed.get("errors").and_then(|e| e.as_array()) {
                 for error in errors {
                     if let Some(msg) = error.get("message").and_then(|m| m.as_str()) {
-                        let file = error
-                            .get("file")
-                            .and_then(|f| f.as_str())
-                            .map(String::from);
-                        let line = error
-                            .get("line")
-                            .and_then(|l| l.as_u64())
-                            .map(|l| l as u32);
+                        let file = error.get("file").and_then(|f| f.as_str()).map(String::from);
+                        let line = error.get("line").and_then(|l| l.as_u64()).map(|l| l as u32);
 
                         failures.push(CiFailure {
                             file,
@@ -178,7 +170,8 @@ impl CiHealingTool {
             FailureCategory::TypeError
         } else if lower.contains("syntax")
             || lower.contains("unexpected token")
-            || (lower.contains("expected") && (lower.contains("{") || lower.contains(";") || lower.contains("]")))
+            || (lower.contains("expected")
+                && (lower.contains("{") || lower.contains(";") || lower.contains("]")))
         {
             FailureCategory::SyntaxError
         } else if lower.contains("test")
@@ -315,10 +308,7 @@ impl CiHealingTool {
                 false => {
                     // For other root causes, suggest investigation
                     fixes.push(CiFix {
-                        description: format!(
-                            "Investigate and fix: {}",
-                            root_cause.description
-                        ),
+                        description: format!("Investigate and fix: {}", root_cause.description),
                         fix_type: FixType::Other,
                         confidence: root_cause.confidence * 0.7,
                         code_change: None,
@@ -380,7 +370,9 @@ impl CiHealingTool {
                             .take_while(|c| !c.is_whitespace() && *c != ',')
                             .collect();
 
-                        if !module_name.is_empty() && (module_name.contains("::") || module_name.contains('.')) {
+                        if !module_name.is_empty()
+                            && (module_name.contains("::") || module_name.contains('.'))
+                        {
                             return Some(format!("use {}::{};", module_name, item_name));
                         }
                     }
@@ -641,7 +633,11 @@ impl Tool for CiHealingTool {
                         Ok(result) => {
                             let parsed: serde_json::Value =
                                 serde_json::from_str(&result.result).unwrap_or_default();
-                            if parsed.get("applied").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            if parsed
+                                .get("applied")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false)
+                            {
                                 applied.push(fix.description.clone());
                             }
                         }
@@ -875,7 +871,9 @@ test result: FAILED. 1 passed, 4 failed;
 
         let failures = tool.parse_ci_output(output);
         assert!(!failures.is_empty());
-        assert!(failures.iter().any(|f| f.category == FailureCategory::TestFailure));
+        assert!(failures
+            .iter()
+            .any(|f| f.category == FailureCategory::TestFailure));
     }
 
     #[tokio::test]

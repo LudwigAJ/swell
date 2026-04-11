@@ -1,0 +1,50 @@
+{
+  "featureId": "tools-vault-integration",
+  "reviewedAt": "2026-04-11T00:00:00Z",
+  "commitId": "6c4144d",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation covers all 3 expected behaviors (Vault client integration, dynamic secret generation, automatic credential rotation) but has 2 blocking issues: a type mismatch bug in renew() method and a cache memory leak where expired entries are never evicted.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/vault.rs",
+        "line": 515,
+        "severity": "blocking",
+        "description": "`get_lease_ttl()` is stubbed to always return `None` with a TODO comment. This prevents monitoring remaining lease time for automatic credential rotation. The method needs actual implementation to query Vault's lease lookup API."
+      },
+      {
+        "file": "crates/swell-tools/src/vault.rs",
+        "line": 445,
+        "severity": "blocking",
+        "description": "Cache memory leak: `is_cached()` returns `false` for expired entries but never removes them from the HashMap. Expired credentials accumulate indefinitely. The `CachedCredential` struct has `cached_at` timestamp but no TTL-based eviction mechanism."
+      },
+      {
+        "file": "crates/swell-tools/src/vault.rs",
+        "line": 15,
+        "severity": "non_blocking",
+        "description": "Documentation example references `DatabaseDynamicSecret` which doesn't exist in the API. Should be `VaultDynamicSecret<DatabaseCredentials>`."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "Worker attempted to read `.factory/services.yaml` which does not exist. Transcript shows: 'Error: Error reading file: ENOENT: no such file or directory, access /Users/ludwigjonsson/.factory/services.yaml'. This file should either exist with documented services or be referenced in AGENTS.md if it's optional.",
+      "evidence": "Transcript skeleton shows failed read of services.yaml"
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md documents Rust patterns but does not mention this crate's specific conventions. The vault module uses `#[allow(dead_code)]` on structs that are part of the public API but not used internally (VaultDynamicSecret, KvMetadata, VaultResponse, VaultAuthResponse). This pattern is acceptable but undocumented.",
+      "evidence": "vault.rs lines 437, 439, 452, 465 use #[allow(dead_code)]"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed the Rust skill correctly. No deviations observed. The skill's guidance about ownership, error handling, and async patterns was properly applied.",
+      "evidence": "Transcript shows worker used async_trait, thiserror, proper Arc<RwLock<>> patterns"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Implementation is mostly solid with good test coverage (11 tests). All core functionality present: VaultClient with token/AppRole auth, VaultCredentialProvider implementing CredentialProvider trait, VaultDynamicSecret for lifecycle management, and builder pattern. However, 2 blocking bugs: (1) cache never evicts expired entries causing memory leak, (2) get_lease_ttl() is stubbed to return None preventing rotation monitoring. Both issues relate to the 'automatic credential rotation' expected behavior."
+}

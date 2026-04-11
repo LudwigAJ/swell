@@ -1,0 +1,67 @@
+{
+  "featureId": "tools-mcp-deferred-loading",
+  "reviewedAt": "2026-04-11T12:00:00.000Z",
+  "commitId": "a6de106",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Feature implements progressive disclosure with lazy loading for tool registry. Added ToolCategory enum with 7 categories, factory-based deferred loading via register_factory(), category-level tracking with load_category(), and list_categories()/list_by_category() for UI support. All call sites updated to use new register signature. Tests pass and workspace builds.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/registry.rs",
+        "line": 98,
+        "severity": "non_blocking",
+        "description": "Malformed doc comment: '/// Factory entry:' appears mid-paragraph within ToolRegistry's doc comment. The comment block ends prematurely at '/// only then are the tools for that category loaded into memory.' but the 'Factory entry:' line is orphaned. The doc comment for FactoryEntry type should be moved before the type definition at line 107."
+      },
+      {
+        "file": "crates/swell-tools/src/registry.rs",
+        "line": 138,
+        "severity": "non_blocking",
+        "description": "Misleading method name: load_category() only marks a category as 'loaded' in memory but doesn't actually load any tools. The name suggests it loads tools from factories or the index, but it just pushes to a Vec. Either rename to mark_category_loaded() or implement actual lazy loading of category tools."
+      },
+      {
+        "file": "crates/swell-tools/src/registry.rs",
+        "line": 117,
+        "severity": "non_blocking",
+        "description": "The 'initialized' field is stored in the struct but never used - no code reads from or writes to it. This is dead code that should be removed or the field should be utilized."
+      },
+      {
+        "file": "crates/swell-tools/src/registry.rs",
+        "line": 153,
+        "severity": "non_blocking",
+        "description": "register_() method with trailing underscore is a migration artifact. It exists only as a fallback with default category Misc, but is not called anywhere in the codebase (grep found zero usages). Consider removing it or using it consistently if backward compatibility is needed."
+      },
+      {
+        "file": "crates/swell-tools/src/registry.rs",
+        "line": 155,
+        "severity": "non_blocking",
+        "description": "In register(), load_category(category) is called at the end, immediately marking categories as loaded upon registration. This means any tool registration marks its category as 'loaded' synchronously. Combined with the fact that register() immediately adds tools to the 'tools' map, the lazy loading mechanism only applies to factory-registered tools, not directly-registered tools. This design may not fully deliver the 'progressive disclosure' benefit for the common registration path."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker used the Rust skill correctly and followed proper Rust patterns (async_trait, Arc<dyn Tool>, tokio::sync::RwLock). No issues found.",
+      "evidence": "Transcript shows worker imported necessary traits and used standard async Rust patterns."
+    },
+    {
+      "area": "skills",
+      "observation": "Skill file (.factory/skills/rust/SKILL.md) provides general Rust guidance but doesn't document specific patterns for lazy loading or factory patterns in Rust. Worker followed general Rust conventions.",
+      "evidence": "Skill covers ownership, borrowing, lifetimes, strings, errors, iterators, concurrency, and memory - but no specific guidance on factory patterns or deferred loading."
+    },
+    {
+      "area": "services",
+      "observation": "Worker used standard cargo build/test/clippy commands - all documented in services.yaml. No undocumented commands or services used.",
+      "evidence": "All commands run (cargo build --workspace, cargo clippy, cargo test) are in services.yaml under 'commands' section."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that clippy requires #[allow(clippy::type_complexity)] annotation on FactoryEntry type alias. This is a non-obvious Rust lint configuration detail that could be documented.",
+      "evidence": "Transcript shows worker added #[allow(clippy::type_complexity)] to handle clippy warning on complex type. This pattern is not documented in AGENTS.md or skill files."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature 'tools-mcp-deferred-loading' successfully implements progressive disclosure with lazy loading for the tool registry. The implementation adds ToolCategory enum with 7 categories (File, Git, Shell, Search, Mcp, Vault, Misc), factory-based deferred loading via register_factory(), category-level tracking, and UI support methods (list_categories, list_by_category). All 11 deferred_loading tests pass. Workspace builds and passes clippy. Minor issues: malformed doc comment at line 98, misleading load_category() method name, unused 'initialized' field, and register_() migration artifact. No blocking issues found."
+}

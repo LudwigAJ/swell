@@ -1,0 +1,45 @@
+{
+  "featureId": "tools-network-egress",
+  "reviewedAt": "2026-04-11T04:45:00.000Z",
+  "commitId": "1a61737",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is complete and correct. Created EgressFilter module (1122 lines) with default-deny policy, DNS-based and IP-based allowlisting, port-level filtering, cloud metadata IP blocking (169.254.169.254), DNS caching, and preset rule sets. All 20 unit tests pass. Build and clippy pass with no warnings.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/egress.rs",
+        "line": 798,
+        "severity": "non_blocking",
+        "description": "In presets::package_registries(), pypi.python.org is listed alongside pypi.org. Both are valid PyPI hostnames, so this is not a bug but could be cleaned up by removing the redundant entry."
+      },
+      {
+        "file": "crates/swell-tools/src/egress.rs",
+        "line": 173,
+        "severity": "non_blocking",
+        "description": "The is_cloud_metadata_ip_addr function's IPv4 check 'octets[3] >= 251' would also match 169.254.169.255 (255 >= 251), which is not a metadata IP. However, 255 is a broadcast address in the 169.254.169.0/24 link-local range and not routable, so this is a minor issue with no practical impact."
+      },
+      {
+        "file": "crates/swell-tools/src/egress.rs",
+        "line": 134,
+        "severity": "non_blocking",
+        "description": "In resolve_blocking(), the warn! log 'DNS resolution failed' executes even when to_socket_addrs() succeeds but returns an empty iterator. This is misleading since no actual DNS failure occurred - the hostname simply resolved to no IPs. Should check if ip_vec.is_empty() before logging."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker followed the Rust skill's guidance properly. Used async_trait where appropriate, proper error handling with Result types, used tracing for logging, and followed the project's Rust conventions.",
+      "evidence": "Transcript shows worker read mission.md, validation-contract.md, features.json, loaded Rust skill, explored existing codebase, implemented the feature, ran tests, and committed."
+    },
+    {
+      "area": "conventions",
+      "observation": "The AGENTS.md mentions port range 3100-3199 reserved for HTTP API, but the egress feature doesn't use any ports. No violation.",
+      "evidence": "AGENTS.md port range guidance was not relevant to this feature."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes review. The EgressFilter module provides default-deny network egress control with DNS-based hostname allowlisting, IP-based CIDR allowlisting, port-level filtering, and cloud metadata IP blocking. All verification steps pass (build, clippy, 20 unit tests). Minor non-blocking issues identified: PyPI hostname typo in preset (non-functional since pypi.org is also included), IPv6 metadata check always returns false (documented but unused), and a misleading log message. No blocking issues found."
+}

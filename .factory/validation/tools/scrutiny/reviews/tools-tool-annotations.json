@@ -1,0 +1,21 @@
+{
+  "featureId": "tools-tool-annotations",
+  "reviewedAt": "2026-04-11T04:35:00.000Z",
+  "commitId": "727afe3d5592d2777ba4570630e0e53a8d7ef557",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation adds ToolBehavioralHints struct with read_only_hint, destructive_hint, and idempotent_hint fields. Extends Tool trait with behavioral_hints() method (default impl) and annotates all 6 built-in tools with appropriate hints. Unit tests verify annotations for each tool.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature introduces a new trait extension pattern (adding behavioral_hints() to Tool trait with default implementation). AGENTS.md documents basic Rust patterns but doesn't cover trait extension patterns or behavioral classification. This is a gap in documented conventions.",
+      "evidence": "swell-core/src/traits.rs:207 - behavioral_hints() method added with default implementation, but no convention docs cover this pattern"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation is correct and complete. Added ToolBehavioralHints struct to swell-core with three behavioral classification fields. Extended Tool trait with behavioral_hints() default method. Annotated all 6 built-in tools (ReadFileTool, WriteFileTool, ShellTool, GitTool, FileEditTool, SearchTool) with appropriate hints. Added 6 unit tests verifying annotations. Build, tests, and lint all pass."
+}

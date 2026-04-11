@@ -1,0 +1,45 @@
+{
+  "featureId": "tools-hybrid-execution",
+  "reviewedAt": "2026-04-11T00:00:00.000Z",
+  "commitId": "2fe7084",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is functionally complete with LocalExecutor, RemoteExecutor, HybridExecutor, and risk-based routing. 11 tests cover the core paths. However, there are some issues: (1) `RiskClass::High` variant can never be created via `from_tool_risk_level()` since ToolRiskLevel has no High variant - this is a design inconsistency between the two enums; (2) An underscore-prefixed unused variable ` _remote_healthy` on line 386; (3) No integration test verifying actual execution routing end-to-end.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/hybrid.rs",
+        "line": 386,
+        "severity": "non_blocking",
+        "description": "Variable ` _remote_healthy` is assigned but never used. The value from `self.remote.is_healthy().await` is computed but discarded. Consider either removing this line or using the value in a warning/info log."
+      },
+      {
+        "file": "crates/swell-tools/src/hybrid.rs",
+        "line": 34,
+        "severity": "non_blocking",
+        "description": "`RiskClass::from_tool_risk_level` only maps 3 ToolRiskLevel variants (Read, Write, Destructive) to RiskClass (Low, Medium, Destructive), but RiskClass has a 4th 'High' variant that can never be created via this function. This is a design inconsistency - if 'High' is meant to represent ToolRiskLevel::Destructive, there's confusion about when High vs Destructive RiskClass is used."
+      },
+      {
+        "file": "crates/swell-tools/src/hybrid.rs",
+        "line": 35,
+        "severity": "non_blocking",
+        "description": "Match expression in `from_tool_risk_level` is non-exhaustive - if ToolRiskLevel gains new variants, this will break. Consider adding a catch-all or documenting that ToolRiskLevel is frozen."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that the RemoteExecutor connects to an external sandbox service at a configurable endpoint. This endpoint (defaulting to http://localhost:8080) is not documented anywhere in .factory/library/ or AGENTS.md. Since sandbox isolation is planned for future (Firecracker in v2 roadmap), the worker correctly assumed this API contract. Should be documented as 'sandbox_endpoint' in services.yaml or library docs.",
+      "evidence": "hybrid.rs:162-175 shows RemoteExecutor::execute() calling a REST API at {sandbox_endpoint}/execute/{tool_name}. The worker created a RemoteExecutor without needing to discover this - it appears to be the worker's assumption about the API contract."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker had to infer the ToolRegistry API for registering tools (the register method signature). The transcript shows the worker reading multiple files to understand the registry. The exact signature `registry.register(tool, category)` with category parameter wasn't obvious from just reading lib.rs. This is a normal discovery process but highlights that the registry's API could be better documented.",
+      "evidence": "Transcript shows worker reading registry.rs and tools.rs to understand how to register tools. The handoff shows 'Full test suite' but the actual test at line 494 shows the worker had to figure out the register signature including ToolCategory."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation is solid with good test coverage (11 tests). All verification steps passed (build, hybrid tests, workspace tests, clippy). Main concerns are non-blocking: (1) ` _remote_healthy` variable not used, (2) RiskClass/ToolRiskLevel enum mismatch where High variant can't be created from ToolRiskLevel, (3) no integration test for actual execution routing. None of these are blocking issues - the core functionality works correctly."
+}

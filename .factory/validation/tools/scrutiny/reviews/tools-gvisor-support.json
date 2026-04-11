@@ -1,0 +1,50 @@
+{
+  "featureId": "tools-gvisor-support",
+  "reviewedAt": "2026-04-11T04:55:00Z",
+  "commitId": "ab5ea5a80f1efea2e5bb7250436bce7fd5109173",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation adds GvisorSandbox with runsc runtime integration, user namespace isolation, and network modes. However, there is a CRITICAL bug: the container_id is never stored in start(), making all subsequent operations (execute, read_file, write_file, stop, is_running) fail because container_id is always None.",
+    "issues": [
+      {
+        "file": "crates/swell-sandbox/src/gvisor.rs",
+        "line": 373,
+        "severity": "blocking",
+        "description": "CRITICAL BUG: start() method extracts container_id from docker run output but never stores it in self.container_id. The comment at line 427 admits 'We can't store the container_id in the struct because self is immutable' - but this is incorrect. Since container_id is already Option<String>, the code could simply assign it: self.container_id = Some(container_id). This bug makes the entire sandbox unusable after start() is called. All subsequent operations (execute, read_file, write_file, is_running, stop) require container_id but it will always be None."
+      },
+      {
+        "file": "crates/swell-sandbox/src/gvisor.rs",
+        "line": 140,
+        "severity": "non_blocking",
+        "description": "The enable_seccomp config field is stored but never used in build_docker_flags(). Seccomp filtering is on by default for gVisor, so this is not causing current failures, but the field is dead code."
+      },
+      {
+        "file": "crates/swell-sandbox/src/gvisor.rs",
+        "line": 145,
+        "severity": "non_blocking",
+        "description": "runsc_path config field is stored and used as documentation, but the actual docker run command does not use --runtime-path flag - it uses '--runtime' 'runsc' which relies on runsc being registered in Docker's runtime registry. The runsc_path field has no effect."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The project AGENTS.md states 'Use async_trait::async_trait for async trait methods' and services.yaml defines standard commands. The worker followed these conventions correctly.",
+      "evidence": "Worker used cargo build/test/clippy as specified in services.yaml"
+    },
+    {
+      "area": "skills",
+      "observation": "The worker followed the Rust skill's guidance on ownership and async patterns. No procedure deviations were noted in skillFeedback.",
+      "evidence": "skillFeedback.followedProcedure: true, no deviations listed"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The gVisor feature notes in plan/research_documents/ describe Firecracker as the primary sandbox technology. The worker implemented gVisor (runsc) via Docker, which is documented as an alternative in the v2 roadmap (Firecracker Sandbox section). The worker discovered that Docker run with --runtime=runsc works without KVM, which is accurate - but this approach was not explicitly specified in the architecture.md library doc.",
+      "evidence": "architecture.md lists 'FirecrackerSandbox - Firecracker microVM (future)' under swell-sandbox. The feature description did not specify which sandbox technology to use beyond 'gVisor alternative sandbox backend'."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The gVisor feature implementation is incomplete due to a critical bug where container_id is never stored after start(). This makes the sandbox unusable because execute(), read_file(), write_file(), is_running(), and stop() all require the container_id which will always be None. The fix is straightforward: assign the container_id to self.container_id before the Ok(()) in start(). Additionally, the runsc_path and enable_seccomp config fields exist but are not used."
+}

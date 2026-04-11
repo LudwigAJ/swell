@@ -1,0 +1,55 @@
+{
+  "featureId": "tools-posttooluse-hooks",
+  "reviewedAt": "2026-04-11T00:00:00Z",
+  "commitId": "0afbc79f033e9bd743c7bab21853a0edd4b0031d",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation adds post-tool-use hooks infrastructure with FormatHook (cargo fmt) and LintHook (cargo clippy). Hooks are integrated into ToolExecutor via execute_with_hooks() method. The implementation is functionally correct with 16 unit tests covering hook behavior. However, there are some observations about configuration handling and integration completeness.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/post_tool_hooks.rs",
+        "line": 259,
+        "severity": "non_blocking",
+        "description": "LintHook's run_clippy accepts timeout_secs parameter but never uses it. The timeout configuration in HookConfig is stored but not enforced. Command::new().output() blocks until completion with no timeout mechanism."
+      },
+      {
+        "file": "crates/swell-tools/src/post_tool_hooks.rs",
+        "line": 193,
+        "severity": "non_blocking",
+        "description": "FormatHook::should_run returns true when file_path is None (empty modified_files), which means hooks will run even when no specific files are identified. This is likely intentional but not documented."
+      },
+      {
+        "file": "crates/swell-tools/src/executor.rs",
+        "line": 67,
+        "severity": "non_blocking",
+        "description": "execute() method delegates to execute_with_hooks() with empty modified_files vec![], meaning hooks won't trigger properly unless caller uses execute_with_hooks() directly. The 'auto-run' behavior described in feature requires explicit adoption."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The implementation creates post-tool hooks infrastructure that integrates with ToolExecutor, but the existing tools (FileEditTool, WriteFileTool) don't automatically pass modified file paths to the executor. The AGENTS.md mentions using tracing for logging but doesn't specify hook integration patterns.",
+      "evidence": "FileEditTool::execute() returns {dry_run, diff, changed} but doesn't expose the file path in a way that ToolExecutor can extract. Caller must manually extract and pass modified_files to execute_with_hooks()."
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill was followed correctly for the core implementation. However, the skill doesn't include guidance on async trait patterns with tokio::task::spawn_blocking, which was used here for running blocking cargo commands.",
+      "evidence": "FormatHook::execute and LintHook::execute use tokio::task::spawn_blocking to run Command::new() which is appropriate but not documented in the skill."
+    },
+    {
+      "area": "services",
+      "observation": "The implementation runs 'cargo fmt' and 'cargo clippy' as external commands. These commands are not defined in .factory/services.yaml as available commands, though they are standard Rust tools.",
+      "evidence": "services.yaml defines: install, typecheck, build, test, lint. cargo fmt and cargo clippy are implicitly available via cargo."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The worker discovered that cargo fmt returns modified file paths on stdout when using --emit files flag, which was used correctly in the implementation. This knowledge about cargo fmt output format could be documented.",
+      "evidence": "post_tool_hooks.rs:170-176 parses stdout lines as modified files: stdout.lines().filter(|line| !line.is_empty()).map(|s| s.to_string()).collect()"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes review. The post-tool-use hooks infrastructure is correctly implemented with FormatHook and LintHook. The implementation builds successfully, passes 16 unit tests, and passes clippy. Key observations: timeout configuration is not enforced (non-blocking), and 'auto-run' behavior requires explicit use of execute_with_hooks() rather than automatic integration with existing tools."
+}

@@ -1,0 +1,86 @@
+{
+  "featureId": "tools-firecracker-sandbox",
+  "reviewedAt": "2026-04-11T04:45:00.000Z",
+  "commitId": "2fe70848cd9838f87e153990d758e256375607f8",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The Firecracker sandbox feature is NOT implemented - only a STUB exists. The handoff incorrectly claims the feature was already complete, but the actual FirecrackerSandbox in swell-sandbox/src/lib.rs explicitly states 'STUB' in every method and does not create actual microVMs, measure startup time, or implement hardware virtualization isolation.",
+    "issues": [
+      {
+        "file": "crates/swell-sandbox/src/lib.rs",
+        "line": 49,
+        "severity": "blocking",
+        "description": "FirecrackerSandbox is explicitly a STUB - every method has 'STUB: In real implementation, this would...' comments. The feature description requires 'Firecracker microVM provisioned per task' but no actual microVM provisioning occurs."
+      },
+      {
+        "file": "crates/swell-sandbox/src/lib.rs",
+        "line": 60,
+        "severity": "blocking",
+        "description": "The start() method only logs a tracing message and returns Ok(()). It does not: 1) Download/create VM image, 2) Start Firecracker process with KVM, 3) Wait for guest agent to be ready. Expected behavior 'Startup time < 125ms' is not measured or implemented."
+      },
+      {
+        "file": "crates/swell-sandbox/src/lib.rs",
+        "line": 67,
+        "severity": "blocking",
+        "description": "The stop() method only logs and returns Ok(()). No actual VM cleanup occurs."
+      },
+      {
+        "file": "crates/swell-sandbox/src/lib.rs",
+        "line": 71,
+        "severity": "blocking",
+        "description": "The execute() method returns a mock response 'STUB: would execute...' instead of actually executing commands in a microVM. Expected behavior 'Isolation via hardware virtualization' is not implemented."
+      },
+      {
+        "file": "crates/swell-sandbox/src/lib.rs",
+        "line": 81,
+        "severity": "blocking",
+        "description": "The write_file() and read_file() methods only log and return mock data, no actual file operations in a VM."
+      },
+      {
+        "file": "crates/swell-sandbox/src/lib.rs",
+        "line": 89,
+        "severity": "blocking",
+        "description": "The is_running() always returns true without checking actual VM health."
+      },
+      {
+        "file": "crates/swell-sandbox/src/lib.rs",
+        "line": 94,
+        "severity": "blocking",
+        "description": "Tests (test_firecracker_sandbox_*) only verify struct methods work on the stub, not actual microVM functionality. They cannot validate <125ms startup or hardware virtualization isolation."
+      },
+      {
+        "file": ".factory/missions/67c2b690-f32a-4538-8ff8-3eb2790dc44e/features.json",
+        "line": 0,
+        "severity": "blocking",
+        "description": "Verification step says 'cargo test -p swell-tools -- firecracker' but FirecrackerSandbox is in swell-sandbox, not swell-tools. The test command would find no tests."
+      },
+      {
+        "file": "commit 2fe7084",
+        "line": 0,
+        "severity": "blocking",
+        "description": "The handoff claims commitId 2fe7084 but this commit implements 'hybrid executor' (LocalExecutor + RemoteExecutor), NOT the firecracker sandbox. The actual firecracker stub pre-existed this commit."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The architecture.md explicitly documents 'Sandbox (stub for MVP): FirecrackerSandbox - Firecracker microVM (future)' indicating it's not implemented. The worker treated this stub as complete, but the stub is explicitly marked as non-functional.",
+      "evidence": "architecture.md under swell-sandbox says 'FirecrackerSandbox - Firecracker microVM (future)'. The stub code itself has extensive 'STUB:' comments explaining what's not implemented."
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill was followed correctly for writing code structure, but the feature itself is not implementable as a stub - the worker should have reported that the stub cannot satisfy the feature requirements for actual microVM provisioning, <125ms startup, and hardware virtualization isolation.",
+      "evidence": "Handoff says 'Firecracker sandbox implementation already complete' but all methods return mock/stub responses. The feature requirements cannot be met by the existing stub."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The research_documents/Tools and Runtime Control Spec.md explicitly states Firecracker requires 'direct KVM access' and 'won't run inside standard Kubernetes pods'. This environmental requirement was not considered - the stub cannot work on macOS (no KVM) or in containers without nested virtualization.",
+      "evidence": "plan/research_documents/Tools and Runtime Control Spec.md: 'Firecracker requires direct KVM access, which means bare-metal hosts or nested virtualization. It won't run inside standard Kubernetes pods.'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - The firecracker sandbox feature is not implemented. The codebase contains only a STUB implementation that logs operations without creating actual microVMs. The handoff incorrectly states the feature was already complete. Expected behaviors (microVM provisioning, <125ms startup, hardware virtualization isolation) are not implemented. Commit 2fe7084 is for hybrid executor, not firecracker sandbox. The feature requires either: 1) Full Firecracker implementation (requires KVM, bare-metal), or 2) Explicit acknowledgment that this is a stub/MVP placeholder."
+}
