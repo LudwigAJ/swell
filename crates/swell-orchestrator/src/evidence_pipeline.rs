@@ -216,6 +216,8 @@ pub struct EvidencePipeline {
     doc_freqs: HashMap<String, usize>,
     /// Total number of documents
     total_docs: usize,
+    /// Store actual chunks for retrieval
+    chunks: HashMap<Uuid, EvidenceChunk>,
 }
 
 impl EvidencePipeline {
@@ -231,6 +233,7 @@ impl EvidencePipeline {
             inverted_index: HashMap::new(),
             doc_freqs: HashMap::new(),
             total_docs: 0,
+            chunks: HashMap::new(),
         }
     }
 
@@ -323,6 +326,9 @@ impl EvidencePipeline {
 
     /// Index a chunk for keyword search
     fn index_chunk(&mut self, chunk: &EvidenceChunk) {
+        // Store the chunk for later retrieval
+        self.chunks.insert(chunk.id, chunk.clone());
+
         // Update document frequencies
         let unique_keywords: HashSet<_> = chunk.keywords.iter().collect();
         for kw in &unique_keywords {
@@ -460,29 +466,15 @@ impl EvidencePipeline {
         // Build results
         let mut results: Vec<EvidenceResult> = chunk_scores
             .into_iter()
-            .map(|(chunk_id, (score, match_type))| {
-                // We'll need to look up the actual chunk
-                // For now, we create a placeholder
-                EvidenceResult {
-                    chunk: EvidenceChunk {
-                        id: chunk_id,
-                        text: String::new(), // Will be filled in later
-                        provenance: ChunkProvenance {
-                            url: String::new(),
-                            title: String::new(),
-                            fetched_at: Utc::now(),
-                            publication_date: None,
-                            chunk_index: 0,
-                            total_chunks: 0,
-                            char_offset: 0,
-                            content_hash: String::new(),
-                        },
-                        keywords: Vec::new(),
-                    },
+            .filter_map(|(chunk_id, (score, match_type))| {
+                // Look up the actual chunk from storage
+                let chunk = self.chunks.get(&chunk_id)?.clone();
+                Some(EvidenceResult {
+                    chunk,
                     score,
                     match_type,
                     original_position: None,
-                }
+                })
             })
             .filter(|r| r.score >= query.min_score)
             .collect();

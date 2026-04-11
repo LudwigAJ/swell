@@ -15,6 +15,7 @@ pub mod alerts;
 pub mod autonomy;
 pub mod backlog;
 pub mod drift_detector;
+pub mod evidence_pipeline;
 pub mod execution;
 pub mod feature_flag;
 pub mod feature_leads;
@@ -49,8 +50,9 @@ pub use agents::{
     DocChangeType, DocWriterAgent, EvaluationResult, EvaluatorAgent, FileChange, GeneratorAgent,
     HandoffArtifact, IssueCategory, IssueSeverity, PlannerAgent, ReactLoop, ReactLoopState,
     ReactLoopSummary, ReactPhase, ReactStep, RefactorOpportunity, RefactorPlan, RefactorerAgent,
-    RequirementCoverage, ReviewResult, ReviewerAgent, SystemPromptBuilder, SystemPromptConfig,
-    TestPattern, TestSpec, TestWriterAgent, DEFAULT_REACT_MAX_ITERATIONS,
+    RequirementCoverage, ResearchFinding, ResearchResult, ReviewResult, ReviewerAgent,
+    SystemPromptBuilder, SystemPromptConfig, TestPattern, TestSpec, TestWriterAgent,
+    DEFAULT_REACT_MAX_ITERATIONS, DEFAULT_RESEARCH_MAX_ITERATIONS,
 };
 pub use alerts::{
     create_alert_manager, create_alert_manager_with_config, Alert, AlertCategory, AlertManager,
@@ -63,6 +65,10 @@ pub use backlog::{
     WorkBacklog,
 };
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
+pub use evidence_pipeline::{
+    ChunkProvenance, EvidencePipeline, EvidencePipelineConfig, EvidenceQuery, EvidenceResult,
+    EvidenceSource, EvidenceChunk, MatchType, RerankFactors,
+};
 pub use execution::ExecutionController;
 pub use feature_flag::{FeatureFlag, FeatureFlagError, FeatureFlagManager, FlagSnapshot};
 pub use feature_leads::{
@@ -142,6 +148,9 @@ pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
 };
+
+// Re-export web search tools from swell-tools for convenience
+pub use swell_tools::web_search::{DomainSearchTool, FetchPageTool, WebSearchTool};
 
 use std::sync::Arc;
 use swell_core::{
@@ -472,6 +481,35 @@ impl Orchestrator {
         let task = sm.get_task(task_id)?;
         Ok(task.current_scope.clone())
     }
+}
+
+// ============================================================================
+// Web Search Tools Registration
+// ============================================================================
+
+/// Register web search tools with a ToolRegistry.
+///
+/// Call this to make web search tools available for use by ResearcherAgent.
+///
+/// # Example
+/// ```ignore
+/// use swell_orchestrator::{ToolRegistry, register_web_search_tools};
+///
+/// let registry = ToolRegistry::new();
+/// register_web_search_tools(&registry).await;
+/// ```
+pub async fn register_web_search_tools(registry: &swell_tools::ToolRegistry) {
+    use swell_tools::registry::ToolCategory;
+
+    registry
+        .register(WebSearchTool::new(), ToolCategory::Search)
+        .await;
+    registry
+        .register(DomainSearchTool::new(vec![]), ToolCategory::Search)
+        .await;
+    registry
+        .register(FetchPageTool::new(), ToolCategory::Search)
+        .await;
 }
 
 impl Default for Orchestrator {

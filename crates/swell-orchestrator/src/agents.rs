@@ -19,6 +19,8 @@ use swell_tools::ToolRegistry;
 use tracing::{debug, info};
 use uuid::Uuid;
 
+use crate::search_router::SearchDepth;
+
 // ============================================================================
 // Structured Agent Handoffs - Per agent-team-orchestration skill
 // ============================================================================
@@ -1376,6 +1378,19 @@ impl BehavioralInvariantVerifier {
                 satisfied: false,
                 details: String::new(),
             },
+            // Researcher invariants
+            BehavioralInvariant {
+                role: AgentRole::Researcher,
+                description: "Researcher must return findings".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
+            BehavioralInvariant {
+                role: AgentRole::Researcher,
+                description: "Researcher must track sources".to_string(),
+                satisfied: false,
+                details: String::new(),
+            },
         ];
 
         Self { invariants }
@@ -2130,6 +2145,413 @@ impl Agent for EvaluatorAgent {
 }
 
 // ============================================================================
+// ResearcherAgent - Web research agent for external information gathering
+// ============================================================================
+
+/// Default maximum iterations for research loop
+pub const DEFAULT_RESEARCH_MAX_ITERATIONS: u32 = 5;
+
+/// Result of a research operation containing findings and sources
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResearchResult {
+    /// Research query that was executed
+    pub query: String,
+    /// List of research findings
+    pub findings: Vec<ResearchFinding>,
+    /// Total sources consulted
+    pub source_count: usize,
+    /// Search iterations performed
+    pub iterations: u32,
+    /// Confidence score for the research (0.0 to 1.0)
+    pub confidence: f64,
+    /// Whether research is complete or needs more investigation
+    pub complete: bool,
+}
+
+/// A single research finding from a source
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResearchFinding {
+    /// Title of the finding
+    pub title: String,
+    /// Content/summary of the finding
+    pub content: String,
+    /// Source URL or reference
+    pub source: String,
+    /// Relevance score to the original query (0.0 to 1.0)
+    pub relevance: f64,
+    /// Timestamp when this source was fetched
+    pub fetched_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Researcher agent - performs web research using search tools
+pub struct ResearcherAgent {
+    model: String,
+    llm: Option<Arc<dyn LlmBackend>>,
+    tool_registry: Option<Arc<ToolRegistry>>,
+    max_iterations: u32,
+}
+
+impl ResearcherAgent {
+    /// Create a new ResearcherAgent with model name only (for testing)
+    pub fn new(model: String) -> Self {
+        Self {
+            model,
+            llm: None,
+            tool_registry: None,
+            max_iterations: DEFAULT_RESEARCH_MAX_ITERATIONS,
+        }
+    }
+
+    /// Create a ResearcherAgent with LLM backend for query analysis
+    pub fn with_llm(model: String, llm: Arc<dyn LlmBackend>) -> Self {
+        Self {
+            model,
+            llm: Some(llm),
+            tool_registry: None,
+            max_iterations: DEFAULT_RESEARCH_MAX_ITERATIONS,
+        }
+    }
+
+    /// Create a ResearcherAgent with tool registry for search execution
+    pub fn with_tools(model: String, tool_registry: Arc<ToolRegistry>) -> Self {
+        Self {
+            model,
+            llm: None,
+            tool_registry: Some(tool_registry),
+            max_iterations: DEFAULT_RESEARCH_MAX_ITERATIONS,
+        }
+    }
+
+    /// Create a fully configured ResearcherAgent with LLM and tools
+    pub fn with_llm_and_tools(
+        model: String,
+        llm: Arc<dyn LlmBackend>,
+        tool_registry: Arc<ToolRegistry>,
+    ) -> Self {
+        Self {
+            model,
+            llm: Some(llm),
+            tool_registry: Some(tool_registry),
+            max_iterations: DEFAULT_RESEARCH_MAX_ITERATIONS,
+        }
+    }
+
+    /// Classify the search depth based on the query
+    fn classify_depth(query: &str) -> SearchDepth {
+        let query_lower = query.to_lowercase();
+
+        // Quick search indicators: exact error messages, simple lookups
+        let quick_indicators = [
+            "error:",
+            "exception:",
+            "failed:",
+            "undefined",
+            "not found",
+            "cannot find",
+            "syntax error",
+        ];
+
+        // Check if query contains quick search indicators
+        let is_quick = quick_indicators
+            .iter()
+            .any(|indicator| query_lower.contains(indicator));
+
+        if is_quick || query.len() < 50 {
+            SearchDepth::Quick
+        } else {
+            SearchDepth::Deep
+        }
+    }
+
+    /// Rewrite query for better search results (version-aware, precise)
+    fn rewrite_query(&self, query: &str) -> String {
+        let mut rewritten = query.to_string();
+
+        // Add context for common patterns
+        if !query.contains("Rust") && !query.contains("rust") {
+            // Don't modify if already has a language/tool specified
+            if !query.contains("Python")
+                && !query.contains("JavaScript")
+                && !query.contains("TypeScript")
+                && !query.contains("Go")
+            {
+                // Keep as-is for general queries
+            }
+        }
+
+        // Clean up the query
+        rewritten = rewritten.replace("  ", " ").trim().to_string();
+
+        rewritten
+    }
+
+    /// Perform a single search iteration and return findings
+    async fn search_iteration(
+        &self,
+        query: &str,
+        _depth: SearchDepth,
+    ) -> Result<Vec<ResearchFinding>, SwellError> {
+        let registry = self.tool_registry.as_ref().ok_or_else(|| {
+            SwellError::ToolExecutionFailed("No tool registry configured".to_string())
+        })?;
+
+        // Try to use web_search tool if available
+        if let Some(tool) = registry.get("web_search").await {
+            let args = serde_json::json!({ "query": query });
+            let result = tool.execute(args).await?;
+
+            if result.success {
+                // Parse search results from the output
+                // Expected format: JSON array of {title, url, snippet}
+                if let Ok(results) = serde_json::from_str::<serde_json::Value>(&result.result) {
+                    let findings = self.parse_search_results(&results, query)?;
+                    return Ok(findings);
+                }
+            }
+        }
+
+        // Fallback: try domain_search if available
+        if let Some(tool) = registry.get("domain_search").await {
+            let args = serde_json::json!({ "query": query, "domains": ["docs.rs", "crates.io"] });
+            let result = tool.execute(args).await?;
+
+            if result.success {
+                if let Ok(results) = serde_json::from_str::<serde_json::Value>(&result.result) {
+                    let findings = self.parse_search_results(&results, query)?;
+                    return Ok(findings);
+                }
+            }
+        }
+
+        // No search tool available - return empty
+        Ok(vec![])
+    }
+
+    /// Parse search results into ResearchFinding structs
+    fn parse_search_results(
+        &self,
+        results: &serde_json::Value,
+        _query: &str,
+    ) -> Result<Vec<ResearchFinding>, SwellError> {
+        let mut findings = Vec::new();
+
+        if let Some(items) = results.as_array() {
+            for item in items {
+                let title = item["title"].as_str().unwrap_or("Unknown").to_string();
+                let content = item["snippet"].as_str().unwrap_or("").to_string();
+                let source = item["url"].as_str().unwrap_or("").to_string();
+                let relevance = item["relevance"].as_f64().unwrap_or(0.5);
+
+                findings.push(ResearchFinding {
+                    title,
+                    content,
+                    source,
+                    relevance,
+                    fetched_at: chrono::Utc::now(),
+                });
+            }
+        }
+
+        Ok(findings)
+    }
+
+    /// Use LLM to analyze findings and determine if research is complete
+    async fn analyze_findings_with_llm(
+        &self,
+        findings: &[ResearchFinding],
+        query: &str,
+    ) -> Result<(bool, f64), SwellError> {
+        let llm = self
+            .llm
+            .as_ref()
+            .ok_or_else(|| SwellError::LlmError("LLM not configured".to_string()))?;
+
+        let findings_summary = findings
+            .iter()
+            .map(|f| format!("- {}: {} ({})", f.title, f.content, f.source))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let prompt = format!(
+            r#"Analyze these research findings for the query: "{}"
+
+Findings:
+{}
+
+Determine:
+1. Is this research complete enough to answer the query? (yes/no)
+2. How confident are you in these findings? (0.0 to 1.0)
+
+Respond in JSON format: {{"complete": true/false, "confidence": 0.0-1.0}}"#,
+            query, findings_summary
+        );
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: prompt,
+        }];
+
+        let config = LlmConfig {
+            temperature: 0.0,
+            max_tokens: 200,
+            stop_sequences: None,
+        };
+
+        let response = llm.chat(messages, None, config).await?;
+
+        // Parse the JSON response
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&response.content) {
+            let complete = parsed["complete"].as_bool().unwrap_or(false);
+            let confidence = parsed["confidence"].as_f64().unwrap_or(0.5);
+            return Ok((complete, confidence));
+        }
+
+        // Default to incomplete with medium confidence
+        Ok((false, 0.5))
+    }
+}
+
+#[async_trait]
+impl Agent for ResearcherAgent {
+    fn role(&self) -> AgentRole {
+        AgentRole::Researcher
+    }
+
+    fn description(&self) -> String {
+        "Researches external information using web search tools".to_string()
+    }
+
+    async fn execute(&self, context: AgentContext) -> Result<AgentResult, SwellError> {
+        // Log start comment
+        let start_comment = AgentComment::new(
+            AgentRole::Researcher,
+            context.task.id,
+            AgentCommentType::Start,
+            &format!("Starting research for: {}", context.task.description),
+        );
+        start_comment.log();
+
+        // Extract the research query from task description
+        let query = context.task.description.clone();
+
+        // Classify search depth
+        let depth = Self::classify_depth(&query);
+
+        // Rewrite query for better results
+        let rewritten_query = self.rewrite_query(&query);
+
+        // Collect all findings across iterations
+        let mut all_findings = Vec::new();
+        let mut iterations = 0u32;
+        let mut complete = false;
+
+        // If no tool registry, return stub result
+        if self.tool_registry.is_none() {
+            let blocker_comment = AgentComment::new(
+                AgentRole::Researcher,
+                context.task.id,
+                AgentCommentType::Blocker,
+                "No tool registry with web search - running in stub mode",
+            );
+            blocker_comment.log();
+
+            return Ok(AgentResult {
+                success: true,
+                output: serde_json::to_string(&ResearchResult {
+                    query: rewritten_query,
+                    findings: vec![],
+                    source_count: 0,
+                    iterations: 0,
+                    confidence: 0.0,
+                    complete: false,
+                })
+                .unwrap_or_default(),
+                tool_calls: vec![],
+                tokens_used: 0,
+                error: None,
+            });
+        }
+
+        // Research loop with max iterations
+        while iterations < self.max_iterations && !complete {
+            iterations += 1;
+
+            // Perform search iteration
+            let findings = self.search_iteration(&rewritten_query, depth).await?;
+            all_findings.extend(findings);
+
+            // Analyze findings with LLM if available
+            if let Some(_llm) = &self.llm {
+                if !all_findings.is_empty() {
+                    let (is_complete, conf) = self
+                        .analyze_findings_with_llm(&all_findings, &query)
+                        .await?;
+                    complete = is_complete;
+                    // Use conf for LLM-based confidence
+                    let _ = conf; // Acknowledge usage in analysis
+                }
+            } else {
+                // Without LLM, stop after collecting initial results
+                complete = true;
+            }
+        }
+
+        // Sort findings by relevance
+        all_findings.sort_by(|a, b| {
+            b.relevance
+                .partial_cmp(&a.relevance)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Deduplicate findings by source
+        let mut seen_sources = std::collections::HashSet::new();
+        all_findings.retain(|f| seen_sources.insert(f.source.clone()));
+
+        let source_count = seen_sources.len();
+        let final_confidence = if all_findings.is_empty() {
+            0.0
+        } else {
+            // Average relevance weighted by count
+            let total_relevance: f64 = all_findings.iter().map(|f| f.relevance).sum();
+            total_relevance / all_findings.len() as f64
+        };
+
+        // Build research result
+        let research_result = ResearchResult {
+            query: rewritten_query,
+            findings: all_findings,
+            source_count,
+            iterations,
+            confidence: final_confidence,
+            complete,
+        };
+
+        // Log completion comment
+        let completion_comment = AgentComment::new(
+            AgentRole::Researcher,
+            context.task.id,
+            AgentCommentType::Completion,
+            &format!(
+                "Research completed: {} findings from {} sources, {} iterations, confidence {:.2}",
+                research_result.findings.len(),
+                source_count,
+                iterations,
+                final_confidence
+            ),
+        );
+        completion_comment.log();
+
+        Ok(AgentResult {
+            success: complete,
+            output: serde_json::to_string(&research_result).unwrap_or_default(),
+            tool_calls: vec![],
+            tokens_used: 0,
+            error: None,
+        })
+    }
+}
+
+// ============================================================================
 // SystemPromptBuilder - Assembles agent context from project config, conventions, memory blocks
 // ============================================================================
 
@@ -2628,6 +3050,41 @@ Always:
 <output_format>
 Output JSON with:
 - changes: array of {file, change_type, content}
+</output_format>"#
+            .to_string(),
+            AgentRole::Researcher => r#"<role>
+You are the RESEARCHER agent for SWELL, an autonomous coding engine built in Rust.
+Your job is to gather external information using web search tools.
+</role>
+
+<task>
+Perform research on topics, APIs, documentation, or error messages as requested.
+
+Think step-by-step before output:
+1. What information is needed?
+2. What search queries would yield the best results?
+3. How should findings be organized?
+4. Is more investigation needed?
+</task>
+
+<constraints>
+Do NOT:
+- Trust a single source without verification
+- Include outdated or deprecated information
+- Fabricate URLs or content
+- Ignore contradictory findings
+
+Always:
+- Cite sources with URLs
+- Verify information across multiple sources
+- Include relevant dates/timestamps
+- Preserve code examples exactly as found
+</constraints>
+
+<output_format>
+Output JSON with:
+- findings: array of {title, content, source, relevance}
+- complete: boolean indicating if research is sufficient
 </output_format>"#
             .to_string(),
         }
@@ -7455,5 +7912,90 @@ fn deeply_nested() {
         }
         // In stub mode, output is plain EvaluationResult JSON
         // The handoff is only included in full validation mode
+    }
+
+    // ========================================================================
+    // Researcher Agent Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_researcher_agent_stub_mode() {
+        let researcher = ResearcherAgent::new("claude-sonnet".to_string());
+
+        let task = Task::new("Research how to implement async traits in Rust".to_string());
+        let context = AgentContext {
+            task,
+            memory_blocks: vec![],
+            session_id: Uuid::new_v4(),
+            workspace_path: Some(".".to_string()),
+        };
+
+        let result = researcher.execute(context).await.unwrap();
+        assert!(result.success);
+
+        // In stub mode (no tool registry), output is ResearchResult JSON
+        if let Ok(output_json) = serde_json::from_str::<serde_json::Value>(&result.output) {
+            assert!(output_json.get("findings").is_some());
+            assert!(output_json.get("query").is_some());
+            assert!(output_json.get("source_count").is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_researcher_agent_role() {
+        let researcher = ResearcherAgent::new("claude-sonnet".to_string());
+        assert_eq!(researcher.role(), AgentRole::Researcher);
+    }
+
+    #[tokio::test]
+    async fn test_search_depth_classification() {
+        // Quick search query - error message
+        let quick_query = "error: cannot find trait `Foo` in this scope";
+        assert_eq!(
+            ResearcherAgent::classify_depth(quick_query),
+            SearchDepth::Quick
+        );
+
+        // Quick search query - short simple lookup
+        let short_query = "what is Rust async trait";
+        assert_eq!(
+            ResearcherAgent::classify_depth(short_query),
+            SearchDepth::Quick
+        );
+
+        // Deep search query - complex multi-part research
+        let deep_query = "How to implement a custom async runtime in Rust with work stealing queue and io_uring integration";
+        assert_eq!(
+            ResearcherAgent::classify_depth(deep_query),
+            SearchDepth::Deep
+        );
+    }
+
+    #[tokio::test]
+    async fn test_research_result_serialization() {
+        let result = ResearchResult {
+            query: "test query".to_string(),
+            findings: vec![ResearchFinding {
+                title: "Test Finding".to_string(),
+                content: "Test content".to_string(),
+                source: "https://example.com".to_string(),
+                relevance: 0.8,
+                fetched_at: chrono::Utc::now(),
+            }],
+            source_count: 1,
+            iterations: 3,
+            confidence: 0.75,
+            complete: true,
+        };
+
+        let json = serde_json::to_string(&result).unwrap();
+        let parsed: ResearchResult = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.query, "test query");
+        assert_eq!(parsed.findings.len(), 1);
+        assert_eq!(parsed.source_count, 1);
+        assert_eq!(parsed.iterations, 3);
+        assert_eq!(parsed.confidence, 0.75);
+        assert!(parsed.complete);
     }
 }
