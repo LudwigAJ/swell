@@ -1,6 +1,6 @@
 {
   "milestone": "tools-fix2",
-  "round": 1,
+  "round": 2,
   "status": "pass",
   "validatorsRun": {
     "test": { "passed": true, "command": "cargo test --workspace", "exitCode": 0 },
@@ -8,10 +8,11 @@
     "lint": { "passed": true, "command": "cargo clippy --workspace", "exitCode": 0 }
   },
   "reviewsSummary": {
-    "total": 2,
-    "passed": 2,
+    "total": 0,
+    "passed": 0,
     "failed": 0,
-    "failedFeatures": []
+    "failedFeatures": [],
+    "note": "No new features added since prior synthesis (round 1). The prior synthesis reviewed fix-permission-tiers and fix-symbol-search features which addressed the tools-fix2 fixes."
   },
   "blockingIssues": [],
   "appliedUpdates": [],
@@ -24,5 +25,5 @@
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": ".factory/validation/tools-fix2/scrutiny/synthesis.json"
 }
