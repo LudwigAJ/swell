@@ -30,15 +30,16 @@ pub mod novelty_check;
 pub mod policy;
 pub mod retry_policy;
 pub mod scheduler;
+pub mod search_router;
 pub mod session_hygiene;
 pub mod soft_limits;
 pub mod stacked_prs;
 pub mod state_machine;
 pub mod stopping_conditions;
 pub mod subagent;
-pub mod tiered_merge;
 pub mod task_board;
 pub mod task_graph;
+pub mod tiered_merge;
 pub mod worker_pool;
 
 pub use agents::{
@@ -108,6 +109,9 @@ pub use retry_policy::{
 pub use scheduler::{
     Scheduler, SchedulerConfig, SchedulerStats, TaskPriority, DEFAULT_MAX_WORKERS, MAX_MAX_WORKERS,
 };
+pub use search_router::{
+    RewrittenQuery, RoutingDecision, SearchDepth, SearchDomains, SearchRouter, SubQuery,
+};
 pub use session_hygiene::{
     ProgressEvaluation, ProgressHealth, SessionCheckpoint, SessionHygiene, SessionHygieneConfig,
 };
@@ -128,12 +132,12 @@ pub use subagent::{
     AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
     MAX_SUBAGENT_DEPTH,
 };
-pub use tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
 pub use task_board::{
     create_task_board, CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry,
     TaskBoardStats,
 };
 pub use task_graph::TaskGraph;
+pub use tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
 pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
