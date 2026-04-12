@@ -2,11 +2,14 @@
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
-use opentelemetry::global;
-use opentelemetry::trace::Tracer;
+use opentelemetry::trace::{Span, Tracer};
+use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use swell_core::{opentelemetry::LatencyTracker, LlmToolCall, SwellError};
+use swell_core::{
+    opentelemetry::{gen_ai, pricing, GenAiSpanExt, LatencyTracker},
+    LlmToolCall, SwellError,
+};
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone)]
@@ -49,9 +52,8 @@ impl OpenAIBackend {
     }
 
     /// Get the tracer for OpenTelemetry
-    #[allow(dead_code)]
     fn tracer(&self) -> impl Tracer {
-        global::tracer("swell-llm")
+        opentelemetry::global::tracer("swell-llm")
     }
 }
 
@@ -145,6 +147,7 @@ impl LlmBackend for OpenAIBackend {
             total_tokens: u64,
         }
 
+        // Prepare request data
         let api_messages: Vec<ApiMessage> = messages
             .into_iter()
             .map(|m| ApiMessage {
@@ -176,13 +179,14 @@ impl LlmBackend for OpenAIBackend {
             stop: config.stop_sequences,
         };
 
-        debug!(model = %self.model, "OpenAI API request");
-
-        // Track latency
         let latency = LatencyTracker::new();
 
+        debug!(model = %self.model, "OpenAI API request");
+
         let url = format!("{}/chat/completions", self.base_url);
-        let response = self
+
+        // Make HTTP request
+        let response = match self
             .client
             .post(&url)
             .header("authorization", format!("Bearer {}", self.api_key))
@@ -190,8 +194,14 @@ impl LlmBackend for OpenAIBackend {
             .json(&request)
             .send()
             .await
-            .map_err(|e| SwellError::LlmError(format!("Request failed: {}", e)))?;
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                return Err(SwellError::LlmError(format!("Request failed: {}", e)));
+            }
+        };
 
+        // Check status
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
@@ -202,12 +212,15 @@ impl LlmBackend for OpenAIBackend {
             )));
         }
 
-        let api_response: Response = response
-            .json()
-            .await
-            .map_err(|e| SwellError::LlmError(format!("Failed to parse response: {}", e)))?;
+        // Parse response
+        let api_response: Response = match response.json().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                return Err(SwellError::LlmError(format!("Failed to parse response: {}", e)));
+            }
+        };
 
-        let _latency_ms = latency.elapsed_ms();
+        let latency_ms = latency.elapsed_ms();
 
         let choice = match api_response.choices.into_iter().next() {
             Some(choice) => choice,
@@ -236,6 +249,29 @@ impl LlmBackend for OpenAIBackend {
 
         let input_tokens = api_response.usage.prompt_tokens;
         let output_tokens = api_response.usage.completion_tokens;
+
+        // Record GenAI attributes on the span
+        let tracer = self.tracer();
+        let span_name = format!("OpenAI chat {}", self.model);
+        let mut span_builder = tracer.span_builder(span_name);
+        span_builder.attributes = Some(vec![
+            KeyValue::new(gen_ai::OPERATION_NAME, "chat".to_string()),
+            KeyValue::new(gen_ai::PROVIDER_NAME, "openai".to_string()),
+            KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()),
+        ]);
+
+        let mut span = tracer.build(span_builder);
+        span.record_prompt_tokens(input_tokens);
+        span.record_completion_tokens(output_tokens);
+        span.record_latency_ms(latency_ms);
+        span.record_response_model(&self.model);
+
+        // Calculate and record cost
+        let pricing = pricing::for_model(&self.model);
+        let cost = pricing.calculate_cost(input_tokens, output_tokens);
+        span.record_cost_usd(cost);
+
+        span.end();
 
         Ok(LlmResponse {
             content,

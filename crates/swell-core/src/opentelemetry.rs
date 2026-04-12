@@ -18,6 +18,25 @@
 //! Cost is calculated based on provider-specific pricing:
 //! - Anthropic: $3.75/M input tokens, $15/M output tokens (Claude 3.5 Sonnet)
 //! - OpenAI: Varies by model (GPT-4o: $5/M input, $15/M output)
+//!
+//! # Runtime Initialization
+//!
+//! To enable full OpenTelemetry tracing with OTLP export:
+//! ```rust,ignore
+//! use swell_core::opentelemetry::{init_tracer_provider, OtelConfig};
+//!
+//! let config = OtelConfig {
+//!     enabled: true,
+//!     service_name: "swell".to_string(),
+//!     otlp_endpoint: Some("http://localhost:4317".to_string()),
+//! };
+//!
+//! // Initialize the tracer provider - call once at startup
+//! let tracer = init_tracer_provider(config).expect("Failed to initialize tracer");
+//! ```
+
+#[cfg(feature = "opentelemetry-full")]
+use opentelemetry_otlp::WithExportConfig;
 
 use opentelemetry::trace::{Span, SpanKind, Status};
 use opentelemetry::KeyValue;
@@ -173,6 +192,127 @@ impl Default for OtelConfig {
             otlp_endpoint: None,
         }
     }
+}
+
+impl OtelConfig {
+    /// Create config from environment variables
+    /// OTEL_EXPORTER_OTLP_ENDPOINT - OTLP endpoint URL
+    /// OTEL_SERVICE_NAME - Service name for tracing
+    pub fn from_env() -> Self {
+        Self {
+            enabled: std::env::var("OTEL_ENABLED")
+                .map(|v| v != "false")
+                .unwrap_or(true),
+            service_name: std::env::var("OTEL_SERVICE_NAME")
+                .unwrap_or_else(|_| "swell".to_string()),
+            otlp_endpoint: std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT").ok(),
+        }
+    }
+}
+
+/// Initialize the OpenTelemetry tracer provider from configuration.
+///
+/// This function sets up the tracer provider with either:
+/// - OTLP exporter (when `config.otlp_endpoint` is Some)
+/// - In-memory provider (when no endpoint is configured, spans are collected in-memory)
+///
+/// Returns a tracer that can be used to create spans.
+///
+/// # Example
+/// ```rust,ignore
+/// use swell_core::opentelemetry::{init_tracer_provider, OtelConfig};
+///
+/// let config = OtelConfig::from_env();
+/// let tracer = init_tracer_provider(config).expect("Failed to initialize tracer");
+/// ```
+#[cfg(feature = "opentelemetry-full")]
+pub fn init_tracer_provider(
+    config: OtelConfig,
+) -> Result<opentelemetry::global::BoxedTracer, OtelInitError> {
+    let tracer_provider = if let Some(endpoint) = &config.otlp_endpoint {
+        // OTLP exporter with gRPC protocol
+        let endpoint_url = if endpoint.contains("://") {
+            endpoint.clone()
+        } else {
+            format!("http://{}", endpoint)
+        };
+
+        let exporter = opentelemetry_otlp::new_exporter()
+            .tonic()
+            .with_endpoint(&endpoint_url)
+            .build_span_exporter()
+            .map_err(|e| OtelInitError::ExporterError(format!("Failed to build span exporter: {}", e)))?;
+
+        opentelemetry_sdk::trace::TracerProvider::builder()
+            .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
+            .build()
+    } else {
+        // When no endpoint is configured, use a simple in-memory provider
+        // The spans are still created and can be processed by a SpanProcessor
+        // but won't be exported anywhere
+        opentelemetry_sdk::trace::TracerProvider::builder()
+            .build()
+    };
+
+    let tracer_name = config.service_name.clone();
+
+    opentelemetry::global::set_tracer_provider(tracer_provider);
+
+    Ok(opentelemetry::global::tracer(tracer_name))
+}
+
+/// Initialize tracer with console exporter only (no OTLP).
+/// This is useful when you just want to verify spans are being created
+/// without requiring an OTLP endpoint.
+#[cfg(not(feature = "opentelemetry-full"))]
+pub fn init_tracer_provider(
+    config: OtelConfig,
+) -> Result<opentelemetry::global::BoxedTracer, OtelInitError> {
+    // When opentelemetry-full feature is not enabled, we can't set up real export
+    // But we can still create spans using the global tracer
+    if !config.enabled {
+        return Ok(opentelemetry::global::tracer("swell-disabled"));
+    }
+
+    // Set service name in resource via OTEL env var mechanism
+    if std::env::var("OTEL_SERVICE_NAME").is_err() {
+        std::env::set_var("OTEL_SERVICE_NAME", &config.service_name);
+    }
+
+    Ok(opentelemetry::global::tracer("swell"))
+}
+
+/// Error type for OpenTelemetry initialization
+#[derive(Debug, thiserror::Error)]
+pub enum OtelInitError {
+    #[error("Failed to initialize OTLP exporter: {0}")]
+    ExporterError(String),
+
+    #[cfg(feature = "opentelemetry-full")]
+    #[error("Failed to parse endpoint URL: {0}")]
+    UrlParseError(#[from] url::ParseError),
+
+    #[error("TLS configuration error: {0}")]
+    TlsError(String),
+
+    #[error("Header parsing error: {0}")]
+    HeaderError(String),
+}
+
+#[cfg(feature = "opentelemetry-full")]
+fn try_load_tls_config() -> Result<(), ()> {
+    // TLS configuration would require the tls feature on tonic
+    // For now, we just return Err and use default TLS
+    Err(())
+}
+
+/// Initialize a tracer for testing purposes.
+/// This sets up a simple in-memory tracer that can be used without
+/// requiring the full opentelemetry-full feature.
+#[cfg(test)]
+pub fn init_test_tracer() -> opentelemetry::global::BoxedTracer {
+    // For tests, we just use the global tracer
+    opentelemetry::global::tracer("swell-test")
 }
 
 /// Latency tracker for measuring LLM call duration
@@ -339,8 +479,14 @@ mod tests {
         assert_eq!(gen_ai::PROVIDER_NAME.as_str(), "gen_ai.provider.name");
         assert_eq!(gen_ai::REQUEST_MODEL.as_str(), "gen_ai.request.model");
         assert_eq!(gen_ai::RESPONSE_MODEL.as_str(), "gen_ai.response.model");
-        assert_eq!(gen_ai::USAGE_INPUT_TOKENS.as_str(), "gen_ai.usage.input_tokens");
-        assert_eq!(gen_ai::USAGE_OUTPUT_TOKENS.as_str(), "gen_ai.usage.output_tokens");
+        assert_eq!(
+            gen_ai::USAGE_INPUT_TOKENS.as_str(),
+            "gen_ai.usage.input_tokens"
+        );
+        assert_eq!(
+            gen_ai::USAGE_OUTPUT_TOKENS.as_str(),
+            "gen_ai.usage.output_tokens"
+        );
     }
 
     #[test]

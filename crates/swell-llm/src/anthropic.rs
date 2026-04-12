@@ -2,11 +2,14 @@
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
-use opentelemetry::global;
-use opentelemetry::trace::Tracer;
+use opentelemetry::trace::{Span, Tracer};
+use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use swell_core::{opentelemetry::LatencyTracker, LlmToolCall, SwellError};
+use swell_core::{
+    opentelemetry::{gen_ai, pricing, GenAiSpanExt, LatencyTracker},
+    LlmToolCall, SwellError,
+};
 use tracing::{debug, warn};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -36,9 +39,8 @@ impl AnthropicBackend {
     }
 
     /// Get the tracer for OpenTelemetry
-    #[allow(dead_code)]
     fn tracer(&self) -> impl Tracer {
-        global::tracer("swell-llm")
+        opentelemetry::global::tracer("swell-llm")
     }
 }
 
@@ -110,6 +112,7 @@ impl LlmBackend for AnthropicBackend {
             output_tokens: u64,
         }
 
+        // Prepare request data first
         let api_messages: Vec<ApiMessage> = messages
             .into_iter()
             .map(|m| ApiMessage {
@@ -138,12 +141,12 @@ impl LlmBackend for AnthropicBackend {
             stop_sequences: config.stop_sequences,
         };
 
-        debug!(model = %self.model, "Anthropic API request");
-
-        // Track latency
         let latency = LatencyTracker::new();
 
-        let response = self
+        debug!(model = %self.model, "Anthropic API request");
+
+        // Make HTTP request
+        let response = match self
             .client
             .post(ANTHROPIC_API_URL)
             .header("x-api-key", &self.api_key)
@@ -152,8 +155,14 @@ impl LlmBackend for AnthropicBackend {
             .json(&request)
             .send()
             .await
-            .map_err(|e| SwellError::LlmError(format!("Request failed: {}", e)))?;
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                return Err(SwellError::LlmError(format!("Request failed: {}", e)));
+            }
+        };
 
+        // Check status
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
@@ -164,12 +173,15 @@ impl LlmBackend for AnthropicBackend {
             )));
         }
 
-        let api_response: Response = response
-            .json()
-            .await
-            .map_err(|e| SwellError::LlmError(format!("Failed to parse response: {}", e)))?;
+        // Parse response
+        let api_response: Response = match response.json().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                return Err(SwellError::LlmError(format!("Failed to parse response: {}", e)));
+            }
+        };
 
-        let _latency_ms = latency.elapsed_ms();
+        let latency_ms = latency.elapsed_ms();
 
         let mut content = String::new();
         let mut tool_calls = Vec::new();
@@ -191,6 +203,30 @@ impl LlmBackend for AnthropicBackend {
 
         let input_tokens = api_response.usage.input_tokens;
         let output_tokens = api_response.usage.output_tokens;
+
+        // Get the tracer and record the span
+        let tracer = self.tracer();
+        let span_name = format!("Anthropic chat {}", self.model);
+        let mut span_builder = tracer.span_builder(span_name);
+        span_builder.attributes = Some(vec![
+            KeyValue::new(gen_ai::OPERATION_NAME, "chat".to_string()),
+            KeyValue::new(gen_ai::PROVIDER_NAME, "anthropic".to_string()),
+            KeyValue::new(gen_ai::REQUEST_MODEL, self.model.clone()),
+        ]);
+
+        // Build and end the span with the recorded attributes
+        let mut span = tracer.build(span_builder);
+        span.record_prompt_tokens(input_tokens);
+        span.record_completion_tokens(output_tokens);
+        span.record_latency_ms(latency_ms);
+        span.record_response_model(api_response.model.as_deref().unwrap_or(&self.model));
+
+        // Calculate and record cost
+        let pricing = pricing::for_model(&self.model);
+        let cost = pricing.calculate_cost(input_tokens, output_tokens);
+        span.record_cost_usd(cost);
+
+        span.end();
 
         Ok(LlmResponse {
             content,
