@@ -891,4 +891,80 @@ mod tests {
         );
         assert!((record_gpt4o_mini.cost_usd - 0.75).abs() < 0.001); // $0.15 + $0.60
     }
+
+    #[test]
+    fn test_cost_breakdown() {
+        // Test cost breakdown functionality for obs-cost-breakdown feature
+        // Verifies: Cost per model tracking, Aggregation by task and run,
+        // Cost breakdown visualization (via serializable structures)
+
+        let task_id1 = Uuid::new_v4();
+        let task_id2 = Uuid::new_v4();
+
+        let mut tracker = CostTracker::new();
+
+        // Record costs for task 1 with multiple models
+        tracker.set_active_task(task_id1);
+        tracker
+            .record_llm_cost(1000, 500, "claude-3-5-sonnet")
+            .unwrap();
+        tracker
+            .record_llm_cost(2000, 1000, "gpt-4o")
+            .unwrap();
+
+        // Record costs for task 2 with a different model
+        tracker.set_active_task(task_id2);
+        tracker
+            .record_llm_cost(500, 250, "claude-3-opus")
+            .unwrap();
+
+        // Verify per-model breakdown in task 1
+        let task1_summary = tracker.get_task_summary(task_id1).unwrap();
+        assert_eq!(task1_summary.call_count, 2);
+        assert_eq!(task1_summary.total_tokens, 4500);
+        assert!(task1_summary.total_cost_usd > 0.0);
+
+        // Check model breakdown for task 1
+        let sonnet_info = task1_summary
+            .model_breakdown
+            .get("claude-3-5-sonnet")
+            .unwrap();
+        assert_eq!(sonnet_info.call_count, 1);
+        assert_eq!(sonnet_info.total_input_tokens, 1000);
+        assert_eq!(sonnet_info.total_output_tokens, 500);
+
+        let gpt_info = task1_summary.model_breakdown.get("gpt-4o").unwrap();
+        assert_eq!(gpt_info.call_count, 1);
+        assert_eq!(gpt_info.total_input_tokens, 2000);
+        assert_eq!(gpt_info.total_output_tokens, 1000);
+
+        // Verify aggregation at run level
+        let run_summary = tracker.get_summary();
+        assert_eq!(run_summary.call_count, 3); // Total across all tasks
+        assert_eq!(
+            run_summary.total_tokens,
+            task1_summary.total_tokens + 750
+        ); // 4500 + 750
+
+        // Verify cost breakdown is serializable (for visualization)
+        let json = serde_json::to_string(&task1_summary.model_breakdown).unwrap();
+        assert!(json.contains("claude-3-5-sonnet"));
+        assert!(json.contains("gpt-4o"));
+
+        // Verify CostSummary is serializable
+        let summary_json = serde_json::to_string(run_summary).unwrap();
+        assert!(summary_json.contains("total_cost_usd"));
+        assert!(summary_json.contains("model_breakdown"));
+
+        // Verify all models are tracked
+        let all_models = run_summary.model_breakdown.models();
+        assert!(all_models.contains(&"claude-3-5-sonnet"));
+        assert!(all_models.contains(&"gpt-4o"));
+        assert!(all_models.contains(&"claude-3-opus"));
+
+        // Verify total cost calculation
+        let total_cost = run_summary.model_breakdown.total_cost_usd();
+        assert!(total_cost > 0.0);
+        assert!((total_cost - run_summary.total_cost_usd).abs() < 0.001);
+    }
 }
