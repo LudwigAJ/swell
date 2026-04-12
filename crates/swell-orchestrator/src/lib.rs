@@ -204,6 +204,8 @@ pub struct Orchestrator {
     agent_pool: Arc<RwLock<AgentPool>>,
     checkpoint_manager: Arc<CheckpointManager>,
     event_sender: mpsc::UnboundedSender<OrchestratorEvent>,
+    /// Manager for active FeatureLead sub-orchestrators
+    feature_lead_manager: Arc<RwLock<FeatureLeadManager>>,
 }
 
 impl Orchestrator {
@@ -218,6 +220,7 @@ impl Orchestrator {
             agent_pool: Arc::new(RwLock::new(AgentPool::new())),
             checkpoint_manager,
             event_sender: tx,
+            feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
         }
     }
 
@@ -230,6 +233,7 @@ impl Orchestrator {
             agent_pool: Arc::new(RwLock::new(AgentPool::new())),
             checkpoint_manager,
             event_sender: tx,
+            feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
         }
     }
 
@@ -432,6 +436,48 @@ impl Orchestrator {
         task_id: Uuid,
     ) -> Result<Vec<Checkpoint>, SwellError> {
         self.checkpoint_manager.list_checkpoints(task_id).await
+    }
+
+    // ========================================================================
+    // FeatureLead Lifecycle APIs
+    // ========================================================================
+
+    /// Get all active FeatureLeads for this orchestrator.
+    ///
+    /// Returns a list of all currently active FeatureLead sub-orchestrators
+    /// that were spawned by this orchestrator.
+    pub async fn get_active_feature_leads(&self) -> Vec<FeatureLead> {
+        let manager = self.feature_lead_manager.read().await;
+        manager
+            .active_task_ids()
+            .iter()
+            .filter_map(|task_id| manager.get(task_id).cloned())
+            .collect()
+    }
+
+    /// Check if a task has an active FeatureLead.
+    ///
+    /// Returns true if the task has a spawned FeatureLead sub-orchestrator.
+    pub async fn has_feature_lead(&self, task_id: Uuid) -> bool {
+        let manager = self.feature_lead_manager.read().await;
+        manager.get(&task_id).is_some()
+    }
+
+    /// Get the active FeatureLead for a task, if any.
+    ///
+    /// Returns Some(FeatureLead) if the task has an active sub-orchestrator,
+    /// None otherwise.
+    pub async fn get_feature_lead(&self, task_id: Uuid) -> Option<FeatureLead> {
+        let manager = self.feature_lead_manager.read().await;
+        manager.get(&task_id).cloned()
+    }
+
+    /// Remove a FeatureLead after completion.
+    ///
+    /// Called when a FeatureLead has finished its work and should be cleaned up.
+    pub async fn remove_feature_lead(&self, task_id: Uuid) -> Option<FeatureLead> {
+        let mut manager = self.feature_lead_manager.write().await;
+        manager.remove(&task_id)
     }
 
     // ========================================================================

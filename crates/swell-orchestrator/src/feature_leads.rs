@@ -421,19 +421,25 @@ impl FeatureLeadSpawner for Orchestrator {
             "FeatureLead spawned"
         );
 
+        // Register with the orchestrator's FeatureLeadManager
+        let mut manager = self.feature_lead_manager.blocking_write();
+        manager.register(lead.clone());
+
         Ok(lead)
     }
 
     fn get_active_feature_leads(&self) -> Vec<FeatureLead> {
-        // This would be implemented with state tracking
-        // For now, return empty as we don't persist FeatureLeads in the basic Orchestrator
-        vec![]
+        let manager = self.feature_lead_manager.blocking_read();
+        manager
+            .active_task_ids()
+            .iter()
+            .filter_map(|task_id| manager.get(task_id).cloned())
+            .collect()
     }
 
-    fn has_feature_lead(&self, _task_id: Uuid) -> bool {
-        // Check if this task has spawned a FeatureLead
-        // Would check internal state tracking
-        false
+    fn has_feature_lead(&self, task_id: Uuid) -> bool {
+        let manager = self.feature_lead_manager.blocking_read();
+        manager.get(&task_id).is_some()
     }
 }
 

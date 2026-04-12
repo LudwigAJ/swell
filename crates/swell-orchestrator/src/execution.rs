@@ -135,9 +135,7 @@ impl ExecutionController {
                     "Task exceeds complexity threshold, spawning FeatureLead"
                 );
 
-                let parent_orch = Arc::new(Orchestrator::with_checkpoint_manager(
-                    self.orchestrator.checkpoint_manager(),
-                ));
+                let parent_orch = self.orchestrator.clone();
 
                 match self.orchestrator.spawn_feature_lead(task_id, plan.clone(), parent_orch) {
                     Ok(lead) => {
@@ -228,7 +226,8 @@ impl ExecutionController {
         //   backlog.apply_decay(completion_ratio);
         // For now, this is stubbed pending backlog integration.
 
-        // Cleanup: Remove FeatureLead if present
+        // Cleanup: Remove FeatureLead from orchestrator and local cache
+        let _ = self.orchestrator.remove_feature_lead(task_id).await;
         if let Ok(mut leads) = self.feature_leads.write() {
             leads.remove(&task_id);
         }
