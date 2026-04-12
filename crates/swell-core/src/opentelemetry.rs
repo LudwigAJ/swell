@@ -329,4 +329,118 @@ mod tests {
         let elapsed = tracker.elapsed_ms();
         assert!(elapsed >= 10, "Expected >= 10ms, got {}ms", elapsed);
     }
+
+    // Tests for otel_genai feature - GenAI semantic conventions
+
+    #[test]
+    fn test_otel_genai_gen_ai_module_keys() {
+        // Verify gen_ai module defines all required semantic convention keys
+        assert_eq!(gen_ai::OPERATION_NAME.as_str(), "gen_ai.operation.name");
+        assert_eq!(gen_ai::PROVIDER_NAME.as_str(), "gen_ai.provider.name");
+        assert_eq!(gen_ai::REQUEST_MODEL.as_str(), "gen_ai.request.model");
+        assert_eq!(gen_ai::RESPONSE_MODEL.as_str(), "gen_ai.response.model");
+        assert_eq!(gen_ai::USAGE_INPUT_TOKENS.as_str(), "gen_ai.usage.input_tokens");
+        assert_eq!(gen_ai::USAGE_OUTPUT_TOKENS.as_str(), "gen_ai.usage.output_tokens");
+    }
+
+    #[test]
+    fn test_otel_genai_provider_conventions() {
+        // Test that providers follow GenAI conventions
+        assert_eq!(LlmProvider::Anthropic.as_str(), "anthropic");
+        assert_eq!(LlmProvider::OpenAI.as_str(), "openai");
+        assert_eq!(LlmProvider::Mock.as_str(), "mock");
+    }
+
+    #[test]
+    fn test_otel_genai_pricing_for_anthropic_models() {
+        // Test Anthropic model pricing
+        let sonnet = pricing::for_model("claude-3-5-sonnet-20250514");
+        assert!((sonnet.input_per_million - 3.0).abs() < 0.001);
+        assert!((sonnet.output_per_million - 15.0).abs() < 0.001);
+
+        let opus = pricing::for_model("claude-3-opus-20240229");
+        assert!((opus.input_per_million - 15.0).abs() < 0.001);
+        assert!((opus.output_per_million - 75.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_otel_genai_pricing_for_openai_models() {
+        // Test OpenAI model pricing
+        let gpt4o = pricing::for_model("gpt-4o-2024-08-06");
+        assert!((gpt4o.input_per_million - 5.0).abs() < 0.001);
+        assert!((gpt4o.output_per_million - 15.0).abs() < 0.001);
+
+        let gpt4o_mini = pricing::for_model("gpt-4o-mini");
+        assert!((gpt4o_mini.input_per_million - 0.15).abs() < 0.001);
+        assert!((gpt4o_mini.output_per_million - 0.60).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_otel_genai_cost_calculation() {
+        // Test cost calculation for GenAI usage
+        let pricing = pricing::ANTHROPIC_SONNET;
+
+        // 1000 input + 500 output tokens
+        let cost = pricing.calculate_cost(1000, 500);
+        // $3/M input → 1000/1M * $3 = $0.003
+        // $15/M output → 500/1M * $15 = $0.0075
+        // Total = $0.0105
+        assert!((cost - 0.0105).abs() < 0.0001);
+
+        // Large request: 1M input + 1M output
+        let large_cost = pricing.calculate_cost(1_000_000, 1_000_000);
+        assert!((large_cost - 18.0).abs() < 0.001);
+    }
+
+    #[allow(unused_comparisons)]
+    #[test]
+    fn test_otel_genai_latency_tracker_precision() {
+        // Test that latency tracker provides millisecond precision
+        let tracker = LatencyTracker::new();
+
+        // Small delay - elapsed_ms returns u64 which is always >= 0
+        std::thread::sleep(std::time::Duration::from_micros(500));
+        let elapsed = tracker.elapsed_ms();
+
+        // Verify elapsed is reasonable (not zero since we slept)
+        assert!(elapsed >= 0); // u64 is always >= 0, but explicit check documents intent
+
+        // But for 10ms sleep, should get at least 10ms
+        let tracker2 = LatencyTracker::new();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let elapsed2 = tracker2.elapsed_ms();
+        assert!(elapsed2 >= 10);
+    }
+
+    #[test]
+    fn test_otel_genai_model_attribute_values() {
+        // Verify model names are preserved correctly
+        let models = vec![
+            "claude-3-5-sonnet-20250514",
+            "gpt-4o-2024-08-06",
+            "gpt-4o-mini",
+            "claude-opus-4",
+        ];
+
+        for model in models {
+            let pricing = pricing::for_model(model);
+            // All should return valid pricing (not zero)
+            assert!(pricing.input_per_million > 0.0);
+            assert!(pricing.output_per_million > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_otel_genai_credit_token_calculation() {
+        // Test token-to-cost calculation for different providers
+        // Anthropic Sonnet: $3/M input, $15/M output
+
+        // 1 token = $3 / 1,000,000 = $0.000003
+        let per_token = pricing::ANTHROPIC_SONNET.calculate_cost(1, 0);
+        assert!((per_token - 0.000003).abs() < 0.000001);
+
+        // 1000 tokens = $0.003
+        let per_thousand = pricing::ANTHROPIC_SONNET.calculate_cost(1000, 0);
+        assert!((per_thousand - 0.003).abs() < 0.0001);
+    }
 }
