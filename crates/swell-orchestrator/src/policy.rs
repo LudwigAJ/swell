@@ -1341,4 +1341,122 @@ rules:
         let (decision, _) = engine.evaluate(&action);
         assert_eq!(decision, PolicyDecision::Deny); // Default deny when no policy loaded
     }
+
+    #[test]
+    fn test_policy_gates_ask_effect() {
+        // Test that the "ask" effect is properly parsed and evaluated
+        // This validates the fix for orch-policy-gates-yaml where default.yaml uses effect: "ask"
+        let yaml = r#"
+version: "1.0"
+default_effect: deny
+
+rules:
+  - id: ask-destructive
+    name: ask destructive operations
+    effect: "ask"
+    priority: 50
+    conditions:
+      - type: tool_category
+        value: "destructive"
+
+  - id: allow-read
+    name: allow read operations
+    effect: allow
+    priority: 10
+    conditions:
+      - type: tool_category
+        value: "read"
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+        assert!(engine.is_loaded());
+
+        let policy = engine.get_policy().unwrap();
+        assert_eq!(policy.version, "1.0");
+        assert_eq!(policy.default_effect, PolicyEffect::Deny);
+        assert_eq!(policy.rules.len(), 2);
+
+        // Verify ask effect rule exists
+        let ask_rules: Vec<_> = policy
+            .rules
+            .iter()
+            .filter(|r| matches!(r.effect, PolicyEffect::Ask))
+            .collect();
+        assert_eq!(ask_rules.len(), 1);
+
+        // Destructive tool should trigger ask decision
+        let destructive_action =
+            PolicyAction::tool("file_delete".to_string(), ToolCategory::Destructive, vec![]);
+        let (decision, rule) = engine.evaluate(&destructive_action);
+        assert_eq!(decision, PolicyDecision::Ask);
+        assert_eq!(rule, Some("ask destructive operations".to_string()));
+
+        // Read tool should trigger allow decision (destructive ask doesn't match)
+        let read_action = PolicyAction::tool("file_read".to_string(), ToolCategory::Read, vec![]);
+        let (decision, rule) = engine.evaluate(&read_action);
+        assert_eq!(decision, PolicyDecision::Allow);
+        assert_eq!(rule, Some("allow read operations".to_string()));
+    }
+
+    #[test]
+    fn test_policy_gates_default_ask() {
+        // Test that default_effect: ask works correctly
+        let yaml = r#"
+version: "1.0"
+default_effect: ask
+
+rules:
+  - id: deny-dangerous
+    name: deny dangerous
+    effect: deny
+    priority: 100
+    conditions:
+      - type: command_match
+        pattern: "rm -rf"
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+
+        // Dangerous command should still be denied
+        let dangerous_action = PolicyAction::command("rm -rf /workspace".to_string());
+        let (decision, _) = engine.evaluate(&dangerous_action);
+        assert_eq!(decision, PolicyDecision::Deny);
+
+        // Unknown command should ask (default is ask)
+        let unknown_action = PolicyAction::command("echo hello".to_string());
+        let (decision, _) = engine.evaluate(&unknown_action);
+        assert_eq!(decision, PolicyDecision::Ask);
+    }
+
+    #[test]
+    fn test_policy_gates_deny_overrides_ask() {
+        // Test that deny takes precedence over ask (deny-first semantics)
+        let yaml = r#"
+version: "1.0"
+default_effect: ask
+
+rules:
+  - id: ask-all
+    name: ask all
+    effect: ask
+    priority: 50
+    conditions:
+      - type: always
+
+  - id: deny-dangerous
+    name: deny dangerous
+    effect: deny
+    priority: 100
+    conditions:
+      - type: always
+"#;
+        let mut engine = PolicyEngine::new();
+        engine.load_from_yaml(yaml).unwrap();
+
+        // Any action should be denied because deny has higher priority
+        let action = PolicyAction::command("any command".to_string());
+        let (decision, rule) = engine.evaluate(&action);
+        assert_eq!(decision, PolicyDecision::Deny);
+        assert_eq!(rule, Some("deny dangerous".to_string()));
+    }
 }
