@@ -1,0 +1,21 @@
+{
+  "featureId": "observability-dashboard-cost-and-agent-runtime-fix",
+  "reviewedAt": "2026-04-12T21:45:00Z",
+  "commitId": "15017845621a45bab58fb77cbc4140b6c90734ec",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly addresses both blocking issues from the prior synthesis: (1) LLM backends now call record_llm_cost() after successful API calls, and (2) the daemon main.rs now subscribes to OrchestratorEvent::AgentRegistered and forwards to DashboardState::register_agent(). The thread-safety issue with UnsafeCell was fixed by using Mutex<String> for last_model field.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The event wiring between orchestrator and dashboard using broadcast channels follows established patterns in the codebase. No new conventions introduced.",
+      "evidence": "main.rs uses orch.subscribe() and broadcast::Receiver pattern consistent with other event handling in the codebase"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass - The fix correctly wires live LLM cost tracking and agent registration into the dashboard. Both GLOBAL_COST_TRACKER (now in swell-core) is updated from anthropic.rs and openai.rs after successful chat() calls, and DashboardState::register_agent() is called from a tokio task that subscribes to OrchestratorEvent::AgentRegistered in main.rs. Cost sync runs periodically every 5 seconds. All tests pass (62 swell-daemon, 20 swell-llm) and clippy shows no warnings."
+}

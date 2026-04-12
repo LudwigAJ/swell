@@ -1,0 +1,68 @@
+{
+  "featureId": "opentelemetry-full-runtime-export-fix",
+  "reviewedAt": "2026-04-12T21:30:00.000Z",
+  "commitId": "ab1718e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The fix provides the infrastructure for OpenTelemetry runtime OTLP export but does NOT actually wire it up. The init_tracer_provider() function exists and is correctly implemented with OTLP gRPC exporter support, but it is NEVER called anywhere in the runtime code. The LLM backends (anthropic.rs, openai.rs) create spans using opentelemetry::global::tracer() but without first calling init_tracer_provider(), these spans go to the default no-op provider, not the configured OTLP exporter. Similarly, OtelConfig::from_env() is defined but never called - no configuration is actually loaded at runtime.",
+    "issues": [
+      {
+        "file": "crates/swell-core/src/opentelemetry.rs",
+        "line": 218,
+        "severity": "blocking",
+        "description": "init_tracer_provider() is defined and correctly implements OTLP exporter setup, but is NEVER called from any runtime code. It only appears in documentation examples. The global tracer provider is never set up with the OTLP exporter - spans will not be exported."
+      },
+      {
+        "file": "crates/swell-core/src/opentelemetry.rs",
+        "line": 220,
+        "severity": "blocking",
+        "description": "OtelConfig::from_env() is defined but NEVER called anywhere. No configuration is loaded at runtime startup. The expectedBehavior requirement 'OtelConfig is instantiated by runtime startup or config code' is NOT met."
+      },
+      {
+        "file": "crates/swell-llm/src/anthropic.rs",
+        "line": 207,
+        "severity": "blocking",
+        "description": "Anthropic backend creates spans using opentelemetry::global::tracer('swell-llm') but init_tracer_provider() is never called first. The spans are created but go to the default no-op provider, not the configured OTLP exporter."
+      },
+      {
+        "file": "crates/swell-llm/src/openai.rs",
+        "line": 254,
+        "severity": "blocking",
+        "description": "OpenAI backend creates spans using opentelemetry::global::tracer('swell-llm') but init_tracer_provider() is never called first. The spans are created but go to the default no-op provider, not the configured OTLP exporter."
+      },
+      {
+        "file": "crates/swell-core/src/opentelemetry.rs",
+        "line": 303,
+        "severity": "non_blocking",
+        "description": "try_load_tls_config() is dead code - always returns Err(()) and is never called."
+      },
+      {
+        "file": "crates/swell-core/src/opentelemetry.rs",
+        "line": 263,
+        "severity": "non_blocking",
+        "description": "GenAiSpanBuilder::start_span() is dead code - the LLM backends create spans inline using span_builder/tracer.build instead."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The expectedBehavior in features.json states 'OtelConfig is instantiated by runtime startup or config code' and 'An OTLP/exporter pipeline is initialized in runtime code', but there's no documented pattern for where OTel initialization should happen. The daemon's main.rs does not initialize OTel tracing.",
+      "evidence": "swell-daemon/src/main.rs only calls init_tracing() (for logging setup), not init_tracer_provider() for OTel. No entry point initializes the tracer provider."
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill does not document that OpenTelemetry tracing requires explicit initialization via init_tracer_provider() at application startup. The infrastructure exists but without explicit initialization, spans are not exported.",
+      "evidence": "init_tracer_provider() exists but is not called anywhere in the codebase except in documentation examples. Applications using this library need to call it explicitly."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The feature documentation claims spans are created during live LLM execution (which is true), but does not clarify that these spans require init_tracer_provider() to be called first for them to be exported to OTLP.",
+      "evidence": "anthropic.rs:207 and openai.rs:254 create spans directly using global::tracer() without ensuring the provider is initialized with OTLP exporter."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - While the fix correctly implements init_tracer_provider() with OTLP gRPC exporter support and instruments LLM backends to create GenAI spans, the critical initialization step is missing. init_tracer_provider() is defined but never called in any runtime code, and OtelConfig::from_env() is similarly never invoked. Spans are created but will not be exported to OTLP because the tracer provider with the batch exporter is never registered with the global provider. The expectedBehavior requirement 'OtelConfig is instantiated by runtime startup or config code' and 'An OTLP/exporter pipeline is initialized in runtime code' are NOT met."
+}
