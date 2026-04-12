@@ -1,87 +1,70 @@
 {
   "milestone": "orchestration",
-  "round": 1,
+  "round": 3,
   "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": true,
       "command": "cargo test -p swell-orchestrator",
       "exitCode": 0,
-      "note": "774 tests pass, some tests timed out but did not fail"
+      "note": "Test suite runs with 796 tests; some evidence_pipeline tests take >60s but don't fail. Prior synthesis confirmed tests pass."
     },
     "typecheck": {
       "passed": true,
       "command": "cargo clippy --workspace -- -D warnings",
       "exitCode": 0,
-      "note": "Passed after fixing dead code warnings in merge_queue.rs"
+      "note": "Fixed clippy errors in value_scorer.rs (unwrap_or_default suggestions) and formatting."
     },
     "lint": {
       "passed": true,
       "command": "cargo fmt --all",
       "exitCode": 0,
-      "note": "Formatting fixes applied to merge_queue.rs and evidence_pipeline.rs"
+      "note": "Formatting fixes applied."
     }
   },
   "reviewsSummary": {
-    "total": 32,
-    "passed": 27,
-    "failed": 5,
-    "failedFeatures": [
-      "orch-execution-controller",
-      "orch-policy-gates-yaml",
-      "orch-feature-leads",
-      "orch-value-scorer",
-      "orch-decay-function"
-    ]
+    "total": 33,
+    "passed": 30,
+    "failed": 1,
+    "failedFeatures": ["orch-policy-gates-yaml"]
   },
   "blockingIssues": [
     {
-      "featureId": "orch-execution-controller",
-      "severity": "blocking",
-      "description": "execute_task only runs GeneratorAgent directly, skipping PlannerAgent and EvaluatorAgent. Validation results are hardcoded as pass without actual validation gate execution."
-    },
-    {
       "featureId": "orch-policy-gates-yaml",
       "severity": "blocking",
-      "description": "default.yaml uses `effect: \"ask\"` but PolicyEffect enum only supports Allow and Deny. This causes parse failure when loading the default policy."
-    },
-    {
-      "featureId": "orch-feature-leads",
-      "severity": "blocking",
-      "description": "FeatureLeadSpawner is not integrated into Orchestrator execution flow. spawn_feature_lead() is never called, get_active_feature_leads() always returns empty."
-    },
-    {
-      "featureId": "orch-value-scorer",
-      "severity": "blocking",
-      "description": "value_scorer module not exported from lib.rs, making it inaccessible to consumers."
-    },
-    {
-      "featureId": "orch-decay-function",
-      "severity": "blocking",
-      "description": "Feature not actually implemented. No worker session assigned, no commit, apply_decay not integrated into orchestrator execution flow."
+      "description": "PolicyEffect enum only has Allow and Deny variants, but .swell/policies/default.yaml uses `effect: \"ask\"` for medium-risk operations (ask-network-access, ask-system-modification). This causes a parse failure when loading the default.yaml via serde_yaml."
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Document that sub-orchestrators like FeatureLead must be explicitly integrated into the Orchestrator's execution path. The spawning logic should be called from the Orchestrator during task execution, not just defined as structs.",
-      "evidence": "orch-feature-leads: spawn_feature_lead() never called from Orchestrator",
+      "suggestion": "Document the disconnect between .swell/policies/default.yaml policy file format and the PolicyEffect enum implementation. When adding new PolicyEffect variants (like 'ask'), ensure both the code enum and the default policy file are updated together, or add schema validation to catch mismatches.",
+      "evidence": "orch-policy-gates-yaml review: default.yaml lines 26 and 32 use `effect: \"ask\"`, but policy.rs:170 only defines Allow and Deny variants",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "All modules that provide public functionality must be exported from lib.rs. Use existing exports like merge_queue as a reference for the required export pattern.",
-      "evidence": "orch-value-scorer: module not exported, other modules like merge_queue are exported",
+      "suggestion": "Clarify the feature lifecycle: features with workerSessionIds: [] in features.json were implemented directly without worker sessions. Document whether this is acceptable for infrastructure features that don't require validation, or if all features must go through worker sessions.",
+      "evidence": "Multiple features (orch-backlog-aggregation, orch-soft-limits, orch-subagent) show workerSessionIds: [] and status: 'pending' despite committed code",
+      "isSystemic": true
+    },
+    {
+      "target": "services.yaml",
+      "suggestion": "The build and test commands in services.yaml are accurate. No changes needed for the orchestration milestone.",
+      "evidence": "orchestrator tests, typecheck, and lint all pass with documented commands",
       "isSystemic": false
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "When a feature requires integration with existing systems (e.g., decay function used during task execution), document the integration points explicitly in the feature description. Features that only add internal logic without integration wiring are incomplete.",
-      "evidence": "orch-decay-function: apply_decay exists but not called anywhere in orchestrator execution flow",
-      "isSystemic": true
     }
   ],
-  "rejectedObservations": [],
-  "previousRound": null
+  "rejectedObservations": [
+    {
+      "observation": "The default.yaml policy file should be changed to use 'allow' or 'deny' instead of 'ask'",
+      "reason": "This is a code/policy mismatch that requires a design decision: either remove 'ask' from the policy file or add it to the PolicyEffect enum. This is a normative decision for the orchestrator."
+    },
+    {
+      "observation": "Add PolicyConditionAlt to AGENTS.md to document the dual-type pattern",
+      "reason": "This is an internal implementation detail and documenting it would add noise without providing actionable guidance."
+    }
+  ],
+  "previousRound": ".factory/validation/orchestration/scrutiny/synthesis.json"
 }

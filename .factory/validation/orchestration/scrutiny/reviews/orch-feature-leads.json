@@ -1,57 +1,15 @@
 {
   "featureId": "orch-feature-leads",
-  "reviewedAt": "2026-04-12T00:00:00Z",
-  "commitId": "956e94fa3e2febddd2e15824f0c77db57cff1669",
-  "transcriptSkeletonReviewed": false,
+  "reviewedAt": "2026-04-12T15:00:00Z",
+  "commitId": "d8490fc",
+  "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "fail",
+  "status": "pass",
   "codeReview": {
-    "summary": "The FeatureLead sub-orchestrator implementation provides the data structures and logic for spawning sub-orchestrators for tasks exceeding 15 steps, but the integration into the Orchestrator's main execution flow is incomplete. The FeatureLead is never actually spawned during task execution - only the skeletal structure exists.",
-    "issues": [
-      {
-        "file": "crates/swell-orchestrator/src/feature_leads.rs",
-        "line": 304,
-        "severity": "blocking",
-        "description": "FeatureLeadSpawner trait is implemented for Orchestrator but spawn_feature_lead() is never called from the Orchestrator's execution flow. The orchestrator does not check plan step count and spawn a FeatureLead when threshold is exceeded."
-      },
-      {
-        "file": "crates/swell-orchestrator/src/feature_leads.rs",
-        "line": 348,
-        "severity": "blocking",
-        "description": "get_active_feature_leads() always returns empty vector - FeatureLeads are not stored persistently after spawning. The manager cannot track active leads across the orchestrator's lifetime."
-      },
-      {
-        "file": "crates/swell-orchestrator/src/feature_leads.rs",
-        "line": 354,
-        "severity": "blocking",
-        "description": "has_feature_lead() always returns false - there is no mechanism to check if a task already has a spawned FeatureLead."
-      },
-      {
-        "file": "crates/swell-orchestrator/src/lib.rs",
-        "line": 204,
-        "severity": "non_blocking",
-        "description": "Orchestrator struct does not have a FeatureLeadManager or any field to track spawned FeatureLeads. The feature_leads module is not integrated into the main Orchestrator execution path."
-      },
-      {
-        "file": "crates/swell-orchestrator/src/feature_leads.rs",
-        "line": 180,
-        "severity": "non_blocking",
-        "description": "execute_step() is a stub that always returns success - it does not actually use GeneratorAgent or run validation gates. This is acknowledged in comments but the stub is empty."
-      }
-    ]
+    "summary": "Fix commit d8490fc adequately addresses the blocking issue. FeatureLeadManager is now properly integrated with Orchestrator state, with leads registered on spawn and observable through public APIs.",
+    "issues": []
   },
-  "sharedStateObservations": [
-    {
-      "area": "conventions",
-      "observation": "The feature uses Arc<Orchestrator> in FeatureLead::new but the Orchestrator struct doesn't store FeatureLeads. This creates a reference cycle potential issue - the FeatureLead holds Arc to Orchestrator but Orchestrator doesn't track the FeatureLead.",
-      "evidence": "feature_leads.rs:80 - parent_orchestrator: Arc<Orchestrator>, but Orchestrator has no field to store FeatureLeads"
-    },
-    {
-      "area": "knowledge",
-      "observation": "The implementation correctly defines FEATURE_LEAD_STEP_THRESHOLD = 15 and implements should_spawn(), segment_plan(), and depth enforcement at MAX_ORCHESTRATOR_DEPTH = 2. However, these are not wired into the orchestrator execution flow.",
-      "evidence": "feature_leads.rs:21-22 define constants, but Orchestrator doesn't call FeatureLead::should_spawn() anywhere"
-    }
-  ],
-  "addressesFailureFrom": null,
-  "summary": "The FeatureLead sub-orchestrator feature has the correct data structures and basic logic (threshold at 15 steps, max depth of 2, plan segmentation, escalation at >30% failure rate), but the integration into the Orchestrator's main execution path is missing. The Orchestrator does not check step count and spawn FeatureLeads - the spawning functions exist but are never called. This is a blocking issue because the feature cannot fulfill its expected behavior of 'Sub-orchestrator spawned for complex tasks' without the Orchestrator actually invoking the spawning logic."
+  "sharedStateObservations": [],
+  "addressesFailureFrom": ".factory/validation/orchestration/scrutiny/reviews/orch-feature-leads.json",
+  "summary": "Reviewed fix for orch-feature-leads. The fix (commit d8490fc) properly addresses the prior blocking issue where spawned FeatureLeads were only stored in ExecutionController's local map and not surfaced through Orchestrator state. Changes include: (1) Added feature_lead_manager field to Orchestrator struct with proper initialization in both constructors, (2) Wired spawn_feature_lead to register leads with the manager, (3) Fixed get_active_feature_leads and has_feature_lead to query the manager instead of returning empty/false, (4) Added public async APIs get_active_feature_leads, has_feature_lead, get_feature_lead, remove_feature_lead for external observability, (5) Fixed ExecutionController cleanup to remove from both orchestrator manager and local cache, (6) Fixed parent_orch reference to use self.orchestrator.clone() instead of creating a new orphaned Orchestrator instance. All changes are consistent with the feature's expected behavior of surfacing sub-orchestrators through Orchestrator state."
 }

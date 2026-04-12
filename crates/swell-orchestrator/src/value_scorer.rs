@@ -280,11 +280,11 @@ impl ValueScorer {
         );
         self.spec_requirements
             .entry(task_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(requirement_id);
         self.requirement_implementers
             .entry(requirement_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(task_id);
         self.known_requirements.insert(requirement_id);
     }
@@ -296,10 +296,7 @@ impl ValueScorer {
             blocked = %blocked,
             "Registering dependency"
         );
-        self.dependencies
-            .entry(blocker)
-            .or_insert_with(Vec::new)
-            .push(blocked);
+        self.dependencies.entry(blocker).or_default().push(blocked);
     }
 
     /// Score a task based on spec alignment and blocking impact
@@ -405,7 +402,10 @@ impl ValueScorer {
 
     /// Get the number of tasks blocked by a task
     pub fn blocked_count(&self, task_id: Uuid) -> usize {
-        self.dependencies.get(&task_id).map(|v| v.len()).unwrap_or(0)
+        self.dependencies
+            .get(&task_id)
+            .map(|v| v.len())
+            .unwrap_or(0)
     }
 
     /// Get the number of tasks a task depends on
@@ -518,7 +518,7 @@ mod tests {
         let task_id = Uuid::new_v4();
         let score = TaskScore::new(
             task_id,
-            SpecAlignmentScore::implements(),  // 4
+            SpecAlignmentScore::implements(), // 4
             BlockingImpactScore::multiple(),  // 4
             vec![],
             vec![],

@@ -2,8 +2,8 @@
 #![allow(clippy::should_implement_trait)]
 
 use crate::{
-    frozen_spec::FrozenSpecRef, EvaluatorAgent, FeatureLead, FeatureLeadSpawner,
-    GeneratorAgent, PlannerAgent, Orchestrator, MAX_CONCURRENT_AGENTS,
+    frozen_spec::FrozenSpecRef, EvaluatorAgent, FeatureLead, FeatureLeadSpawner, GeneratorAgent,
+    Orchestrator, PlannerAgent, MAX_CONCURRENT_AGENTS,
 };
 use futures::stream::{self, StreamExt};
 use std::sync::Arc;
@@ -114,7 +114,9 @@ impl ExecutionController {
                     tests_passed: false,
                     security_passed: false,
                     ai_review_passed: false,
-                    errors: vec![planner_result.error.unwrap_or_else(|| "Planning failed".into())],
+                    errors: vec![planner_result
+                        .error
+                        .unwrap_or_else(|| "Planning failed".into())],
                     warnings: vec![],
                 });
             }
@@ -137,7 +139,10 @@ impl ExecutionController {
 
                 let parent_orch = self.orchestrator.clone();
 
-                match self.orchestrator.spawn_feature_lead(task_id, plan.clone(), parent_orch) {
+                match self
+                    .orchestrator
+                    .spawn_feature_lead(task_id, plan.clone(), parent_orch)
+                {
                     Ok(lead) => {
                         if let Ok(mut leads) = self.feature_leads.write() {
                             leads.insert(task_id, lead);
