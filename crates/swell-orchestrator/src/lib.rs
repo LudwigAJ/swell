@@ -25,6 +25,7 @@ pub mod frozen_spec;
 pub mod gap_analyzer;
 pub mod hard_limits;
 pub mod idempotent_actions;
+pub mod merge_queue;
 pub mod metrics;
 pub mod model_fallback;
 pub mod novelty_check;
@@ -128,6 +129,11 @@ pub use soft_limits::{
 pub use stacked_prs::{
     FileChangeRisk, Pr, PrFileChange, PrStack, PrStackManager, StackedPrConfig, StackedPrError,
     DEFAULT_MAX_PR_LINES, MIN_PR_LINES,
+};
+pub use merge_queue::{
+    GitHubMergeMethod, GitHubMergeProvider, GitHubMergeQueueConfig, MergeProvider, MergeQueue,
+    MergeQueueConfig, MergeQueueEntry, MergeQueueError, MergeQueueStats, MergeResult, MergeStatus,
+    MergifyProvider, StubMergeProvider,
 };
 pub use state_machine::TaskStateMachine;
 pub use stopping_conditions::{
