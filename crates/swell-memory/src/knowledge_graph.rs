@@ -18,8 +18,10 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use swell_core::{KgDirection, KgEdge, KgNode, KgNodeType, KgPath, KgRelation, KgTraversal, SwellError};
 use swell_core::KnowledgeGraph;
+use swell_core::{
+    KgDirection, KgEdge, KgNode, KgNodeType, KgPath, KgRelation, KgTraversal, SwellError,
+};
 
 /// A node in the knowledge graph with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -641,7 +643,9 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
                         .fetch_all(self.pool.as_ref())
                         .await
                         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
-                    rows.iter().filter_map(|row| Self::row_to_edge(row).ok()).collect()
+                    rows.iter()
+                        .filter_map(|row| Self::row_to_edge(row).ok())
+                        .collect()
                 }
                 KgDirection::Incoming => {
                     let rows = sqlx::query("SELECT * FROM kg_edges WHERE target = ?")
@@ -649,7 +653,9 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
                         .fetch_all(self.pool.as_ref())
                         .await
                         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
-                    rows.iter().filter_map(|row| Self::row_to_edge(row).ok()).collect()
+                    rows.iter()
+                        .filter_map(|row| Self::row_to_edge(row).ok())
+                        .collect()
                 }
                 KgDirection::Both => {
                     let rows = sqlx::query("SELECT * FROM kg_edges WHERE source = ? OR target = ?")
@@ -658,16 +664,16 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
                         .fetch_all(self.pool.as_ref())
                         .await
                         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
-                    rows.iter().filter_map(|row| Self::row_to_edge(row).ok()).collect()
+                    rows.iter()
+                        .filter_map(|row| Self::row_to_edge(row).ok())
+                        .collect()
                 }
             };
 
             // Filter edges by relation if specified
             let filtered_edges: Vec<_> = edges
                 .into_iter()
-                .filter(|edge| {
-                    traversal.relation.is_none_or(|rel| edge.relation == rel)
-                })
+                .filter(|edge| traversal.relation.is_none_or(|rel| edge.relation == rel))
                 .collect();
 
             // If no edges to follow, record path
@@ -721,9 +727,11 @@ impl KnowledgeGraph for SqliteKnowledgeGraph {
 }
 
 impl SqliteKnowledgeGraph {
-
     /// Find dependencies (outgoing edges) for a node
-    pub async fn find_dependencies(&self, node_id: Uuid) -> Result<Vec<DependencyResult>, SwellError> {
+    pub async fn find_dependencies(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<DependencyResult>, SwellError> {
         let rows = sqlx::query(
             r#"
             SELECT e.*, n.* FROM kg_edges e
@@ -751,7 +759,10 @@ impl SqliteKnowledgeGraph {
     }
 
     /// Find dependents (incoming edges) for a node
-    pub async fn find_dependents(&self, node_id: Uuid) -> Result<Vec<DependencyResult>, SwellError> {
+    pub async fn find_dependents(
+        &self,
+        node_id: Uuid,
+    ) -> Result<Vec<DependencyResult>, SwellError> {
         let rows = sqlx::query(
             r#"
             SELECT e.*, n.* FROM kg_edges e
@@ -875,7 +886,12 @@ impl SqliteKnowledgeGraph {
 
         let node = match node_row {
             Some(row) => Self::row_to_node(&row)?,
-            None => return Err(SwellError::DatabaseError(format!("Node not found: {}", node_id))),
+            None => {
+                return Err(SwellError::DatabaseError(format!(
+                    "Node not found: {}",
+                    node_id
+                )))
+            }
         };
 
         // Get incoming edges (references from other nodes)
@@ -930,15 +946,17 @@ impl SqliteKnowledgeGraph {
     }
 
     /// Get all nodes in a file
-    pub async fn get_nodes_in_file(&self, repository: &str, file_path: &str) -> Result<Vec<KgNode>, SwellError> {
-        let rows = sqlx::query(
-            "SELECT * FROM kg_nodes WHERE repository = ? AND file_path = ?",
-        )
-        .bind(repository)
-        .bind(file_path)
-        .fetch_all(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+    pub async fn get_nodes_in_file(
+        &self,
+        repository: &str,
+        file_path: &str,
+    ) -> Result<Vec<KgNode>, SwellError> {
+        let rows = sqlx::query("SELECT * FROM kg_nodes WHERE repository = ? AND file_path = ?")
+            .bind(repository)
+            .bind(file_path)
+            .fetch_all(self.pool.as_ref())
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         let mut nodes = Vec::new();
         for row in rows {
@@ -950,16 +968,18 @@ impl SqliteKnowledgeGraph {
     }
 
     /// Get all nodes by type
-    pub async fn get_nodes_by_type(&self, repository: &str, node_type: KgNodeType) -> Result<Vec<KgNode>, SwellError> {
+    pub async fn get_nodes_by_type(
+        &self,
+        repository: &str,
+        node_type: KgNodeType,
+    ) -> Result<Vec<KgNode>, SwellError> {
         let node_type_str = Self::node_type_to_string(node_type);
-        let rows = sqlx::query(
-            "SELECT * FROM kg_nodes WHERE repository = ? AND node_type = ?",
-        )
-        .bind(repository)
-        .bind(node_type_str)
-        .fetch_all(self.pool.as_ref())
-        .await
-        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        let rows = sqlx::query("SELECT * FROM kg_nodes WHERE repository = ? AND node_type = ?")
+            .bind(repository)
+            .bind(node_type_str)
+            .fetch_all(self.pool.as_ref())
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         let mut nodes = Vec::new();
         for row in rows {
@@ -1073,7 +1093,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_and_get_node() {
-        let kg = SqliteKnowledgeGraph::create("sqlite::memory:").await.unwrap();
+        let kg = SqliteKnowledgeGraph::create("sqlite::memory:")
+            .await
+            .unwrap();
 
         let node = KgNode {
             id: Uuid::new_v4(),
@@ -1094,7 +1116,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_add_edge() {
-        let kg = SqliteKnowledgeGraph::create("sqlite::memory:").await.unwrap();
+        let kg = SqliteKnowledgeGraph::create("sqlite::memory:")
+            .await
+            .unwrap();
 
         let node1 = KgNode {
             id: Uuid::new_v4(),
@@ -1129,7 +1153,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_path() {
-        let kg = SqliteKnowledgeGraph::create("sqlite::memory:").await.unwrap();
+        let kg = SqliteKnowledgeGraph::create("sqlite::memory:")
+            .await
+            .unwrap();
 
         // Create: a -> b -> c
         let a = KgNode {
@@ -1182,7 +1208,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_cross_references() {
-        let kg = SqliteKnowledgeGraph::create("sqlite::memory:").await.unwrap();
+        let kg = SqliteKnowledgeGraph::create("sqlite::memory:")
+            .await
+            .unwrap();
 
         let node = KgNode {
             id: Uuid::new_v4(),
@@ -1234,7 +1262,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_node() {
-        let kg = SqliteKnowledgeGraph::create("sqlite::memory:").await.unwrap();
+        let kg = SqliteKnowledgeGraph::create("sqlite::memory:")
+            .await
+            .unwrap();
 
         let node = KgNode {
             id: Uuid::new_v4(),
@@ -1252,7 +1282,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_traverse() {
-        let kg = SqliteKnowledgeGraph::create("sqlite::memory:").await.unwrap();
+        let kg = SqliteKnowledgeGraph::create("sqlite::memory:")
+            .await
+            .unwrap();
 
         let a = KgNode {
             id: Uuid::new_v4(),

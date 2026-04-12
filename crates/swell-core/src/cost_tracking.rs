@@ -908,15 +908,11 @@ mod tests {
         tracker
             .record_llm_cost(1000, 500, "claude-3-5-sonnet")
             .unwrap();
-        tracker
-            .record_llm_cost(2000, 1000, "gpt-4o")
-            .unwrap();
+        tracker.record_llm_cost(2000, 1000, "gpt-4o").unwrap();
 
         // Record costs for task 2 with a different model
         tracker.set_active_task(task_id2);
-        tracker
-            .record_llm_cost(500, 250, "claude-3-opus")
-            .unwrap();
+        tracker.record_llm_cost(500, 250, "claude-3-opus").unwrap();
 
         // Verify per-model breakdown in task 1
         let task1_summary = tracker.get_task_summary(task_id1).unwrap();
@@ -941,10 +937,7 @@ mod tests {
         // Verify aggregation at run level
         let run_summary = tracker.get_summary();
         assert_eq!(run_summary.call_count, 3); // Total across all tasks
-        assert_eq!(
-            run_summary.total_tokens,
-            task1_summary.total_tokens + 750
-        ); // 4500 + 750
+        assert_eq!(run_summary.total_tokens, task1_summary.total_tokens + 750); // 4500 + 750
 
         // Verify cost breakdown is serializable (for visualization)
         let json = serde_json::to_string(&task1_summary.model_breakdown).unwrap();

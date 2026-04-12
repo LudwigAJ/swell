@@ -553,9 +553,9 @@ impl McpClient {
                     .to_string();
 
                 // Parse annotations (readOnlyHint, destructiveHint, idempotentHint)
-                let annotations = t.get("annotations").and_then(|a| {
-                    serde_json::from_value::<McpToolAnnotations>(a.clone()).ok()
-                });
+                let annotations = t
+                    .get("annotations")
+                    .and_then(|a| serde_json::from_value::<McpToolAnnotations>(a.clone()).ok());
 
                 // Parse outputSchema (November 2025 MCP spec)
                 let output_schema = t.get("outputSchema").cloned();
@@ -969,7 +969,10 @@ mod tests {
             }),
             server_name: "test-server".to_string(),
         };
-        assert_eq!(read_only_info.risk_level_from_annotations(), ToolRiskLevel::Read);
+        assert_eq!(
+            read_only_info.risk_level_from_annotations(),
+            ToolRiskLevel::Read
+        );
 
         // Test destructive tool
         let destructive_info = McpToolInfo {
@@ -984,7 +987,10 @@ mod tests {
             }),
             server_name: "test-server".to_string(),
         };
-        assert_eq!(destructive_info.risk_level_from_annotations(), ToolRiskLevel::Destructive);
+        assert_eq!(
+            destructive_info.risk_level_from_annotations(),
+            ToolRiskLevel::Destructive
+        );
 
         // Test tool without annotations
         let no_annot_info = McpToolInfo {
@@ -995,7 +1001,10 @@ mod tests {
             annotations: None,
             server_name: "test-server".to_string(),
         };
-        assert_eq!(no_annot_info.risk_level_from_annotations(), ToolRiskLevel::Write);
+        assert_eq!(
+            no_annot_info.risk_level_from_annotations(),
+            ToolRiskLevel::Write
+        );
     }
 
     #[tokio::test]

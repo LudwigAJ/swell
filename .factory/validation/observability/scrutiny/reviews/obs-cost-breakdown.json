@@ -1,43 +1,21 @@
 {
   "featureId": "obs-cost-breakdown",
-  "reviewedAt": "2026-04-12T17:35:00Z",
-  "commitId": "c1d63abb56ebf58ca8f443491508c1556242f08c",
-  "transcriptSkeletonReviewed": true,
+  "reviewedAt": "2026-04-12T22:20:00.000Z",
+  "commitId": "728422c546ac6fd8e6e744dcb308c44f0b74a7f6",
+  "transcriptSkeletonReviewed": false,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "The worker added a comprehensive test_cost_breakdown test that exercises the existing cost_tracking infrastructure (CostRecord, ModelBreakdown, CostSummary, CostTracker). The test verifies per-model cost tracking, task/run aggregation, and JSON serialization for visualization. All verification steps pass: workspace build succeeds, test passes, clippy clean, all swell-core tests pass.",
-    "issues": [
-      {
-        "file": "crates/swell-core/src/cost_tracking.rs",
-        "line": 893,
-        "severity": "non_blocking",
-        "description": "Feature description mentions 'Cost breakdown visualization' but the implementation only verifies that the data structures are serializable to JSON. No actual visualization component (dashboard, report format, etc.) was built. However, the existing infrastructure (ModelBreakdown, CostSummary with serde Serialize/Deserialize) provides everything needed for visualization — a consumer can serialize and render. This appears to be a gap between feature description and actual deliverable, but does not block the test from passing verification."
-      }
-    ]
+    "summary": "The fix correctly addresses all three blocking issues from the prior review. GLOBAL_LLM_COST_TRACKER is now in swell-core and updated by both LLM backends (anthropic.rs, openai.rs) after successful chat() calls. DashboardState::sync_cost_from_global() polls the global tracker every 5 seconds and updates the dashboard cost state. EventEmitter::subscribe() enables real-time event broadcasting to WebSocket clients. OrchestratorEvent::AgentRegistered is subscribed in main.rs and forwarded to DashboardState::register_agent(). All blocking issues are resolved.",
+    "issues": []
   },
   "sharedStateObservations": [
     {
-      "area": "conventions",
-      "observation": "Worker correctly followed AGENTS.md Rust toolchain execution rules: ran cargo build before clippy, used package-scoped validation (-p swell-core), and followed the verification contract exactly.",
-      "evidence": "Transcript shows cargo build --workspace → cargo test -p swell-core -- cost_breakdown → cargo clippy -p swell-core -- -D warnings in sequence matching AGENTS.md guidance"
-    },
-    {
       "area": "skills",
-      "observation": "Rust skill was followed correctly. The worker used proper test patterns (#[test], assertions, no unwrap in production code). skillFeedback.confirmed followedProcedure=true with no deviations.",
-      "evidence": "Transcript shows worker read mission.md, validation-contract.md, features.json before implementation. Test uses proper assertions (assert_eq!, assert!) with meaningful messages."
-    },
-    {
-      "area": "services",
-      "observation": "Commands run match services.yaml: install (cargo build --workspace), typecheck (cargo clippy -p <package> -- -D warnings), test (cargo test -p <package>). Worker used workspace-wide build and test which is appropriate for a feature touching shared cost_tracking infrastructure.",
-      "evidence": "Handoff verification.commandsRun shows: cargo build --workspace, cargo test -p swell-core -- cost_breakdown, cargo clippy -p swell-core -- -D warnings, cargo test -p swell-core"
-    },
-    {
-      "area": "knowledge",
-      "observation": "The worker discovered and used the existing cost_tracking infrastructure (CostRecord, ModelBreakdown, CostSummary, CostTracker) rather than building new types. This suggests the infrastructure was already in place from prior work. The worker correctly identified the gap was in test coverage not implementation.",
-      "evidence": "Handoff 'whatWasImplemented' states: 'The cost tracking infrastructure (CostRecord, ModelBreakdown, CostSummary, CostTracker) was already in place but lacked a test matching the verification filter pattern.'"
+      "observation": "The Rust skill does not cover global tracker patterns using LazyLock + RwLock. The worker correctly implemented thread-safe global state but this pattern could be documented.",
+      "evidence": "cost_tracking.rs uses static GLOBAL_LLM_COST_TRACKER: LazyLock<std::sync::RwLock<GlobalLlmCostData>> - a specific Rust pattern that isn't mentioned in the skill file"
     }
   ],
-  "addressesFailureFrom": null,
-  "summary": "Feature obs-cost-breakdown passes scrutiny review. Worker correctly identified that the cost tracking infrastructure already existed with proper types (ModelBreakdown, CostSummary) and added the missing test that satisfies the verification contract. The test_cost_breakdown test exercises all three expected behaviors: per-model tracking, task/run aggregation, and serializable cost breakdown for visualization. All verification commands pass. Code quality is high with proper assertions and no clippy warnings. The only non-blocking observation is that 'visualization' in the feature description implies UI/output, but the JSON serialization enables any consumer to build visualization on top — this is a documentation gap rather than an implementation failure."
+  "addressesFailureFrom": "observability-dashboard-api",
+  "fixAdequacy": "adequate - The fix wires all three dead code paths from the prior review: (1) LLM backends now call record_llm_cost() after successful API calls, making DashboardState::update_cost() reachable via sync_cost_from_global(); (2) DashboardState::register_agent() is called from a tokio task in main.rs that subscribes to OrchestratorEvent::AgentRegistered; (3) EventEmitter now has subscribe() and broadcast infrastructure, and main.rs spawns a task that converts DaemonEvent to DashboardEvent and calls broadcast_event(). The cost_breakdown test passes. Clippy shows no warnings. Build succeeds."
 }

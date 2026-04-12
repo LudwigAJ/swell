@@ -175,7 +175,8 @@ impl EventEmitter {
             tx.send(DaemonEvent::Error {
                 message: "EventEmitter shutting down".to_string(),
                 correlation_id: Uuid::nil(),
-            }).ok();
+            })
+            .ok();
             rx
         }
     }

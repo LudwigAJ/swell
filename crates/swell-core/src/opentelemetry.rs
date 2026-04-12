@@ -241,7 +241,9 @@ pub fn init_tracer_provider(
             .tonic()
             .with_endpoint(&endpoint_url)
             .build_span_exporter()
-            .map_err(|e| OtelInitError::ExporterError(format!("Failed to build span exporter: {}", e)))?;
+            .map_err(|e| {
+                OtelInitError::ExporterError(format!("Failed to build span exporter: {}", e))
+            })?;
 
         opentelemetry_sdk::trace::TracerProvider::builder()
             .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
@@ -250,8 +252,7 @@ pub fn init_tracer_provider(
         // When no endpoint is configured, use a simple in-memory provider
         // The spans are still created and can be processed by a SpanProcessor
         // but won't be exported anywhere
-        opentelemetry_sdk::trace::TracerProvider::builder()
-            .build()
+        opentelemetry_sdk::trace::TracerProvider::builder().build()
     };
 
     let tracer_name = config.service_name.clone();

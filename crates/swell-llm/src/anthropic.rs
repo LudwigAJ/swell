@@ -177,7 +177,10 @@ impl LlmBackend for AnthropicBackend {
         let api_response: Response = match response.json().await {
             Ok(resp) => resp,
             Err(e) => {
-                return Err(SwellError::LlmError(format!("Failed to parse response: {}", e)));
+                return Err(SwellError::LlmError(format!(
+                    "Failed to parse response: {}",
+                    e
+                )));
             }
         };
 

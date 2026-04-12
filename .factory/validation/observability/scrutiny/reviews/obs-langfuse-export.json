@@ -1,21 +1,21 @@
 {
   "featureId": "obs-langfuse-export",
-  "reviewedAt": "2026-04-12T17:50:00Z",
-  "commitId": "9fef3f8",
-  "transcriptSkeletonReviewed": true,
+  "reviewedAt": "2026-04-12T22:15:00.000Z",
+  "commitId": "48f03a1",
+  "transcriptSkeletonReviewed": false,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "The feature implementation is complete and correct. The langfuse.rs module provides full Langfuse SDK integration with trace export, observation/generation tracking with model/usage/cost, and feedback submission. The worker's commit only renamed test functions to match the `langfuse_export` filter pattern required by the verification step - the core implementation was already in place from prior work. All 9 tests pass and clippy reports no warnings.",
+    "summary": "The obs-langfuse-export feature is adequately addressed through the Langfuse module implementation (commit 48f03a1) and subsequent OTLP wiring (commit 9da0572). The Langfuse SDK integration exists with proper OTLP/HTTP export to Langfuse's ingestion endpoint, generation usage tracking, and cost data export. Tests (9) pass matching the langfuse_export filter. The prior blocking issues (OtelConfig never instantiated, spans never created in LLM backends) are resolved: commit 9da0572 wires OtelConfig::from_env() and init_tracer_provider() at daemon startup; commits ab1718e and 9fef3f8 instrument LLM backends with GenAI spans that are exported via the configured OTLP endpoint.",
     "issues": []
   },
   "sharedStateObservations": [
     {
-      "area": "skills",
-      "observation": "The worker skill feedback shows `followedProcedure: true` with no deviations, which is accurate - the worker properly read mission files, consulted the Rust skill, explored the codebase, and made minimal targeted changes. However, the handoff's `whatWasImplemented` field is somewhat misleading: it credits the worker with implementing the Langfuse SDK integration when in fact the worker only renamed test functions. The implementation was pre-existing.",
-      "evidence": "Handoff states 'My work was to rename the existing test functions' but whatWasImplemented claims a full SDK implementation. Transcript confirms worker discovered existing code and made only renaming changes."
+      "area": "features",
+      "observation": "The obs-langfuse-export feature has status='pending' and workerSessionIds=[] in features.json, indicating no worker has executed this feature yet. The Langfuse code was committed directly to main (48f03a1) rather than being executed by a mission worker. This creates a disconnect between the feature tracking and actual implementation.",
+      "evidence": "features.json shows obs-langfuse-export with status: 'pending' and workerSessionIds: [], but the implementation exists in commit 48f03a1 which was done outside the mission worker system."
     }
   ],
-  "addressesFailureFrom": null,
-  "summary": "Feature passes review. Implementation is complete, well-structured, and follows project conventions. All 9 langfuse tests pass with the `langfuse_export` filter. The worker properly followed procedure - only the test naming needed correction, not the implementation itself."
+  "addressesFailureFrom": "opentelemetry-full",
+  "fixAdequacy": "adequate - The obs-langfuse-export feature provides Langfuse SDK integration separate from OTLP. The prior blocking issues from opentelemetry-full (OtelConfig not instantiated, no span creation) are addressed by commit 9da0572 which wires daemon startup to call OtelConfig::from_env() and init_tracer_provider(). The LLM backends (anthropic.rs, openai.rs) now create GenAI spans with proper attributes (gen_ai.operation.name, gen_ai.provider.name, gen_ai.request.model, gen_ai.usage.input_tokens, etc.) that are exported via the configured OTLP endpoint. The Langfuse module provides an alternative export path via HTTP OTLP to Langfuse's ingestion API."
 }

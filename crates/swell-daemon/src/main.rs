@@ -59,7 +59,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             match event_rx.recv().await {
                 Ok(daemon_event) => {
                     let dashboard_event = daemon_event.into();
-                    dashboard_for_broadcast.broadcast_event(dashboard_event).await;
+                    dashboard_for_broadcast
+                        .broadcast_event(dashboard_event)
+                        .await;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                     // Events dropped - that's OK for dashboard, we just continue
@@ -82,9 +84,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         loop {
             match event_rx.recv().await {
-                Ok(OrchestratorEvent::AgentRegistered { agent_id, role, model }) => {
+                Ok(OrchestratorEvent::AgentRegistered {
+                    agent_id,
+                    role,
+                    model,
+                }) => {
                     tracing::debug!(agent_id = %agent_id, role = ?role, model = %model, "Agent registered, updating dashboard");
-                    dashboard_for_agents.register_agent(agent_id, role, model).await;
+                    dashboard_for_agents
+                        .register_agent(agent_id, role, model)
+                        .await;
                 }
                 Ok(_) => {
                     // Ignore other orchestrator events for now
@@ -93,7 +101,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Events dropped - continue
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    tracing::info!("Orchestrator event channel closed, stopping agent registration forwarding");
+                    tracing::info!(
+                        "Orchestrator event channel closed, stopping agent registration forwarding"
+                    );
                     break;
                 }
             }

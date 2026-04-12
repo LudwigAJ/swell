@@ -428,11 +428,15 @@ mod tests {
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
 
-        sm.pause_task(task_id, "Operator requested pause".to_string()).unwrap();
+        sm.pause_task(task_id, "Operator requested pause".to_string())
+            .unwrap();
 
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Paused);
-        assert_eq!(task.paused_reason, Some("Operator requested pause".to_string()));
+        assert_eq!(
+            task.paused_reason,
+            Some("Operator requested pause".to_string())
+        );
     }
 
     #[test]
@@ -446,7 +450,11 @@ mod tests {
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
 
-        sm.pause_task(task_id, "Operator requested pause during validation".to_string()).unwrap();
+        sm.pause_task(
+            task_id,
+            "Operator requested pause during validation".to_string(),
+        )
+        .unwrap();
 
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Paused);
@@ -579,10 +587,7 @@ mod tests {
         assert!(task_during.plan.is_some());
         assert_eq!(task_during.plan.unwrap().id, plan.id);
         assert_eq!(task_during.assigned_agent, Some(agent_id));
-        assert_eq!(
-            task_during.paused_reason,
-            Some("Test pause".to_string())
-        );
+        assert_eq!(task_during.paused_reason, Some("Test pause".to_string()));
 
         // Resume and verify state still preserved
         sm.resume_task(task_id).unwrap();

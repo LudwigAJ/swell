@@ -1,44 +1,22 @@
 {
   "featureId": "obs-opentelemetry-genai",
-  "reviewedAt": "2026-04-12T20:15:00Z",
-  "commitId": "0d9475a8d7b004d72e4df0b19ba0ea810b7c8a52",
+  "reviewedAt": "2026-04-12T22:15:00.000Z",
+  "commitId": "ab1718e",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "Feature adds 8 comprehensive tests for OpenTelemetry GenAI semantic conventions. Tests cover gen_ai module keys, provider conventions, pricing for Anthropic/OpenAI models, cost calculation, latency tracking, model attributes, and token-to-cost calculation. All tests pass. Implementation correctly validates the existing gen_ai module, LlmProvider enum, TokenPricing struct, and LatencyTracker.",
+    "summary": "This fix adequately addresses all three prior blocking issues. The OpenTelemetry initialization is now wired at daemon startup (commit 9da0572), and spans are properly created in both Anthropic (ab1718e) and OpenAI (ab1718e) LLM backends with full GenAI semantic conventions. All 8 otel GenAI tests pass.",
     "issues": [
       {
         "file": "crates/swell-core/src/opentelemetry.rs",
-        "line": 362,
+        "line": 345,
         "severity": "non_blocking",
-        "description": "Test test_otel_genai_latency_tracker_precision has unusual #[allow(unused_comparisons)] attribute with comment explaining that u64 >= 0 is always true. This is technically correct (u64 is always >= 0) but the attribute usage is unconventional. The test still validates the correct behavior (elapsed2 >= 10 for 10ms sleep). Justified given the explanation in comments."
-      },
-      {
-        "file": "crates/swell-core/src/opentelemetry.rs",
-        "line": 329,
-        "severity": "non_blocking",
-        "description": "The test test_otel_genai_latency_tracker_precision has an assertion `elapsed >= 0` which is always true for u64. The comment explains this is to document intent, which is reasonable, but the assertion provides no actual test value. However, the subsequent assertion `elapsed2 >= 10` does provide real validation."
+        "description": "GenAiSpanBuilder struct is still marked #[allow(dead_code)] but is not used by LLM backends. The backends use Span directly with GenAiSpanExt trait instead, which is a valid alternative implementation. Not blocking since the functionality is complete via the trait."
       }
     ]
   },
-  "sharedStateObservations": [
-    {
-      "area": "skills",
-      "observation": "The Rust skill procedure was followed correctly. Worker used proper cargo commands (cargo build --workspace, cargo test -p swell-core -- otel_genai, cargo clippy -p swell-core). The skill suggests 'cargo test -p <package>' for unit tests, and worker correctly scoped to swell-core package.",
-      "evidence": "Transcript shows: cargo build --workspace, cargo test -p swell-core -- otel_genai, cargo clippy -p swell-core -- -D warnings"
-    },
-    {
-      "area": "services",
-      "observation": "Worker did not use any services not already in services.yaml. All commands (cargo build, cargo test, cargo clippy) are properly documented in services.yaml under the 'commands' section.",
-      "evidence": "services.yaml defines: build, test, lint, workspace-build commands"
-    },
-    {
-      "area": "knowledge",
-      "observation": "The worker discovered and correctly used the gen_ai module keys and semantic conventions. The existing implementation already had gen_ai::OPERATION_NAME, gen_ai::PROVIDER_NAME, etc. The worker correctly identified that tests needed to be added to verify the 'otel_genai' feature filter. No online documentation needed - OpenTelemetry semantic conventions are properly documented in code comments.",
-      "evidence": "crates/swell-core/src/opentelemetry.rs lines 14-47 define gen_ai module with semantic convention keys"
-    }
-  ],
-  "addressesFailureFrom": null,
-  "summary": "PASS - Feature adds 8 comprehensive tests validating OpenTelemetry GenAI semantic conventions including gen_ai.* attribute keys, provider conventions (Anthropic, OpenAI, Mock), model pricing accuracy, cost calculation, latency tracking, and token-to-cost conversion. All tests pass. Implementation correctly follows Rust conventions and skill procedures. No blocking issues found."
+  "sharedStateObservations": [],
+  "addressesFailureFrom": "opentelemetry-full",
+  "fixAdequacy": "adequate - The fix addresses all three prior blocking issues: (1) OtelConfig struct is now instantiated via OtelConfig::from_env() at daemon startup in main.rs:17 and passed to init_tracer_provider(), (2) Spans are now created via tracer.span_builder() and tracer.build() in both anthropic.rs:204-228 and openai.rs:253-274, (3) init_tracer_provider() is called at daemon startup before any LLM execution. The implementation fully covers expectedBehavior with gen_ai.operation.name, gen_ai.provider.name, gen_ai.request.model, gen_ai.usage.input_tokens, gen_ai.usage.output_tokens, gen_ai.response.model, latency_ms, and cost.usd attributes. Build passes and 8 otel GenAI tests pass."
 }
