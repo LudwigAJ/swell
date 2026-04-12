@@ -174,6 +174,7 @@ impl TaskStateMachine {
         match task.state {
             TaskState::Executing | TaskState::Validating => {
                 task.paused_reason = Some(reason);
+                task.paused_from_state = Some(task.state);
                 task.transition_to(TaskState::Paused);
                 Ok(())
             }
@@ -190,14 +191,9 @@ impl TaskStateMachine {
         match task.state {
             TaskState::Paused => {
                 task.paused_reason = None;
-                // Resume to previous state - if was validating, go back to validating
-                // otherwise go back to executing
-                let previous_validating = task.validation_result.is_some();
-                if previous_validating {
-                    task.transition_to(TaskState::Validating);
-                } else {
-                    task.transition_to(TaskState::Executing);
-                }
+                // Restore to the state before pause
+                let previous_state = task.paused_from_state.take();
+                task.transition_to(previous_state.unwrap_or(TaskState::Executing));
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
@@ -418,6 +414,185 @@ mod tests {
 
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Validating);
+    }
+
+    // --- Pause/Resume Tests ---
+
+    #[test]
+    fn test_pause_executing_task() {
+        let mut sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&mut sm);
+
+        sm.enrich_task(task_id).unwrap();
+        sm.ready_task(task_id).unwrap();
+        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.start_execution(task_id).unwrap();
+
+        sm.pause_task(task_id, "Operator requested pause".to_string()).unwrap();
+
+        let task = sm.get_task(task_id).unwrap();
+        assert_eq!(task.state, TaskState::Paused);
+        assert_eq!(task.paused_reason, Some("Operator requested pause".to_string()));
+    }
+
+    #[test]
+    fn test_pause_validating_task() {
+        let mut sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&mut sm);
+
+        sm.enrich_task(task_id).unwrap();
+        sm.ready_task(task_id).unwrap();
+        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.start_execution(task_id).unwrap();
+        sm.start_validation(task_id).unwrap();
+
+        sm.pause_task(task_id, "Operator requested pause during validation".to_string()).unwrap();
+
+        let task = sm.get_task(task_id).unwrap();
+        assert_eq!(task.state, TaskState::Paused);
+        assert_eq!(
+            task.paused_reason,
+            Some("Operator requested pause during validation".to_string())
+        );
+    }
+
+    #[test]
+    fn test_resume_executing_from_paused() {
+        let mut sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&mut sm);
+
+        sm.enrich_task(task_id).unwrap();
+        sm.ready_task(task_id).unwrap();
+        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.start_execution(task_id).unwrap();
+        sm.pause_task(task_id, "Test pause".to_string()).unwrap();
+
+        sm.resume_task(task_id).unwrap();
+
+        let task = sm.get_task(task_id).unwrap();
+        assert_eq!(task.state, TaskState::Executing);
+        assert!(task.paused_reason.is_none());
+    }
+
+    #[test]
+    fn test_resume_validating_from_paused() {
+        let mut sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&mut sm);
+
+        sm.enrich_task(task_id).unwrap();
+        sm.ready_task(task_id).unwrap();
+        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.start_execution(task_id).unwrap();
+        sm.start_validation(task_id).unwrap();
+        sm.pause_task(task_id, "Test pause".to_string()).unwrap();
+
+        sm.resume_task(task_id).unwrap();
+
+        let task = sm.get_task(task_id).unwrap();
+        assert_eq!(task.state, TaskState::Validating);
+        assert!(task.paused_reason.is_none());
+    }
+
+    #[test]
+    fn test_cannot_pause_created_task() {
+        let mut sm = TaskStateMachine::new();
+        let task_id = sm.create_task("Test".to_string()).id;
+
+        let result = sm.pause_task(task_id, "Test".to_string());
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SwellError::InvalidStateTransition(msg) => {
+                assert!(msg.contains("Cannot pause"));
+            }
+            _ => panic!("Expected InvalidStateTransition"),
+        }
+    }
+
+    #[test]
+    fn test_cannot_pause_ready_task() {
+        let mut sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&mut sm);
+
+        sm.enrich_task(task_id).unwrap();
+        sm.ready_task(task_id).unwrap();
+
+        let result = sm.pause_task(task_id, "Test".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cannot_pause_assigned_task() {
+        let mut sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&mut sm);
+
+        sm.enrich_task(task_id).unwrap();
+        sm.ready_task(task_id).unwrap();
+        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+
+        let result = sm.pause_task(task_id, "Test".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cannot_resume_non_paused_task() {
+        let mut sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&mut sm);
+
+        sm.enrich_task(task_id).unwrap();
+        sm.ready_task(task_id).unwrap();
+        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.start_execution(task_id).unwrap();
+
+        let result = sm.resume_task(task_id);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SwellError::InvalidStateTransition(msg) => {
+                assert!(msg.contains("Cannot resume"));
+            }
+            _ => panic!("Expected InvalidStateTransition"),
+        }
+    }
+
+    #[test]
+    fn test_state_preserved_during_pause() {
+        let mut sm = TaskStateMachine::new();
+        let (task_id, plan) = create_test_task_and_plan(&mut sm);
+
+        sm.enrich_task(task_id).unwrap();
+        sm.ready_task(task_id).unwrap();
+        let agent_id = uuid::Uuid::new_v4();
+        sm.assign_task(task_id, agent_id).unwrap();
+        sm.start_execution(task_id).unwrap();
+
+        // Verify initial state
+        let task_before = sm.get_task(task_id).unwrap();
+        assert_eq!(task_before.state, TaskState::Executing);
+        assert!(task_before.plan.is_some());
+        assert_eq!(task_before.assigned_agent, Some(agent_id));
+
+        // Pause the task
+        sm.pause_task(task_id, "Test pause".to_string()).unwrap();
+
+        // Verify state is preserved
+        let task_during = sm.get_task(task_id).unwrap();
+        assert_eq!(task_during.state, TaskState::Paused);
+        assert!(task_during.plan.is_some());
+        assert_eq!(task_during.plan.unwrap().id, plan.id);
+        assert_eq!(task_during.assigned_agent, Some(agent_id));
+        assert_eq!(
+            task_during.paused_reason,
+            Some("Test pause".to_string())
+        );
+
+        // Resume and verify state still preserved
+        sm.resume_task(task_id).unwrap();
+
+        let task_after = sm.get_task(task_id).unwrap();
+        assert_eq!(task_after.state, TaskState::Executing);
+        assert!(task_after.plan.is_some());
+        assert_eq!(task_after.plan.unwrap().id, plan.id);
+        assert_eq!(task_after.assigned_agent, Some(agent_id));
+        assert!(task_after.paused_reason.is_none());
     }
 
     #[test]
