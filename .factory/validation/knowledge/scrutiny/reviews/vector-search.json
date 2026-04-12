@@ -1,0 +1,68 @@
+{
+  "featureId": "vector-search",
+  "reviewedAt": "2026-04-12T19:30:00Z",
+  "commitId": "787d867",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Vector search implementation provides hybrid retrieval (vector + BM25 + graph) with RRF fusion and cross-encoder reranking. Feature complete with 51 tests passing. Code quality is good overall with proper error handling and async patterns. Three blocking issues identified in data flow between components that could cause incorrect reranking scores.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/cross_encoder_rerank.rs",
+        "line": 195,
+        "severity": "blocking",
+        "description": "RerankableCandidates::to_rerank_candidates() creates MemoryEntry with empty label, content, repository, and placeholder block_type. The reranker scores based on label/content but these are empty strings. Reranking results may be incorrect or meaningless."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 407,
+        "severity": "blocking",
+        "description": "BM25 search stream creates new Uuid::new_v4() for each result instead of using actual memory entry IDs. This breaks RRF fusion since the fused scores map to placeholder IDs that don't exist in memory_store, causing search_with_reranking to fail to build rerank candidates."
+      },
+      {
+        "file": "crates/swell-memory/src/knowledge_graph.rs",
+        "line": 450,
+        "severity": "non_blocking",
+        "description": "traverse() method calls visited.remove(&node_id) at end of loop, allowing nodes to be re-visited via different paths. This could lead to duplicate paths in results or incorrect traversal for graphs with multiple paths to same node."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 265,
+        "severity": "non_blocking",
+        "description": "ReciprocalRankFusion::fuse() uses dummy weights array &[1.0; 100] when weights param is None, but rankings.len() could exceed 100, causing index out of bounds."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 350,
+        "severity": "non_blocking",
+        "description": "reranked_to_triple_stream_results takes &self but never uses self (dead code pattern). The method signature could be simplified to take &Ctx or be removed if truly unused."
+      },
+      {
+        "file": "crates/swell-memory/src/triple_stream.rs",
+        "line": 410,
+        "severity": "non_blocking",
+        "description": "BM25 search returns RankedItems with new Uuids but also returns result.score from recall. Since Uuids don't match actual entries, the build_rerank_candidates() will fail to find entries via memory_store.get(result.id)."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker ran workspace-wide tests (cargo test --workspace via 'cargo test -p swell-memory') with --test-threads=4. Per AGENTS.md and services.yaml, crate-scoped validation is the default. The workspace-wide approach is acceptable for final validation gate but package-scoped would be faster during development.",
+      "evidence": "Transcript shows: 'cargo test -p swell-memory' with package flag, which is correct. However handoff reports 'All 380 swell-memory tests pass' suggesting full test run was done."
+    },
+    {
+      "area": "code_quality",
+      "observation": "The RerankableCandidates extension trait has a fundamental design issue: it creates placeholder MemoryEntry objects that lose the actual content, label, and repository data from the original TripleStreamResult. This breaks the reranking score calculation since SimpleReranker scores based on these fields.",
+      "evidence": "cross_encoder_rerank.rs:195 - MemoryEntry { label: String::new(), content: String::new(), repository: String::new() }"
+    },
+    {
+      "area": "code_quality",
+      "observation": "BM25 stream creates new Uuids instead of linking to actual memory entries. This is a data flow discontinuity - recall_results contain content but BM25 search creates new IDs that don't connect back to memory_store.",
+      "evidence": "triple_stream.rs:407 - RankedItem { id: Uuid::new_v4(), score: result.score, ... }"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Vector search feature is well-implemented with good test coverage (51 tests passing). The hybrid retrieval architecture combining vector search, BM25 keyword search, and graph traversal via RRF is sound. Cross-encoder reranking infrastructure is in place with Simple and Mock rerankers. Three blocking issues identified: (1) RerankableCandidates creates MemoryEntry with empty content preventing proper scoring, (2) BM25 search uses placeholder Uuids breaking fusion, (3) traverse() allows node revisits. These issues affect the data flow integrity but the core architecture is correct."
+}
