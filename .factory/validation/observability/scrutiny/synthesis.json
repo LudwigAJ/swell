@@ -1,0 +1,111 @@
+{
+  "milestone": "observability",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "notes": "Tests pass but some long-running tests (evidence_pipeline) timed out after 60s"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo fmt",
+      "exitCode": 0,
+      "notes": "Fixed formatting in knowledge_graph.rs before final check"
+    }
+  },
+  "reviewsSummary": {
+    "total": 21,
+    "passed": 19,
+    "failed": 2,
+    "failedFeatures": [
+      "observability-dashboard-api",
+      "opentelemetry-full"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "observability-dashboard-api",
+      "severity": "blocking",
+      "description": "DashboardState::update_cost() is never called anywhere in the codebase at runtime. The cost tracking API will always return zero/nil values.",
+      "file": "crates/swell-daemon/src/dashboard.rs",
+      "line": 70
+    },
+    {
+      "featureId": "observability-dashboard-api",
+      "severity": "blocking",
+      "description": "DashboardState::register_agent() is never called anywhere in the codebase at runtime. The /api/agents endpoint will always return an empty list.",
+      "file": "crates/swell-daemon/src/dashboard.rs",
+      "line": 91
+    },
+    {
+      "featureId": "observability-dashboard-api",
+      "severity": "blocking",
+      "description": "DashboardState::broadcast_event() is never called anywhere in the codebase at runtime. WebSocket clients will connect but receive no events.",
+      "file": "crates/swell-daemon/src/dashboard.rs",
+      "line": 65
+    },
+    {
+      "featureId": "opentelemetry-full",
+      "severity": "blocking",
+      "description": "OtelConfig struct defines otlp_endpoint field but is never instantiated or used. There is no tracer provider setup, no OTLP exporter pipeline, and no mechanism to actually export traces to an endpoint.",
+      "file": "crates/swell-core/src/opentelemetry.rs",
+      "line": 137
+    },
+    {
+      "featureId": "opentelemetry-full",
+      "severity": "blocking",
+      "description": "GenAiSpanBuilder::start_span is marked #[allow(dead_code)] and is never called. The gen_ai attributes are defined but no actual spans are being created during LLM calls.",
+      "file": "crates/swell-core/src/opentelemetry.rs",
+      "line": 172
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document port 3100 usage - the observability-dashboard-api feature uses port 3100 as the default dashboard port but this is not recorded in AGENTS.md's port range section. Add a line like 'Port 3100: Dashboard API (SWELL_DASHBOARD_PORT env override)'",
+      "evidence": "observability-dashboard-api sharedStateObservations: AGENTS.md says '3100-3199 reserved' but doesn't list actual port assignments",
+      "isSystemic": false
+    },
+    {
+      "target": "skills/rust",
+      "suggestion": "Add HTTP/WebSocket server patterns to the Rust skill - the skill documents async/tokio patterns but doesn't cover axum, tower-http, or WebSocket implementation. Workers implementing dashboard APIs encountered repeated compile errors with axum Router/State API.",
+      "evidence": "observability-dashboard-api: 'Transcript shows repeated cargo build failures with axum type errors, suggesting unfamiliarity with axum 0.7 API'",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the relationship between LoopDetectionState (alerts.rs) and ReactLoopState (state_machine.rs). Two independent loop tracking mechanisms exist with no explanation of their relationship or which to use.",
+      "evidence": "observability-alerts sharedStateObservations: 'The transcript shows the worker explored ReactLoopState in state_machine.rs but implemented LoopDetectionState independently in alerts.rs. No shared state documentation explains the relationship'",
+      "isSystemic": true
+    },
+    {
+      "target": "skills/rust",
+      "suggestion": "Add alert system design patterns and integration guidance to the Rust skill. Workers implementing alert functionality have to infer how AlertManager should integrate with the broader orchestrator flow.",
+      "evidence": "observability-alerts: 'Worker had to infer how alerts should integrate with the broader orchestrator flow'",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document EventStore service - the correlation-ids feature implemented EventStore for querying correlation IDs but services.yaml doesn't mention it and AGENTS.md doesn't document it as a service.",
+      "evidence": "observability-correlation-ids: 'AGENTS.md doesn't document EventStore', 'services.yaml doesn't mention EventStore as a service'",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that OpenTelemetry primitives in opentelemetry.rs are parallel implementation not unified with EventStore correlation IDs - two separate correlation systems exist and workers should be aware.",
+      "evidence": "observability-correlation-ids: 'OTel primitives in opentelemetry.rs are parallel implementation not unified with correlation IDs'",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
