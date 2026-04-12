@@ -1,0 +1,39 @@
+{
+  "featureId": "mcp-server-config",
+  "reviewedAt": "2026-04-13T00:35:00Z",
+  "commitId": "8f7f2e3",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation provides JSON config parsing, lazy startup, health checks, and reconnection logic. However, there is a critical bug: environment variables from config are parsed but never passed to the spawned MCP server process.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/mcp.rs",
+        "line": 150,
+        "severity": "blocking",
+        "description": "Environment variables in McpServerConfig.env are never applied when spawning the server process. McpClient::connect() calls tokio::process::Command::new() and .args() but never calls .envs() or .env(). The env HashMap is parsed and stored but silently ignored at runtime."
+      },
+      {
+        "file": "crates/swell-tools/src/mcp_config.rs",
+        "line": 128,
+        "severity": "non_blocking",
+        "description": "Unused variable 'base_dir' computed from config_path.parent() with comment '// suppress unused warning'. This is a code smell indicating the base_dir calculation may have been intended for future use (e.g., resolving relative paths in config) but was never actually needed."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The AGENTS.md documents the expected config format for .swell/mcp_servers.json including env field, but doesn't specify whether env vars are required vs optional, or how relative command paths should be resolved. The worker correctly implemented the documented format.",
+      "evidence": "AGENTS.md shows env: {} example in MCP Configuration section"
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill SKILL.md documents ownership, borrowing, error handling, and common compiler errors but doesn't have specific guidance on tokio::process::Command environment variable handling. A worker implementing MCP client process spawning would need to know to use .envs() or .env() explicitly.",
+      "evidence": "Rust skill covers concurrency but not process spawning patterns"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The mcp-server-config feature is mostly well-implemented with 22 passing tests covering config parsing, server state management, health tracking, and reconnection. The feature correctly implements lazy startup via get_or_start_server() and health checks. However, there is a blocking bug: the `env` field in McpServerConfig is parsed from JSON but never passed to the spawned MCP server process - McpClient::connect() spawns the process without applying any environment variables."
+}

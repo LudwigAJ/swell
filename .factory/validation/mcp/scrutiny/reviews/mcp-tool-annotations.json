@@ -1,0 +1,15 @@
+{
+  "featureId": "mcp-tool-annotations",
+  "reviewedAt": "2026-04-13T00:00:00Z",
+  "commitId": "0fe50397e3736f09984168332b54137709b5ffd5",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "MCP tool behavioral annotations (readOnlyHint, destructiveHint, idempotentHint) fully implemented. ToolBehavioralHints struct in swell_core, all built-in tools implement behavioral_hints(), McpToolAnnotations in mcp.rs with risk_level_from_annotations() and permission_tier() integration. 9 annotation tests passing.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Implementation is complete and correct. All behavioral hint annotations are properly integrated with risk classification and policy engine."
+}

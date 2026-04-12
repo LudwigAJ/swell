@@ -276,7 +276,7 @@ impl HooksManager {
     pub fn with_config_path(workspace_path: PathBuf, config_path: PathBuf) -> Self {
         Self {
             config: Arc::new(RwLock::new(None)),
-            config_path: config_path,
+            config_path,
             workspace_path,
             enabled: true,
         }
