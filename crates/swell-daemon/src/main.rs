@@ -2,6 +2,7 @@ use std::sync::Arc;
 use swell_core::init_tracing;
 use swell_daemon::dashboard::{start_dashboard_server, DashboardState};
 use swell_daemon::Daemon;
+use swell_orchestrator::OrchestratorEvent;
 use tracing::info;
 
 #[tokio::main]
@@ -44,6 +45,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     tracing::info!("Event emitter closed, stopping dashboard event forwarding");
+                    break;
+                }
+            }
+        }
+    });
+
+    // Spawn task to handle OrchestratorEvent::AgentRegistered and update dashboard
+    let dashboard_for_agents = Arc::clone(&dashboard_state_for_events);
+    let orchestrator = daemon.orchestrator();
+    tokio::spawn(async move {
+        // Subscribe to orchestrator events for agent registration
+        let orch = orchestrator.lock().await;
+        let mut event_rx = orch.subscribe();
+
+        loop {
+            match event_rx.recv().await {
+                Ok(OrchestratorEvent::AgentRegistered { agent_id, role, model }) => {
+                    tracing::debug!(agent_id = %agent_id, role = ?role, model = %model, "Agent registered, updating dashboard");
+                    dashboard_for_agents.register_agent(agent_id, role, model).await;
+                }
+                Ok(_) => {
+                    // Ignore other orchestrator events for now
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    // Events dropped - continue
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("Orchestrator event channel closed, stopping agent registration forwarding");
                     break;
                 }
             }

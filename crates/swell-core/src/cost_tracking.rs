@@ -968,3 +968,90 @@ mod tests {
         assert!((total_cost - run_summary.total_cost_usd).abs() < 0.001);
     }
 }
+
+// =============================================================================
+// Global Cost Tracker for LLM Usage
+// =============================================================================
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
+
+/// Global cost data shared across all LLM backends and the dashboard.
+/// This allows tracking LLM costs from runtime call sites.
+static GLOBAL_LLM_COST_TRACKER: LazyLock<std::sync::RwLock<GlobalLlmCostData>> =
+    LazyLock::new(|| std::sync::RwLock::new(GlobalLlmCostData::new()));
+
+/// Global cost data for LLM tracking
+pub struct GlobalLlmCostData {
+    /// Total tokens used across all LLM calls
+    total_tokens: AtomicU64,
+    /// The last model used (for per-model breakdown)
+    last_model: Mutex<String>,
+}
+
+impl GlobalLlmCostData {
+    /// Create new global cost data
+    fn new() -> Self {
+        Self {
+            total_tokens: AtomicU64::new(0),
+            last_model: Mutex::new(String::new()),
+        }
+    }
+
+    /// Record tokens used by an LLM call
+    pub fn record_tokens(&self, tokens: u64, model: &str) {
+        self.total_tokens.fetch_add(tokens, Ordering::Relaxed);
+        // Note: The String assignment is done via Mutex which provides interior mutability.
+        // This is safe because:
+        // 1. The total_tokens atomic is the source of truth for cost tracking
+        // 2. The last_model is only used for display/debugging purposes
+        // 3. We use atomic token count as a guard to ensure model is only read after first write
+        if let Ok(mut last_model) = self.last_model.lock() {
+            *last_model = model.to_string();
+        }
+    }
+
+    /// Get current total tokens
+    pub fn total_tokens(&self) -> u64 {
+        self.total_tokens.load(Ordering::Relaxed)
+    }
+
+    /// Get last used model
+    pub fn last_model(&self) -> String {
+        // Use consistent read - load the atomic first, then get model if tokens > 0
+        if self.total_tokens.load(Ordering::Relaxed) > 0 {
+            if let Ok(last_model) = self.last_model.lock() {
+                last_model.clone()
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    }
+}
+
+impl Default for GlobalLlmCostData {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Record LLM cost to the global tracker.
+/// This is called by LLM backends after each successful chat() call.
+pub fn record_llm_cost(tokens_used: u64, model: &str) {
+    let global = GLOBAL_LLM_COST_TRACKER.read().unwrap();
+    global.record_tokens(tokens_used, model);
+}
+
+/// Get current total tokens from global tracker
+pub fn get_total_llm_tokens() -> u64 {
+    let global = GLOBAL_LLM_COST_TRACKER.read().unwrap();
+    global.total_tokens()
+}
+
+/// Get last used model from global tracker
+pub fn get_last_llm_model() -> String {
+    let global = GLOBAL_LLM_COST_TRACKER.read().unwrap();
+    global.last_model()
+}

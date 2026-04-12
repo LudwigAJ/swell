@@ -19,7 +19,8 @@ pub use audit::{
 };
 pub use cost_tracking::{
     BudgetAlert, BudgetAlertType, CostBudget, CostRecord, CostSummary, CostTracker,
-    CostTrackerError, ModelBreakdown, ModelCostInfo,
+    CostTrackerError, ModelBreakdown, ModelCostInfo, get_last_llm_model, get_total_llm_tokens,
+    record_llm_cost,
 };
 pub use dependency_graph::{DependencyGraph, DependencyQuery, GraphStats, ImpactResult};
 pub use error::SwellError;

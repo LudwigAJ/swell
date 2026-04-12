@@ -1,0 +1,63 @@
+{
+  "featureId": "observability-dashboard-api",
+  "reviewedAt": "2026-04-12T00:00:00.000Z",
+  "commitId": "2c19c98",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The Dashboard API implementation provides the HTTP/WebSocket server infrastructure but the core integration points are stub implementations - cost tracking, agent registry, and event broadcasting are all dead code paths never invoked at runtime.",
+    "issues": [
+      {
+        "file": "crates/swell-daemon/src/dashboard.rs",
+        "line": 70,
+        "severity": "blocking",
+        "description": "DashboardState::update_cost() is never called anywhere in the codebase at runtime. The cost tracking API will always return zero/nil values. The orchestrator or LLM backend must call this method when actual API calls are made, but no integration exists."
+      },
+      {
+        "file": "crates/swell-daemon/src/dashboard.rs",
+        "line": 91,
+        "severity": "blocking",
+        "description": "DashboardState::register_agent() is never called anywhere in the codebase at runtime. The /api/agents endpoint will always return an empty list. When the Orchestrator registers agents via orchestrator.register_agent(), this should propagate to the dashboard's agent registry."
+      },
+      {
+        "file": "crates/swell-daemon/src/dashboard.rs",
+        "line": 65,
+        "severity": "blocking",
+        "description": "DashboardState::broadcast_event() is never called anywhere in the codebase at runtime. WebSocket clients will connect but receive no events. The EventEmitter integration exists but no code path actually converts DaemonEvents to DashboardEvents and broadcasts them."
+      },
+      {
+        "file": "crates/swell-daemon/src/dashboard.rs",
+        "line": 230,
+        "severity": "non_blocking",
+        "description": "EventListQuery::since_sequence parameter is defined and parsed but never used in list_events handler. Events are not filtered by sequence number."
+      },
+      {
+        "file": "crates/swell-daemon/src/dashboard.rs",
+        "line": 66,
+        "severity": "non_blocking",
+        "description": "broadcast_event() uses `let _ =` to silently ignore send failures. This masks the error when the broadcast channel is closed or lagging, making debugging difficult."
+      },
+      {
+        "file": "crates/swell-daemon/src/main.rs",
+        "line": 11,
+        "severity": "non_blocking",
+        "description": "Dashboard port 3100 is hardcoded as default with SWELL_DASHBOARD_PORT env override, but this is not documented in .factory/services.yaml or AGENTS.md. Workers would not know this port is in use."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature adds a second HTTP server (port 3100) to the daemon but doesn't document the port usage in AGENTS.md's 'Off-Limits' or 'Port Range' sections. The AGENTS.md says 'Port Range: 3100-3199 reserved for future HTTP API' but this feature is the first to actually use it and no docs were added to record the actual port assignment.",
+      "evidence": "main.rs:11-13 and AGENTS.md which only says '3100-3199 reserved' without listing which ports are actually in use"
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill file covers async/tokio patterns but does not mention tower-http, axum, or WebSocket patterns. The worker encountered multiple compile errors (seen in transcript) related to axum Router/State API before getting it right. A more complete HTTP server example in the Rust skill would have helped.",
+      "evidence": "Transcript shows repeated cargo build failures with axum type errors, suggesting unfamiliarity with axum 0.7 API"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The feature creates a Dashboard API server with proper REST/WebSocket infrastructure but the three core promised capabilities are stubs: cost tracking, agent registry, and event broadcasting are defined but never invoked. The API will serve empty data. This is a structural integration gap, not a bug in the HTTP layer itself."
+}

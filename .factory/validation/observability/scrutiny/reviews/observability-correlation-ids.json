@@ -1,0 +1,61 @@
+{
+  "featureId": "observability-correlation-ids",
+  "reviewedAt": "2026-04-12T18:00:00Z",
+  "commitId": "2050da7",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation adds correlation ID types (TraceId, SpanId, CrossTaskCorrelationId, AgentSessionId, RequestId), updates ObservableEvent with all correlation fields, and provides EventStore for querying events by correlation ID. Code is well-structured with comprehensive tests covering generation, serialization, propagation, and querying.",
+    "issues": [
+      {
+        "file": "crates/swell-core/src/events.rs",
+        "line": 74,
+        "severity": "non_blocking",
+        "description": "rand_u64() for SpanId generation uses only SystemTime-based seeding without cryptographic randomness. For non-security-critical span IDs this is acceptable, but production systems should consider using rand::random() or getrandom crate for stronger randomness."
+      },
+      {
+        "file": "crates/swell-core/src/events.rs",
+        "line": 423,
+        "severity": "non_blocking",
+        "description": "EventStore uses in-memory HashMap storage without persistence. This is fine for MVP but events will be lost on process restart. No documentation about this limitation or planned persistence strategy."
+      },
+      {
+        "file": "crates/swell-core/src/events.rs",
+        "line": 265,
+        "severity": "non_blocking",
+        "description": "EventStore is exported from lib.rs but there is no integration documentation or examples showing how it should be used by other components (orchestrator, tools) to actually store and query events. The AGENTS.md observability section doesn't mention it."
+      },
+      {
+        "file": "crates/swell-core/src/events.rs",
+        "line": 115,
+        "severity": "non_blocking",
+        "description": "Correlation ID types (CrossTaskCorrelationId, AgentSessionId, RequestId) are all just UUID wrappers with no semantic enforcement. A developer could accidentally swap them. This is a convention issue rather than a bug - document which type to use in which context."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker followed Rust skill procedure correctly. Used cargo check before clippy, crate-scoped validation, proper error handling with Result types. No convention violations.",
+      "evidence": "Handoff skillFeedback.followedProcedure: true, deviations: [], transcript shows sequential cargo build → clippy → test workflow"
+    },
+    {
+      "area": "services",
+      "observation": "EventStore is a new component but is not registered in .factory/services.yaml. No documentation about its lifecycle, initialization, or how it should be accessed by other components.",
+      "evidence": "services.yaml has only swell-daemon defined. EventStore was created but no service integration was documented."
+    },
+    {
+      "area": "knowledge",
+      "observation": "opentelemetry.rs contains OtelConfig and GenAiSpanBuilder for OTel integration, but the new correlation ID code in events.rs doesn't reference or integrate with these OTel primitives. This suggests the correlation IDs and OpenTelemetry integration are parallel implementations that should be unified.",
+      "evidence": "events.rs imports from opentelemetry are not present. opentelemetry.rs doesn't reference TraceId or SpanId from events.rs."
+    },
+    {
+      "area": "conventions",
+      "observation": "trace_waterfall.rs test helper create_test_event() doesn't use the new correlation ID types (CrossTaskCorrelationId, AgentSessionId, RequestId) - it creates them via new() but doesn't test correlation ID propagation in the trace waterfall context. This means correlation IDs aren't validated in the trace waterfall integration.",
+      "evidence": "create_test_event in trace_waterfall.rs tests uses CrossTaskCorrelationId::new() but doesn't verify propagation behavior through the waterfall builder."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The observability-correlation-ids feature passes review. Implementation fully covers all expected behaviors: root_trace_id propagation, cross_task_correlation_id for multi-task flows, agent_session_id per agent, request_id for API calls, and EventStore querying by correlation ID. Code quality is good with 25 unit tests covering core functionality. Non-blocking issues are limited to: (1) SpanId randomness is not cryptographic but is adequate for tracing purposes; (2) EventStore is in-memory only with no persistence; (3) No integration documentation for EventStore usage; (4) Correlation ID types lack semantic enforcement but this is a convention issue. Worker followed Rust skill procedure correctly and verification commands passed. The most notable gap is the parallel OTel and correlation ID implementations that should potentially be unified in future work."
+}

@@ -29,34 +29,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+
 use tokio::sync::{broadcast, RwLock};
 use tokio::time::Duration;
 use uuid::Uuid;
 
 use crate::events::EventEmitter;
 use crate::server::Daemon;
-use swell_core::{AgentRole, DaemonEvent, Task, TaskState};
-
-/// Global cost tracker that LLM backends update directly.
-/// This allows DashboardState to read cost data from live LLM calls.
-static GLOBAL_COST_TRACKER: std::sync::LazyLock<RwLock<GlobalCostData>> =
-    std::sync::LazyLock::new(|| RwLock::new(GlobalCostData::default()));
-
-/// Global cost data shared across all LLM backends
-#[derive(Debug, Default)]
-pub struct GlobalCostData {
-    pub total_tokens: AtomicU64,
-    pub last_model: std::sync::LazyLock<String>,
-}
-
-impl GlobalCostData {
-    pub fn record_tokens(&self, tokens: u64, _model: &str) {
-        self.total_tokens.fetch_add(tokens, Ordering::Relaxed);
-        // Note: String assignment is not atomic but we use LazyLock for one-time init
-        // In production, you'd want a more sophisticated approach
-    }
-}
+use swell_core::{
+    get_last_llm_model, get_total_llm_tokens, AgentRole, DaemonEvent, Task, TaskState,
+};
 
 /// Dashboard API state shared across all request handlers
 #[derive(Clone)]
@@ -134,8 +116,9 @@ impl DashboardState {
     /// Sync cost data from global tracker into local cost state.
     /// Call this periodically to ensure /api/cost reflects live LLM usage.
     pub async fn sync_cost_from_global(&self) {
-        let global = GLOBAL_COST_TRACKER.read().await;
-        let total = global.total_tokens.load(Ordering::Relaxed);
+        // Use swell_core's global tracker functions (sync call in async context)
+        let total = get_total_llm_tokens();
+        let model = get_last_llm_model();
 
         // Update local cost state with global total
         let mut cost = self.cost_state.write().await;
@@ -144,12 +127,11 @@ impl DashboardState {
             cost.total_tokens = total;
             cost.last_updated = Utc::now();
             // Update per-model using last known model
-            let model = global.last_model.as_str();
             let entry = cost
                 .by_model
-                .entry(model.to_string())
+                .entry(model.clone())
                 .or_insert_with(|| ModelCost {
-                    model: model.to_string(),
+                    model: model.clone(),
                     tokens: 0,
                     estimated_cost_usd: 0.0,
                 });
@@ -159,13 +141,6 @@ impl DashboardState {
                 cost.by_model.values().map(|m| m.estimated_cost_usd).sum();
         }
     }
-}
-
-/// Record LLM cost to the global tracker.
-/// Called by LLM backends after each chat() call.
-pub async fn record_llm_cost(tokens_used: u64, model: &str) {
-    let global = GLOBAL_COST_TRACKER.read().await;
-    global.record_tokens(tokens_used, model);
 }
 
 /// Cost tracking state

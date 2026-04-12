@@ -8,7 +8,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use swell_core::{
     opentelemetry::{gen_ai, pricing, GenAiSpanExt, LatencyTracker},
-    LlmToolCall, SwellError,
+    record_llm_cost, LlmToolCall, SwellError,
 };
 use tracing::{debug, warn};
 
@@ -227,6 +227,9 @@ impl LlmBackend for AnthropicBackend {
         span.record_cost_usd(cost);
 
         span.end();
+
+        // Record cost to global tracker for dashboard integration
+        record_llm_cost(input_tokens + output_tokens, &self.model);
 
         Ok(LlmResponse {
             content,

@@ -1,0 +1,40 @@
+{
+  "featureId": "opentelemetry-full",
+  "reviewedAt": "2026-04-12T19:45:00.000Z",
+  "commitId": "aeff5ef",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The implementation provides gen_ai semantic convention attributes and cost tracking infrastructure, but the actual OTLP trace export is not implemented. The OtelConfig struct with otlp_endpoint field exists but is never instantiated or used. No TracerProvider or OTLP exporter pipeline is set up anywhere.",
+    "issues": [
+      {
+        "file": "crates/swell-core/src/opentelemetry.rs",
+        "line": 137,
+        "severity": "blocking",
+        "description": "OtelConfig struct defines otlp_endpoint field but is never instantiated or used in any initialization function. There is no tracer provider setup, no OTLP exporter pipeline, and no mechanism to actually export traces to an endpoint."
+      },
+      {
+        "file": "crates/swell-core/src/opentelemetry.rs",
+        "line": 172,
+        "severity": "blocking",
+        "description": "GenAiSpanBuilder::start_span is marked #[allow(dead_code)] and is never called from any LLM integration point. The gen_ai attributes are defined but no actual spans are being created during LLM calls. The feature cannot fulfill 'Trace export to OTLP endpoint' without actual span creation."
+      },
+      {
+        "file": "crates/swell-core/src/opentelemetry.rs",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "The module documentation promises 'GenAI semantic conventions' and mentions 'OTLP export via opentelemetry-otlp dependency with configurable endpoint' in the handoff, but the actual opentelemetry-otlp dependency usage is not present in the code. No opentelemetry_otlp import exists."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The Rust skill documents async patterns, but the transcript shows no async instrumentation code was written - only synchronous test execution. The feature claims 'Full OpenTelemetry integration' but no async span creation in LLM call paths was discovered.",
+      "evidence": "Transcript shows worker ran tests but never wrote any instrumentation code that would create spans during LLM calls. gen_ai::OPERATION_NAME etc are defined but never used in a Tracer::start() call."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - The opentelemetry-full feature is not fully implemented. While gen_ai semantic convention attributes and pricing infrastructure are in place, the OTLP trace export capability is missing. The OtelConfig struct exists but is never used, GenAiSpanBuilder::start_span is dead code, and there is no TracerProvider initialization. The handoff claims 'OTLP export via opentelemetry-otlp dependency with configurable endpoint' but no such configuration or export pipeline exists in the codebase. The commit ID aeff5ef is actually a docs commit for 'knowledge milestone user-testing synthesis' - the actual OpenTelemetry changes are in commit 0d9475a. Worker reported success based on existing tests passing, not on new instrumentation functionality."
+}
