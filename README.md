@@ -78,7 +78,7 @@ SWELL is an autonomous coding engine designed to handle software engineering tas
 
 ### Prerequisites
 
-- Rust 1.75+
+- Rust 1.94+
 - SQLite
 - Anthropic API key (for Claude integration)
 
