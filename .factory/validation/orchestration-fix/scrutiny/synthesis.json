@@ -1,0 +1,57 @@
+{
+  "milestone": "orchestration-fix",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": false,
+      "command": "cargo test --workspace",
+      "exitCode": null
+    },
+    "typecheck": {
+      "passed": false,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": null
+    },
+    "lint": {
+      "passed": false,
+      "command": "cargo clippy --workspace",
+      "exitCode": null
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedFeatures": [
+      "scrutiny-validator-orchestration-fix"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "scrutiny-validator-orchestration-fix",
+      "severity": "blocking",
+      "description": "The requested scrutiny-validator feature is not evidenced as complete: no spawned review subagents or synthesized findings were produced in the reviewed transcript."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the required evidence for validation-role features: spawned reviewer reports and synthesized JSON output must exist before marking the feature complete.",
+      "evidence": "The review found the feature transcript did not show review subagents or a synthesized scrutiny report, even though the orchestration fix itself was addressed.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "A stub comment remains in execution.rs apply_decay.",
+      "reason": "Not part of the requested scrutiny-validator feature boundary; it is a separate orchestration implementation concern."
+    },
+    {
+      "observation": "Add a service entry for scrutiny validation in services.yaml.",
+      "reason": "Ambiguous and not supported by the current validation-role workflow; no verified service schema or need was established."
+    }
+  ],
+  "previousRound": null
+}

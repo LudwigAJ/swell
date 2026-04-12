@@ -1,0 +1,44 @@
+{
+  "featureId": "scrutiny-validator-orchestration-fix",
+  "reviewedAt": "2026-04-12T00:00:00Z",
+  "commitId": "5738c46",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The fix closes the original execution-controller gap, but the scrutiny-validator feature itself appears to have been implemented against the broader orchestration codebase and not the requested validation role. It does not demonstrably spawn review subagents for each completed feature or synthesize a scrutiny report in the reviewed transcript, so the feature is incomplete.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/execution.rs",
+        "line": 225,
+        "severity": "non_blocking",
+        "description": "The `apply_decay` work remains a stub comment only; no actual invocation is wired into execution flow. This matches the prior review's note and leaves the decay integration incomplete if it is still expected by the milestone."
+      },
+      {
+        "file": ".factory/validation/orchestration/scrutiny/synthesis.json",
+        "line": 1,
+        "severity": "blocking",
+        "description": "The prior round shows the milestone depended on five feature reviews, but the current requested feature is the scrutiny validator itself. The transcript for session 4c108954-dfa6-42ea-a0b7-cfc7f6854024 only shows session start and no evidence of spawned review subagents or synthesized findings for this feature."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The orchestration crate now exports `FeatureLeadSpawner` and `value_scorer` from lib.rs, but the mission guidance does not document where validation-synthesis features should live or how they should emit review artifacts. That made it hard to verify the scrutiny-validator feature boundary from shared docs alone.",
+      "evidence": "crates/swell-orchestrator/src/lib.rs exports related orchestration internals; mission docs only describe the core orchestration MVP, not scrutiny-validator behavior."
+    },
+    {
+      "area": "services",
+      "observation": "No service entry appears to exist for the scrutiny validator workflow in `.factory/services.yaml`, despite this feature being a dedicated validation role.",
+      "evidence": "Read of `.factory/services.yaml` was requested in the worker transcript, but the current mission artifacts do not show a corresponding service definition for scrutiny validation."
+    },
+    {
+      "area": "skills",
+      "observation": "The worker transcript shows the assigned skill name was unavailable in similar orchestration tasks, causing repeated fallback to the generic Rust skill. If the scrutiny-validator feature has a custom skill/procedure, it should be documented alongside the other mission skills to avoid this ambiguity.",
+      "evidence": "Prior orchestration feature transcripts repeatedly record `rust-worker` missing and then switching to `Rust`; the current task prompt only names `scrutiny-validator` without a visible skill file in the transcript evidence."
+    }
+  ],
+  "addressesFailureFrom": "/Users/ludwigjonsson/Projects/swell/.factory/validation/orchestration/scrutiny/reviews/orch-execution-controller.json",
+  "summary": "Reviewed the fix feature and found the original orchestration execution issue was addressed, but the requested scrutiny-validator feature is not evidenced as a complete validator/synthesizer implementation in the transcript."
+}
