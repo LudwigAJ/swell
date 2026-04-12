@@ -1,0 +1,27 @@
+{
+  "milestone": "sandbox",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test -p swell-sandbox", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo clippy -p swell-sandbox -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Fixed memory size calculation bug in Firecracker configure_vm() - Firecracker API expects mebibytes directly, not bytes converted from megabytes",
+      "sourceFeature": "firecracker-sandbox"
+    }
+  ],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [],
+  "previousRound": null
+}

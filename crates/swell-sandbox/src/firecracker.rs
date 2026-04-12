@@ -405,7 +405,7 @@ impl FirecrackerSandbox {
                 "type": "instance",
                 "instance_id": self.config.vm_id,
                 "smt": false,
-                "mem_size_mib": self.config.memory_mb * 1024 * 1024,
+                "mem_size_mib": self.config.memory_mb,
                 "vcpu_count": self.config.vcpu_count
             }
         });

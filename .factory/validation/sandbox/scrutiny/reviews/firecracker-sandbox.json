@@ -1,0 +1,75 @@
+{
+  "featureId": "firecracker-sandbox",
+  "reviewedAt": "2026-04-12T22:40:00.000Z",
+  "commitId": "548fbd9",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation provides a working Firecracker microVM sandbox with KVM detection, startup metrics tracking, and <125ms SLO verification. The code compiles and tests pass. However, there are several correctness issues and dead code that should be addressed.",
+    "issues": [
+      {
+        "file": "crates/swell-sandbox/src/firecracker.rs",
+        "line": 355,
+        "severity": "blocking",
+        "description": "Bug: Memory size calculation is wrong in configure_vm(). `self.config.memory_mb * 1024 * 1024` converts megabytes to bytes, but the Firecracker API expects mebibytes (MiB). This results in a massive memory allocation request (e.g., 256 MB config becomes 268,435,456 MiB). Should be `self.config.memory_mb` directly."
+      },
+      {
+        "file": "crates/swell-sandbox/src/firecracker.rs",
+        "line": 78-91,
+        "severity": "non_blocking",
+        "description": "Dead code: `BootSourceRequest` enum is defined but never used. The code manually constructs JSON in `configure_boot_source()`. Either remove the enum or use it."
+      },
+      {
+        "file": "crates/swell-sandbox/src/firecracker.rs",
+        "line": 93-104,
+        "severity": "non_blocking",
+        "description": "Dead code: `DriveRequest` enum is defined but never used. The code manually constructs JSON in `configure_drive()`. Either remove the enum or use it."
+      },
+      {
+        "file": "crates/swell-sandbox/src/firecracker.rs",
+        "line": 106-118,
+        "severity": "non_blocking",
+        "description": "Dead code: `VmRequest` enum is defined but never used. The code manually constructs JSON. Either remove the enum or use it."
+      },
+      {
+        "file": "crates/swell-sandbox/src/firecracker.rs",
+        "line": 126-149,
+        "severity": "non_blocking",
+        "description": "Dead code: Response structs (`PartialBootTimer`, `VmResponse`, `DriveAttachmentResponse`) are defined and parsed but never used. The code just checks `if !response.is_empty() && response != \"{}\"` without parsing. Either use these structs for proper response validation or remove them."
+      },
+      {
+        "file": "crates/swell-sandbox/src/firecracker.rs",
+        "line": 460,
+        "severity": "non_blocking",
+        "description": "execute_guest_command() is a stub that returns simulated output instead of actually communicating with the guest VM via vsock or other mechanism. This is acceptable for MVP but should be documented or the stub nature made clearer."
+      },
+      {
+        "file": "crates/swell-sandbox/src/firecracker.rs",
+        "line": 475-483,
+        "severity": "non_blocking",
+        "description": "stop_vm() sends 'InstanceStart' action to halt, which is incorrect. Firecracker uses 'SendCtrlAltDel' for graceful shutdown and a separate halt command. The second API call should likely be different."
+      },
+      {
+        "file": "crates/swell-sandbox/src/firecracker.rs",
+        "line": 495,
+        "severity": "non_blocking",
+        "description": "kill_firecracker() uses `kill -9` which bypasses graceful shutdown. Should attempt graceful termination first via SIGTERM before SIGKILL."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The worker followed the Rust skill's guidance appropriately. The implementation avoids common pitfalls like Rc vs Arc, uses async_trait correctly, and handles errors with Result types instead of unwrap().",
+      "evidence": "Transcript shows careful cargo check iterations and clippy fixes for unused code warnings."
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md mentions 'Never hardcode magic numbers - always load from .swell/settings.json or environment variables.' The Firecracker config defaults include hardcoded paths like '/usr/bin/firecracker' and '/var/lib/firecracker/kernels/vmlinux.bin'. These should potentially be configurable via settings.json.",
+      "evidence": "FirecrackerConfig::default() has hardcoded firecracker_path, kernel_image, and rootfs_image paths."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The Firecracker sandbox implementation is functional and passes all tests. The implementation includes proper KVM detection for Linux-only support, startup time metrics with SLO verification, and correct implementation of the Sandbox trait. However, there is a critical bug in the memory size calculation that would cause incorrect VM configuration (unnecessarily massive memory allocation). Additionally, there is significant dead code (API request/response types) that should be cleaned up. The implementation is correct in its overall structure and approach, but the memory calculation bug needs fixing before production use."
+}
