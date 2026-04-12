@@ -23,6 +23,7 @@ pub mod hybrid;
 pub mod killswitch;
 pub mod loop_detection;
 pub mod mcp;
+pub mod mcp_lsp;
 pub mod opa_policy;
 pub mod os_sandbox;
 pub mod post_tool_hooks;
@@ -73,6 +74,12 @@ pub use loop_detection::{
     create_tool_loop_tracker, create_tool_loop_tracker_with_config, LoopDetectionConfig,
     LoopDetectionResult, LoopPattern, LoopPatternType, SharedToolLoopTracker, ToolExecution,
     ToolLoopTracker,
+};
+pub use mcp_lsp::{
+    LspBridgeManager, LspDefinitionTool, LspDiagnostic, LspDiagnosticsTool, LspDocumentSymbolsTool,
+    LspHover, LspHoverTool, LspLanguage, LspLocation, LspPosition, LspRange, LspReferencesTool,
+    LspRenameResult, LspRenameTool, LspSymbol, LspTextEdit, LspWorkspaceDiagnostics,
+    LspWorkspaceDiagnosticsTool,
 };
 pub use os_sandbox::{
     detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox,
