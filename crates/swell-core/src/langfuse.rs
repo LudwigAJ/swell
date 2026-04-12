@@ -663,7 +663,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_config_auth_header() {
+    fn test_langfuse_export_config_auth_header() {
         let config = LangfuseConfig::new(
             "https://cloud.langfuse.com",
             "pk-test-123",
@@ -681,7 +681,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trace_creation() {
+    fn test_langfuse_export_trace_creation() {
         let trace = Trace::new("test-trace");
         assert!(!trace.id.is_empty());
         assert_eq!(trace.name, Some("test-trace".to_string()));
@@ -689,7 +689,7 @@ mod tests {
     }
 
     #[test]
-    fn test_observation_creation() {
+    fn test_langfuse_export_observation_creation() {
         let trace = Trace::new("test");
         let obs = trace.new_generation("chat");
         assert_eq!(obs.trace_id, trace.id);
@@ -697,7 +697,7 @@ mod tests {
     }
 
     #[test]
-    fn test_observation_with_usage() {
+    fn test_langfuse_export_observation_with_usage() {
         let trace = Trace::new("test");
         let obs = trace
             .new_generation("chat")
@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn test_feedback_creation() {
+    fn test_langfuse_export_feedback_creation() {
         let feedback = Feedback::positive("trace-123")
             .with_category("quality")
             .with_message("Great output!");
@@ -725,7 +725,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_client_creation() {
+    async fn test_langfuse_export_client_creation() {
         let config =
             LangfuseConfig::new("https://cloud.langfuse.com", "pk-test", "sk-test", "test");
 
@@ -734,7 +734,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_feedback_client_creation() {
+    async fn test_langfuse_export_feedback_client_creation() {
         let config =
             LangfuseConfig::new("https://cloud.langfuse.com", "pk-test", "sk-test", "test");
 
@@ -743,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn test_trace_with_user_and_session() {
+    fn test_langfuse_export_trace_with_user_and_session() {
         let trace = Trace::new("test-trace")
             .with_user_id("user-123")
             .with_session_id("session-456");
@@ -753,7 +753,7 @@ mod tests {
     }
 
     #[test]
-    fn test_observation_chain() {
+    fn test_langfuse_export_observation_chain() {
         let trace = Trace::new("test");
 
         // Create parent observation
