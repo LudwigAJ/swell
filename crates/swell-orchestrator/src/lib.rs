@@ -168,7 +168,7 @@ use swell_core::{
     AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult,
 };
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 use uuid::Uuid;
 
@@ -183,6 +183,11 @@ pub enum OrchestratorEvent {
         task_id: Uuid,
         from: TaskState,
         to: TaskState,
+    },
+    AgentRegistered {
+        agent_id: AgentId,
+        role: AgentRole,
+        model: String,
     },
     AgentStarted {
         agent_id: AgentId,
@@ -203,7 +208,7 @@ pub struct Orchestrator {
     state_machine: Arc<RwLock<TaskStateMachine>>,
     agent_pool: Arc<RwLock<AgentPool>>,
     checkpoint_manager: Arc<CheckpointManager>,
-    event_sender: mpsc::UnboundedSender<OrchestratorEvent>,
+    event_sender: broadcast::Sender<OrchestratorEvent>,
     /// Manager for active FeatureLead sub-orchestrators
     feature_lead_manager: Arc<RwLock<FeatureLeadManager>>,
 }
@@ -211,7 +216,7 @@ pub struct Orchestrator {
 impl Orchestrator {
     /// Create a new orchestrator with default in-memory checkpoint store
     pub fn new() -> Self {
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = broadcast::channel(100);
         let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
         let checkpoint_manager = Arc::new(CheckpointManager::new(checkpoint_store));
 
@@ -226,7 +231,7 @@ impl Orchestrator {
 
     /// Create a new orchestrator with a custom checkpoint manager
     pub fn with_checkpoint_manager(checkpoint_manager: Arc<CheckpointManager>) -> Self {
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = broadcast::channel(100);
 
         Self {
             state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
@@ -235,6 +240,12 @@ impl Orchestrator {
             event_sender: tx,
             feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
         }
+    }
+
+    /// Subscribe to orchestrator events.
+    /// Returns a receiver that will receive all subsequent events.
+    pub fn subscribe(&self) -> broadcast::Receiver<OrchestratorEvent> {
+        self.event_sender.subscribe()
     }
 
     /// Create a new task
@@ -258,7 +269,16 @@ impl Orchestrator {
     /// Register a new agent
     pub async fn register_agent(&self, role: AgentRole, model: String) -> AgentId {
         let mut pool = self.agent_pool.write().await;
-        pool.register(role, model)
+        let agent_id = pool.register(role, model.clone());
+
+        // Emit agent registered event for dashboard integration
+        let _ = self.event_sender.send(OrchestratorEvent::AgentRegistered {
+            agent_id,
+            role,
+            model,
+        });
+
+        agent_id
     }
 
     /// Get available agent count for a role
