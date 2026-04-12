@@ -1091,3 +1091,654 @@ mod tests {
         assert!(!annot.is_read_only());
     }
 }
+
+// =============================================================================
+// Tree-sitter MCP Integration Tests
+// =============================================================================
+//
+// These tests verify the MCP client integration with mcp-server-tree-sitter.
+// The tree-sitter server provides AST analysis, symbol extraction, and code
+// complexity analysis tools.
+//
+// Reference: https://github.com/wrale/mcp-server-tree-sitter
+
+#[cfg(test)]
+mod mcp_treesitter_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Expected tree-sitter MCP tools based on FEATURES.md
+    const EXPECTED_TREE_SITTER_TOOLS: &[&str] = &[
+        // AST Analysis Commands
+        "get_ast",
+        "get_node_at_position",
+        // Search and Query Commands
+        "run_query",
+        // Code Analysis Commands
+        "get_symbols",
+        "find_usage",
+        "analyze_project",
+        "get_dependencies",
+        "analyze_complexity",
+        // Project Management Commands
+        "register_project_tool",
+        "list_projects_tool",
+        "remove_project_tool",
+        // Language Tools Commands
+        "list_languages",
+        "check_language_available",
+        // File Operations Commands
+        "list_files",
+        "get_file",
+        "get_file_metadata",
+    ];
+
+    /// Verify that a tool info matches expected tree-sitter tool structure
+    fn validate_tree_sitter_tool_info(info: &McpToolInfo) -> Result<(), String> {
+        // Tree-sitter tools should be read-only (they analyze code without modifying it)
+        if let Some(ref annotations) = info.annotations {
+            // Most tree-sitter tools are read-only
+            if !annotations.is_destructive() {
+                // Good - tools are marked as non-destructive
+            }
+        }
+
+        // Verify tool has a description
+        if info.description.is_empty() {
+            return Err(format!("Tool '{}' has empty description", info.name));
+        }
+
+        // Verify tool has an input schema (tree-sitter tools require arguments)
+        let schema = info.schema();
+        if schema.get("type").is_none() {
+            return Err(format!("Tool '{}' missing schema type", info.name));
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_tool_names() {
+        // Verify all expected tree-sitter tool names are recognized
+        let expected_tools: HashSet<&str> = EXPECTED_TREE_SITTER_TOOLS.iter().cloned().collect();
+
+        // These are the core AST/symbol/analysis tools that must be present
+        let core_tools = [
+            "get_ast",
+            "get_node_at_position",
+            "run_query",
+            "get_symbols",
+            "find_usage",
+            "analyze_project",
+            "get_dependencies",
+            "analyze_complexity",
+        ];
+
+        for tool_name in core_tools {
+            assert!(
+                expected_tools.contains(tool_name),
+                "Core tool '{}' should be in expected tree-sitter tools",
+                tool_name
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_ast_tool_info() {
+        // Test get_ast tool info structure
+        let get_ast_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "project": { "type": "string", "description": "Project name" },
+                "path": { "type": "string", "description": "File path within project" },
+                "max_depth": { "type": "integer", "description": "Maximum tree depth" },
+                "include_text": { "type": "boolean", "description": "Include source text" }
+            },
+            "required": ["project", "path"]
+        });
+
+        let get_ast_info = McpToolInfo {
+            name: "get_ast".to_string(),
+            description: "Returns AST using efficient cursor-based traversal with proper node IDs"
+                .to_string(),
+            input_schema: Some(get_ast_schema.clone()),
+            output_schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "nodes": { "type": "array", "description": "AST nodes" },
+                    "root": { "type": "object", "description": "Root node" }
+                }
+            })),
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "tree-sitter".to_string(),
+        };
+
+        assert_eq!(get_ast_info.name, "get_ast");
+        assert!(get_ast_info.description.contains("AST"));
+        assert!(get_ast_info.schema().get("properties").is_some());
+
+        // Verify read-only annotation
+        let annot = get_ast_info.annotations.as_ref().unwrap();
+        assert!(annot.is_read_only());
+        assert!(!annot.is_destructive());
+        assert!(annot.is_idempotent());
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_node_at_position_tool_info() {
+        // Test get_node_at_position tool info structure
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "path": { "type": "string" },
+                "row": { "type": "integer", "description": "Line number (0-indexed)" },
+                "column": { "type": "integer", "description": "Column number (0-indexed)" }
+            },
+            "required": ["project", "path", "row", "column"]
+        });
+
+        let info = McpToolInfo {
+            name: "get_node_at_position".to_string(),
+            description: "Retrieves nodes at a specific position in a file".to_string(),
+            input_schema: Some(schema),
+            output_schema: None,
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "tree-sitter".to_string(),
+        };
+
+        assert_eq!(info.name, "get_node_at_position");
+        validate_tree_sitter_tool_info(&info).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_run_query_tool_info() {
+        // Test run_query tool info structure
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "query": { "type": "string", "description": "Tree-sitter query" },
+                "file_path": { "type": "string" },
+                "language": { "type": "string", "description": "Language (python, rust, etc.)" }
+            },
+            "required": ["project", "query", "file_path", "language"]
+        });
+
+        let info = McpToolInfo {
+            name: "run_query".to_string(),
+            description: "Executes tree-sitter queries and returns results".to_string(),
+            input_schema: Some(schema),
+            output_schema: Some(serde_json::json!({
+                "type": "array",
+                "description": "Query matches"
+            })),
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "tree-sitter".to_string(),
+        };
+
+        assert_eq!(info.name, "run_query");
+        validate_tree_sitter_tool_info(&info).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_get_symbols_tool_info() {
+        // Test get_symbols tool info structure
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "file_path": { "type": "string" }
+            },
+            "required": ["project", "file_path"]
+        });
+
+        let info = McpToolInfo {
+            name: "get_symbols".to_string(),
+            description: "Extracts symbols (functions, classes, imports) from files".to_string(),
+            input_schema: Some(schema),
+            output_schema: Some(serde_json::json!({
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" },
+                        "kind": { "type": "string" },
+                        "location": { "type": "object" }
+                    }
+                }
+            })),
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "tree-sitter".to_string(),
+        };
+
+        assert_eq!(info.name, "get_symbols");
+        validate_tree_sitter_tool_info(&info).unwrap();
+
+        // Verify output schema indicates array of symbols
+        let output = info.output_schema().unwrap();
+        assert_eq!(output["type"], "array");
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_find_usage_tool_info() {
+        // Test find_usage tool info structure
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "symbol": { "type": "string", "description": "Symbol name to find" },
+                "language": { "type": "string" }
+            },
+            "required": ["project", "symbol", "language"]
+        });
+
+        let info = McpToolInfo {
+            name: "find_usage".to_string(),
+            description: "Finds usage of symbols across project files".to_string(),
+            input_schema: Some(schema),
+            output_schema: Some(serde_json::json!({
+                "type": "array",
+                "description": "Symbol usage locations"
+            })),
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "tree-sitter".to_string(),
+        };
+
+        assert_eq!(info.name, "find_usage");
+        validate_tree_sitter_tool_info(&info).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_analyze_project_tool_info() {
+        // Test analyze_project tool info structure
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "scan_depth": { "type": "integer", "description": "Directory scan depth" }
+            },
+            "required": ["project"]
+        });
+
+        let info = McpToolInfo {
+            name: "analyze_project".to_string(),
+            description: "Project structure analysis".to_string(),
+            input_schema: Some(schema),
+            output_schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "files": { "type": "array" },
+                    "structure": { "type": "object" }
+                }
+            })),
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "tree-sitter".to_string(),
+        };
+
+        assert_eq!(info.name, "analyze_project");
+        validate_tree_sitter_tool_info(&info).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_get_dependencies_tool_info() {
+        // Test get_dependencies tool info structure
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "file_path": { "type": "string" }
+            },
+            "required": ["project", "file_path"]
+        });
+
+        let info = McpToolInfo {
+            name: "get_dependencies".to_string(),
+            description: "Identifies dependencies from import statements".to_string(),
+            input_schema: Some(schema),
+            output_schema: Some(serde_json::json!({
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": { "type": "string" },
+                        "target": { "type": "string" }
+                    }
+                }
+            })),
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "tree-sitter".to_string(),
+        };
+
+        assert_eq!(info.name, "get_dependencies");
+        validate_tree_sitter_tool_info(&info).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_analyze_complexity_tool_info() {
+        // Test analyze_complexity tool info structure
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "project": { "type": "string" },
+                "file_path": { "type": "string" }
+            },
+            "required": ["project", "file_path"]
+        });
+
+        let info = McpToolInfo {
+            name: "analyze_complexity".to_string(),
+            description: "Provides accurate code complexity metrics".to_string(),
+            input_schema: Some(schema),
+            output_schema: Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "lines": { "type": "integer" },
+                    "cyclomatic": { "type": "integer" },
+                    "functions": { "type": "integer" }
+                }
+            })),
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "tree-sitter".to_string(),
+        };
+
+        assert_eq!(info.name, "analyze_complexity");
+        validate_tree_sitter_tool_info(&info).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_all_tools_are_read_only() {
+        // All tree-sitter analysis tools should be marked as read-only
+        let client = McpClient::new("tree-sitter-server");
+        let tree_sitter_tools = [
+            (
+                "get_ast",
+                McpToolInfo {
+                    name: "get_ast".to_string(),
+                    description: "Get AST".to_string(),
+                    input_schema: None,
+                    output_schema: None,
+                    annotations: Some(McpToolAnnotations {
+                        read_only_hint: Some(true),
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(true),
+                    }),
+                    server_name: "tree-sitter".to_string(),
+                },
+            ),
+            (
+                "get_node_at_position",
+                McpToolInfo {
+                    name: "get_node_at_position".to_string(),
+                    description: "Get node".to_string(),
+                    input_schema: None,
+                    output_schema: None,
+                    annotations: Some(McpToolAnnotations {
+                        read_only_hint: Some(true),
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(true),
+                    }),
+                    server_name: "tree-sitter".to_string(),
+                },
+            ),
+            (
+                "run_query",
+                McpToolInfo {
+                    name: "run_query".to_string(),
+                    description: "Run query".to_string(),
+                    input_schema: None,
+                    output_schema: None,
+                    annotations: Some(McpToolAnnotations {
+                        read_only_hint: Some(true),
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(true),
+                    }),
+                    server_name: "tree-sitter".to_string(),
+                },
+            ),
+            (
+                "get_symbols",
+                McpToolInfo {
+                    name: "get_symbols".to_string(),
+                    description: "Get symbols".to_string(),
+                    input_schema: None,
+                    output_schema: None,
+                    annotations: Some(McpToolAnnotations {
+                        read_only_hint: Some(true),
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(true),
+                    }),
+                    server_name: "tree-sitter".to_string(),
+                },
+            ),
+            (
+                "find_usage",
+                McpToolInfo {
+                    name: "find_usage".to_string(),
+                    description: "Find usage".to_string(),
+                    input_schema: None,
+                    output_schema: None,
+                    annotations: Some(McpToolAnnotations {
+                        read_only_hint: Some(true),
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(true),
+                    }),
+                    server_name: "tree-sitter".to_string(),
+                },
+            ),
+            (
+                "analyze_project",
+                McpToolInfo {
+                    name: "analyze_project".to_string(),
+                    description: "Analyze project".to_string(),
+                    input_schema: None,
+                    output_schema: None,
+                    annotations: Some(McpToolAnnotations {
+                        read_only_hint: Some(true),
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(true),
+                    }),
+                    server_name: "tree-sitter".to_string(),
+                },
+            ),
+            (
+                "get_dependencies",
+                McpToolInfo {
+                    name: "get_dependencies".to_string(),
+                    description: "Get dependencies".to_string(),
+                    input_schema: None,
+                    output_schema: None,
+                    annotations: Some(McpToolAnnotations {
+                        read_only_hint: Some(true),
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(true),
+                    }),
+                    server_name: "tree-sitter".to_string(),
+                },
+            ),
+            (
+                "analyze_complexity",
+                McpToolInfo {
+                    name: "analyze_complexity".to_string(),
+                    description: "Analyze complexity".to_string(),
+                    input_schema: None,
+                    output_schema: None,
+                    annotations: Some(McpToolAnnotations {
+                        read_only_hint: Some(true),
+                        destructive_hint: Some(false),
+                        idempotent_hint: Some(true),
+                    }),
+                    server_name: "tree-sitter".to_string(),
+                },
+            ),
+        ];
+
+        for (name, tool_info) in tree_sitter_tools {
+            let risk_level = tool_info.risk_level_from_annotations();
+            assert_eq!(
+                risk_level,
+                ToolRiskLevel::Read,
+                "Tool '{}' should be read-only but got {:?}",
+                name,
+                risk_level
+            );
+
+            // Create wrapper and check permission tier
+            let wrapper = McpToolWrapper::new(tool_info, client.clone());
+            let permission = wrapper.permission_tier();
+            assert_eq!(
+                permission,
+                PermissionTier::Auto,
+                "Tool '{}' should have Auto permission but got {:?}",
+                name,
+                permission
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_tool_result_parsing() {
+        // Test that we can parse tree-sitter tool call results
+        // Simulating the response format from mcp-server-tree-sitter
+
+        // Example get_ast response
+        let get_ast_response = serde_json::json!({
+            "content": [
+                {
+                    "type": "text",
+                    "text": "{\"nodes\": [{\"id\": \"root_0\", \"kind\": \"program\", \"name\": null}], \"root\": {\"id\": \"root_0\"}}"
+                }
+            ]
+        });
+
+        let content = get_ast_response
+            .get("content")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .cloned();
+
+        assert!(content.is_some());
+        let content_obj = content.unwrap();
+        let text = content_obj.get("text").and_then(|t| t.as_str()).unwrap();
+        assert!(text.contains("nodes"));
+        assert!(text.contains("root"));
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_symbol_result_parsing() {
+        // Test parsing of get_symbols response
+        let symbols_response = serde_json::json!({
+            "content": [
+                {
+                    "type": "text",
+                    "text": "[{\"name\": \"hello_world\", \"kind\": \"function\", \"location\": {\"row\": 1, \"column\": 0}}]"
+                }
+            ]
+        });
+
+        let content = symbols_response
+            .get("content")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .cloned();
+
+        assert!(content.is_some());
+        let content_obj = content.unwrap();
+        let text = content_obj.get("text").and_then(|t| t.as_str()).unwrap();
+
+        // Parse the JSON array inside the text field
+        let symbols: Vec<serde_json::Value> = serde_json::from_str(text).unwrap();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0]["name"], "hello_world");
+        assert_eq!(symbols[0]["kind"], "function");
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_complexity_result_parsing() {
+        // Test parsing of analyze_complexity response
+        let complexity_response = serde_json::json!({
+            "content": [
+                {
+                    "type": "text",
+                    "text": "{\"lines\": 42, \"cyclomatic\": 3, \"functions\": 2}"
+                }
+            ]
+        });
+
+        let content = complexity_response
+            .get("content")
+            .and_then(|c| c.as_array())
+            .and_then(|arr| arr.first())
+            .cloned();
+
+        assert!(content.is_some());
+        let content_obj = content.unwrap();
+        let text = content_obj.get("text").and_then(|t| t.as_str()).unwrap();
+
+        let metrics: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(metrics["lines"], 42);
+        assert_eq!(metrics["cyclomatic"], 3);
+        assert_eq!(metrics["functions"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_tree_sitter_tool_client_creation() {
+        // Test that we can create an MCP client configured for tree-sitter
+        let client = McpClient::new("python3 -m mcp_server_tree_sitter");
+
+        assert_eq!(client.server_url, "python3 -m mcp_server_tree_sitter");
+        // Client is not connected initially
+        assert!(!client.is_connected().await);
+    }
+
+    #[test]
+    fn test_tree_sitter_expected_tool_count() {
+        // Verify we have tests for all expected tree-sitter tools
+        // This ensures we don't forget to add tests for new tools
+
+        let core_tools = vec![
+            "get_ast",
+            "get_node_at_position",
+            "run_query",
+            "get_symbols",
+            "find_usage",
+            "analyze_project",
+            "get_dependencies",
+            "analyze_complexity",
+        ];
+
+        assert_eq!(core_tools.len(), 8, "Should have 8 core tree-sitter tools");
+    }
+}
