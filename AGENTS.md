@@ -154,24 +154,20 @@ All configurable values are in `.swell/` folder:
 
 ## Build, Test, and Development
 
-### Build
+### Default Validation Scope
+```bash
+cargo check -p <crate>
+cargo build -p <crate>
+cargo test -p <crate> -- --test-threads=4
+cargo clippy -p <crate> -- -D warnings
+```
+
+Use crate-scoped validation by default for the directly affected package. Use `-- --test-threads=1` only for stateful, flaky, or explicitly serial tests. Reserve workspace-wide `cargo build/test/clippy` for explicit full-repo validation, cross-crate changes, or final release gates.
+
+### Workspace-wide Validation (Opt-in)
 ```bash
 cargo build --workspace
-```
-
-### Run Tests
-```bash
 cargo test --workspace
-```
-
-### Run Specific Crate Tests
-```bash
-cargo test -p swell-orchestrator
-cargo test -p swell-memory
-```
-
-### Lint
-```bash
 cargo clippy --workspace -- -D warnings
 ```
 

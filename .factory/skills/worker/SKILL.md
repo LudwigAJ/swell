@@ -17,8 +17,11 @@ This skill defines how worker agents implement features for the SWELL Rust codeb
    - Import from `swell_core` using `../swell-core`
 
 3. **Test the implementation**
-   - Run `cargo test -p <crate>` for the affected crate
-   - Run `cargo clippy --workspace` to catch issues
+   - Run `cargo check -p <crate>` or `cargo build -p <crate>` for the affected crate as needed
+   - Run `cargo test -p <crate> -- --test-threads=4` for the affected crate by default
+   - Use `-- --test-threads=1` only for stateful, flaky, or explicitly serial tests
+   - Run `cargo clippy -p <crate> -- -D warnings` for the affected crate
+   - Broaden to workspace-wide validation only when the task touches multiple crates or explicitly requires milestone/full-repo validation
    - Fix any warnings/errors
 
 4. **Verify against contract**

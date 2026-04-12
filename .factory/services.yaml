@@ -1,9 +1,12 @@
 commands:
   install: cargo build --workspace
-  typecheck: cargo clippy --workspace -- -D warnings
-  build: cargo build --workspace
-  test: cargo test --workspace
-  lint: cargo clippy --workspace
+  typecheck: cargo clippy -p <package> -- -D warnings
+  build: cargo build -p <package>
+  test: cargo test -p <package> -- --test-threads=4
+  lint: cargo clippy -p <package>
+  workspace-build: cargo build --workspace
+  workspace-test: cargo test --workspace
+  workspace-typecheck: cargo clippy --workspace -- -D warnings
   run-daemon: cargo run --bin swell-daemon
   run-cli: cargo run --bin swell
 

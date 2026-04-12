@@ -54,8 +54,9 @@ For MVP, sequential testing is sufficient. No parallel validators needed.
 ## Manual Testing Checklist
 
 1. **Build & Test**
-   - [ ] `cargo build --workspace` succeeds
-   - [ ] `cargo test --workspace` passes
+   - [ ] `cargo check -p <affected-crate>` or `cargo build -p <affected-crate>` succeeds
+   - [ ] `cargo test -p <affected-crate> -- --test-threads=4` passes
+   - [ ] Use workspace-wide build/test only for explicit cross-crate or full-pipeline validation
 
 2. **Daemon Lifecycle**
    - [ ] Start daemon: `cargo run --bin swell-daemon`
