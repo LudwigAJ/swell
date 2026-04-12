@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod circuit_breaker;
 pub mod cost_tracking;
+pub mod dependency_graph;
 pub mod error;
 pub mod events;
 pub mod kill_switch;
@@ -9,6 +10,7 @@ pub mod opentelemetry;
 pub mod trace_waterfall;
 pub mod tracing_json;
 pub mod traits;
+pub mod treesitter;
 pub mod types;
 
 pub use audit::{
@@ -19,6 +21,7 @@ pub use cost_tracking::{
     BudgetAlert, BudgetAlertType, CostBudget, CostRecord, CostSummary, CostTracker,
     CostTrackerError, ModelBreakdown, ModelCostInfo,
 };
+pub use dependency_graph::{DependencyGraph, DependencyQuery, GraphStats, ImpactResult};
 pub use error::SwellError;
 pub use events::{
     AgentSessionId, CrossTaskCorrelationId, EventStore, ObservableEvent, Outcome, RequestId,

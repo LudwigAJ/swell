@@ -17,6 +17,7 @@
 
 use crate::{AgentId, AgentRole, Plan, SwellError, Task, TaskState};
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::any::Any;
 use uuid::Uuid;
 
@@ -395,7 +396,8 @@ pub struct KgNode {
 }
 
 /// Types of nodes in the knowledge graph
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum KgNodeType {
     File,
     Function,
@@ -404,10 +406,12 @@ pub enum KgNodeType {
     Module,
     Type,
     Import,
+    Variable,
+    Test,
 }
 
 /// An edge in the knowledge graph
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KgEdge {
     pub id: Uuid,
     pub source: Uuid,
@@ -416,7 +420,8 @@ pub struct KgEdge {
 }
 
 /// Types of relationships between nodes
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum KgRelation {
     Calls,
     InheritsFrom,
@@ -424,6 +429,7 @@ pub enum KgRelation {
     DependsOn,
     Contains,
     HasType,
+    Tests,
 }
 
 /// Graph traversal query
@@ -435,7 +441,7 @@ pub struct KgTraversal {
     pub direction: KgDirection,
 }
 
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KgDirection {
     Outgoing,
     Incoming,
