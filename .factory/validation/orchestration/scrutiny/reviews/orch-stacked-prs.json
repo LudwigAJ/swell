@@ -1,0 +1,34 @@
+{
+  "featureId": "orch-stacked-prs",
+  "reviewedAt": "2026-04-12T05:40:00Z",
+  "commitId": "9c0f9ab9f7bcc42736aace7b595aa02de8a01019",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The stacked PRs implementation is comprehensive and well-structured. It provides PR stack management with configurable size limits (default 200 max, 20 min), dependency tracking between PRs in a stack, and automatic splitting of large changes. All 25 unit tests pass. The implementation correctly sorts high-risk files first for early review.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/stacked_prs.rs",
+        "line": 358,
+        "severity": "non_blocking",
+        "description": "PrFileChange.line_count is not validated against actual content.lines().count(). It's stored as provided by caller ('Approximate line count' per comment), which could lead to inconsistency if caller miscalculates. This is acceptable since the API consumer is expected to provide accurate counts, but worth noting."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/stacked_prs.rs",
+        "line": 157,
+        "severity": "non_blocking",
+        "description": "In split_changes_into_prs, the else branch that handles small PRs (< min_pr_lines) keeps adding changes to current_pr_changes but also updates current_pr_lines. This means the 'small PR' gets accumulated into the next PR. Logic is correct but could be clearer with a comment."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The workerSessionIds array was empty in features.json for this feature, indicating no handoff/transcript was created via the normal agent workflow. The implementation was committed directly (9c0f9ab). This suggests the feature may have been implemented without going through the standard scrutiny validation workflow, or the handoff wasn't recorded.",
+      "evidence": "features.json shows workerSessionIds: [] for orch-stacked-prs. No handoffs/ directory in mission dir."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-stacked-prs PASSES review. The implementation provides comprehensive PR stack management with proper size limits (200 lines default max, 20 lines min), dependency tracking between PRs, and automatic splitting of large changes. High-risk files are sorted first for early review. All 25 unit tests pass. No blocking issues found."
+}

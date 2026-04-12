@@ -1,0 +1,39 @@
+{
+  "featureId": "orch-decay-function",
+  "reviewedAt": "2026-04-12T05:17:00Z",
+  "commitId": null,
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": false,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The apply_decay function exists in backlog.rs but appears to predate the orch-decay-function feature request. No git commit or worker session correlates with this feature. The decay function implementation itself is logically correct but the test (test_decay_function) does not demonstrate actual auto-approval functionality working.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/backlog.rs",
+        "line": 363,
+        "severity": "blocking",
+        "description": "test_decay_function test does not validate actual auto-approval. It creates a SpecGap item with priority_score=3 and expects 0 auto-approved items even at 100% completion (threshold 5). This confirms the decay raises threshold but never demonstrates an item actually getting auto-approved. The test verifies threshold INCREASES but not that the decay function accomplishes its stated goal of auto-approving items at appropriate thresholds."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/backlog.rs",
+        "line": 363,
+        "severity": "non_blocking",
+        "description": "The apply_decay function implementation is logically sound: completion_ratio (0.0-1.0) maps to additional_threshold (0-+2), raising the auto-approve threshold. However, the test setup never creates an item with priority_score high enough to be auto-approved at any threshold level, making it impossible to verify the decay function actually works as intended."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature 'orch-decay-function' appears in features.json with status 'pending' and empty workerSessionIds, indicating no worker session was ever assigned. This is anomalous - either the feature was never started, or its implementation pre-existed the feature request.",
+      "evidence": "features.json shows workerSessionIds: [], status: 'pending' for orch-decay-function. Git log shows no commit for this feature."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The apply_decay function exists in backlog.rs with no evidence of integration into the orchestrator execution flow. The feature description requires 'Track runtime progress' and 'enforce increasingly strict validation' but there's no evidence apply_decay is called anywhere in the orchestrator during task execution.",
+      "evidence": "Grep for 'apply_decay' in crates/swell-orchestrator/src/ shows only the backlog.rs definition and test calls. No other module calls this function."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL: The orch-decay-function feature is not actually implemented as a distinct feature. The apply_decay function exists in backlog.rs but predates this feature request. No worker session was assigned, no commit was made for this feature. The existing decay implementation is logically correct but lacks: (1) test coverage demonstrating actual auto-approval at raised thresholds, (2) integration into the orchestrator execution flow to actually track runtime progress."
+}

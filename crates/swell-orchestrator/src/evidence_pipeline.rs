@@ -454,7 +454,9 @@ impl EvidencePipeline {
                     // IDF component
                     let idf = ((self.total_docs as f64 + 1.0) / df).ln();
 
-                    let entry = chunk_scores.entry(*chunk_id).or_insert((0.0, MatchType::Keyword));
+                    let entry = chunk_scores
+                        .entry(*chunk_id)
+                        .or_insert((0.0, MatchType::Keyword));
                     entry.0 += idf;
                     if entry.1 == MatchType::Semantic {
                         entry.1 = MatchType::Hybrid;
@@ -480,7 +482,11 @@ impl EvidencePipeline {
             .collect();
 
         // Sort by score descending
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Limit results
         results.truncate(query.limit);
@@ -500,7 +506,8 @@ impl EvidencePipeline {
 
             // Boost for recency
             if boost_factors.recency_boost {
-                let age_hours = (Utc::now() - result.chunk.provenance.fetched_at).num_hours() as f64;
+                let age_hours =
+                    (Utc::now() - result.chunk.provenance.fetched_at).num_hours() as f64;
                 let recency_boost = (1.0 / (1.0 + age_hours / 24.0)) * 0.2; // Max 0.2 boost for very recent
                 new_score += recency_boost;
             }
@@ -524,7 +531,11 @@ impl EvidencePipeline {
         }
 
         // Re-sort by new scores
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 
     /// Process fetched content end-to-end
@@ -536,7 +547,13 @@ impl EvidencePipeline {
         publication_date: Option<DateTime<Utc>>,
         content: String,
     ) -> EvidenceSource {
-        let chunks = self.chunk_content(url.clone(), title.clone(), fetched_at, publication_date, content);
+        let chunks = self.chunk_content(
+            url.clone(),
+            title.clone(),
+            fetched_at,
+            publication_date,
+            content,
+        );
         let sources = self.build_sources(chunks);
 
         // If we have exactly one source, return it
@@ -601,10 +618,10 @@ fn extract_keywords(text: &str) -> Vec<String> {
 
     // Common stop words to filter
     let stop_words: HashSet<&str> = [
-        "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her",
-        "was", "one", "our", "out", "has", "have", "been", "were", "they", "this",
-        "that", "with", "from", "your", "what", "when", "where", "which", "their",
-        "will", "would", "there", "could", "other", "into", "just", "about", "also",
+        "the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was", "one",
+        "our", "out", "has", "have", "been", "were", "they", "this", "that", "with", "from",
+        "your", "what", "when", "where", "which", "their", "will", "would", "there", "could",
+        "other", "into", "just", "about", "also",
     ]
     .iter()
     .copied()
@@ -732,7 +749,11 @@ mod tests {
             fetched_at: Utc::now(),
             publication_date: None,
             chunks: vec![],
-            keywords: vec!["rust".to_string(), "programming".to_string(), "language".to_string()],
+            keywords: vec![
+                "rust".to_string(),
+                "programming".to_string(),
+                "language".to_string(),
+            ],
         };
 
         let source2 = EvidenceSource {

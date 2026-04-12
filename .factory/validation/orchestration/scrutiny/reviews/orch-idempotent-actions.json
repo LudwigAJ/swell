@@ -1,0 +1,46 @@
+{
+  "featureId": "orch-idempotent-actions",
+  "reviewedAt": "2026-04-12T00:00:00Z",
+  "commitId": "c6d8a33a5d28249151ec725779ffd882049a43df",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The idempotent actions implementation provides core idempotent action design with safe retry semantics and deduplication handling. The implementation includes IdempotentAction trait, ActionDeduplicator for preventing concurrent execution, ActionKey for unique identification, ActionStatus tracking, execute_idempotent() helper with exponential backoff, and IdempotentClosure wrapper. 31 tests pass covering all functionality. However, there is a dead code issue and some design inconsistencies noted below.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/idempotent_actions.rs",
+        "line": 457,
+        "severity": "non_blocking",
+        "description": "Dead code: `DuplicateAction::AlreadyCompleted` variant is never returned by `try_acquire()`. In `try_acquire()` at line 309-327, when status is `Completed`, the code always sets status back to `Running` and returns `Ok(ActionExecution::new(...))` instead of returning `Err(DuplicateAction::AlreadyCompleted{...})`. The `AlreadyCompleted` branch in `execute_idempotent()` (lines 492-518) is therefore unreachable."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/idempotent_actions.rs",
+        "line": 457,
+        "severity": "non_blocking",
+        "description": "Inconsistent behavior: `Completed` status is treated identically to `Failed`/`Cancelled` in `try_acquire()` - all three allow re-execution by setting status to `Running`. This means after an action completes successfully, `try_acquire` will allow it to run again (for idempotent actions). This may be intentional but is not clearly documented. Consider whether completed idempotent actions should be automatically re-executed or if the result should be cached."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/idempotent_actions.rs",
+        "line": 457,
+        "severity": "non_blocking",
+        "description": "`TrackedAction` struct does not track `completed_at` timestamp despite `DuplicateAction::AlreadyCompleted` error variant expecting `completed_at`. The `started_at` field in `AlreadyRunning` is set to `existing.created_at`, not the actual start time of the running action. This is misleading but functional since `created_at` is set when the action is first tracked."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/idempotent_actions.rs",
+        "line": 520,
+        "severity": "non_blocking",
+        "description": "Underscore prefix unused variable `_execution` at line 520 (`Ok(_execution) =>`). This is fine but could be written as `Ok(()) =>` to make the unused binding explicit."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/idempotent_actions.rs",
+        "line": 450,
+        "severity": "non_blocking",
+        "description": "The comment at line 450 says 'we return success' but the code at line 516 returns `SkippedDuplicate` for non-idempotent actions. The comment is misleading but doesn't affect functionality."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The orch-idempotent-actions feature implements idempotent action design with safe retry semantics and deduplication. All 31 tests pass and the code builds successfully. The implementation covers the expected behaviors: idempotent action trait, safe retry with exponential backoff, and deduplication handling. The main finding is dead code (`AlreadyCompleted` error variant is unreachable) but this is non-blocking as the core functionality works correctly."
+}

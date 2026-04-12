@@ -1,0 +1,52 @@
+{
+  "featureId": "orch-merge-queue",
+  "reviewedAt": "2026-04-12T10:30:00Z",
+  "commitId": "3b0268071ac36963440cb5c74f748f6d773e2e25",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation provides the merge queue abstraction with GitHub and Mergify provider interfaces. The code builds successfully and all 43 unit tests pass. Both providers are implemented as stubs for MVP - they log operations but don't make actual API calls.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/merge_queue.rs",
+        "line": 315,
+        "severity": "non_blocking",
+        "description": "GitHubMergeProvider is marked as 'stubbed for MVP' - actual GitHub API integration (POST /repos/{owner}/{repo}/pulls/{pull_number}/mergequeue) is not implemented. This may be intentional for MVP but external API integration is not functional."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/merge_queue.rs",
+        "line": 397,
+        "severity": "non_blocking",
+        "description": "MergifyProvider is also marked as 'stubbed for MVP' - actual Mergify API integration (POST /v1/queues/{queue_name}/pull_requests) is not implemented. Same as GitHub provider."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/merge_queue.rs",
+        "line": 607,
+        "severity": "non_blocking",
+        "description": "sync_with_provider() async method is a stub that does nothing: 'info!(...)' then returns Ok(()). In real implementation, this would fetch current queue state from the provider."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/merge_queue.rs",
+        "line": 1773,
+        "severity": "non_blocking",
+        "description": "Warning: unused variable 'merge_result' in test_stats_after_merge. Variable is assigned but never used."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/merge_queue.rs",
+        "line": 1778,
+        "severity": "non_blocking",
+        "description": "Warning: comparison 'stats.avg_merge_time_ms >= 0' is always true since avg_merge_time_ms is u64 (unsigned). This is a useless comparison."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The worker added merge_queue.rs but the worker-transcripts.jsonl file does not exist in the mission directory, so transcript review was not possible. Unable to verify if the worker followed proper procedures.",
+      "evidence": "Mission dir /Users/ludwigjonsson/Projects/swell/.factory/missions/67c2b690-f32a-4538-8ff8-3eb2790dc44e/ does not contain handoffs/ directory or worker-transcripts.jsonl"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The orch-merge-queue feature implements a merge queue abstraction with GitHub and Mergify provider interfaces. The code builds and all 43 tests pass. However, both GitHubMergeProvider and MergifyProvider are stubs that don't make actual API calls - they just log operations and return success. The atomic stacked PR merge logic is properly implemented in merge_stacked_atomic(). This is appropriate for an MVP but actual external API integration is not implemented yet."
+}

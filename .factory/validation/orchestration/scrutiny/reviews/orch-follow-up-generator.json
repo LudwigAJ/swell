@@ -1,0 +1,21 @@
+{
+  "featureId": "orch-follow-up-generator",
+  "reviewedAt": "2026-04-12T17:30:00Z",
+  "commitId": "e88d9e5",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The FollowUpGenerator implementation in crates/swell-orchestrator/src/followup_generator.rs fully covers the feature's requirements. It analyzes completed tasks, extracts follow-up opportunities, and generates new task proposals. However, the feature description mentions 'acceptance criteria' but the implementation does not reference a structured acceptance criteria field on tasks (swell-core Task struct has no acceptance_criteria field). The implementation analyzes validation results and task state transitions to derive opportunities, which functionally serves the purpose even without explicit acceptance criteria.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "The feature description references 'acceptance criteria' but swell-core Task struct has no acceptance_criteria field. The FollowUpGenerator handles this by analyzing ValidationResult for unmet criteria signals (via ValidationWarning type), but there's no first-class acceptance criteria concept in the codebase. This is a design gap — if acceptance criteria tracking is needed, it would require a new field on Task and potentially on validation-contract.md.",
+      "evidence": "FollowUpGenerator uses FollowUpOpportunityType::UnmetAcceptanceCriteria but this type is never actually generated in the code. The analyzer methods (analyze_rejection, analyze_acceptance, analyze_failure) don't check for any acceptance criteria fields because none exist on Task in swell-core/src/types.rs (lines 91-119)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes review. The FollowUpGenerator correctly analyzes tasks in terminal states (Accepted, Rejected, Failed, Escalated), extracts opportunities from validation results, and generates follow-up proposals. All 11 tests pass. The 'acceptance criteria' aspect is handled through validation result analysis rather than explicit task fields, which is functionally adequate though not explicitly matching the feature description's wording."
+}

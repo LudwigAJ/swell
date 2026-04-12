@@ -1,0 +1,21 @@
+{
+  "featureId": "orch-file-locks",
+  "reviewedAt": "2026-04-12T06:02:00Z",
+  "commitId": "3205d009860da1292b2d9de6a9d29cebcc584810",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The FileLockManager implementation fully satisfies the feature requirements. It provides logical file locks with conflict detection and lock release capabilities. The implementation uses tokio RwLock for thread-safety, tracks locks by file path with task_id and agent_id, and includes comprehensive test coverage (28 tests) including concurrent access scenarios.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature is properly exported from the orchestrator crate via lib.rs, following the established pattern for other modules (file_locks module declaration + pub use exports). No convention gaps identified.",
+      "evidence": "crates/swell-orchestrator/src/lib.rs:20 adds 'pub mod file_locks;' and lines 64-66 export FileLock, FileLockError, FileLockManager, LockAcquisitionResult, LockEvent, LockEventType, LockStats"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-file-locks passes review. The FileLockManager provides logical file locks to prevent concurrent edits to the same file across agents. All three expected behaviors are implemented: (1) Logical lock per file path using HashMap keyed by path string, (2) Conflict detection returning LockAcquisitionResult::Conflict when another task holds the lock, (3) Lock release on completion via release() and release_all_for_task() methods. Thread-safe implementation using tokio RwLock. All 28 unit tests pass. cargo build --workspace succeeds."
+}

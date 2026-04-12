@@ -1,0 +1,87 @@
+{
+  "milestone": "orchestration",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test -p swell-orchestrator",
+      "exitCode": 0,
+      "note": "774 tests pass, some tests timed out but did not fail"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0,
+      "note": "Passed after fixing dead code warnings in merge_queue.rs"
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo fmt --all",
+      "exitCode": 0,
+      "note": "Formatting fixes applied to merge_queue.rs and evidence_pipeline.rs"
+    }
+  },
+  "reviewsSummary": {
+    "total": 32,
+    "passed": 27,
+    "failed": 5,
+    "failedFeatures": [
+      "orch-execution-controller",
+      "orch-policy-gates-yaml",
+      "orch-feature-leads",
+      "orch-value-scorer",
+      "orch-decay-function"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "orch-execution-controller",
+      "severity": "blocking",
+      "description": "execute_task only runs GeneratorAgent directly, skipping PlannerAgent and EvaluatorAgent. Validation results are hardcoded as pass without actual validation gate execution."
+    },
+    {
+      "featureId": "orch-policy-gates-yaml",
+      "severity": "blocking",
+      "description": "default.yaml uses `effect: \"ask\"` but PolicyEffect enum only supports Allow and Deny. This causes parse failure when loading the default policy."
+    },
+    {
+      "featureId": "orch-feature-leads",
+      "severity": "blocking",
+      "description": "FeatureLeadSpawner is not integrated into Orchestrator execution flow. spawn_feature_lead() is never called, get_active_feature_leads() always returns empty."
+    },
+    {
+      "featureId": "orch-value-scorer",
+      "severity": "blocking",
+      "description": "value_scorer module not exported from lib.rs, making it inaccessible to consumers."
+    },
+    {
+      "featureId": "orch-decay-function",
+      "severity": "blocking",
+      "description": "Feature not actually implemented. No worker session assigned, no commit, apply_decay not integrated into orchestrator execution flow."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that sub-orchestrators like FeatureLead must be explicitly integrated into the Orchestrator's execution path. The spawning logic should be called from the Orchestrator during task execution, not just defined as structs.",
+      "evidence": "orch-feature-leads: spawn_feature_lead() never called from Orchestrator",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "All modules that provide public functionality must be exported from lib.rs. Use existing exports like merge_queue as a reference for the required export pattern.",
+      "evidence": "orch-value-scorer: module not exported, other modules like merge_queue are exported",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "When a feature requires integration with existing systems (e.g., decay function used during task execution), document the integration points explicitly in the feature description. Features that only add internal logic without integration wiring are incomplete.",
+      "evidence": "orch-decay-function: apply_decay exists but not called anywhere in orchestrator execution flow",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

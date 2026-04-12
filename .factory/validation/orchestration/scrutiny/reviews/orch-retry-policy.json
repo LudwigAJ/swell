@@ -1,0 +1,49 @@
+{
+  "featureId": "orch-retry-policy",
+  "reviewedAt": "2026-04-12T12:30:00Z",
+  "commitId": null,
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The retry policy feature is correctly implemented in retry_policy.rs with proper iteration-based logic for: (1) 2 retries with same agent, (2) 3rd retry with different model, (3) 4+ escalation to human. All 22 unit tests pass and the build succeeds.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/retry_policy.rs",
+        "line": 84,
+        "severity": "non_blocking",
+        "description": "The `alternative_model` field in RetryState is never populated by the orchestrator. The model switch decision returns `RetryWithDifferentModel` but the actual model switching logic (`get_next_model()` at line 99) falls back to `previous_model` if `alternative_model` is not set. This means the model switch may not actually occur unless `alternative_model` is explicitly set elsewhere. No evidence found in the codebase of who sets `alternative_model`."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 180,
+        "severity": "non_blocking",
+        "description": "The escalation logic only triggers after `EscalateToHuman` decision, but `MAX_RETRIES_BEFORE_ESCALATION = 3` means escalation occurs when iteration_count >= 3. However, the 4th retry (iteration_count=4) is when EscalateToHuman is returned. This is correct per spec but the naming could be clearer - `MAX_RETRIES_BEFORE_ESCALATION = 3` means only 3 retries before escalation, which means iterations 1, 2, 3 are retries and 4 is escalation."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md does not document the retry policy pattern (2 retries same agent, 3rd different model, 4+ escalation). Workers implementing features that interact with retry logic would not find guidance in AGENTS.md.",
+      "evidence": "Searched AGENTS.md for 'retry', 'escalat', 'model.*switch' - no matches found"
+    },
+    {
+      "area": "skills",
+      "observation": "The feature's expectedBehavior requires model switching but there's no documented skill for how to configure alternative models. The RetryState.alternative_model field exists but no code sets it.",
+      "evidence": "Grep searched entire swell-orchestrator/src for 'set_alternative_model' - only found in tests. No orchestrator code calls this method."
+    },
+    {
+      "area": "services",
+      "observation": "No gap - services.yaml correctly documents the build, test, and lint commands that are relevant to this feature.",
+      "evidence": "services.yaml contains correct commands for build and test"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The retry policy implementation is well-documented with clear comments explaining the iteration-to-decision mapping. However, the relationship between RetryState and how the orchestrator propagates model information is not documented.",
+      "evidence": "retry_policy.rs has good module-level documentation but the integration with orchestrator (how alternative_model gets set) is not explained"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The orch-retry-policy feature is PASSING. The implementation correctly handles: (1) iterations 1-2 returning RetrySameAgent, (2) iteration 3 returning RetryWithDifferentModel, (3) iteration 4+ returning EscalateToHuman. Build succeeds and all 22 tests pass. Two non-blocking issues: (1) alternative_model is never set in the codebase - the model switch decision may fall back to same model if not explicitly configured, (2) AGENTS.md doesn't document the retry policy pattern that workers should follow."
+}

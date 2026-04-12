@@ -1,0 +1,34 @@
+{
+  "featureId": "orch-task-graph",
+  "reviewedAt": "2026-04-12T00:00:00Z",
+  "commitId": null,
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "TaskGraph implementation is complete and correct. The DAG structure properly tracks dependencies with bidirectional maps, topological sort works correctly using both iterative and Kahn's algorithms, and circular dependency detection is thorough with DFS-based validation. All 25 unit tests pass.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/task_graph.rs",
+        "line": 148,
+        "severity": "non_blocking",
+        "description": "Dead code: Unused in_degree initialization loop that immediately gets overwritten. The loop `*in_degree.entry(*task_id).or_insert(0) += 0;` is a no-op since it adds 0 to 0."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/task_graph.rs",
+        "line": 201,
+        "severity": "non_blocking",
+        "description": "Dead code: First pass at in_degree initialization in topological_sort_kahn is immediately followed by a complete recalculation. The initial insert-and-add-0 loop is unnecessary."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/task_graph.rs",
+        "line": 207,
+        "severity": "non_blocking",
+        "description": "Unused variable: `let _ = task_id;` is used to suppress unused variable warning but has no effect."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-task-graph PASSES review. The TaskGraph implementation correctly provides: (1) DAG for dependency tracking via bidirectional HashMaps, (2) topological sort for execution ordering via both iterative and Kahn's algorithms, (3) circular dependency detection via would_create_cycle(), validate_no_cycles(), and transitively_depends_on(). All 25 tests pass. Only minor dead code issues found (non-blocking)."
+}

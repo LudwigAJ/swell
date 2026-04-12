@@ -1,0 +1,15 @@
+{
+  "featureId": "orch-risk-tiered-merge",
+  "reviewedAt": "2026-04-12T05:40:00Z",
+  "commitId": "3b0268071ac36963440cb5c74f748f6d773e2e25",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Risk-tiered merge feature is fully implemented with three merge strategies (AutoMerge, AutoMergeWithAiReview, HumanReview) based on task risk level and confidence score. All 25 tiered_merge tests and 43 merge_queue tests pass. Integration with merge_queue.rs is correct.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-risk-tiered-merge PASSES review. The implementation correctly provides: Low-risk tasks with confidence >= 0.7 get auto-merge; Medium-risk tasks with confidence >= 0.85 get auto-merge with AI review; High-risk tasks always require human review. All tests pass and code compiles cleanly."
+}

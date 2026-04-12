@@ -67,8 +67,8 @@ pub use backlog::{
 };
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use evidence_pipeline::{
-    ChunkProvenance, EvidencePipeline, EvidencePipelineConfig, EvidenceQuery, EvidenceResult,
-    EvidenceSource, EvidenceChunk, MatchType, RerankFactors,
+    ChunkProvenance, EvidenceChunk, EvidencePipeline, EvidencePipelineConfig, EvidenceQuery,
+    EvidenceResult, EvidenceSource, MatchType, RerankFactors,
 };
 pub use execution::ExecutionController;
 pub use feature_flag::{FeatureFlag, FeatureFlagError, FeatureFlagManager, FlagSnapshot};
@@ -97,6 +97,11 @@ pub use idempotent_actions::{
     create_deduplicator, create_deduplicator_with_window, execute_idempotent, ActionDeduplicator,
     ActionExecution, ActionKey, ActionStatus, DuplicateAction, IdempotentAction, IdempotentClosure,
     IdempotentResult, SharedDeduplicator, TrackedAction, MAX_ACTION_RETRIES,
+};
+pub use merge_queue::{
+    GitHubMergeMethod, GitHubMergeProvider, GitHubMergeQueueConfig, MergeProvider, MergeQueue,
+    MergeQueueConfig, MergeQueueEntry, MergeQueueError, MergeQueueStats, MergeResult, MergeStatus,
+    MergifyProvider, StubMergeProvider,
 };
 pub use metrics::{
     create_metrics_collector, create_metrics_collector_with_thresholds, AggregatedMetrics,
@@ -129,11 +134,6 @@ pub use soft_limits::{
 pub use stacked_prs::{
     FileChangeRisk, Pr, PrFileChange, PrStack, PrStackManager, StackedPrConfig, StackedPrError,
     DEFAULT_MAX_PR_LINES, MIN_PR_LINES,
-};
-pub use merge_queue::{
-    GitHubMergeMethod, GitHubMergeProvider, GitHubMergeQueueConfig, MergeProvider, MergeQueue,
-    MergeQueueConfig, MergeQueueEntry, MergeQueueError, MergeQueueStats, MergeResult, MergeStatus,
-    MergifyProvider, StubMergeProvider,
 };
 pub use state_machine::TaskStateMachine;
 pub use stopping_conditions::{

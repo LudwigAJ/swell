@@ -103,7 +103,10 @@ impl MergeStatus {
 
     /// Check if this is a terminal state
     pub fn is_terminal(&self) -> bool {
-        matches!(self, MergeStatus::Merged | MergeStatus::Removed | MergeStatus::Failed)
+        matches!(
+            self,
+            MergeStatus::Merged | MergeStatus::Removed | MergeStatus::Failed
+        )
     }
 
     /// Get string representation for provider API
@@ -344,10 +347,12 @@ pub trait MergeProvider: Send + Sync {
 /// GitHub merge queue provider (stubbed for MVP)
 pub struct GitHubMergeProvider {
     /// Repository identifier (owner/repo)
+    #[allow(dead_code)]
     repo: String,
     /// GitHub API token (if provided)
     token: Option<String>,
     /// Configuration
+    #[allow(dead_code)]
     config: GitHubMergeQueueConfig,
 }
 
@@ -362,8 +367,16 @@ impl GitHubMergeProvider {
     }
 
     /// Create with custom configuration
-    pub fn with_config(repo: String, token: Option<String>, config: GitHubMergeQueueConfig) -> Self {
-        Self { repo, token, config }
+    pub fn with_config(
+        repo: String,
+        token: Option<String>,
+        config: GitHubMergeQueueConfig,
+    ) -> Self {
+        Self {
+            repo,
+            token,
+            config,
+        }
     }
 
     /// Check if we have authentication
@@ -475,6 +488,7 @@ pub struct MergifyProvider {
     /// Mergify configuration token
     token: Option<String>,
     /// Platform URL
+    #[allow(dead_code)]
     platform_url: String,
     /// Queue name
     queue_name: String,
@@ -666,6 +680,7 @@ pub struct MergeQueue {
     /// Provider for merge operations
     provider: Box<dyn MergeProvider>,
     /// Stacked PR manager for atomic merges
+    #[allow(dead_code)]
     stacked_pr_manager: PrStackManager,
     /// Configuration
     config: MergeQueueConfig,
@@ -779,7 +794,9 @@ impl MergeQueue {
         );
 
         // Update queue size history
-        self.stats.queue_size_history.push(self.entries.len() as u32);
+        self.stats
+            .queue_size_history
+            .push(self.entries.len() as u32);
         if self.stats.queue_size_history.len() > 100 {
             self.stats.queue_size_history.remove(0);
         }
@@ -815,7 +832,9 @@ impl MergeQueue {
         let mut entries: Vec<_> = self.entries.values().collect();
         // Sort by priority (highest first) then by queued time
         entries.sort_by(|a, b| {
-            b.priority.cmp(&a.priority).then(a.queued_at.cmp(&b.queued_at))
+            b.priority
+                .cmp(&a.priority)
+                .then(a.queued_at.cmp(&b.queued_at))
         });
         entries
     }
@@ -931,7 +950,10 @@ impl MergeQueue {
             );
 
             // Merge all PRs in the stack in order
-            let _base_branch = stack_entries.first().map(|e| e.base_branch.clone()).unwrap_or_default();
+            let _base_branch = stack_entries
+                .first()
+                .map(|e| e.base_branch.clone())
+                .unwrap_or_default();
 
             for (i, entry) in stack_entries.iter().enumerate() {
                 if i > 0 {
@@ -944,7 +966,7 @@ impl MergeQueue {
                     );
                 }
 
-                let result = self.provider.merge_at_head(&[entry.clone()]);
+                let result = self.provider.merge_at_head(std::slice::from_ref(entry));
 
                 if let Err(e) = result {
                     // Atomic merge failed - in real implementation, we'd need rollback
@@ -1134,7 +1156,12 @@ mod tests {
 
     #[test]
     fn test_merge_queue_entry_record_merge_attempt_success() {
-        let mut entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let mut entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
 
         entry.record_merge_attempt(true, None);
 
@@ -1144,7 +1171,12 @@ mod tests {
 
     #[test]
     fn test_merge_queue_entry_record_merge_attempt_failure() {
-        let mut entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let mut entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
 
         entry.record_merge_attempt(false, Some("CI failed".to_string()));
 
@@ -1155,7 +1187,12 @@ mod tests {
 
     #[test]
     fn test_merge_queue_entry_can_be_merged() {
-        let mut entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let mut entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
 
         // Queued and checks not passed - cannot merge
         assert!(!entry.can_be_merged());
@@ -1257,14 +1294,32 @@ mod tests {
 
     #[test]
     fn test_merge_queue_add_pr_max_size() {
-        let mut queue = MergeQueue::with_config(Box::new(StubMergeProvider), MergeQueueConfig {
-            max_queue_size: 2,
-            ..Default::default()
-        });
+        let mut queue = MergeQueue::with_config(
+            Box::new(StubMergeProvider),
+            MergeQueueConfig {
+                max_queue_size: 2,
+                ..Default::default()
+            },
+        );
 
-        let entry1 = MergeQueueEntry::new("1".to_string(), "branch1".to_string(), "main".to_string(), None);
-        let entry2 = MergeQueueEntry::new("2".to_string(), "branch2".to_string(), "main".to_string(), None);
-        let entry3 = MergeQueueEntry::new("3".to_string(), "branch3".to_string(), "main".to_string(), None);
+        let entry1 = MergeQueueEntry::new(
+            "1".to_string(),
+            "branch1".to_string(),
+            "main".to_string(),
+            None,
+        );
+        let entry2 = MergeQueueEntry::new(
+            "2".to_string(),
+            "branch2".to_string(),
+            "main".to_string(),
+            None,
+        );
+        let entry3 = MergeQueueEntry::new(
+            "3".to_string(),
+            "branch3".to_string(),
+            "main".to_string(),
+            None,
+        );
 
         assert!(queue.add_pr(entry1).is_ok());
         assert!(queue.add_pr(entry2).is_ok());
@@ -1275,7 +1330,12 @@ mod tests {
     fn test_merge_queue_remove_pr() {
         let mut queue = MergeQueue::new();
 
-        let entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         queue.add_pr(entry).unwrap();
 
         let removed = queue.remove_pr("123");
@@ -1297,7 +1357,12 @@ mod tests {
     fn test_merge_queue_get_entry() {
         let mut queue = MergeQueue::new();
 
-        let entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         queue.add_pr(entry).unwrap();
 
         let retrieved = queue.get_entry("123");
@@ -1317,13 +1382,28 @@ mod tests {
     fn test_merge_queue_entries_sorted_by_priority() {
         let mut queue = MergeQueue::new();
 
-        let mut entry1 = MergeQueueEntry::new("1".to_string(), "branch1".to_string(), "main".to_string(), None);
+        let mut entry1 = MergeQueueEntry::new(
+            "1".to_string(),
+            "branch1".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry1.priority = 10;
 
-        let mut entry2 = MergeQueueEntry::new("2".to_string(), "branch2".to_string(), "main".to_string(), None);
+        let mut entry2 = MergeQueueEntry::new(
+            "2".to_string(),
+            "branch2".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry2.priority = 100;
 
-        let mut entry3 = MergeQueueEntry::new("3".to_string(), "branch3".to_string(), "main".to_string(), None);
+        let mut entry3 = MergeQueueEntry::new(
+            "3".to_string(),
+            "branch3".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry3.priority = 50;
 
         queue.add_pr(entry1).unwrap();
@@ -1342,13 +1422,28 @@ mod tests {
     fn test_merge_queue_get_head_entries() {
         let mut queue = MergeQueue::new();
 
-        let mut entry1 = MergeQueueEntry::new("1".to_string(), "branch1".to_string(), "main".to_string(), None);
+        let mut entry1 = MergeQueueEntry::new(
+            "1".to_string(),
+            "branch1".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry1.set_status(MergeStatus::Queued);
 
-        let mut entry2 = MergeQueueEntry::new("2".to_string(), "branch2".to_string(), "main".to_string(), None);
+        let mut entry2 = MergeQueueEntry::new(
+            "2".to_string(),
+            "branch2".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry2.set_status(MergeStatus::AtHead);
 
-        let mut entry3 = MergeQueueEntry::new("3".to_string(), "branch3".to_string(), "main".to_string(), None);
+        let mut entry3 = MergeQueueEntry::new(
+            "3".to_string(),
+            "branch3".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry3.set_status(MergeStatus::Merged);
 
         queue.add_pr(entry1).unwrap();
@@ -1365,7 +1460,12 @@ mod tests {
     fn test_merge_queue_merge_next() {
         let mut queue = MergeQueue::new();
 
-        let mut entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let mut entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry.set_status(MergeStatus::AtHead);
         entry.checks_passed = true;
 
@@ -1395,7 +1495,12 @@ mod tests {
     fn test_merge_queue_update_status() {
         let mut queue = MergeQueue::new();
 
-        let entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         queue.add_pr(entry).unwrap();
 
         queue.update_status("123", MergeStatus::AtHead).unwrap();
@@ -1417,7 +1522,12 @@ mod tests {
     fn test_merge_queue_cancel_pr() {
         let mut queue = MergeQueue::new();
 
-        let entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         queue.add_pr(entry).unwrap();
 
         queue.cancel_pr("123").unwrap();
@@ -1429,7 +1539,12 @@ mod tests {
     fn test_merge_queue_refresh_status() {
         let mut queue = MergeQueue::new();
 
-        let entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         queue.add_pr(entry).unwrap();
 
         let result = queue.refresh_status();
@@ -1441,7 +1556,12 @@ mod tests {
     fn test_merge_queue_stats() {
         let mut queue = MergeQueue::new();
 
-        let entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         queue.add_pr(entry).unwrap();
 
         // Trigger a merge
@@ -1505,7 +1625,12 @@ mod tests {
     fn test_merge_queue_github_provider_add_pr() {
         let mut queue = MergeQueue::with_github("owner/repo".to_string(), None);
 
-        let entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
 
         let result = queue.add_pr(entry);
 
@@ -1525,7 +1650,12 @@ mod tests {
     fn test_merge_queue_mergify_provider_add_pr() {
         let mut queue = MergeQueue::with_mergify(None, "default".to_string());
 
-        let entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
 
         let result = queue.add_pr(entry);
 
@@ -1560,7 +1690,12 @@ mod tests {
     fn test_merge_queue_is_mergeable_auto_merge() {
         let mut queue = MergeQueue::new();
 
-        let mut entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let mut entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry.set_status(MergeStatus::AtHead);
         entry.checks_passed = true;
         queue.add_pr(entry).unwrap();
@@ -1572,7 +1707,12 @@ mod tests {
     fn test_merge_queue_is_mergeable_human_review() {
         let mut queue = MergeQueue::new();
 
-        let mut entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let mut entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry.set_status(MergeStatus::AtHead);
         entry.checks_passed = true;
         queue.add_pr(entry).unwrap();
@@ -1586,12 +1726,22 @@ mod tests {
         let mut queue = MergeQueue::new();
 
         // Entry that can be merged
-        let mut entry1 = MergeQueueEntry::new("1".to_string(), "branch1".to_string(), "main".to_string(), None);
+        let mut entry1 = MergeQueueEntry::new(
+            "1".to_string(),
+            "branch1".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry1.set_status(MergeStatus::AtHead);
         entry1.checks_passed = true;
 
         // Entry that cannot be merged
-        let mut entry2 = MergeQueueEntry::new("2".to_string(), "branch2".to_string(), "main".to_string(), None);
+        let mut entry2 = MergeQueueEntry::new(
+            "2".to_string(),
+            "branch2".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry2.set_status(MergeStatus::Queued);
         entry2.checks_passed = false;
 
@@ -1610,7 +1760,12 @@ mod tests {
     fn test_merge_queue_stats_after_merge() {
         let mut queue = MergeQueue::new();
 
-        let mut entry = MergeQueueEntry::new("123".to_string(), "branch".to_string(), "main".to_string(), None);
+        let mut entry = MergeQueueEntry::new(
+            "123".to_string(),
+            "branch".to_string(),
+            "main".to_string(),
+            None,
+        );
         entry.set_status(MergeStatus::AtHead);
         entry.checks_passed = true;
         queue.add_pr(entry).unwrap();

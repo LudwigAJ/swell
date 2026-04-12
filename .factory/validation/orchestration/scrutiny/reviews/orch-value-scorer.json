@@ -1,0 +1,37 @@
+{
+  "featureId": "orch-value-scorer",
+  "reviewedAt": "2026-04-12T06:15:00Z",
+  "commitId": null,
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": false,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The value_scorer.rs implementation fully satisfies the functional requirements (1-5 scoring for spec alignment and blocking impact), but the module is not exported from the orchestrator's lib.rs and the test filter in verificationSteps is incorrect.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "severity": "blocking",
+        "description": "The value_scorer module is NOT exported from lib.rs. Compare to merge_queue which is exported at line 'pub mod merge_queue;'. Without the export, other crates cannot use ValueScorer via 'use swell_orchestrator::{ValueScorer, ...}'."
+      },
+      {
+        "file": ".factory/missions/67c2b690-f32a-4538-8ff8-3eb2790dc44e/features.json",
+        "severity": "blocking",
+        "description": "The verificationSteps specifies 'cargo test -p swell-orchestrator -- value_scorer' but tests in value_scorer.rs are defined in a #[cfg(test)] module within the source file (not a separate test file). Cargo test filter '-- value_scorer' matches test file names, not module paths. Result: 0 tests run. Should use '--lib' or a correct filter pattern."
+      },
+      {
+        "file": ".factory/missions/67c2b690-f32a-4538-8ff8-3eb2790dc44e/features.json",
+        "severity": "non_blocking",
+        "description": "The feature has empty workerSessionIds array ([]) and no handoff files in the mission directory. This is unusual - indicates the feature may have been created but not actually worked on by a worker, or the work was not persisted to the mission directory."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The skillName in features.json is 'Rust' but there's no evidence the Rust skill procedure was followed (no transcript). AGENTS.md documents available skills but the skillFeedback tracking mechanism isn't being used.",
+      "evidence": "features.json shows workerSessionIds: [] and no handoffs/ directory exists"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The value_scorer.rs implementation is correct and complete - it scores tasks 1-5 on spec alignment and blocking impact with a combined priority score. However, the feature FAILS because: (1) the module is not exported from lib.rs making it inaccessible to consumers, and (2) the verification command uses an incorrect test filter that results in 0 tests running. Both issues are blocking."
+}

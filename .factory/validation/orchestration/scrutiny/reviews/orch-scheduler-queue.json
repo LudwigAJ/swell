@@ -1,0 +1,28 @@
+{
+  "featureId": "orch-scheduler-queue",
+  "reviewedAt": "2026-04-12T00:00:00Z",
+  "commitId": "216ef38b485533b131ec0bb57f4290da149aa3de",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The scheduler implementation correctly manages a priority-based ready queue, enforces max concurrent workers (default 6, max 7), and implements fair FIFO scheduling for same-priority tasks. All 28 tests pass.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/scheduler.rs",
+        "line": 282,
+        "severity": "non_blocking",
+        "description": "The `fair_scheduling` field in Scheduler struct is stored but never used in any scheduling logic. The FIFO ordering via `enqueue_ts` is always applied regardless of this flag. This is inert code but does not cause incorrect behavior."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/scheduler.rs",
+        "line": 84,
+        "severity": "non_blocking",
+        "description": "The `#![allow(dead_code)]` attribute is used at the module level, which suppresses dead code warnings for the entire module. While the scheduler module may legitimately need this for future features, it could mask unintended dead code elsewhere."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "The orch-scheduler-queue feature passes review. Implementation correctly provides: (1) priority-based queue using BinaryHeap with custom ordering by priority base then FIFO timestamp, (2) max concurrent workers enforcement with DEFAULT_MAX_WORKERS=6 and MAX_MAX_WORKERS=7 hard limit, (3) fair scheduling via enqueue_ts for same-priority tasks. All 28 unit tests pass and the build succeeds without errors."
+}

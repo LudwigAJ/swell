@@ -1,0 +1,45 @@
+{
+  "featureId": "orch-agent-pool",
+  "reviewedAt": "2026-04-12T18:00:00Z",
+  "commitId": "c9202ac",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "AgentPool implementation correctly provides register/reserve/release/available_count operations. Thread-safety is achieved via Arc<RwLock<AgentPool>> wrapper in Orchestrator. MAX_CONCURRENT_AGENTS=6 constant is defined and used by ExecutionController.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 230,
+        "severity": "non_blocking",
+        "description": "AgentPool struct itself is not internally thread-safe (uses bare HashMap with &mut self methods). However, this is acceptable since usage is through Arc<RwLock<AgentPool>> in Orchestrator (lib.rs:323). The RwLock provides the necessary synchronization."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 55,
+        "severity": "non_blocking",
+        "description": "MAX_CONCURRENT_AGENTS=6 is defined as a constant but there is no test verifying enforcement of this limit. The value is used by ExecutionController to set max_concurrent field, but AgentPool itself doesn't enforce any capacity limit during registration."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 6036-6069,
+        "severity": "non_blocking",
+        "description": "AgentPool tests (test_agent_pool_registration, test_agent_pool_reserve, test_agent_pool_release) verify basic functionality but do not test concurrent access patterns or MAX_CONCURRENT_AGENTS enforcement."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AgentPool is designed to be used behind a RwLock wrapper (Arc<RwLock<AgentPool>>) rather than being internally thread-safe. This pattern is documented in lib.rs but not explicitly in the AgentPool code itself. Workers using AgentPool should access it through the Orchestrator's agent_pool field, not create standalone AgentPool instances.",
+      "evidence": "lib.rs:323 'agent_pool: Arc<RwLock<AgentPool>>' and usage in execution.rs shows Arc<RwLock<AgentPool>> pattern, but agents.rs AgentPool impl has no internal synchronization"
+    },
+    {
+      "area": "services",
+      "observation": "MAX_CONCURRENT_AGENTS constant is defined in lib.rs but the architecture.md in .factory/library doesn't document this constant or the ExecutionController's role in enforcing agent concurrency limits.",
+      "evidence": "MAX_CONCURRENT_AGENTS defined at lib.rs:55 but .factory/library/architecture.md doesn't mention agent concurrency limits"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "AgentPool implementation is correct and passes review. The four required operations (register/reserve/release/available_count) are properly implemented. Thread-safety is achieved via RwLock wrapper pattern. MAX_CONCURRENT_AGENTS=6 is defined and used. No blocking issues found - only minor non-blocking observations about test coverage for concurrency limits."
+}

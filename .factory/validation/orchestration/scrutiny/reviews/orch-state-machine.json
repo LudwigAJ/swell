@@ -1,0 +1,50 @@
+{
+  "featureId": "orch-state-machine",
+  "reviewedAt": "2026-04-12T06:00:00Z",
+  "commitId": "3a8c017",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "TaskStateMachine implementation covers all 8 primary states (Created→Enriched→Ready→Assigned→Executing→Validating→Accepted/Rejected) plus Failed and Escalated terminal states. All invalid transitions properly return SwellError::InvalidStateTransition. Plan attachment works via set_plan(). Iteration count increments on rejection. 25 unit tests pass. One non-blocking design observation about escalation: the state machine exposes escalate_task() but does NOT automatically call it when iteration_count reaches 3 — callers must check iteration_count and invoke escalate_task() manually.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/state_machine.rs",
+        "line": 131,
+        "severity": "non_blocking",
+        "description": "The feature description says 'escalation after 3 failures' but the state machine does NOT automatically transition to Escalated when iteration_count reaches 3. The test test_escalation_after_3_failures manually calls escalate_task() after 3 rejections. This is arguably correct separation of concerns (orchestrator decides when to escalate), but the feature description could imply automatic escalation. The state machine correctly tracks iteration_count on each rejection (line 131: task.iteration_count += 1) and exposes escalate_task() for callers to use."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/state_machine.rs",
+        "line": 171,
+        "severity": "non_blocking",
+        "description": "resume_task() infers previous state by checking validation_result.is_some() to decide between Validating and Executing. This works correctly when validation_result was set, but could mislead if validation_result persists from an earlier cycle. However, accept_task and reject_task are the only places that set validation_result, and they both clear it on subsequent transitions, so this edge case doesn't occur in practice."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/state_machine.rs",
+        "line": 208,
+        "severity": "non_blocking",
+        "description": "fail_task() has no state guard — it can be called from any state. This provides flexibility (any state can fail) but differs from pause_task() which only allows failing from Executing/Validating. If unrecoverable failures should be more constrained, fail_task() could add state guards. Current behavior is likely intentional."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The AGENTS.md states 'Use tracing for structured logging' and 'Log state transitions: info!(task_id = %id, from = %old, to = %new, \"Transition\")'. The state_machine.rs follows this convention correctly in transition_to() method in swell-core/src/types.rs. No issue found.",
+      "evidence": "crates/swell-core/src/types.rs:transition_to method logs task_id, from, to"
+    },
+    {
+      "area": "skills",
+      "observation": "The Rust skill was used but workerSessionIds is empty array, indicating this feature may have been implemented without a worker session transcript. The handoff file exists but workerSessionId in features.json is null. This is unusual and worth noting for process audit purposes.",
+      "evidence": "features.json shows workerSessionIds: [] for orch-state-machine, but handoff file 2026-04-09T01-06-25-698Z__orch-state-machine__16b428c9-6a66-4f89-9071-a6a5c3e5162e.json exists"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The feature description references '10 states' but TaskState enum actually has 12 states (Created, Enriched, Ready, Assigned, Executing, Paused, Validating, Accepted, Rejected, Failed, Escalated). The description's '10 states' likely counts the main flow without Paused, or counts the branching paths differently. This discrepancy is minor but worth noting for documentation accuracy.",
+      "evidence": "TaskState enum in crates/swell-core/src/types.rs has 12 states, feature description says 10"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "TaskStateMachine implementation PASSES review. The implementation correctly provides: (1) All state transitions for the 8-state lifecycle (Created→Enriched→Ready→Assigned→Executing→Validating→Accepted/Rejected) plus Failed/Escalated terminal states; (2) Invalid transition protection via SwellError::InvalidStateTransition on all methods; (3) Plan attachment via set_plan() method with tests verifying preservation through transitions; (4) Iteration count tracking incremented on each rejection in reject_task(); (5) Escalation capability via escalate_task() method — note this is NOT automatic but requires caller to check iteration_count and invoke escalate_task() when appropriate. 25 unit tests pass covering valid transitions, invalid transitions, plan attachment, and iteration tracking. The design correctly separates concerns between state machine (state management) and orchestrator (business logic like when to escalate)."
+}

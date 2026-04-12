@@ -1,0 +1,45 @@
+{
+  "featureId": "orch-policy-gates-yaml",
+  "reviewedAt": "2026-04-12T00:00:00Z",
+  "commitId": "4ef807b",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The policy engine implementation correctly handles YAML policy loading and deny-first semantics, but has a critical bug: the default.yaml policy file uses `effect: \"ask\"` for medium-risk operations, but PolicyEffect only supports `allow` and `deny`. This causes a parse failure when loading the default.yaml.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/policy.rs",
+        "line": 170,
+        "severity": "blocking",
+        "description": "PolicyEffect enum only has Allow and Deny variants, but .swell/policies/default.yaml uses `effect: \"ask\"` for medium-risk operations (ask-network-access, ask-system-modification). This will cause a parse error when loading default.yaml via serde_yaml."
+      },
+      {
+        "file": ".swell/policies/default.yaml",
+        "line": 26,
+        "severity": "blocking",
+        "description": "The default.yaml policy file uses `effect: \"ask\"` which is not a valid PolicyEffect variant. The policy engine will fail to load this file."
+      },
+      {
+        "file": ".swell/policies/default.yaml",
+        "line": 32,
+        "severity": "blocking",
+        "description": "The default.yaml policy file uses `effect: \"ask\"` which is not a valid PolicyEffect variant. The policy engine will fail to load this file."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The default.yaml policy file was created with `effect: \"ask\"` values, but the PolicyEffect enum was not updated to support this. This suggests a disconnect between the policy file format and the code implementation.",
+      "evidence": "default.yaml lines 26 and 32 use `effect: \"ask\"`, but policy.rs:170 only defines Allow and Deny variants"
+    },
+    {
+      "area": "skills",
+      "observation": "The skill feedback mechanism (worker-transcripts.jsonl) was not available in the mission directory, so I could not verify if the worker followed the expected Rust skill procedure.",
+      "evidence": "mission directory missing handoffs/ and worker-transcripts.jsonl files"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The orch-policy-gates-yaml feature has correct deny-first semantics and YAML loading implementation for `allow` and `deny` effects. However, it FAILS because the default.yaml policy file uses `effect: \"ask\"` for medium-risk operations, which is not supported by the PolicyEffect enum. This is a blocking bug that prevents the default policy from being loaded."
+}
