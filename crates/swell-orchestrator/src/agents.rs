@@ -19,7 +19,7 @@ use swell_tools::ToolRegistry;
 use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::search_router::SearchDepth;
+use crate::search_router::{SearchDepth, SearchRouter};
 
 // ============================================================================
 // Structured Agent Handoffs - Per agent-team-orchestration skill
@@ -2236,31 +2236,11 @@ impl ResearcherAgent {
         }
     }
 
-    /// Classify the search depth based on the query
+    /// Classify the search depth based on the query using SearchRouter
     fn classify_depth(query: &str) -> SearchDepth {
-        let query_lower = query.to_lowercase();
-
-        // Quick search indicators: exact error messages, simple lookups
-        let quick_indicators = [
-            "error:",
-            "exception:",
-            "failed:",
-            "undefined",
-            "not found",
-            "cannot find",
-            "syntax error",
-        ];
-
-        // Check if query contains quick search indicators
-        let is_quick = quick_indicators
-            .iter()
-            .any(|indicator| query_lower.contains(indicator));
-
-        if is_quick || query.len() < 50 {
-            SearchDepth::Quick
-        } else {
-            SearchDepth::Deep
-        }
+        // Use SearchRouter's classify_depth for consistent behavior
+        let router = SearchRouter::new();
+        router.classify_depth(query)
     }
 
     /// Rewrite query for better search results (version-aware, precise)

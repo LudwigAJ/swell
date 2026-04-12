@@ -452,9 +452,7 @@ impl ModelRouterBuilder {
         ));
 
         // Fallback: GPT-4o (OpenAI)
-        let gpt_4o = Arc::new(
-            OpenAIBackend::new("gpt-4o", gpt_4o_api_key).unwrap(),
-        );
+        let gpt_4o = Arc::new(OpenAIBackend::new("gpt-4o", gpt_4o_api_key).unwrap());
 
         // Final fallback: Claude Haiku
         let haiku = Arc::new(AnthropicBackend::new(

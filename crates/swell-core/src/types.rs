@@ -254,6 +254,7 @@ pub enum AgentRole {
     Reviewer,
     Refactorer,
     DocWriter,
+    Researcher,
 }
 
 /// Agent definition

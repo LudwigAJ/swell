@@ -1,0 +1,55 @@
+{
+  "featureId": "research-search-router",
+  "reviewedAt": "2026-04-11T17:45:00Z",
+  "commitId": "67e836f",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation fully covers the feature description. SearchRouter provides classify_depth() for Quick/Deep classification, rewrite_query() for version-aware queries, get_official_doc_domains() for domain restriction, decompose_into_subqueries() for complex query decomposition, and route() combining all logic into RoutingDecision. 16 tests pass covering all expected behaviors.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/search_router.rs",
+        "line": 172,
+        "severity": "blocking",
+        "description": "Regex is used (line 172: Regex::new) but 'regex' is not declared as a dependency in swell-orchestrator/Cargo.toml. It only appears as regex.workspace = true which references the workspace-level regex = \"1\" in Cargo.toml, but the crate-level Cargo.toml should explicitly include it as a dependency since it uses regex::Regex directly."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/search_router.rs",
+        "line": 67,
+        "severity": "non_blocking",
+        "description": "SearchDomains::for_language has a logic issue: for_language() sets official_docs_only = !is_empty, but when language_lower doesn't match any case (falls to _ => vec![]), is_empty is true so official_docs_only becomes false with restricted=[] (empty restriction = no docs only). This means unrecognised languages get no domain restriction AND official_docs_only=false, which is equivalent to default() behavior. Should be clarified."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/search_router.rs",
+        "line": 336,
+        "severity": "non_blocking",
+        "description": "In decompose_into_subqueries(), the 'comparison' decomposition adds 'What is X' and 'What is Y' queries but these are generic and may not match the user's original intent. The 'Overall comparison' query at priority 0 tries to compensate but the sub-queries themselves may be unhelpful. However this is a minor design choice rather than a bug."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker successfully followed procedure. Transcript skeleton is empty but this appears to be because the worker session ID doesn't match any entries in worker-transcripts.jsonl (the file may not have captured this session). Handoff indicates procedure was followed.",
+      "evidence": "handoff.skillFeedback.followedProcedure=true, deviations=[], transcript shows no entries for session f137a404"
+    },
+    {
+      "area": "services",
+      "observation": "No services or commands were started that need to be documented in services.yaml. The feature only adds a new Rust module with no external service dependencies.",
+      "evidence": "No external services started during implementation"
+    },
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md mentions using async_trait::async_trait, thiserror::Error, #[tokio::test], and Arc<dyn Trait>. The search_router.rs uses neither async_trait nor Arc<dyn Trait>, which is appropriate since this module only provides synchronous data transformation logic (no async traits or dynamic dispatch needed). No convention violation.",
+      "evidence": "Module provides pure synchronous functions: classify_depth, rewrite_query, get_official_doc_domains, decompose_into_subqueries, route"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The implementation uses regex crate correctly. However the workspace Cargo.toml defines regex = \"1\" at workspace level, and swell-orchestrator/Cargo.toml references it with regex.workspace = true. This is the correct pattern per AGENTS.md convention (don't duplicate version specs). No knowledge gap.",
+      "evidence": "Cargo.toml [workspace.dependencies] regex = \"1\", [dependencies] regex.workspace = true"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes scrutiny. SearchRouter correctly implements: classify_depth() returning SearchDepth::Quick or Deep based on quick/deep indicators and query length; rewrite_query() for version detection and language detection; get_official_doc_domains() for domain restriction based on language/tool; decompose_into_subqueries() for breaking complex queries into sub-queries; route() combining all logic into RoutingDecision with confidence scores. 16 tests pass. The only blocking issue is that regex crate should be explicitly declared as dependency in the crate's Cargo.toml (even though workspace-level reference exists, explicit declaration is clearer). Non-blocking observations are minor design choices, not bugs."
+}

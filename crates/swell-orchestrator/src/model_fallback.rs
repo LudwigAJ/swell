@@ -169,9 +169,7 @@ mod tests {
             stop_sequences: None,
         };
 
-        let result = router
-            .route(TaskType::Coding, messages, None, config)
-            .await;
+        let result = router.route(TaskType::Coding, messages, None, config).await;
 
         // All models failed, should return error
         assert!(result.is_err());
@@ -241,14 +239,10 @@ mod tests {
             TaskType::Default,
         ] {
             let route = router.get_route(task_type);
-            assert!(
-                route.is_some(),
-                "Route for {:?} should exist",
-                task_type
-            );
+            assert!(route.is_some(), "Route for {:?} should exist", task_type);
 
             let route = route.unwrap();
-            
+
             // Verify primary model is set
             assert!(
                 !route.primary.model_name.is_empty(),
@@ -330,13 +324,13 @@ mod tests {
             .build();
 
         let route = router.get_route(TaskType::Fast).unwrap();
-        
+
         // Primary for Fast should be Haiku
         assert_eq!(route.primary.model_name, "claude-haiku-4-20250514");
-        
+
         // First fallback for Fast should be Sonnet
         assert_eq!(route.fallbacks[0].model_name, "claude-sonnet-4-20250514");
-        
+
         // Second fallback for Fast should be GPT-4o
         assert_eq!(route.fallbacks[1].model_name, "gpt-4o");
     }

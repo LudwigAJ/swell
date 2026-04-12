@@ -277,12 +277,7 @@ impl SubagentTree {
     pub fn get_children(&self, subagent_id: &Uuid) -> Vec<&Subagent> {
         self.nodes
             .get(subagent_id)
-            .map(|n| {
-                n.children
-                    .iter()
-                    .filter_map(|cid| self.get(cid))
-                    .collect()
-            })
+            .map(|n| n.children.iter().filter_map(|cid| self.get(cid)).collect())
             .unwrap_or_default()
     }
 
@@ -565,7 +560,11 @@ mod tests {
     #[test]
     fn test_subagent_new_root() {
         let task_id = Uuid::new_v4();
-        let subagent = Subagent::new_root(task_id, "Root Agent".to_string(), "Main coordinator".to_string());
+        let subagent = Subagent::new_root(
+            task_id,
+            "Root Agent".to_string(),
+            "Main coordinator".to_string(),
+        );
 
         assert_eq!(subagent.depth, 0);
         assert!(subagent.parent_id.is_none());
@@ -616,8 +615,20 @@ mod tests {
         let parent_id = Uuid::new_v4();
 
         let root = Subagent::new_root(task_id, "Root".to_string(), "".to_string());
-        let level1 = Subagent::first_level(task_id, parent_id, "L1".to_string(), "".to_string(), SpawnReason::TaskDecomposition);
-        let level2 = Subagent::second_level(task_id, parent_id, "L2".to_string(), "".to_string(), SpawnReason::TaskDecomposition);
+        let level1 = Subagent::first_level(
+            task_id,
+            parent_id,
+            "L1".to_string(),
+            "".to_string(),
+            SpawnReason::TaskDecomposition,
+        );
+        let level2 = Subagent::second_level(
+            task_id,
+            parent_id,
+            "L2".to_string(),
+            "".to_string(),
+            SpawnReason::TaskDecomposition,
+        );
 
         assert!(!root.is_at_max_depth());
         assert!(!level1.is_at_max_depth());
@@ -672,8 +683,16 @@ mod tests {
         let task_id = Uuid::new_v4();
         let other_task_id = Uuid::new_v4();
 
-        tree.insert(Subagent::new_root(task_id, "Root".to_string(), "".to_string()));
-        tree.insert(Subagent::new_root(other_task_id, "Other Root".to_string(), "".to_string()));
+        tree.insert(Subagent::new_root(
+            task_id,
+            "Root".to_string(),
+            "".to_string(),
+        ));
+        tree.insert(Subagent::new_root(
+            other_task_id,
+            "Other Root".to_string(),
+            "".to_string(),
+        ));
 
         let all = tree.get_all_for_task(&task_id);
         assert_eq!(all.len(), 1);
@@ -707,11 +726,23 @@ mod tests {
         let root = Subagent::new_root(task_id, "Root".to_string(), "".to_string());
         tree.insert(root.clone());
 
-        let l1 = Subagent::first_level(task_id, root.id, "L1".to_string(), "".to_string(), SpawnReason::TaskDecomposition);
+        let l1 = Subagent::first_level(
+            task_id,
+            root.id,
+            "L1".to_string(),
+            "".to_string(),
+            SpawnReason::TaskDecomposition,
+        );
         let l1_id = l1.id;
         tree.insert(l1);
 
-        let l2 = Subagent::second_level(task_id, l1_id, "L2".to_string(), "".to_string(), SpawnReason::TaskDecomposition);
+        let l2 = Subagent::second_level(
+            task_id,
+            l1_id,
+            "L2".to_string(),
+            "".to_string(),
+            SpawnReason::TaskDecomposition,
+        );
         tree.insert(l2);
 
         // All should be valid (depths 0, 1, 2)
@@ -728,7 +759,11 @@ mod tests {
         let task_id = Uuid::new_v4();
 
         let root = spawner
-            .spawn_root(task_id, "Root Agent".to_string(), "Main coordinator".to_string())
+            .spawn_root(
+                task_id,
+                "Root Agent".to_string(),
+                "Main coordinator".to_string(),
+            )
             .unwrap();
 
         assert_eq!(root.depth, 0);

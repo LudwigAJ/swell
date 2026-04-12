@@ -62,9 +62,7 @@ pub enum LockAcquisitionResult {
         requested_by: Uuid,
     },
     /// Lock is already held by the same task (re-acquisition)
-    AlreadyHeld {
-        existing_lock: FileLock,
-    },
+    AlreadyHeld { existing_lock: FileLock },
 }
 
 /// Manager for file locks.
@@ -102,7 +100,7 @@ pub enum LockEventType {
     Acquired,
     Released,
     Conflict,
-   Expired,
+    Expired,
 }
 
 impl FileLockManager {
@@ -160,7 +158,12 @@ impl FileLockManager {
     /// Returns `LockAcquisitionResult::Acquired` if the lock was acquired successfully.
     /// Returns `LockAcquisitionResult::Conflict` if another task holds the lock.
     /// Returns `LockAcquisitionResult::AlreadyHeld` if the same task already holds the lock.
-    pub async fn acquire(&self, path: String, task_id: Uuid, agent_id: Option<Uuid>) -> LockAcquisitionResult {
+    pub async fn acquire(
+        &self,
+        path: String,
+        task_id: Uuid,
+        agent_id: Option<Uuid>,
+    ) -> LockAcquisitionResult {
         let mut locks = self.locks.write().await;
 
         // Check if already locked
@@ -190,7 +193,8 @@ impl FileLockManager {
                     path.clone(),
                     task_id,
                     agent_id,
-                ).await;
+                )
+                .await;
                 return LockAcquisitionResult::Conflict {
                     existing_lock: existing_lock.clone(),
                     requested_by: task_id,
@@ -209,13 +213,8 @@ impl FileLockManager {
             "File lock acquired"
         );
 
-        self.record_event(
-            LockEventType::Acquired,
-            lock.id,
-            path,
-            task_id,
-            agent_id,
-        ).await;
+        self.record_event(LockEventType::Acquired, lock.id, path, task_id, agent_id)
+            .await;
 
         LockAcquisitionResult::Acquired(lock)
     }
@@ -255,7 +254,8 @@ impl FileLockManager {
             path.to_string(),
             task_id,
             None,
-        ).await;
+        )
+        .await;
 
         Some(removed)
     }
@@ -288,7 +288,8 @@ impl FileLockManager {
                     path.clone(),
                     task_id,
                     None,
-                ).await;
+                )
+                .await;
                 released_count += 1;
             }
         }
@@ -316,7 +317,8 @@ impl FileLockManager {
             path.to_string(),
             removed.task_id,
             None,
-        ).await;
+        )
+        .await;
 
         Some(removed)
     }
@@ -339,7 +341,11 @@ impl FileLockManager {
         let locks = self.locks.read().await;
         LockStats {
             active_locks: locks.len(),
-            unique_tasks: locks.values().map(|l| l.task_id).collect::<std::collections::HashSet<_>>().len(),
+            unique_tasks: locks
+                .values()
+                .map(|l| l.task_id)
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
         }
     }
 
@@ -494,7 +500,10 @@ mod tests {
         let result2 = manager.acquire(path.clone(), task2, None).await;
 
         match result2 {
-            LockAcquisitionResult::Conflict { existing_lock, requested_by } => {
+            LockAcquisitionResult::Conflict {
+                existing_lock,
+                requested_by,
+            } => {
                 assert_eq!(existing_lock.path, path);
                 assert_eq!(existing_lock.task_id, task1);
                 assert_eq!(requested_by, task2);
@@ -766,8 +775,12 @@ mod tests {
         // Should have at least 2 events: Acquired and Released
         assert!(history.len() >= 2);
 
-        let acquired_event = history.iter().find(|e| e.event_type == LockEventType::Acquired);
-        let released_event = history.iter().find(|e| e.event_type == LockEventType::Released);
+        let acquired_event = history
+            .iter()
+            .find(|e| e.event_type == LockEventType::Acquired);
+        let released_event = history
+            .iter()
+            .find(|e| e.event_type == LockEventType::Released);
 
         assert!(acquired_event.is_some());
         assert!(released_event.is_some());
@@ -789,9 +802,7 @@ mod tests {
         let path1 = "/path/to/file.rs".to_string();
         let path2 = "/path/to/file.rs".to_string();
 
-        let handle1 = tokio::spawn(async move {
-            manager1.acquire(path1, task1, None).await
-        });
+        let handle1 = tokio::spawn(async move { manager1.acquire(path1, task1, None).await });
 
         let handle2 = tokio::spawn(async move {
             // Small delay to ensure handle1 acquires first
@@ -810,7 +821,10 @@ mod tests {
             _ => 0,
         };
 
-        assert_eq!(success_count, 1, "Expected exactly one successful acquisition");
+        assert_eq!(
+            success_count, 1,
+            "Expected exactly one successful acquisition"
+        );
     }
 
     #[tokio::test]
@@ -821,13 +835,7 @@ mod tests {
         let task_id = Uuid::new_v4();
 
         // Acquire multiple different files concurrently
-        let paths = vec![
-            "file1.rs",
-            "file2.rs",
-            "file3.rs",
-            "file4.rs",
-            "file5.rs",
-        ];
+        let paths = vec!["file1.rs", "file2.rs", "file3.rs", "file4.rs", "file5.rs"];
 
         let mut handles = Vec::new();
         for path in paths {
@@ -880,7 +888,10 @@ mod tests {
     #[test]
     fn test_file_lock_error_display() {
         let err = FileLockError::Conflict("/path/file.rs".to_string());
-        assert_eq!(err.to_string(), "Lock conflict: file '/path/file.rs' is locked by another task");
+        assert_eq!(
+            err.to_string(),
+            "Lock conflict: file '/path/file.rs' is locked by another task"
+        );
 
         let err = FileLockError::NotFound("/path/file.rs".to_string());
         assert_eq!(err.to_string(), "Lock not found for file '/path/file.rs'");

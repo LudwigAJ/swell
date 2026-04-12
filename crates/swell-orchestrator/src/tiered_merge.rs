@@ -152,7 +152,10 @@ mod tests {
     #[test]
     fn test_merge_strategy_display() {
         assert_eq!(format!("{}", MergeStrategy::AutoMerge), "AutoMerge");
-        assert_eq!(format!("{}", MergeStrategy::AutoMergeWithAiReview), "AutoMergeWithAiReview");
+        assert_eq!(
+            format!("{}", MergeStrategy::AutoMergeWithAiReview),
+            "AutoMergeWithAiReview"
+        );
         assert_eq!(format!("{}", MergeStrategy::HumanReview), "HumanReview");
     }
 
@@ -247,11 +250,8 @@ mod tests {
 
     #[test]
     fn test_merge_eligibility_eligible() {
-        let eligibility = MergeEligibility::eligible(
-            MergeStrategy::AutoMerge,
-            "All checks passed",
-            0.95,
-        );
+        let eligibility =
+            MergeEligibility::eligible(MergeStrategy::AutoMerge, "All checks passed", 0.95);
 
         assert!(eligibility.can_merge);
         assert_eq!(eligibility.strategy, MergeStrategy::AutoMerge);
@@ -305,17 +305,26 @@ mod tests {
 
     #[test]
     fn test_required_review_type_auto_merge() {
-        assert_eq!(TieredMerge::required_review_type(MergeStrategy::AutoMerge), None);
+        assert_eq!(
+            TieredMerge::required_review_type(MergeStrategy::AutoMerge),
+            None
+        );
     }
 
     #[test]
     fn test_required_review_type_ai_review() {
-        assert_eq!(TieredMerge::required_review_type(MergeStrategy::AutoMergeWithAiReview), Some("ai_review"));
+        assert_eq!(
+            TieredMerge::required_review_type(MergeStrategy::AutoMergeWithAiReview),
+            Some("ai_review")
+        );
     }
 
     #[test]
     fn test_required_review_type_human() {
-        assert_eq!(TieredMerge::required_review_type(MergeStrategy::HumanReview), Some("human_review"));
+        assert_eq!(
+            TieredMerge::required_review_type(MergeStrategy::HumanReview),
+            Some("human_review")
+        );
     }
 
     // --- Integration Tests ---
@@ -343,7 +352,10 @@ mod tests {
 
         assert!(eligibility.can_merge);
         assert_eq!(eligibility.strategy, MergeStrategy::AutoMergeWithAiReview);
-        assert_eq!(TieredMerge::required_review_type(eligibility.strategy), Some("ai_review"));
+        assert_eq!(
+            TieredMerge::required_review_type(eligibility.strategy),
+            Some("ai_review")
+        );
     }
 
     #[test]
@@ -356,6 +368,9 @@ mod tests {
 
         assert!(eligibility.can_merge);
         assert_eq!(eligibility.strategy, MergeStrategy::HumanReview);
-        assert_eq!(TieredMerge::required_review_type(eligibility.strategy), Some("human_review"));
+        assert_eq!(
+            TieredMerge::required_review_type(eligibility.strategy),
+            Some("human_review")
+        );
     }
 }
