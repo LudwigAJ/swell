@@ -1,0 +1,23 @@
+{
+  "milestone": "sandbox",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0,
+    "note": "No testable assertions for sandbox milestone - firecracker-sandbox feature has empty fulfills array"
+  },
+  "passedAssertions": [],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "notes": [
+    "Sandbox milestone contains only firecracker-sandbox feature with fulfills: []",
+    "No assertions in validation-contract.md relate to sandbox functionality",
+    "firecracker-sandbox was validated via scrutiny (cargo test -p swell-sandbox -- firecracker)",
+    "No user-facing behavioral assertions require user-testing validation for this milestone"
+  ]
+}
