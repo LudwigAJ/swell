@@ -1,0 +1,62 @@
+{
+  "milestone": "observability-fix",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test -p swell-llm && cargo test -p swell-daemon",
+      "exitCode": 0,
+      "notes": "swell-llm: 20 tests passed, swell-daemon: 60 tests passed. swell-orchestrator tests timed out on evidence_pipeline tests but those are unrelated to observability-fix features."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    },
+    "build": {
+      "passed": true,
+      "command": "cargo build --workspace",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": [
+      "observability-dashboard-api-integration-fix"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "observability-dashboard-api-integration-fix",
+      "severity": "blocking",
+      "description": "DashboardState::register_agent has zero callers beyond tests - orchestrator never subscribes to DashboardState",
+      "detail": "DashboardState never receives agent registration events from orchestrator because DashboardState::register_agent is never called from main.rs or anywhere else in the runtime code path"
+    },
+    {
+      "featureId": "observability-dashboard-api-integration-fix",
+      "severity": "blocking",
+      "description": "DashboardState::update_cost has zero callers - LLM cost data never reaches dashboard",
+      "detail": "LLM backends calculate cost via pricing::calculate_cost() and record it on OTEL spans, but never call DashboardState::update_cost(). The /api/cost endpoint will remain zero after any LLM activity."
+    },
+    {
+      "featureId": "observability-dashboard-api-integration-fix",
+      "severity": "blocking",
+      "description": "DashboardState::broadcast_event is only called in tests - no real WebSocket events",
+      "detail": "The DaemonEvent -> DashboardEvent conversion exists but no code path actually converts and broadcasts events to WebSocket clients in production runtime."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance that DashboardState integration must be verified with integration tests that exercise full runtime paths, not just unit tests that call methods directly",
+      "evidence": "Feature observability-dashboard-api-integration-fix had correct refactoring (broadcast channel) but missed wiring DashboardState subscription in main.rs",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
