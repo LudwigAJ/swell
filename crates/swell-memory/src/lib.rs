@@ -28,6 +28,14 @@ pub mod blocks;
 // Event log module - Append-only JSONL event log with schema versioning for immutable audit trail
 pub mod event_log;
 
+// Knowledge graph module - Property graph for code structure with nodes and edges
+pub mod knowledge_graph;
+
+pub use knowledge_graph::{
+    CrossReferenceResult, DependencyResult, GraphStats, KnowledgeGraphEdge, KnowledgeGraphNode,
+    KnowledgeGraphQuery, PathResult, SqliteKnowledgeGraph,
+};
+
 // Recall module - BM25 keyword search and temporal queries for conversation logs
 pub mod recall;
 
