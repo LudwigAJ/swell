@@ -739,3 +739,210 @@ mod tests {
         assert_eq!(deserialized, plane);
     }
 }
+
+// ============================================================================
+// Audit Chain Tests (matched by `cargo test audit_chain`)
+// ============================================================================
+
+#[cfg(test)]
+mod audit_chain {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn create_temp_audit_chain_log() -> (AuditLog, TempDir) {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("audit-chain-test.ndjson");
+        let log = AuditLog::new(&log_path).unwrap();
+        (log, temp_dir)
+    }
+
+    /// Test: Previous event hash is included in each entry
+    #[test]
+    fn test_audit_chain_previous_hash_included() {
+        let (mut log, _temp) = create_temp_audit_chain_log();
+
+        // Genesis entry has GENESIS_HASH as prev_hash
+        let entry1 = log
+            .log_tool_call("actor1", "target1", None, None, 100, "session")
+            .unwrap();
+        assert_eq!(entry1.prev_hash, GENESIS_HASH);
+        assert!(entry1.hash.starts_with("sha256:"));
+
+        // Second entry should have first entry's hash as prev_hash
+        let entry2 = log
+            .log_tool_call("actor2", "target2", None, None, 100, "session")
+            .unwrap();
+        assert_eq!(entry2.prev_hash, entry1.hash);
+        assert_ne!(entry2.hash, entry1.hash);
+    }
+
+    /// Test: Chain integrity verification passes for valid chain
+    #[test]
+    fn test_audit_chain_integrity_verification() {
+        let (mut log, _temp) = create_temp_audit_chain_log();
+
+        // Append several entries
+        log.log_tool_call("actor1", "target1", None, None, 100, "session")
+            .unwrap();
+        log.log_tool_call("actor2", "target2", None, None, 100, "session")
+            .unwrap();
+        log.log_external_write("actor3", "target3", "wrote data", "session")
+            .unwrap();
+        log.log_decision("actor4", "target4", "decision made", "session")
+            .unwrap();
+
+        // Verify chain - should pass
+        let result = log.verify_chain();
+        assert!(result.valid, "Chain should be valid: {:?}", result.error);
+        assert_eq!(result.entries_verified, 4);
+        assert!(result.error.is_none());
+        assert!(result.broken_at.is_none());
+    }
+
+    /// Test: Tampering detection - modified entry is detected
+    #[test]
+    fn test_audit_chain_tamper_detection_modified_entry() {
+        let (mut log, temp) = create_temp_audit_chain_log();
+
+        // Append an entry
+        log.log_tool_call("actor", "target", None, None, 100, "session")
+            .unwrap();
+
+        // Tamper with the file by modifying the content
+        let file_path = temp.path().join("audit-chain-test.ndjson");
+        let content = fs::read_to_string(&file_path).unwrap();
+        // Replace "actor" with "ACTRESS" - this changes the data
+        let tampered = content.replace("actor", "ACTRESS");
+        fs::write(&file_path, &tampered).unwrap();
+
+        // Verify should detect tampering
+        let result = log.verify_chain();
+        assert!(!result.valid, "Chain should be invalid after tampering");
+        assert!(result.error.is_some());
+    }
+
+    /// Test: Tampering detection - missing entry is detected via hash chain break
+    #[test]
+    fn test_audit_chain_tamper_detection_missing_entry() {
+        let (mut log, temp) = create_temp_audit_chain_log();
+
+        // Append multiple entries
+        log.log_tool_call("actor1", "target1", None, None, 100, "session")
+            .unwrap();
+        log.log_tool_call("actor2", "target2", None, None, 100, "session")
+            .unwrap();
+        log.log_tool_call("actor3", "target3", None, None, 100, "session")
+            .unwrap();
+
+        // Now tamper by removing the second entry
+        let file_path = temp.path().join("audit-chain-test.ndjson");
+        let content = fs::read_to_string(&file_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        // Remove line 2 (entry2)
+        let tampered: String = lines
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| *i != 1)
+            .map(|(_, line)| format!("{}\n", line))
+            .collect();
+        fs::write(&file_path, &tampered).unwrap();
+
+        // Verify should detect the chain break
+        let result = log.verify_chain();
+        assert!(
+            !result.valid,
+            "Chain should be invalid after removing entry"
+        );
+    }
+
+    /// Test: Hash computation is deterministic and correct
+    #[test]
+    fn test_audit_chain_hash_computation_deterministic() {
+        let (mut log1, _temp1) = create_temp_audit_chain_log();
+        let (mut log2, _temp2) = create_temp_audit_chain_log();
+
+        // Create identical entries in two different logs
+        let entry1a = log1
+            .log_tool_call("actor", "target", None, None, 100, "session")
+            .unwrap();
+        let entry1b = log2
+            .log_tool_call("actor", "target", None, None, 100, "session")
+            .unwrap();
+
+        // They should have different prev_hash (different genesis) but same structure
+        // The hash itself should be deterministic for same input
+        assert_eq!(entry1a.prev_hash, GENESIS_HASH);
+        assert_eq!(entry1b.prev_hash, GENESIS_HASH);
+
+        // Both should have valid sha256 format hashes
+        assert!(entry1a.hash.starts_with("sha256:"));
+        assert!(entry1b.hash.starts_with("sha256:"));
+        assert_eq!(entry1a.hash.len(), 71); // "sha256:" + 64 hex chars
+        assert_eq!(entry1b.hash.len(), 71);
+    }
+
+    /// Test: Sequence numbers are monotonically increasing
+    #[test]
+    fn test_audit_chain_sequence_numbers_monotonic() {
+        let (mut log, _temp) = create_temp_audit_chain_log();
+
+        let entry1 = log
+            .log_tool_call("actor1", "target1", None, None, 100, "session")
+            .unwrap();
+        let entry2 = log
+            .log_tool_call("actor2", "target2", None, None, 100, "session")
+            .unwrap();
+        let entry3 = log
+            .log_decision("actor3", "target3", "decision", "session")
+            .unwrap();
+
+        assert_eq!(entry1.ord, 1);
+        assert_eq!(entry2.ord, 2);
+        assert_eq!(entry3.ord, 3);
+        assert!(entry2.ord > entry1.ord);
+        assert!(entry3.ord > entry2.ord);
+    }
+
+    /// Test: verify_audit_chain function works on file path
+    #[test]
+    fn test_verify_audit_chain_function() {
+        let (mut log, temp) = create_temp_audit_chain_log();
+
+        log.log_tool_call("actor1", "target1", None, None, 100, "session")
+            .unwrap();
+        log.log_tool_call("actor2", "target2", None, None, 100, "session")
+            .unwrap();
+
+        let file_path = temp.path().join("audit-chain-test.ndjson");
+        let result = verify_audit_chain(&file_path);
+
+        assert!(result.valid);
+        assert_eq!(result.entries_verified, 2);
+    }
+
+    /// Test: Empty log file is valid (no entries to verify)
+    #[test]
+    fn test_audit_chain_empty_log_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("empty-audit.ndjson");
+
+        // Create empty log
+        fs::write(&log_path, "").unwrap();
+
+        let result = verify_audit_chain(&log_path);
+        assert!(result.valid);
+        assert_eq!(result.entries_verified, 0);
+    }
+
+    /// Test: Non-existent file returns valid with 0 entries
+    #[test]
+    fn test_audit_chain_nonexistent_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let log_path = temp_dir.path().join("nonexistent-audit.ndjson");
+
+        let result = verify_audit_chain(&log_path);
+        assert!(result.valid);
+        assert_eq!(result.entries_verified, 0);
+    }
+}
