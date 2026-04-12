@@ -22,6 +22,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let daemon = Arc::new(Daemon::new(socket_path));
     let dashboard_state = DashboardState::new(daemon.event_emitter());
 
+    // Clone for the dashboard task before moving into spawned task
+    let dashboard_state_for_events = Arc::new(dashboard_state.clone());
+
+    // Spawn event subscription task that converts daemon events to DashboardEvents
+    // and broadcasts them via the dashboard state
+    let dashboard_for_broadcast = Arc::clone(&dashboard_state_for_events);
+    let event_emitter = daemon.event_emitter();
+    tokio::spawn(async move {
+        // Subscribe to all daemon events for WebSocket broadcasting
+        let mut event_rx = event_emitter.subscribe().await;
+
+        loop {
+            match event_rx.recv().await {
+                Ok(daemon_event) => {
+                    let dashboard_event = daemon_event.into();
+                    dashboard_for_broadcast.broadcast_event(dashboard_event).await;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    // Events dropped - that's OK for dashboard, we just continue
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    tracing::info!("Event emitter closed, stopping dashboard event forwarding");
+                    break;
+                }
+            }
+        }
+    });
+
+    // Also spawn a task to sync global cost data into dashboard state periodically
+    let dashboard_for_cost = Arc::clone(&dashboard_state_for_events);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            dashboard_for_cost.sync_cost_from_global().await;
+        }
+    });
+
     // Start both servers concurrently
     let daemon_run = daemon.run();
     let dashboard_run =

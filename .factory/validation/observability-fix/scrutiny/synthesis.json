@@ -1,13 +1,13 @@
 {
   "milestone": "observability-fix",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": true,
       "command": "cargo test -p swell-llm && cargo test -p swell-daemon",
       "exitCode": 0,
-      "notes": "swell-llm: 20 tests passed, swell-daemon: 60 tests passed. swell-orchestrator tests timed out on evidence_pipeline tests but those are unrelated to observability-fix features."
+      "notes": "swell-llm: 20 tests passed, swell-daemon: 62 tests passed"
     },
     "typecheck": {
       "passed": true,
@@ -21,42 +21,34 @@
     }
   },
   "reviewsSummary": {
-    "total": 2,
-    "passed": 1,
+    "total": 1,
+    "passed": 0,
     "failed": 1,
-    "failedFeatures": [
-      "observability-dashboard-api-integration-fix"
-    ]
+    "failedFeatures": ["observability-dashboard-api-integration-fix"]
   },
   "blockingIssues": [
     {
       "featureId": "observability-dashboard-api-integration-fix",
       "severity": "blocking",
-      "description": "DashboardState::register_agent has zero callers beyond tests - orchestrator never subscribes to DashboardState",
-      "detail": "DashboardState never receives agent registration events from orchestrator because DashboardState::register_agent is never called from main.rs or anywhere else in the runtime code path"
+      "description": "GLOBAL_COST_TRACKER is never updated by LLM backends - sync_cost_from_global() has no effect",
+      "detail": "DashboardState::sync_cost_from_global() polls GLOBAL_COST_TRACKER, but no LLM backend calls record_llm_cost(). The /api/cost endpoint will always return zero after any LLM activity."
     },
     {
       "featureId": "observability-dashboard-api-integration-fix",
       "severity": "blocking",
-      "description": "DashboardState::update_cost has zero callers - LLM cost data never reaches dashboard",
-      "detail": "LLM backends calculate cost via pricing::calculate_cost() and record it on OTEL spans, but never call DashboardState::update_cost(). The /api/cost endpoint will remain zero after any LLM activity."
-    },
-    {
-      "featureId": "observability-dashboard-api-integration-fix",
-      "severity": "blocking",
-      "description": "DashboardState::broadcast_event is only called in tests - no real WebSocket events",
-      "detail": "The DaemonEvent -> DashboardEvent conversion exists but no code path actually converts and broadcasts events to WebSocket clients in production runtime."
+      "description": "DashboardState::register_agent is never called - no path from orchestrator to dashboard agent registry",
+      "detail": "Orchestrator::register_agent() emits OrchestratorEvent::AgentRegistered but this event type is not handled anywhere. There's no conversion to DashboardState::register_agent() in the runtime path. The /api/agents endpoint will always return empty list."
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Add guidance that DashboardState integration must be verified with integration tests that exercise full runtime paths, not just unit tests that call methods directly",
-      "evidence": "Feature observability-dashboard-api-integration-fix had correct refactoring (broadcast channel) but missed wiring DashboardState subscription in main.rs",
+      "suggestion": "Add guidance that event wiring between components must be verified through integration tests that exercise the full runtime path. The broadcast channel for events is correct, but the DaemonEvent to DashboardState bridge is incomplete - AgentRegistered events from the orchestrator never reach the dashboard.",
+      "evidence": "Feature observability-dashboard-api-integration-fix added runtime wiring for broadcast_event (fixed) and sync_cost_from_global (partially fixed - polling exists but GLOBAL_COST_TRACKER is never updated by LLM backends). Agent registration is still completely unwired.",
       "isSystemic": true
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": ".factory/validation/observability-fix/scrutiny/synthesis.json"
 }

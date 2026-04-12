@@ -21,7 +21,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use swell_core::{CorrelationId, DaemonEvent, Task, TaskState};
-use tokio::sync::RwLock;
+use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
 /// An event log entry that records an emitted event with metadata.
@@ -150,19 +150,48 @@ impl ImmutableEventLog {
 pub struct EventEmitter {
     /// Shared immutable event log
     log: Arc<RwLock<ImmutableEventLog>>,
+    /// Broadcast channel for real-time event subscribers
+    broadcast_tx: Arc<RwLock<Option<broadcast::Sender<DaemonEvent>>>>,
 }
 
 impl EventEmitter {
     /// Create a new event emitter with an empty log
     pub fn new() -> Self {
+        let (tx, _) = broadcast::channel(100);
         Self {
             log: Arc::new(RwLock::new(ImmutableEventLog::new())),
+            broadcast_tx: Arc::new(RwLock::new(Some(tx))),
+        }
+    }
+
+    /// Subscribe to events. Returns a receiver that will receive all subsequent events.
+    pub async fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
+        let tx = self.broadcast_tx.read().await;
+        if let Some(sender) = tx.as_ref() {
+            sender.subscribe()
+        } else {
+            // If no sender, create a channel that will never receive
+            let (tx, rx) = broadcast::channel(1);
+            tx.send(DaemonEvent::Error {
+                message: "EventEmitter shutting down".to_string(),
+                correlation_id: Uuid::nil(),
+            }).ok();
+            rx
         }
     }
 
     /// Generate a new correlation ID for tracking related events
     pub fn new_correlation_id() -> CorrelationId {
         Uuid::new_v4()
+    }
+
+    /// Broadcast an event to all subscribers
+    async fn broadcast(&self, event: &DaemonEvent) {
+        let tx = self.broadcast_tx.read().await;
+        if let Some(sender) = tx.as_ref() {
+            // Ignore send errors (subscriber lag is expected)
+            let _ = sender.send(event.clone());
+        }
     }
 
     /// Emit a TaskCreated event and record it in the log
@@ -182,6 +211,8 @@ impl EventEmitter {
             "Event: TaskCreated"
         );
 
+        drop(log);
+        self.broadcast(&event).await;
         event
     }
 
@@ -208,6 +239,8 @@ impl EventEmitter {
             "Event: TaskStateChanged"
         );
 
+        drop(log);
+        self.broadcast(&event).await;
         event
     }
 
@@ -234,6 +267,8 @@ impl EventEmitter {
             "Event: TaskProgress"
         );
 
+        drop(log);
+        self.broadcast(&event).await;
         event
     }
 
@@ -259,6 +294,8 @@ impl EventEmitter {
             "Event: TaskCompleted"
         );
 
+        drop(log);
+        self.broadcast(&event).await;
         event
     }
 
@@ -285,6 +322,8 @@ impl EventEmitter {
             "Event: TaskFailed"
         );
 
+        drop(log);
+        self.broadcast(&event).await;
         event
     }
 
@@ -304,6 +343,8 @@ impl EventEmitter {
             "Event: Error"
         );
 
+        drop(log);
+        self.broadcast(&event).await;
         event
     }
 
@@ -679,5 +720,66 @@ mod tests {
 
         assert_eq!(entries.len(), 1);
         assert!(entries[0].timestamp >= before && entries[0].timestamp <= after);
+    }
+
+    #[tokio::test]
+    async fn test_event_emitter_subscribe() {
+        let emitter = EventEmitter::new();
+        let task_id = Uuid::new_v4();
+        let correlation_id = EventEmitter::new_correlation_id();
+
+        // Subscribe before emitting
+        let mut rx = emitter.subscribe().await;
+
+        // Emit an event
+        emitter
+            .emit_task_state_changed(task_id, TaskState::Executing, correlation_id)
+            .await;
+
+        // Receive should get the event
+        let event = rx.recv().await.unwrap();
+        match event {
+            DaemonEvent::TaskStateChanged {
+                id,
+                state,
+                correlation_id: cid,
+            } => {
+                assert_eq!(id, task_id);
+                assert_eq!(state, TaskState::Executing);
+                assert_eq!(cid, correlation_id);
+            }
+            other => panic!("Expected TaskStateChanged event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_event_emitter_subscribe_multiple_receivers() {
+        let emitter = EventEmitter::new();
+        let task_id = Uuid::new_v4();
+        let correlation_id = EventEmitter::new_correlation_id();
+
+        // Subscribe multiple receivers
+        let mut rx1 = emitter.subscribe().await;
+        let mut rx2 = emitter.subscribe().await;
+
+        // Emit an event
+        emitter
+            .emit_task_state_changed(task_id, TaskState::Executing, correlation_id)
+            .await;
+
+        // Both receivers should get the event
+        let event1 = rx1.recv().await.unwrap();
+        let event2 = rx2.recv().await.unwrap();
+
+        match (&event1, &event2) {
+            (
+                DaemonEvent::TaskStateChanged { id: id1, .. },
+                DaemonEvent::TaskStateChanged { id: id2, .. },
+            ) => {
+                assert_eq!(*id1, task_id);
+                assert_eq!(*id2, task_id);
+            }
+            _ => panic!("Expected TaskStateChanged events"),
+        }
     }
 }
