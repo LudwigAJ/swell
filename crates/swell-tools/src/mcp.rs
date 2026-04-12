@@ -4,7 +4,10 @@
 //! MCP is the industry standard for AI tool integration, providing:
 //! - Tool discovery via `tools/list`
 //! - Tool execution via `tools/call`
-//! - Deferred/lazy loading support
+//! - Tool annotations: readOnlyHint, destructiveHint, idempotentHint
+//! - outputSchema support for typed results
+//! - Dynamic tool discovery via `notifications/tools/list_changed`
+//! - Capability negotiation during handshake
 //!
 //! Reference: https://modelcontextprotocol.io/
 
@@ -22,6 +25,38 @@ use uuid::Uuid;
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const JSONRPC_VERSION: &str = "2.0";
+
+/// Tool behavioral annotations as defined in the MCP spec.
+/// These provide hints about tool behavior for policy evaluation.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct McpToolAnnotations {
+    /// If true, the tool does not modify its environment
+    #[serde(default)]
+    pub read_only_hint: Option<bool>,
+    /// If true, the tool permanently destroys data
+    #[serde(default)]
+    pub destructive_hint: Option<bool>,
+    /// If true, the tool is safe to retry with the same arguments
+    #[serde(default)]
+    pub idempotent_hint: Option<bool>,
+}
+
+impl McpToolAnnotations {
+    /// Returns true if the tool appears to be read-only
+    pub fn is_read_only(&self) -> bool {
+        self.read_only_hint.unwrap_or(false)
+    }
+
+    /// Returns true if the tool appears to be destructive
+    pub fn is_destructive(&self) -> bool {
+        self.destructive_hint.unwrap_or(false)
+    }
+
+    /// Returns true if the tool appears to be idempotent
+    pub fn is_idempotent(&self) -> bool {
+        self.idempotent_hint.unwrap_or(true)
+    }
+}
 
 /// MCP client for connecting to MCP servers via stdio
 #[derive(Debug, Clone)]
@@ -130,6 +165,12 @@ pub struct McpToolInfo {
     pub description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_schema: Option<Value>,
+    /// Optional output schema for typed results (MCP November 2025 spec)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_schema: Option<Value>,
+    /// Tool behavioral annotations: readOnlyHint, destructiveHint, idempotentHint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<McpToolAnnotations>,
     pub server_name: String,
 }
 
@@ -144,6 +185,31 @@ impl McpToolInfo {
             })
         })
     }
+
+    /// Returns the JSON schema for the tool's output
+    pub fn output_schema(&self) -> Option<Value> {
+        self.output_schema.clone()
+    }
+
+    /// Returns the tool's behavioral annotations
+    pub fn annotations(&self) -> Option<&McpToolAnnotations> {
+        self.annotations.as_ref()
+    }
+
+    /// Determines the risk level based on annotations
+    pub fn risk_level_from_annotations(&self) -> ToolRiskLevel {
+        if let Some(ref annotations) = self.annotations {
+            if annotations.is_destructive() {
+                ToolRiskLevel::Destructive
+            } else if annotations.is_read_only() {
+                ToolRiskLevel::Read
+            } else {
+                ToolRiskLevel::Write
+            }
+        } else {
+            ToolRiskLevel::Write
+        }
+    }
 }
 
 /// Wrapper tool for MCP tools - implements the Tool trait
@@ -156,6 +222,16 @@ pub struct McpToolWrapper {
 impl McpToolWrapper {
     fn new(info: McpToolInfo, client: McpClient) -> Self {
         Self { info, client }
+    }
+
+    /// Returns the output schema for this tool, if specified
+    pub fn output_schema(&self) -> Option<Value> {
+        self.info.output_schema()
+    }
+
+    /// Returns the annotations for this tool, if specified
+    pub fn annotations(&self) -> Option<&McpToolAnnotations> {
+        self.info.annotations()
     }
 }
 
@@ -170,12 +246,23 @@ impl Tool for McpToolWrapper {
     }
 
     fn risk_level(&self) -> ToolRiskLevel {
-        // MCP tools default to Read - risk classification can be enhanced later
-        ToolRiskLevel::Read
+        // Use annotation-based risk classification if available
+        self.info.risk_level_from_annotations()
     }
 
     fn permission_tier(&self) -> PermissionTier {
-        PermissionTier::Ask
+        // Use annotation-based permission tier
+        if let Some(ref annotations) = self.info.annotations {
+            if annotations.is_destructive() {
+                PermissionTier::Deny
+            } else if annotations.is_read_only() {
+                PermissionTier::Auto
+            } else {
+                PermissionTier::Ask
+            }
+        } else {
+            PermissionTier::Ask
+        }
     }
 
     fn input_schema(&self) -> Value {
@@ -465,10 +552,20 @@ impl McpClient {
                     .unwrap_or("")
                     .to_string();
 
+                // Parse annotations (readOnlyHint, destructiveHint, idempotentHint)
+                let annotations = t.get("annotations").and_then(|a| {
+                    serde_json::from_value::<McpToolAnnotations>(a.clone()).ok()
+                });
+
+                // Parse outputSchema (November 2025 MCP spec)
+                let output_schema = t.get("outputSchema").cloned();
+
                 Some(McpToolInfo {
                     name,
                     description,
                     input_schema: t.get("inputSchema").cloned(),
+                    output_schema,
+                    annotations,
                     server_name: server_name.clone(),
                 })
             })
@@ -485,6 +582,31 @@ impl McpClient {
         }
 
         Ok(tools)
+    }
+
+    /// Refresh the tool cache when server announces list changes.
+    /// This handles the `notifications/tools/list_changed` notification.
+    pub async fn refresh_tools(&self) -> Result<Vec<McpToolInfo>, SwellError> {
+        info!("Refreshing MCP tools due to list change notification");
+
+        // Clear existing cache
+        {
+            let mut tools_map = self.tools.write().await;
+            tools_map.clear();
+        }
+
+        // Re-fetch all tools
+        self.list_tools().await
+    }
+
+    /// Check if the server supports tool list change notifications
+    pub async fn supports_tool_list_changes(&self) -> bool {
+        if let Some(caps) = self.get_capabilities().await {
+            // Check if the server has tools capability with list subscribed
+            caps.tools.as_ref().map(|t| t.list).unwrap_or(false)
+        } else {
+            false
+        }
     }
 
     /// List tools with deferred loading support - returns cached tools
@@ -752,11 +874,15 @@ mod tests {
             name: "test_tool".to_string(),
             description: "A test tool".to_string(),
             input_schema: None,
+            output_schema: None,
+            annotations: None,
             server_name: "test-server".to_string(),
         };
 
         let schema = info.schema();
         assert_eq!(schema["type"], "object");
+        assert!(info.output_schema().is_none());
+        assert!(info.annotations().is_none());
     }
 
     #[tokio::test]
@@ -772,10 +898,187 @@ mod tests {
             name: "test_tool".to_string(),
             description: "A test tool".to_string(),
             input_schema: Some(custom_schema.clone()),
+            output_schema: None,
+            annotations: None,
             server_name: "test-server".to_string(),
         };
 
         let schema = info.schema();
         assert_eq!(schema, custom_schema);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tool_info_with_annotations() {
+        let annotations = McpToolAnnotations {
+            read_only_hint: Some(true),
+            destructive_hint: Some(false),
+            idempotent_hint: Some(true),
+        };
+
+        let info = McpToolInfo {
+            name: "read_file".to_string(),
+            description: "Reads a file from disk".to_string(),
+            input_schema: None,
+            output_schema: None,
+            annotations: Some(annotations),
+            server_name: "test-server".to_string(),
+        };
+
+        assert!(info.annotations().is_some());
+        let annot = info.annotations().unwrap();
+        assert!(annot.is_read_only());
+        assert!(!annot.is_destructive());
+        assert!(annot.is_idempotent());
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tool_info_with_output_schema() {
+        let output_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": { "type": "string" },
+                "lines": { "type": "integer" }
+            }
+        });
+
+        let info = McpToolInfo {
+            name: "read_file".to_string(),
+            description: "Reads a file from disk".to_string(),
+            input_schema: None,
+            output_schema: Some(output_schema.clone()),
+            annotations: None,
+            server_name: "test-server".to_string(),
+        };
+
+        assert!(info.output_schema().is_some());
+        assert_eq!(info.output_schema().unwrap(), output_schema);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tool_risk_level_from_annotations() {
+        // Test read-only tool
+        let read_only_info = McpToolInfo {
+            name: "read".to_string(),
+            description: "Read-only tool".to_string(),
+            input_schema: None,
+            output_schema: None,
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "test-server".to_string(),
+        };
+        assert_eq!(read_only_info.risk_level_from_annotations(), ToolRiskLevel::Read);
+
+        // Test destructive tool
+        let destructive_info = McpToolInfo {
+            name: "delete".to_string(),
+            description: "Destructive tool".to_string(),
+            input_schema: None,
+            output_schema: None,
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(false),
+                destructive_hint: Some(true),
+                idempotent_hint: Some(false),
+            }),
+            server_name: "test-server".to_string(),
+        };
+        assert_eq!(destructive_info.risk_level_from_annotations(), ToolRiskLevel::Destructive);
+
+        // Test tool without annotations
+        let no_annot_info = McpToolInfo {
+            name: "unknown".to_string(),
+            description: "Unknown tool".to_string(),
+            input_schema: None,
+            output_schema: None,
+            annotations: None,
+            server_name: "test-server".to_string(),
+        };
+        assert_eq!(no_annot_info.risk_level_from_annotations(), ToolRiskLevel::Write);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tool_wrapper_permission_tier() {
+        let client = McpClient::new("echo test");
+
+        // Read-only tool should have Auto permission
+        let read_only_info = McpToolInfo {
+            name: "read".to_string(),
+            description: "Read-only tool".to_string(),
+            input_schema: None,
+            output_schema: None,
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(true),
+                destructive_hint: Some(false),
+                idempotent_hint: Some(true),
+            }),
+            server_name: "test-server".to_string(),
+        };
+        let wrapper = McpToolWrapper::new(read_only_info, client.clone());
+        assert_eq!(wrapper.permission_tier(), PermissionTier::Auto);
+
+        // Destructive tool should have Deny permission
+        let destructive_info = McpToolInfo {
+            name: "delete".to_string(),
+            description: "Destructive tool".to_string(),
+            input_schema: None,
+            output_schema: None,
+            annotations: Some(McpToolAnnotations {
+                read_only_hint: Some(false),
+                destructive_hint: Some(true),
+                idempotent_hint: Some(false),
+            }),
+            server_name: "test-server".to_string(),
+        };
+        let wrapper = McpToolWrapper::new(destructive_info, client.clone());
+        assert_eq!(wrapper.permission_tier(), PermissionTier::Deny);
+
+        // Tool without annotations should have Ask permission
+        let no_annot_info = McpToolInfo {
+            name: "unknown".to_string(),
+            description: "Unknown tool".to_string(),
+            input_schema: None,
+            output_schema: None,
+            annotations: None,
+            server_name: "test-server".to_string(),
+        };
+        let wrapper = McpToolWrapper::new(no_annot_info, client);
+        assert_eq!(wrapper.permission_tier(), PermissionTier::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tool_wrapper_output_schema() {
+        let client = McpClient::new("echo test");
+
+        let output_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "result": { "type": "string" }
+            }
+        });
+
+        let info = McpToolInfo {
+            name: "test_tool".to_string(),
+            description: "Test tool".to_string(),
+            input_schema: None,
+            output_schema: Some(output_schema.clone()),
+            annotations: None,
+            server_name: "test-server".to_string(),
+        };
+
+        let wrapper = McpToolWrapper::new(info, client);
+        assert!(wrapper.output_schema().is_some());
+        assert_eq!(wrapper.output_schema().unwrap(), output_schema);
+    }
+
+    #[tokio::test]
+    async fn test_mcp_tool_annotations_default() {
+        let annot = McpToolAnnotations::default();
+        // Default values should make tool appear non-destructive and idempotent
+        assert!(!annot.is_destructive());
+        assert!(annot.is_idempotent());
+        // read_only_hint defaults to false
+        assert!(!annot.is_read_only());
     }
 }
