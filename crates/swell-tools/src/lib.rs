@@ -19,10 +19,12 @@ pub mod conflict_resolution;
 pub mod credential_proxy;
 pub mod egress;
 pub mod executor;
+pub mod hooks;
 pub mod hybrid;
 pub mod killswitch;
 pub mod loop_detection;
 pub mod mcp;
+pub mod mcp_config;
 pub mod mcp_lsp;
 pub mod opa_policy;
 pub mod os_sandbox;
@@ -74,6 +76,13 @@ pub use loop_detection::{
     create_tool_loop_tracker, create_tool_loop_tracker_with_config, LoopDetectionConfig,
     LoopDetectionResult, LoopPattern, LoopPatternType, SharedToolLoopTracker, ToolExecution,
     ToolLoopTracker,
+};
+pub use mcp::{
+    McpClient, McpManager, McpToolInfo, McpToolWrapper,
+};
+pub use mcp_config::{
+    McpConfigManager, McpReconnectConfig, McpServerConfig, McpServerHealth, McpServerState,
+    McpServersConfig,
 };
 pub use mcp_lsp::{
     LspBridgeManager, LspDefinitionTool, LspDiagnostic, LspDiagnosticsTool, LspDocumentSymbolsTool,
