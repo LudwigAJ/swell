@@ -1,13 +1,34 @@
 use std::sync::Arc;
 use swell_core::init_tracing;
+use swell_core::opentelemetry::{init_tracer_provider, OtelConfig};
 use swell_daemon::dashboard::{start_dashboard_server, DashboardState};
 use swell_daemon::Daemon;
 use swell_orchestrator::OrchestratorEvent;
-use tracing::info;
+use tracing::{info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
+
+    // Initialize OpenTelemetry tracing - this must happen before any LLM execution
+    // so that spans created by LLM backends are exported to the configured OTLP endpoint
+    let otel_config = OtelConfig::from_env();
+    match init_tracer_provider(otel_config.clone()) {
+        Ok(_tracer) => {
+            info!(
+                service_name = %otel_config.service_name,
+                otlp_endpoint = ?otel_config.otlp_endpoint,
+                "OpenTelemetry tracer provider initialized"
+            );
+        }
+        Err(e) => {
+            // Log the error but don't fail startup - we can still run without OTLP export
+            warn!(
+                error = %e,
+                "Failed to initialize OpenTelemetry tracer provider, spans will use no-op provider"
+            );
+        }
+    }
 
     let socket_path =
         std::env::var("SWELL_SOCKET").unwrap_or_else(|_| "/tmp/swell-daemon.sock".to_string());
