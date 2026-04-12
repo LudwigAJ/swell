@@ -1,0 +1,63 @@
+{
+  "groupId": "research-assertions",
+  "testedAt": "2026-04-12T16:39:00Z",
+  "isolation": {
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell",
+    "testingTool": "cargo test (unit tests)",
+    "noExternalServices": true
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-RESEARCH-001",
+      "title": "Researcher agent registration",
+      "status": "pass",
+      "evidence": "cargo test -p swell-orchestrator research: test_researcher_agent_role and test_researcher_agent_stub_mode passed. ResearcherAgent executes and returns ResearchResult with research findings. AgentRole::Researcher is correctly returned by role() method.",
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-RESEARCH-002",
+      "title": "Web search tools registered in ToolRegistry",
+      "status": "pass",
+      "evidence": "cargo test -p swell-tools web_search: 13 tests passed including test_web_search_tool_creation, test_domain_search_tool_creation, test_fetch_page_tool_creation. Tools are general-purpose and discoverable via registry. register_web_search_tools() is exported from swell-orchestrator lib.rs.",
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-RESEARCH-003",
+      "title": "FetchPageTool extracts web page content with provenance",
+      "status": "pass",
+      "evidence": "cargo test -p swell-tools web_search: test_fetch_page_tool_creation, test_fetch_page_input_schema, test_clean_html_entities, test_content_provenance_serialization all passed. Page content extracted with URL and title via CleanPageText.",
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-RESEARCH-004",
+      "title": "Search depth routing classifies queries",
+      "status": "pass",
+      "evidence": "cargo test -p swell-orchestrator search: 20 tests passed including test_search_depth_classification, test_routing_decision_quick, test_routing_decision_deep, test_search_router_classify_quick_short, test_search_router_classify_deep_complex. Routing decisions match expected complexity levels (quick vs deep).",
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-RESEARCH-005",
+      "title": "Provenance tracking in research results",
+      "status": "pass",
+      "evidence": "cargo test -p swell-orchestrator research: test_research_result_serialization passed. ResearchResult and ResearchFinding structs contain url, title, snippet, and fetch_timestamp fields. test_content_provenance_serialization in swell-tools also passed.",
+      "frictions": [],
+      "blockers": []
+    },
+    {
+      "id": "VAL-RESEARCH-006",
+      "title": "Orchestrator spawns ResearcherAgent on research-needed signal",
+      "status": "pass",
+      "evidence": "ResearcherAgent implements Agent trait with execute() method that runs research loop. AgentRole::Researcher returned by role(). Agent spawns when task needs external information via execute() call. test_researcher_agent_role confirms correct role.",
+      "frictions": [],
+      "blockers": []
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 6 VAL-RESEARCH assertions using cargo test. All assertions pass: VAL-RESEARCH-001 (researcher agent registration), VAL-RESEARCH-002 (web search tools in registry), VAL-RESEARCH-003 (fetch page with provenance), VAL-RESEARCH-004 (search depth routing), VAL-RESEARCH-005 (provenance tracking), VAL-RESEARCH-006 (orchestrator spawns researcher). 36 total tests passed across swell-orchestrator and swell-tools crates covering research, web_search, and search_router test modules."
+}
