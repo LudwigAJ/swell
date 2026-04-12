@@ -160,7 +160,8 @@ impl FirecrackerMetrics {
 
     /// Record total startup time
     pub fn finish(&mut self) {
-        let total = self.process_start_ms
+        let total = self
+            .process_start_ms
             .zip(self.boot_config_ms)
             .zip(self.drive_attach_ms)
             .zip(self.vm_start_ms)
@@ -173,9 +174,7 @@ impl FirecrackerMetrics {
 
     /// Check if startup meets <125ms target
     pub fn meets_slo(&self) -> bool {
-        self.total_startup_ms
-            .map(|ms| ms < 125)
-            .unwrap_or(false)
+        self.total_startup_ms.map(|ms| ms < 125).unwrap_or(false)
     }
 }
 
@@ -273,7 +272,12 @@ impl FirecrackerSandbox {
         }
 
         // Try to open /dev/kvm to verify we have access
-        let fd = unsafe { libc::open(kvm_device.to_string_lossy().as_ptr() as *const libc::c_char, libc::O_RDWR) };
+        let fd = unsafe {
+            libc::open(
+                kvm_device.to_string_lossy().as_ptr() as *const libc::c_char,
+                libc::O_RDWR,
+            )
+        };
         if fd < 0 {
             tracing::debug!("KVM not available: cannot open /dev/kvm");
             return Ok(false);
@@ -309,9 +313,9 @@ impl FirecrackerSandbox {
         let output = std::process::Command::new(&self.config.firecracker_path)
             .arg("--help")
             .output()
-            .map_err(|e| SwellError::ToolExecutionFailed(format!(
-                "Failed to run firecracker: {}", e
-            )))?;
+            .map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Failed to run firecracker: {}", e))
+            })?;
 
         Ok(output.status.success())
     }
@@ -352,7 +356,10 @@ impl FirecrackerSandbox {
     }
 
     /// Configure the boot source (kernel)
-    async fn configure_boot_source(&self, metrics: &mut FirecrackerMetrics) -> Result<(), SwellError> {
+    async fn configure_boot_source(
+        &self,
+        metrics: &mut FirecrackerMetrics,
+    ) -> Result<(), SwellError> {
         let start = Instant::now();
 
         let request = serde_json::json!({
@@ -430,14 +437,20 @@ impl FirecrackerSandbox {
 
         let mut child = tokio::process::Command::new(&self.config.firecracker_path)
             .args([
-                "--api-sock", &api_socket,
-                "--level", "Info",
-                "--log-file", self.vm_dir.join("firecracker.log").to_string_lossy().as_ref(),
+                "--api-sock",
+                &api_socket,
+                "--level",
+                "Info",
+                "--log-file",
+                self.vm_dir
+                    .join("firecracker.log")
+                    .to_string_lossy()
+                    .as_ref(),
             ])
             .spawn()
-            .map_err(|e| SwellError::ToolExecutionFailed(format!(
-                "Failed to start Firecracker: {}", e
-            )))?;
+            .map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Failed to start Firecracker: {}", e))
+            })?;
 
         // Wait for the process to start and create socket
         // Firecracker creates the socket immediately on start
@@ -447,7 +460,8 @@ impl FirecrackerSandbox {
         match child.try_wait() {
             Ok(Some(status)) => {
                 return Err(SwellError::ToolExecutionFailed(format!(
-                    "Firecracker exited immediately with status: {:?}", status
+                    "Firecracker exited immediately with status: {:?}",
+                    status
                 )));
             }
             Ok(None) => {
@@ -457,7 +471,8 @@ impl FirecrackerSandbox {
             }
             Err(e) => {
                 return Err(SwellError::ToolExecutionFailed(format!(
-                    "Failed to check Firecracker status: {}", e
+                    "Failed to check Firecracker status: {}",
+                    e
                 )));
             }
         }
@@ -503,7 +518,10 @@ impl FirecrackerSandbox {
     }
 
     /// Execute a command in the guest VM
-    async fn execute_guest_command(&self, cmd: &SandboxCommand) -> Result<SandboxOutput, SwellError> {
+    async fn execute_guest_command(
+        &self,
+        cmd: &SandboxCommand,
+    ) -> Result<SandboxOutput, SwellError> {
         let start = Instant::now();
 
         // Serialize command for guest agent (used in real implementation)
@@ -531,21 +549,31 @@ impl FirecrackerSandbox {
     /// Stop the Firecracker VM
     async fn stop_vm(&self) -> Result<(), SwellError> {
         // Send Ctrl+Alt+Del to gracefully shutdown
-        let _ = self.send_api_request(&serde_json::json!({
-            "action": {
-                "action_type": "SendCtrlAltDel"
-            }
-        }).to_string()).await;
+        let _ = self
+            .send_api_request(
+                &serde_json::json!({
+                    "action": {
+                        "action_type": "SendCtrlAltDel"
+                    }
+                })
+                .to_string(),
+            )
+            .await;
 
         // Give guest time to handle shutdown
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
         // Send halt to force stop if needed
-        let _ = self.send_api_request(&serde_json::json!({
-            "action": {
-                "action_type": "InstanceStart"
-            }
-        }).to_string()).await;
+        let _ = self
+            .send_api_request(
+                &serde_json::json!({
+                    "action": {
+                        "action_type": "InstanceStart"
+                    }
+                })
+                .to_string(),
+            )
+            .await;
 
         *self.is_running.lock().unwrap() = false;
         *self.guest_connected.lock().unwrap() = false;
@@ -565,9 +593,9 @@ impl FirecrackerSandbox {
                 .args(["-9", &pid.to_string()])
                 .output()
                 .await
-                .map_err(|e| SwellError::ToolExecutionFailed(format!(
-                    "Failed to kill Firecracker: {}", e
-                )))?;
+                .map_err(|e| {
+                    SwellError::ToolExecutionFailed(format!("Failed to kill Firecracker: {}", e))
+                })?;
 
             if !output.status.success() {
                 tracing::warn!("Failed to kill Firecracker process {}", pid);
@@ -603,7 +631,8 @@ impl Sandbox for FirecrackerSandbox {
         // Check KVM availability
         if !Self::is_kvm_available()? {
             return Err(SwellError::SandboxError(
-                "KVM is not available on this system. Firecracker requires KVM support.".to_string()
+                "KVM is not available on this system. Firecracker requires KVM support."
+                    .to_string(),
             ));
         }
 
@@ -753,7 +782,10 @@ mod tests {
     #[tokio::test]
     async fn test_firecracker_sandbox_vm_dir() {
         let sandbox = FirecrackerSandbox::with_params("test-vm-2".to_string(), 256);
-        assert!(sandbox.vm_dir().to_string_lossy().contains("firecracker_test-vm-2"));
+        assert!(sandbox
+            .vm_dir()
+            .to_string_lossy()
+            .contains("firecracker_test-vm-2"));
     }
 
     #[tokio::test]
