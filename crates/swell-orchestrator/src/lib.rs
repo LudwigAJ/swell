@@ -42,6 +42,7 @@ pub mod subagent;
 pub mod task_board;
 pub mod task_graph;
 pub mod tiered_merge;
+pub mod value_scorer;
 pub mod worker_pool;
 
 pub use agents::{
@@ -150,6 +151,10 @@ pub use task_board::{
 };
 pub use task_graph::TaskGraph;
 pub use tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
+pub use value_scorer::{
+    BlockingImpactScore, SpecAlignmentScore, TaskDependency, TaskScore, ValueScorer,
+    ValueScorerConfig,
+};
 pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,

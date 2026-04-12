@@ -28,6 +28,7 @@ pub const MAX_ORCHESTRATOR_DEPTH: u32 = 2;
 /// FeatureLeads are spawned by the root orchestrator when a task exceeds
 /// the complexity threshold (FEATURE_LEAD_STEP_THRESHOLD steps). Each FeatureLead
 /// manages its own task queue and reports back to the root orchestrator.
+#[derive(Clone)]
 pub struct FeatureLead {
     /// Unique ID for this FeatureLead
     pub id: Uuid,

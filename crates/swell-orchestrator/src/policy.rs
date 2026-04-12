@@ -58,6 +58,8 @@ pub enum PolicyDecision {
     Deny,
     /// No rule matched the action
     NoMatch,
+    /// Action requires user confirmation
+    Ask,
 }
 
 impl PolicyDecision {
@@ -74,6 +76,11 @@ impl PolicyDecision {
     /// Returns true if no rule matched
     pub fn is_no_match(&self) -> bool {
         matches!(self, PolicyDecision::NoMatch)
+    }
+
+    /// Returns true if the action requires user confirmation
+    pub fn is_ask(&self) -> bool {
+        matches!(self, PolicyDecision::Ask)
     }
 }
 
@@ -219,6 +226,8 @@ pub enum ToolCategory {
 pub enum PolicyEffect {
     Allow,
     Deny,
+    /// Requires user confirmation before proceeding
+    Ask,
 }
 
 /// A single policy rule
@@ -490,8 +499,10 @@ impl PolicyEngine {
         // Collect matching rules and their effects
         let mut has_deny = false;
         let mut has_allow = false;
+        let mut has_ask = false;
         let mut deny_rule: Option<&PolicyRule> = None;
         let mut allow_rule: Option<&PolicyRule> = None;
+        let mut ask_rule: Option<&PolicyRule> = None;
 
         // Sort rules by priority (higher first), then evaluate
         let mut sorted_rules: Vec<&PolicyRule> = policy.rules.iter().collect();
@@ -511,6 +522,10 @@ impl PolicyEngine {
                         has_allow = true;
                         allow_rule = Some(rule);
                     }
+                    PolicyEffect::Ask => {
+                        has_ask = true;
+                        ask_rule = Some(rule);
+                    }
                 }
             }
         }
@@ -523,6 +538,16 @@ impl PolicyEngine {
                 "Action denied by policy"
             );
             return (PolicyDecision::Deny, deny_rule.map(|r| r.name.clone()));
+        }
+
+        // If no rule denies but at least one asks, the action requires confirmation
+        if has_ask {
+            info!(
+                action_type = ?action.action_type,
+                rule = ?ask_rule.map(|r| r.name.as_str()),
+                "Action requires user confirmation"
+            );
+            return (PolicyDecision::Ask, ask_rule.map(|r| r.name.clone()));
         }
 
         // If no rule denies but at least one allows, the action is allowed
@@ -544,6 +569,10 @@ impl PolicyEngine {
             PolicyEffect::Allow => {
                 debug!("No rule matched, using default allow");
                 PolicyDecision::Allow
+            }
+            PolicyEffect::Ask => {
+                debug!("No rule matched, using default ask");
+                PolicyDecision::Ask
             }
         };
 
