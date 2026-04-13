@@ -314,8 +314,8 @@ impl McpConfigManager {
 
         info!(server = %name, "Starting MCP server (lazy startup)");
 
-        // Create client with the command string
-        let client = McpClient::new(server_config.to_command_string());
+        // Create client with the command string and environment variables
+        let client = McpClient::new_with_env(server_config.to_command_string(), server_config.env);
 
         // Attempt connection
         match client.connect().await {

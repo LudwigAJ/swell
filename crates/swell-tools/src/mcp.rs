@@ -62,6 +62,8 @@ impl McpToolAnnotations {
 #[derive(Debug, Clone)]
 pub struct McpClient {
     server_url: String,
+    /// Environment variables to pass to the spawned server process
+    env: HashMap<String, String>,
     /// Process handle plus buffered I/O - uses write lock for mutability
     process: Arc<RwLock<Option<McpProcess>>>,
     /// Server capabilities received during handshake
@@ -277,8 +279,14 @@ impl Tool for McpToolWrapper {
 impl McpClient {
     /// Create a new MCP client for the given server command
     pub fn new(server_url: impl Into<String>) -> Self {
+        Self::new_with_env(server_url, HashMap::new())
+    }
+
+    /// Create a new MCP client with environment variables
+    pub fn new_with_env(server_url: impl Into<String>, env: HashMap<String, String>) -> Self {
         Self {
             server_url: server_url.into(),
+            env,
             process: Arc::new(RwLock::new(None)),
             capabilities: Arc::new(RwLock::new(None)),
             tools: Arc::new(RwLock::new(HashMap::new())),
@@ -308,6 +316,7 @@ impl McpClient {
 
         let mut child = tokio::process::Command::new(&program)
             .args(&args)
+            .envs(&self.env)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit())
