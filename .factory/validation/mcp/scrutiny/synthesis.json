@@ -1,11 +1,11 @@
 {
   "milestone": "mcp",
-  "round": 9,
+  "round": 10,
   "status": "fail",
   "validatorsRun": {
     "build": {
       "passed": true,
-      "command": "cargo build --workspace",
+      "command": "cargo build --release",
       "exitCode": 0
     },
     "typecheck": {
@@ -22,10 +22,9 @@
   },
   "reviewsSummary": {
     "total": 5,
-    "passed": 3,
-    "failed": 2,
-    "failedFeatures": ["mcp-server-config", "mcp-lsp-integration"],
-    "note": "Round 9: 3 features pass, 2 blocking issues still unfixed. No fix features have been created or implemented yet."
+    "passed": 2,
+    "failed": 3,
+    "failedFeatures": ["mcp-server-config", "mcp-lsp-integration", "mcp-tool-annotations"]
   },
   "blockingIssues": [
     {
@@ -45,17 +44,26 @@
       "lines": "137, 150, 427, 510, 564",
       "status": "pending",
       "originalRound": 4
+    },
+    {
+      "featureId": "mcp-tool-annotations",
+      "severity": "blocking",
+      "description": "McpToolWrapper doesn't implement behavioral_hints() from the Tool trait. MCP tool annotations (readOnlyHint, destructiveHint, idempotentHint) are parsed and stored but not exposed via the Tool trait interface. Callers using the trait interface get default hints (read_only_hint: false, destructive_hint: false, idempotent_hint: true) instead of actual MCP annotations.",
+      "file": "crates/swell-tools/src/mcp.rs",
+      "line": 223,
+      "status": "pending",
+      "originalRound": 10
     }
   ],
   "appliedUpdates": [
     {
       "target": "services.yaml",
-      "description": "Added mcp-language-server and tree-sitter-server entries to services.yaml as runtime dependencies for MCP features",
+      "description": "Added mcp-language-server and tree-sitter-server entries to services.yaml as runtime dependencies for MCP features (from round 2)",
       "sourceFeature": "mcp-lsp-integration"
     },
     {
       "target": "library",
-      "description": "Created .factory/library/mcp-server-tools.md documenting actual tool names and argument formats for mcp-language-server and tree-sitter-server",
+      "description": "Created .factory/library/mcp-server-tools.md documenting actual tool names and argument formats for mcp-language-server and tree-sitter-server (from round 2)",
       "sourceFeature": "mcp-lsp-integration"
     }
   ],

@@ -1,44 +1,50 @@
 {
   "featureId": "mcp-server-config",
-  "reviewedAt": "2026-04-13T01:50:00Z",
+  "reviewedAt": "2026-04-13T02:01:00Z",
   "commitId": "8f7f2e3",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "The prior blocking issue (env vars not applied to spawned process) is NOT FIXED. While the `mcp-env-vars-runtime-fix` feature exists in features.json as a pending fix, the code has not been modified to pass env vars to the spawned MCP server process. The fix feature remains pending with no worker session.",
+    "summary": "Re-run review confirms the prior blocking issue (env vars not applied to spawned process) remains UNFIXED. The code has not been modified to pass env vars from McpServerConfig.env to the spawned MCP server process. McpClient::connect() does not call .envs() or .env() on the Command, and the API design makes it impossible to pass env through without changes.",
     "issues": [
       {
         "file": "crates/swell-tools/src/mcp.rs",
-        "line": 309,
+        "line": 268,
         "severity": "blocking",
-        "description": "Environment variables from McpServerConfig.env are still NOT applied when spawning the server process. McpClient::connect() calls tokio::process::Command::new(&program).args(&args) but still never calls .envs() or .env(). The flow is: McpConfigManager::start_server() -> McpClient::new(server_config.to_command_string()) where env is discarded, then McpClient::connect() spawns the process without the configured environment variables. The fix has not been implemented."
+        "description": "Environment variables from McpServerConfig.env are still NOT applied when spawning the server process. McpClient::connect() spawns with tokio::process::Command::new(&program).args(&args) but never calls .envs() or .env(). The flow: McpConfigManager::start_server() -> McpClient::new(server_config.to_command_string()) where to_command_string() discards env entirely -> client.connect() spawns without any env vars. This is the same issue identified in the prior review and has not been fixed."
       },
       {
         "file": "crates/swell-tools/src/mcp_config.rs",
         "line": 128,
         "severity": "non_blocking",
-        "description": "Unused variable 'base_dir' computed from config_path.parent() with comment '// suppress unused warning'. This code smell remains from the original implementation - base_dir is never used for anything."
+        "description": "Unused variable 'base_dir' - the code computes base_dir from config_path.parent() with comment '// suppress unused warning' but base_dir is never used. Code smell that should be cleaned up."
+      },
+      {
+        "file": "crates/swell-tools/src/mcp_config.rs",
+        "line": 41,
+        "severity": "non_blocking",
+        "description": "McpServerConfig::to_command_string() discards the env HashMap entirely - it only concatenates command and args. The env field is parsed and stored but never used in process spawning."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "skills",
-      "observation": "The fix feature mcp-env-vars-runtime-fix was created but has not been started. The worker session IDs array is empty for this fix feature. No implementation has occurred.",
+      "observation": "The fix feature mcp-env-vars-runtime-fix was created in features.json but has no worker session and remains pending. No implementation has occurred.",
       "evidence": "features.json shows mcp-env-vars-runtime-fix with workerSessionIds: [] and status: pending"
     },
     {
       "area": "conventions",
-      "observation": "The McpClient constructor takes only server_url (command string) but doesn't accept env HashMap. This design means env cannot be passed through to the spawned process without API changes. A proper fix would require either: (1) extending McpClient::new() to accept env, or (2) storing env in McpConfigManager and applying it during start_server before calling client.connect().",
-      "evidence": "McpClient::new(server_url: impl Into<String>) has no env parameter - crates/swell-tools/src/mcp.rs:274"
+      "observation": "McpClient API only accepts server_url (command string) in new(), making it impossible to pass env vars through without API changes. A proper fix requires either: (1) extending McpClient::new() to accept env and call .envs() in connect(), or (2) McpConfigManager storing env and applying it via a separate mechanism before/after connect().",
+      "evidence": "McpClient::new(server_url: impl Into<String>) has no env parameter - mcp.rs:274"
     },
     {
       "area": "knowledge",
-      "observation": "The McpConfigManager holds the server_config with env but doesn't use it when creating the client. McpConfigManager::start_server() at line 261-267 creates the client with just the command string, completely ignoring the env field. The fix needs to apply the env at this point.",
-      "evidence": "crates/swell-tools/src/mcp_config.rs:265 - client = McpClient::new(server_config.to_command_string()); env field is never passed"
+      "observation": "McpConfigManager holds the full server_config (including env) but the start_server() method at line ~265 only passes to_command_string() to McpClient::new(). The env field is completely discarded at this boundary.",
+      "evidence": "mcp_config.rs:265 - client = McpClient::new(server_config.to_command_string()); env field never transferred"
     }
   ],
   "addressesFailureFrom": ".factory/validation/mcp/scrutiny/reviews/mcp-server-config.json",
-  "summary": "The blocking issue from the prior review (env vars not applied to spawned process) is NOT FIXED. The code at mcp.rs:309 still spawns the process without calling .envs(). The fix feature mcp-env-vars-runtime-fix was created but remains pending with no implementation. The McpClient API would need modification to accept and apply env vars, or McpConfigManager::start_server() would need to pass env to the client before connect()."
+  "summary": "Re-run review confirms the blocking issue persists. Environment variables from McpServerConfig.env are NOT applied when spawning the MCP server process. The McpClient::connect() method does not call .envs() or .env() on the Command, and the to_command_string() method discards env entirely. The fix feature (mcp-env-vars-runtime-fix) was created but never started - no code changes have been made to address this issue."
 }

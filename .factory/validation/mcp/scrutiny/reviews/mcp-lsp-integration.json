@@ -1,68 +1,51 @@
 {
   "featureId": "mcp-lsp-integration",
-  "reviewedAt": "2026-04-13T03:43:00.000Z",
+  "reviewedAt": "2026-04-13T10:35:00.000Z",
   "commitId": "f67e508fef91d81aef4d7be47b77f80fcb3c3a46",
-  "transcriptSkeletonReviewed": true,
+  "transcriptSkeletonReviewed": false,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "Implementation has fundamental mismatches with the actual mcp-language-server tool interface. The code uses incorrect tool names ('rename' vs 'rename_symbol'), calls non-existent tools ('workspace_diagnostics', 'document_symbols'), and uses wrong argument formats (textDocumentUri+position object vs filePath+line+column). These are blocking issues that will cause all LSP tool calls to fail at runtime.",
+    "summary": "Re-review confirms all 4 prior blocking issues are STILL PRESENT in the current code. No fixes have been applied to mcp_lsp.rs. A fix feature 'mcp-lsp-tool-fix' was created (commit a746055) but the actual code has not been updated.",
     "issues": [
       {
         "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 427,
+        "line": 570,
         "severity": "blocking",
-        "description": "LspRenameTool calls 'rename' but the actual mcp-language-server exposes tool named 'rename_symbol'. The call to mcp_client.call_tool(\"rename\", ...) will fail with 'tool not found' error."
+        "description": "LspRenameTool.execute() calls 'rename' but mcp-language-server exposes tool named 'rename_symbol'. This call will fail at runtime with 'tool not found'."
       },
       {
         "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 510,
+        "line": 628,
         "severity": "blocking",
-        "description": "LspWorkspaceDiagnosticsTool calls 'workspace_diagnostics' but the mcp-language-server (isaacphi/mcp-language-server) does not expose this tool. It only has: definition, references, hover, diagnostics, rename_symbol, edit_file."
+        "description": "LspWorkspaceDiagnosticsTool.execute() calls 'workspace_diagnostics' which does NOT exist in mcp-language-server. The server only exposes: definition, references, hover, diagnostics, rename_symbol, edit_file."
       },
       {
         "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 564,
+        "line": 705,
         "severity": "blocking",
-        "description": "LspDocumentSymbolsTool calls 'document_symbols' but this tool does not exist in mcp-language-server."
+        "description": "LspDocumentSymbolsTool.execute() calls 'document_symbols' which does NOT exist in mcp-language-server."
       },
       {
         "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 137,
+        "line": "200, 303, 394, 467, 565, 700",
         "severity": "blocking",
-        "description": "LspDefinitionTool and other tools use argument format {textDocumentUri, position: {line, column}} but the actual mcp-language-server expects {filePath, line, column} (1-indexed line/column, not 0-indexed)."
-      },
-      {
-        "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 150,
-        "severity": "blocking",
-        "description": "Argument structure mismatch: Implementation passes {textDocument: {uri: ...}, position: ...} but mcp-language-server expects {filePath: string, line: number, column: number}. This will cause all LSP calls to fail."
-      },
-      {
-        "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 35-44,
-        "severity": "non_blocking",
-        "description": "LspPosition uses 0-indexed lines/columns but LSP specification uses 0-indexed (per JSON-RPC), so this may be correct - but contradicts what mcp-language-server appears to expect based on its Go code which shows 1-indexed."
+        "description": "Argument format mismatch. All LSP tools use {textDocument: {uri: ...}, position: {...}} but mcp-language-server expects {filePath: string, line: number, column: number}. The server does not accept the textDocument/position wrapper structure."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "knowledge",
-      "observation": "Worker searched for mcp-language-server but didn't verify the actual tool names and argument formats from the source code. The actual server (github.com/isaacphi/mcp-language-server) has different tool names: 'rename_symbol' not 'rename', no 'workspace_diagnostics' or 'document_symbols'.",
-      "evidence": "WebFetch of tools.go shows: definition, references, hover, diagnostics, rename_symbol, edit_file. No workspace_diagnostics or document_symbols."
+      "observation": "The library file .factory/library/mcp-server-tools.md correctly documents the actual mcp-language-server tools and argument formats. The fix feature was created but code was not updated.",
+      "evidence": "Commit a746055 created fix feature 'mcp-lsp-tool-fix' but did not apply changes to mcp_lsp.rs"
     },
     {
       "area": "conventions",
-      "observation": "AGENTS.md mentions MCP but doesn't specify how to verify MCP server tool interfaces. Workers should verify against actual server capabilities, not assume.",
-      "evidence": "No guidance in AGENTS.md for MCP server capability verification"
-    },
-    {
-      "area": "services",
-      "observation": "mcp-language-server is not listed in services.yaml but is a required external service for this feature.",
-      "evidence": "services.yaml only has swell-daemon. mcp-language-server is a runtime dependency."
+      "observation": "Fix features should update the actual code. Creating a fix feature without applying the fix doesn't resolve blocking issues.",
+      "evidence": "mcp-lsp-integration still shows same 4 blocking issues after fix feature creation"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "FAIL - The implementation has critical mismatches with the actual mcp-language-server interface. Tool names don't match (rename vs rename_symbol), non-existent tools are called (workspace_diagnostics, document_symbols), and argument formats are incompatible. The code builds and tests pass because tests mock the MCP client, but at runtime these LSP tools will fail."
+  "summary": "FAIL - All 4 prior blocking issues remain unfixed. The code still calls 'rename' instead of 'rename_symbol', calls non-existent 'workspace_diagnostics' and 'document_symbols', and uses incompatible argument format. Fix feature mcp-lsp-tool-fix was created but code was not updated."
 }

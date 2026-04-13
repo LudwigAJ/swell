@@ -1,36 +1,28 @@
 {
   "featureId": "mcp-tool-annotations",
-  "reviewedAt": "2026-04-13T00:00:00.000Z",
+  "reviewedAt": "2026-04-13T02:05:00Z",
   "commitId": "0fe50397e3736f09984168332b54137709b5ffd5",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "pass",
+  "status": "fail",
   "codeReview": {
-    "summary": "The mcp-tool-annotations feature is fully implemented and working correctly. All expected behaviors are delivered: (1) ToolBehavioralHints struct in swell-core with readOnlyHint, destructiveHint, idempotentHint; (2) All built-in tools implement behavioral_hints() with appropriate values; (3) McpToolAnnotations in mcp.rs with helper methods; (4) risk_level_from_annotations() for automatic risk classification; (5) McpToolWrapper uses annotations for permission_tier() decisions (ReadOnly→Auto, Destructive→Deny); (6) Cedar policy engine has ReadOnly/Destructive ToolOperation variants; (7) 9 annotation tests pass.",
-    "issues": []
+    "summary": "Implementation is mostly complete but has one blocking issue: `McpToolWrapper` doesn't implement `behavioral_hints()` from the `Tool` trait, so MCP tools always return the default `ToolBehavioralHints` instead of reflecting the actual MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`). This means the MCP tool annotations are parsed and stored but not actually exposed via the `Tool` trait interface.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/mcp.rs",
+        "line": 223,
+        "severity": "blocking",
+        "description": "`McpToolWrapper` implements the `Tool` trait but does NOT implement `behavioral_hints()`. All other built-in tools in swell-tools (ReadFileTool, WriteFileTool, ShellTool, GitTool, FileEditTool, SearchTool, WebSearchTool) implement `behavioral_hints()` and return their specific hints. The MCP tool wrapper should map its `McpToolAnnotations` to `ToolBehavioralHints` so that callers using the `Tool` trait interface get the correct behavioral hints. Currently, `McpToolWrapper::behavioral_hints()` returns the trait default (`read_only_hint: false, destructive_hint: false, idempotent_hint: true`) instead of reflecting the actual MCP annotations."
+      },
+      {
+        "file": "crates/swell-tools/src/mcp.rs",
+        "line": 35,
+        "severity": "non_blocking",
+        "description": "`McpToolAnnotations::is_read_only()` returns `self.read_only_hint.unwrap_or(false)` - when the hint is `None`, the tool is treated as non-read-only. This is a reasonable default but could be documented. Similarly, `is_destructive()` defaults to `false` and `is_idempotent()` defaults to `true`."
+      }
+    ]
   },
-  "sharedStateObservations": [
-    {
-      "area": "conventions",
-      "observation": "Worker followed all documented conventions from AGENTS.md: used crate-scoped validation, ran cargo build --workspace for verification, ran cargo test -p swell-tools for tests, ran cargo clippy -p swell-tools for linting.",
-      "evidence": "Transcript shows cargo build --workspace, cargo test -p swell-tools -- tool_annotation, cargo clippy -p swell-tools"
-    },
-    {
-      "area": "skills",
-      "observation": "Worker used the Rust skill properly and followed the documented procedure from the skill file. No deviations from the expected workflow.",
-      "evidence": "skillFeedback.followedProcedure: true, skillFeedback.deviations: []"
-    },
-    {
-      "area": "services",
-      "observation": "Worker did not start any additional services beyond the standard cargo commands. No services.yaml gaps identified.",
-      "evidence": "Transcript shows only standard cargo build/test/clippy commands"
-    },
-    {
-      "area": "knowledge",
-      "observation": "Worker discovered that the feature was already partially implemented from a prior session and correctly identified what was complete vs what needed to be added. This is documented in the handoff.",
-      "evidence": "Handoff salientSummary confirms feature was already fully implemented"
-    }
-  ],
+  "sharedStateObservations": [],
   "addressesFailureFrom": null,
-  "summary": "Feature mcp-tool-annotations passes review. Implementation is complete with ToolBehavioralHints in swell-core, McpToolAnnotations in mcp.rs, behavioral_hints() on all built-in tools, risk classification via risk_level_from_annotations(), and permission_tier() integration with ReadOnly/Destructive ToolOperation variants in Cedar policy. All 9 annotation tests pass. No blocking issues found."
+  "summary": "The `McpToolAnnotations` struct (with `readOnlyHint`, `destructiveHint`, `idempotentHint`) is correctly parsed from MCP server responses and stored in `McpToolInfo`. The `risk_level_from_annotations()` and `permission_tier()` methods on `McpToolInfo` and `McpToolWrapper` correctly map annotations to `ToolRiskLevel` and `PermissionTier`. However, `McpToolWrapper` does not implement the `behavioral_hints()` method from the `Tool` trait, so the MCP tool annotations are not exposed to callers using the standard `Tool` trait interface. This is a blocking issue because callers expecting behavioral hints via the trait will get incorrect defaults."
 }
