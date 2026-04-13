@@ -17,7 +17,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use swell_core::traits::Tool;
-use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
+use swell_core::{
+    PermissionTier, SwellError, ToolOutput, ToolRiskLevel,
+};
+use swell_core::traits::ToolBehavioralHints;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -269,6 +272,26 @@ impl Tool for McpToolWrapper {
 
     fn input_schema(&self) -> Value {
         self.info.schema()
+    }
+
+    fn behavioral_hints(&self) -> ToolBehavioralHints {
+        ToolBehavioralHints {
+            read_only_hint: self
+                .info
+                .annotations
+                .as_ref()
+                .is_some_and(|a| a.is_read_only()),
+            destructive_hint: self
+                .info
+                .annotations
+                .as_ref()
+                .is_some_and(|a| a.is_destructive()),
+            idempotent_hint: self
+                .info
+                .annotations
+                .as_ref()
+                .is_none_or(|a| a.is_idempotent()),
+        }
     }
 
     async fn execute(&self, arguments: Value) -> Result<ToolOutput, SwellError> {
