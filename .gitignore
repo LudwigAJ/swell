@@ -18,3 +18,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
+
+# plan
+/plan/**
+plan/**
