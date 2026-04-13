@@ -17,3 +17,15 @@ services:
     healthcheck: echo "daemon started"
     port: 3100
     depends_on: []
+  mcp-language-server:
+    start: npx -y @modelcontextprotocol/language-server rust-analyzer
+    stop: pkill -f "language-server" || true
+    healthcheck: echo "mcp-language-server started"
+    port: 3110
+    depends_on: []
+  tree-sitter-server:
+    start: python3 -m mcp_server_tree_sitter
+    stop: pkill -f "mcp_server_tree_sitter" || true
+    healthcheck: echo "tree-sitter server started"
+    port: 3111
+    depends_on: []

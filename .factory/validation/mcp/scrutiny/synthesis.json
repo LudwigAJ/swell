@@ -1,6 +1,6 @@
 {
   "milestone": "mcp",
-  "round": 8,
+  "round": 9,
   "status": "fail",
   "validatorsRun": {
     "build": {
@@ -25,7 +25,7 @@
     "passed": 3,
     "failed": 2,
     "failedFeatures": ["mcp-server-config", "mcp-lsp-integration"],
-    "note": "Round 8: No new completed features. All implementation features remain 'pending'. 2 blocking issues remain unfixed. Fix features (mcp-env-vars-runtime-fix, mcp-lsp-tool-fix) still pending."
+    "note": "Round 9: 3 features pass, 2 blocking issues still unfixed. No fix features have been created or implemented yet."
   },
   "blockingIssues": [
     {
@@ -47,7 +47,18 @@
       "originalRound": 4
     }
   ],
-  "appliedUpdates": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Added mcp-language-server and tree-sitter-server entries to services.yaml as runtime dependencies for MCP features",
+      "sourceFeature": "mcp-lsp-integration"
+    },
+    {
+      "target": "library",
+      "description": "Created .factory/library/mcp-server-tools.md documenting actual tool names and argument formats for mcp-language-server and tree-sitter-server",
+      "sourceFeature": "mcp-lsp-integration"
+    }
+  ],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
@@ -60,14 +71,8 @@
       "suggestion": "Add guidance on tokio::process::Command environment variable handling (.envs()/.env() methods) for MCP client process spawning. When spawning subprocesses that need environment variables, the .envs() method must be called on the Command.",
       "evidence": "mcp-server-config reviewer identified that env handling was missing from MCP client implementation - env vars were being parsed but never passed to the subprocess",
       "isSystemic": false
-    },
-    {
-      "target": "services.yaml",
-      "suggestion": "Add mcp-language-server to services.yaml as a runtime dependency for LSP features",
-      "evidence": "mcp-lsp-integration requires mcp-language-server which is not listed in services.yaml",
-      "isSystemic": false
     }
   ],
   "rejectedObservations": [],
-  "previousRound": ".factory/validation/mcp/scrutiny/synthesis.json.bak"
+  "previousRound": ".factory/validation/mcp/scrutiny/synthesis.json"
 }
