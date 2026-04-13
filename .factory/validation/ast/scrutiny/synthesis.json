@@ -1,0 +1,52 @@
+{
+  "milestone": "ast",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test -p swell-core", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "services.yaml now exists in .factory/ - LSP tools (LspDefinitionTool, LspReferencesTool, LspHoverTool, LspDiagnosticsTool, LspRenameTool) were discovered in mcp_lsp.rs but not documented. However, per triage guidelines, this is a documentation gap rather than an operational issue - the tools exist and work. Not applied as it would be a documentation-only change outside scope."
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify the distinction between MCP tree-sitter integration (external MCP servers) and direct tree-sitter Rust bindings (internal implementation). The feature description for ast-dependency-analysis says 'Use MCP tree-sitter tools' but the implementation uses tree_sitter crate directly. This caused confusion during review.",
+      "evidence": "Feature ast-dependency-analysis description mentions 'MCP tree-sitter tools' but implementation uses crate::treesitter module with tree_sitter::Parser directly. MCP integration exists separately in swell-tools/src/mcp.rs.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills",
+      "suggestion": "The Rust skill should include guidance on tree-sitter integration patterns, as multiple features in milestone 'ast' required this knowledge which was not covered in the skill.",
+      "evidence": "ast-dependency-graph and ast-dependency-analysis both needed tree-sitter patterns that weren't in the Rust skill. The skill only covers ownership, async, error handling, but not external library integration patterns.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Error handling uses String instead of thiserror::Error",
+      "reason": "Not a systemic issue - dependency_graph.rs uses String error returns which is a stylistic choice. The project doesn't mandate thiserror for all crates. No evidence this causes problems."
+    },
+    {
+      "observation": "Tree-sitter language support limitations not documented",
+      "reason": "Language support gaps (TypeScript, JavaScript, Go return None from to_language()) are implementation details that don't affect core functionality. Workers can discover this through tests."
+    },
+    {
+      "observation": "LSP tools not in services.yaml",
+      "reason": "services.yaml is for operational services (daemon, MCP servers). LSP tools are code components, not running services. This is a documentation gap, not an operational issue."
+    }
+  ],
+  "previousRound": null
+}
