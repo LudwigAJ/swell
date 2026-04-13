@@ -179,9 +179,7 @@ impl Tool for LspDefinitionTool {
         let symbol_name = arguments
             .get("symbol_name")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                SwellError::ToolExecutionFailed("Missing symbol_name".to_string())
-            })?;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing symbol_name".to_string()))?;
 
         let params = serde_json::json!({
             "symbolName": symbol_name
@@ -258,9 +256,7 @@ impl Tool for LspReferencesTool {
         let symbol_name = arguments
             .get("symbol_name")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                SwellError::ToolExecutionFailed("Missing symbol_name".to_string())
-            })?;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing symbol_name".to_string()))?;
 
         let params = serde_json::json!({
             "symbolName": symbol_name
@@ -343,19 +339,19 @@ impl Tool for LspHoverTool {
         let file_path = arguments
             .get("file_path")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                SwellError::ToolExecutionFailed("Missing file_path".to_string())
-            })?;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing file_path".to_string()))?;
 
         let line = arguments
             .get("line")
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing line".to_string()))? as u32;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing line".to_string()))?
+            as u32;
 
         let column = arguments
             .get("column")
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing column".to_string()))? as u32;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing column".to_string()))?
+            as u32;
 
         let params = serde_json::json!({
             "filePath": file_path,
@@ -427,9 +423,7 @@ impl Tool for LspDiagnosticsTool {
         let file_path = arguments
             .get("file_path")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                SwellError::ToolExecutionFailed("Missing file_path".to_string())
-            })?;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing file_path".to_string()))?;
 
         let params = serde_json::json!({
             "filePath": file_path
@@ -516,19 +510,19 @@ impl Tool for LspRenameTool {
         let file_path = arguments
             .get("file_path")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                SwellError::ToolExecutionFailed("Missing file_path".to_string())
-            })?;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing file_path".to_string()))?;
 
         let line = arguments
             .get("line")
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing line".to_string()))? as u32;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing line".to_string()))?
+            as u32;
 
         let column = arguments
             .get("column")
             .and_then(|v| v.as_u64())
-            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing column".to_string()))? as u32;
+            .ok_or_else(|| SwellError::ToolExecutionFailed("Missing column".to_string()))?
+            as u32;
 
         let new_name = arguments
             .get("new_name")

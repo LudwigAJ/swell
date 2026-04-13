@@ -72,20 +72,17 @@ pub struct McpServersConfig {
 impl McpServersConfig {
     /// Load configuration from a JSON file
     pub async fn load_from_file(path: &Path) -> Result<Self, SwellError> {
-        let content = tokio::fs::read_to_string(path)
-            .await
-            .map_err(|e| {
-                SwellError::ConfigError(format!("Failed to read MCP config file: {}", e))
-            })?;
+        let content = tokio::fs::read_to_string(path).await.map_err(|e| {
+            SwellError::ConfigError(format!("Failed to read MCP config file: {}", e))
+        })?;
 
         Self::load_from_str(&content)
     }
 
     /// Load configuration from a JSON string
     pub fn load_from_str(content: &str) -> Result<Self, SwellError> {
-        serde_json::from_str(content).map_err(|e| {
-            SwellError::ConfigError(format!("Failed to parse MCP config: {}", e))
-        })
+        serde_json::from_str(content)
+            .map_err(|e| SwellError::ConfigError(format!("Failed to parse MCP config: {}", e)))
     }
 
     /// Get a server config by name
@@ -274,10 +271,7 @@ impl McpConfigManager {
     /// Get reconnection state for a server
     pub async fn get_reconnect_attempts(&self, name: &str) -> u32 {
         let states = self.server_states.read().await;
-        states
-            .get(name)
-            .map(|s| s.reconnect_attempts)
-            .unwrap_or(0)
+        states.get(name).map(|s| s.reconnect_attempts).unwrap_or(0)
     }
 
     /// Get the client for a server, starting it if needed (lazy startup)
@@ -302,13 +296,17 @@ impl McpConfigManager {
         let server_config = self
             .config
             .get_server(name)
-            .ok_or_else(|| SwellError::ConfigError(format!("MCP server '{}' not found in config", name)))?
+            .ok_or_else(|| {
+                SwellError::ConfigError(format!("MCP server '{}' not found in config", name))
+            })?
             .clone();
 
         // Update state to starting
         {
             let mut states = self.server_states.write().await;
-            let state = states.entry(name.to_string()).or_insert_with(|| McpServerState::new(server_config.clone()));
+            let state = states
+                .entry(name.to_string())
+                .or_insert_with(|| McpServerState::new(server_config.clone()));
             state.health = McpServerHealth::Starting;
         }
 
@@ -409,8 +407,7 @@ impl McpConfigManager {
             if state.reconnect_attempts >= self.reconnect_config.max_reconnect_attempts {
                 return Err(SwellError::ToolExecutionFailed(format!(
                     "MCP server '{}' failed after {} reconnection attempts",
-                    name,
-                    state.reconnect_attempts
+                    name, state.reconnect_attempts
                 )));
             }
 
@@ -471,7 +468,8 @@ impl McpConfigManager {
             }
             _ => {
                 // Server not connected
-                self.update_health(name, McpServerHealth::Disconnected).await;
+                self.update_health(name, McpServerHealth::Disconnected)
+                    .await;
                 false
             }
         }
@@ -532,19 +530,25 @@ impl McpConfigManager {
 
     /// Get a tool wrapper from a specific server (starting server as needed)
     /// Note: Returns the tool info directly since McpToolWrapper constructor is private
-    pub async fn get_tool(&self, server_name: &str, tool_name: &str) -> Result<McpToolInfo, SwellError> {
+    pub async fn get_tool(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+    ) -> Result<McpToolInfo, SwellError> {
         let client = self.get_or_start_server(server_name).await?;
 
         // Get cached tools or refresh
         let tools = client.list_tools_deferred().await?;
 
-        tools.into_iter()
+        tools
+            .into_iter()
             .find(|t| t.name == tool_name)
-            .ok_or_else(|| SwellError::ToolExecutionFailed(format!(
-                "MCP tool '{}' not found on server '{}'",
-                tool_name,
-                server_name
-            )))
+            .ok_or_else(|| {
+                SwellError::ToolExecutionFailed(format!(
+                    "MCP tool '{}' not found on server '{}'",
+                    tool_name, server_name
+                ))
+            })
     }
 }
 
@@ -623,7 +627,10 @@ mod tests {
 
         let rust_analyser = config.get_server("rust-analyzer").unwrap();
         assert_eq!(rust_analyser.command, "npx");
-        assert_eq!(rust_analyser.env.get("RUST_ANALYZER_MODE").unwrap(), "debug");
+        assert_eq!(
+            rust_analyser.env.get("RUST_ANALYZER_MODE").unwrap(),
+            "debug"
+        );
     }
 
     #[test]
@@ -922,8 +929,14 @@ mod mcp_config_tests {
         let all_health = manager.get_all_health().await;
 
         assert_eq!(all_health.len(), 2);
-        assert_eq!(all_health.get("server1"), Some(&McpServerHealth::Disconnected));
-        assert_eq!(all_health.get("server2"), Some(&McpServerHealth::Disconnected));
+        assert_eq!(
+            all_health.get("server1"),
+            Some(&McpServerHealth::Disconnected)
+        );
+        assert_eq!(
+            all_health.get("server2"),
+            Some(&McpServerHealth::Disconnected)
+        );
     }
 
     #[test]

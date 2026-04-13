@@ -17,10 +17,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 use swell_core::traits::Tool;
-use swell_core::{
-    PermissionTier, SwellError, ToolOutput, ToolRiskLevel,
-};
 use swell_core::traits::ToolBehavioralHints;
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};

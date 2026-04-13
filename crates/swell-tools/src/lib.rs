@@ -77,17 +77,15 @@ pub use loop_detection::{
     LoopDetectionResult, LoopPattern, LoopPatternType, SharedToolLoopTracker, ToolExecution,
     ToolLoopTracker,
 };
-pub use mcp::{
-    McpClient, McpManager, McpToolInfo, McpToolWrapper,
-};
+pub use mcp::{McpClient, McpManager, McpToolInfo, McpToolWrapper};
 pub use mcp_config::{
     McpConfigManager, McpReconnectConfig, McpServerConfig, McpServerHealth, McpServerState,
     McpServersConfig,
 };
 pub use mcp_lsp::{
-    LspBridgeManager, LspDefinitionTool, LspDiagnostic, LspDiagnosticsTool,
-    LspHover, LspHoverTool, LspLanguage, LspLocation, LspPosition, LspRange, LspReferencesTool,
-    LspRenameResult, LspRenameTool, LspSymbol, LspTextEdit, LspWorkspaceDiagnostics,
+    LspBridgeManager, LspDefinitionTool, LspDiagnostic, LspDiagnosticsTool, LspHover, LspHoverTool,
+    LspLanguage, LspLocation, LspPosition, LspRange, LspReferencesTool, LspRenameResult,
+    LspRenameTool, LspSymbol, LspTextEdit, LspWorkspaceDiagnostics,
 };
 pub use os_sandbox::{
     detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox,
