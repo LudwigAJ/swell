@@ -1,6 +1,44 @@
 {
   "features": [
     {
+      "id": "mcp-env-vars-runtime-fix",
+      "description": "Fix mcp-server-config blocking issue: In McpClient::connect() where tokio::process::Command is built, add .envs(\u0026self.config.env) to pass the configured environment variables to the spawned server process. The env HashMap is parsed and stored but never applied at runtime.",
+      "skillName": "worker",
+      "milestone": "mcp",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Environment variables from McpServerConfig.env applied to spawned process",
+        "McpClient::connect() calls .envs() with the env HashMap before spawning",
+        "MCP servers receive their configured environment variables"
+      ],
+      "verificationSteps": [
+        "cargo build -p swell-tools",
+        "cargo test -p swell-tools -- mcp_config -- --test-threads=4"
+      ],
+      "fulfills": [],
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
+      "id": "mcp-lsp-tool-fix",
+      "description": "Fix mcp-lsp-integration blocking issue: LSP tool names mismatch with actual mcp-language-server interface. Research actual mcp-language-server tool names from github.com/isaacphi/mcp-language-server/tools.go and fix tool names and argument schemas to match the real server interface.",
+      "skillName": "worker",
+      "milestone": "mcp",
+      "preconditions": [],
+      "expectedBehavior": [
+        "LSP tool names match actual mcp-language-server interface",
+        "Argument schemas use correct format",
+        "All LSP tools correctly invoke the language server"
+      ],
+      "verificationSteps": [
+        "cargo build -p swell-tools",
+        "cargo test -p swell-tools -- mcp_lsp -- --test-threads=4"
+      ],
+      "fulfills": [],
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
       "id": "fix-validation-lint-gate-json",
       "description": "Fix LintGate JSON parsing: clippy outputs 'message' as an object with nested fields (message.message, message.level, message.spans[].file_name), not a string. Fix json.get(\"message\").and_then(|m| m.as_str()) to use m.get(\"message\") then as_str(). Also fix file/line field access (clippy uses \"spans[].file_name\" and \"spans[].line_start\" not \"file\" and \"line\").",
       "skillName": "Rust",
