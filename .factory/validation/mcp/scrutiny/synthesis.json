@@ -1,18 +1,31 @@
 {
   "milestone": "mcp",
-  "round": 6,
+  "round": 7,
   "status": "fail",
   "validatorsRun": {
-    "build": { "passed": true, "command": "cargo build --workspace", "exitCode": 0 },
-    "typecheck": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
-    "test": { "passed": true, "command": "cargo test -p swell-tools -- mcp -- --test-threads=4", "exitCode": 0, "notes": "72 MCP tests passed in swell-tools." }
+    "build": {
+      "passed": true,
+      "command": "cargo build --workspace",
+      "exitCode": 0
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    },
+    "test": {
+      "passed": true,
+      "command": "cargo test -p swell-tools -- mcp -- --test-threads=4",
+      "exitCode": 0,
+      "notes": "72 MCP tests passed in swell-tools."
+    }
   },
   "reviewsSummary": {
     "total": 5,
     "passed": 3,
     "failed": 2,
     "failedFeatures": ["mcp-server-config", "mcp-lsp-integration"],
-    "note": "Round 6: 2 blocking issues remain from round 1. No fix features have been implemented yet. All 5 implementation features reviewed."
+    "note": "Round 7: Re-run with no new completed features. All 5 implementation features reviewed in prior rounds. 2 blocking issues remain from round 1/4. Fix features (mcp-env-vars-runtime-fix, mcp-lsp-tool-fix) still pending."
   },
   "blockingIssues": [
     {
