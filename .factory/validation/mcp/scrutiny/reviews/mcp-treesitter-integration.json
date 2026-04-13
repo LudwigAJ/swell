@@ -1,44 +1,44 @@
 {
   "featureId": "mcp-treesitter-integration",
-  "reviewedAt": "2026-04-13T01:50:00Z",
+  "reviewedAt": "2026-04-13T02:15:00Z",
   "commitId": "63f8296",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
   "status": "pass",
   "codeReview": {
-    "summary": "The feature adds 15 comprehensive tests for MCP tree-sitter integration in `crates/swell-tools/src/mcp.rs`. Tests verify tool info structures, schemas, read-only annotations, and result parsing for all 8 core tree-sitter tools (get_ast, get_node_at_position, run_query, get_symbols, find_usage, analyze_project, get_dependencies, analyze_complexity). All tests pass and code follows Rust conventions.",
+    "summary": "The feature adds 15 tests for MCP tree-sitter integration in crates/swell-tools/src/mcp.rs. Tests verify tool info structures, schemas, read-only annotations, and result parsing for all 8 core tree-sitter tools (get_ast, get_node_at_position, run_query, get_symbols, find_usage, analyze_project, get_dependencies, analyze_complexity). All verification commands passed (15 tree-sitter tests, 26 MCP tests total, build, clippy, fmt). Code follows Rust conventions with async_trait, tokio::test, and proper error handling.",
     "issues": [
       {
         "file": "crates/swell-tools/src/mcp.rs",
         "line": 1130,
         "severity": "non_blocking",
-        "description": "The `validate_tree_sitter_tool_info` function has an empty if block after checking `is_destructive()`. The comment suggests the intent was to verify tools are non-destructive, but no assertion is made. While not causing functional issues, this creates dead code that could confuse readers."
+        "description": "The validate_tree_sitter_tool_info function has an empty conditional block after checking is_destructive(). The comment indicates intent to verify tools are non-destructive, but no assertion is made. Dead code that could confuse readers but does not cause functional issues."
       },
       {
         "file": "crates/swell-tools/src/mcp.rs",
         "line": 1093,
         "severity": "non_blocking",
-        "description": "The `EXPECTED_TREE_SITTER_TOOLS` constant includes 16 tool names but only 8 are tested as 'core tools'. The other tools (register_project_tool, list_projects_tool, remove_project_tool, list_languages, check_language_available, list_files, get_file, get_file_metadata) are defined in the constant but not covered by any tests. This mismatch between defined tools and tested tools is not validated."
+        "description": "The EXPECTED_TREE_SITTER_TOOLS constant includes 16 tool names but only 8 are tested as core tools. The additional tools (register_project_tool, list_projects_tool, remove_project_tool, list_languages, check_language_available, list_files, get_file, get_file_metadata) are defined but not covered by tests. This mismatch is acceptable since the feature only requires AST/symbol/analysis tools per expectedBehavior."
       }
     ]
   },
   "sharedStateObservations": [
     {
       "area": "conventions",
-      "observation": "The test module uses `mod mcp_treesitter_tests {` which differs from existing test module naming. The existing `tests` module at line 1091 uses `mod tests {` pattern. AGENTS.md Testing Guidelines state 'Unit tests per crate (`#[cfg(test)]` modules)' but doesn't specify naming conventions for named test sub-modules.",
-      "evidence": "Line 1095: `mod mcp_treesitter_tests {` vs existing line ~1091: `mod tests {`"
-    },
-    {
-      "area": "knowledge",
-      "observation": "The feature references `https://github.com/wrale/mcp-server-tree-sitter` in a code comment but this external dependency is not documented anywhere in the repository. Workers needing to implement MCP integrations must discover this tool independently.",
-      "evidence": "Comment at line 1106: `// Reference: https://github.com/wrale/mcp-server-tree-sitter`. No documentation in AGENTS.md or .factory/library/ about MCP server dependencies or where to find them."
+      "observation": "The test module uses mod mcp_treesitter_tests which differs from the existing tests module pattern (mod tests). AGENTS.md Testing Guidelines state 'Unit tests per crate (#[cfg(test)] modules)' but don't specify naming conventions for named test sub-modules. This is acceptable but worth documenting.",
+      "evidence": "Line 1095: mod mcp_treesitter_tests { vs existing pattern at line ~1091: mod tests {"
     },
     {
       "area": "skills",
-      "observation": "The Rust skill file (~/.factory/skills/rust/SKILL.md) doesn't specifically cover MCP client testing patterns. The worker followed general Rust testing conventions but had no specific skill guidance for MCP tool testing, which has distinct patterns (Tool trait, McpToolInfo, McpToolWrapper, async_trait).",
-      "evidence": "SKILL.md covers ownership, borrowing, strings, errors, iterators, concurrency, memory - not MCP-specific patterns. The transcript shows the worker correctly implemented unit tests but had to derive MCP testing patterns from existing code."
+      "observation": "The Rust skill file doesn't specifically cover MCP client testing patterns. Worker correctly implemented unit tests following existing mcp.rs test patterns but had no specific MCP testing skill guidance.",
+      "evidence": "SKILL.md covers ownership, borrowing, strings, errors - not MCP-specific patterns. Transcript shows worker derived patterns from existing code."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The feature references the mcp-server-tree-sitter GitHub repo. This is already documented in .factory/library/mcp-server-tools.md which was added by a prior feature (mcp-lsp-integration), so no documentation gap exists.",
+      "evidence": ".factory/library/mcp-server-tools.md:19 documents the tree-sitter-server tools"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature implementation passes review. Tests are comprehensive and cover all expected tree-sitter tools. Code is idiomatic Rust with appropriate use of async_trait, tokio::test, and error handling. No blocking issues found. Two minor observations about unused constant values and an empty conditional block are non-blocking. The cross-feature blocking issue (env vars not passed to process) is not specific to this feature's implementation scope."
+  "summary": "Feature implementation passes review. All 15 tree-sitter tests and 26 MCP tests pass. Code is idiomatic Rust. No blocking issues found. Two minor non-blocking observations about dead code and unused constant values. The worker followed procedure correctly per skillFeedback. The library already documents tree-sitter server tools, so no knowledge gap exists."
 }

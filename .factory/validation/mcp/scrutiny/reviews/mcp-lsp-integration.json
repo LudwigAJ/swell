@@ -1,51 +1,26 @@
 {
   "featureId": "mcp-lsp-integration",
-  "reviewedAt": "2026-04-13T10:35:00.000Z",
+  "reviewedAt": "2026-04-13T11:00:00.000Z",
   "commitId": "f67e508fef91d81aef4d7be47b77f80fcb3c3a46",
-  "transcriptSkeletonReviewed": false,
+  "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "fail",
+  "status": "pass",
   "codeReview": {
-    "summary": "Re-review confirms all 4 prior blocking issues are STILL PRESENT in the current code. No fixes have been applied to mcp_lsp.rs. A fix feature 'mcp-lsp-tool-fix' was created (commit a746055) but the actual code has not been updated.",
-    "issues": [
-      {
-        "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 570,
-        "severity": "blocking",
-        "description": "LspRenameTool.execute() calls 'rename' but mcp-language-server exposes tool named 'rename_symbol'. This call will fail at runtime with 'tool not found'."
-      },
-      {
-        "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 628,
-        "severity": "blocking",
-        "description": "LspWorkspaceDiagnosticsTool.execute() calls 'workspace_diagnostics' which does NOT exist in mcp-language-server. The server only exposes: definition, references, hover, diagnostics, rename_symbol, edit_file."
-      },
-      {
-        "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": 705,
-        "severity": "blocking",
-        "description": "LspDocumentSymbolsTool.execute() calls 'document_symbols' which does NOT exist in mcp-language-server."
-      },
-      {
-        "file": "crates/swell-tools/src/mcp_lsp.rs",
-        "line": "200, 303, 394, 467, 565, 700",
-        "severity": "blocking",
-        "description": "Argument format mismatch. All LSP tools use {textDocument: {uri: ...}, position: {...}} but mcp-language-server expects {filePath: string, line: number, column: number}. The server does not accept the textDocument/position wrapper structure."
-      }
-    ]
+    "summary": "Round 11 re-review confirms all 4 prior blocking issues from round 10 have been FIXED. The original feature commit f67e508 had incorrect LSP tool names and argument formats, but these were corrected in fix commit 9c1b01e. The current code (HEAD 114b53e) now correctly interfaces with mcp-language-server.",
+    "issues": []
   },
   "sharedStateObservations": [
     {
-      "area": "knowledge",
-      "observation": "The library file .factory/library/mcp-server-tools.md correctly documents the actual mcp-language-server tools and argument formats. The fix feature was created but code was not updated.",
-      "evidence": "Commit a746055 created fix feature 'mcp-lsp-tool-fix' but did not apply changes to mcp_lsp.rs"
+      "area": "conventions",
+      "observation": "The fix for LSP tool names was properly implemented in a separate commit (9c1b01e) after the initial feature. The AGENTS.md guidance about verifying MCP tool names against actual server implementation was likely followed for the fix.",
+      "evidence": "Commit 9c1b01e shows comprehensive changes aligning tool names and argument formats with mcp-language-server interface"
     },
     {
-      "area": "conventions",
-      "observation": "Fix features should update the actual code. Creating a fix feature without applying the fix doesn't resolve blocking issues.",
-      "evidence": "mcp-lsp-integration still shows same 4 blocking issues after fix feature creation"
+      "area": "knowledge",
+      "observation": "The library file .factory/library/mcp-server-tools.md documents the actual mcp-language-server tools correctly. The fix applied this knowledge.",
+      "evidence": "Current code at HEAD 114b53e correctly uses rename_symbol, removed non-existent tools, and uses proper filePath/line/column format"
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "FAIL - All 4 prior blocking issues remain unfixed. The code still calls 'rename' instead of 'rename_symbol', calls non-existent 'workspace_diagnostics' and 'document_symbols', and uses incompatible argument format. Fix feature mcp-lsp-tool-fix was created but code was not updated."
+  "summary": "PASS - All 4 blocking issues from round 10 have been resolved. The LSP tool names (rename_symbol, definition, references, hover, diagnostics) and argument formats (filePath, line, column) now match mcp-language-server's actual interface. Non-existent tools (workspace_diagnostics, document_symbols) were removed."
 }
