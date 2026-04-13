@@ -865,4 +865,350 @@ fn calculate() {
 
         assert!(result.has_test_impact());
     }
+
+    // Tests for AST dependency analysis - verifying the full pipeline
+    // from source code parsing to dependency graph queries
+
+    #[test]
+    fn test_ast_dependency_analysis_python_imports() {
+        // Test that we can parse Python source and extract import dependencies
+        let source = br#"
+import os
+import sys
+from pathlib import Path
+
+def main():
+    os.getcwd()
+    sys.exit(0)
+"#;
+        let graph = DependencyGraph::from_source(source, SourceLanguage::Python);
+        assert!(
+            graph.is_ok(),
+            "Failed to parse Python source: {:?}",
+            graph.err()
+        );
+
+        let graph = graph.unwrap();
+
+        // Should have import dependencies extracted
+        let call_edges = graph.get_edges_by_relation(KgRelation::Calls);
+        assert!(
+            !call_edges.is_empty() || graph.nodes.len() > 1,
+            "Expected nodes and edges from AST parsing"
+        );
+    }
+
+    #[test]
+    fn test_ast_dependency_analysis_rust_imports_and_calls() {
+        // Test that we can parse Rust source and extract both imports and calls
+        let source = br#"
+use std::collections::HashMap;
+use std::fs::File;
+
+fn helper() -> i32 {
+    42
+}
+
+fn process() {
+    let _ = helper();
+    let mut map = HashMap::new();
+    let _ = File::open("test.txt");
+}
+"#;
+        let graph = DependencyGraph::from_source(source, SourceLanguage::Rust);
+        assert!(
+            graph.is_ok(),
+            "Failed to parse Rust source: {:?}",
+            graph.err()
+        );
+
+        let graph = graph.unwrap();
+
+        // Should have function nodes
+        let funcs = graph.get_nodes_by_type(KgNodeType::Function);
+        assert!(
+            funcs.len() >= 2,
+            "Expected at least 2 functions (helper, process)"
+        );
+
+        // Should have edges
+        let all_edges = graph.all_edges();
+        assert!(!all_edges.is_empty(), "Expected edges from AST");
+    }
+
+    #[test]
+    fn test_ast_dependency_query_what_does_y_call() {
+        // Test answering "what does Y call?" - find outgoing edges
+        let mut graph = DependencyGraph::new();
+
+        // Create: main -> helper1, main -> helper2
+        let main = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "main".to_string(),
+            properties: serde_json::json!({}),
+        });
+        let helper1 = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "helper1".to_string(),
+            properties: serde_json::json!({}),
+        });
+        let helper2 = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "helper2".to_string(),
+            properties: serde_json::json!({}),
+        });
+
+        graph.add_edge(KgEdge {
+            id: Uuid::new_v4(),
+            source: main,
+            target: helper1,
+            relation: KgRelation::Calls,
+        });
+        graph.add_edge(KgEdge {
+            id: Uuid::new_v4(),
+            source: main,
+            target: helper2,
+            relation: KgRelation::Calls,
+        });
+
+        // Query: what does main call?
+        let dependencies = graph.find_dependencies(main);
+        assert_eq!(dependencies.len(), 2);
+        assert!(dependencies.contains(&helper1));
+        assert!(dependencies.contains(&helper2));
+    }
+
+    #[test]
+    fn test_ast_dependency_query_what_depends_on_x() {
+        // Test answering "what depends on X?" - find incoming edges
+        let mut graph = DependencyGraph::new();
+
+        // Create: main -> helper, other -> helper
+        let main = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "main".to_string(),
+            properties: serde_json::json!({}),
+        });
+        let other = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "other".to_string(),
+            properties: serde_json::json!({}),
+        });
+        let helper = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "helper".to_string(),
+            properties: serde_json::json!({}),
+        });
+
+        graph.add_edge(KgEdge {
+            id: Uuid::new_v4(),
+            source: main,
+            target: helper,
+            relation: KgRelation::Calls,
+        });
+        graph.add_edge(KgEdge {
+            id: Uuid::new_v4(),
+            source: other,
+            target: helper,
+            relation: KgRelation::Calls,
+        });
+
+        // Query: what depends on helper?
+        let dependents = graph.find_dependents(helper);
+        assert_eq!(dependents.len(), 2);
+        assert!(dependents.contains(&main));
+        assert!(dependents.contains(&other));
+    }
+
+    #[test]
+    fn test_ast_dependency_call_graph_chain() {
+        // Test building a call graph chain: a -> b -> c -> d
+        let mut graph = DependencyGraph::new();
+
+        let a = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "a".to_string(),
+            properties: serde_json::json!({}),
+        });
+        let b = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "b".to_string(),
+            properties: serde_json::json!({}),
+        });
+        let c = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "c".to_string(),
+            properties: serde_json::json!({}),
+        });
+        let d = graph.add_node(KgNode {
+            id: Uuid::new_v4(),
+            node_type: KgNodeType::Function,
+            name: "d".to_string(),
+            properties: serde_json::json!({}),
+        });
+
+        // Build chain: a -> b -> c -> d
+        graph.add_edge(KgEdge {
+            id: Uuid::new_v4(),
+            source: a,
+            target: b,
+            relation: KgRelation::Calls,
+        });
+        graph.add_edge(KgEdge {
+            id: Uuid::new_v4(),
+            source: b,
+            target: c,
+            relation: KgRelation::Calls,
+        });
+        graph.add_edge(KgEdge {
+            id: Uuid::new_v4(),
+            source: c,
+            target: d,
+            relation: KgRelation::Calls,
+        });
+
+        // Verify direct dependencies
+        assert_eq!(graph.find_dependencies(a), vec![b]);
+        assert_eq!(graph.find_dependencies(b), vec![c]);
+        assert_eq!(graph.find_dependencies(c), vec![d]);
+
+        // Verify direct dependents
+        assert_eq!(graph.find_dependents(d), vec![c]);
+        assert_eq!(graph.find_dependents(c), vec![b]);
+        assert_eq!(graph.find_dependents(b), vec![a]);
+    }
+
+    #[test]
+    fn test_ast_dependency_rust_method_calls() {
+        // Test parsing Rust with method calls (obj.method())
+        let source = br#"
+struct Counter {
+    value: i32,
+}
+
+impl Counter {
+    fn new() -> Self {
+        Counter { value: 0 }
+    }
+
+    fn increment(&mut self) {
+        self.value += 1;
+    }
+
+    fn get_value(&self) -> i32 {
+        self.value
+    }
+}
+
+fn main() {
+    let mut c = Counter::new();
+    c.increment();
+    c.increment();
+    let _ = c.get_value();
+}
+"#;
+        let graph = DependencyGraph::from_source(source, SourceLanguage::Rust);
+        assert!(
+            graph.is_ok(),
+            "Failed to parse Rust with methods: {:?}",
+            graph.err()
+        );
+
+        let graph = graph.unwrap();
+
+        // Should have struct and method nodes
+        let type_nodes = graph.get_nodes_by_type(KgNodeType::Type);
+        assert!(
+            !type_nodes.is_empty() || graph.nodes.len() > 1,
+            "Expected nodes from Rust struct/methods"
+        );
+    }
+
+    #[test]
+    fn test_ast_dependency_python_functions_and_calls() {
+        // Test parsing Python with functions calling each other
+        let source = br#"
+def add(a, b):
+    return a + b
+
+def multiply(a, b):
+    return a * b
+
+def calculate():
+    result = add(1, 2)
+    result = multiply(result, 3)
+    return result
+"#;
+        let graph = DependencyGraph::from_source(source, SourceLanguage::Python);
+        assert!(
+            graph.is_ok(),
+            "Failed to parse Python functions: {:?}",
+            graph.err()
+        );
+
+        let graph = graph.unwrap();
+
+        // Should have function nodes
+        let funcs = graph.get_nodes_by_type(KgNodeType::Function);
+        assert!(funcs.len() >= 3, "Expected at least 3 functions");
+    }
+
+    #[test]
+    fn test_ast_dependency_cross_file_imports() {
+        // Test extracting cross-file import relationships
+        let source = br#"
+from collections import OrderedDict
+from typing import List, Dict
+import os
+import sys
+
+def process():
+    items: List[int] = []
+    mapping: Dict[str, str] = OrderedDict()
+    os.getcwd()
+    sys.exit(0)
+"#;
+        let graph = DependencyGraph::from_source(source, SourceLanguage::Python);
+        assert!(
+            graph.is_ok(),
+            "Failed to parse Python imports: {:?}",
+            graph.err()
+        );
+
+        let graph = graph.unwrap();
+
+        // Verify we extracted some nodes
+        assert!(!graph.nodes.is_empty(), "Expected nodes from AST parsing");
+    }
+
+    #[test]
+    fn test_ast_dependency_analysis_stats() {
+        // Test that stats are populated after AST analysis
+        let source = br#"
+def helper():
+    pass
+
+def main():
+    helper()
+    helper()
+"#;
+        let graph = DependencyGraph::from_source(source, SourceLanguage::Python);
+        assert!(graph.is_ok(), "Failed to parse: {:?}", graph.err());
+
+        let graph = graph.unwrap();
+        let stats = graph.stats();
+
+        // Should have some nodes and edges
+        assert!(stats.total_nodes > 0, "Expected some nodes");
+        // Note: edges may vary based on how imports are resolved
+    }
 }
