@@ -1,6 +1,6 @@
 {
   "milestone": "mcp",
-  "round": 7,
+  "round": 8,
   "status": "fail",
   "validatorsRun": {
     "build": {
@@ -25,7 +25,7 @@
     "passed": 3,
     "failed": 2,
     "failedFeatures": ["mcp-server-config", "mcp-lsp-integration"],
-    "note": "Round 7: Re-run with no new completed features. All 5 implementation features reviewed in prior rounds. 2 blocking issues remain from round 1/4. Fix features (mcp-env-vars-runtime-fix, mcp-lsp-tool-fix) still pending."
+    "note": "Round 8: No new completed features. All implementation features remain 'pending'. 2 blocking issues remain unfixed. Fix features (mcp-env-vars-runtime-fix, mcp-lsp-tool-fix) still pending."
   },
   "blockingIssues": [
     {
