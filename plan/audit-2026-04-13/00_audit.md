@@ -33,6 +33,17 @@ The Claw Code analysis reveals additional design patterns around runtime reliabi
 | [09_operator_surfaces_ux.md](09_operator_surfaces_ux.md) | VS Code extension, dashboard views, three interaction modes | Plan (Phase 1-3) |
 | [10_memory_storage_backends.md](10_memory_storage_backends.md) | LanceDB, Voyage embeddings, tiered storage, graph DB backends | Plan (research docs) |
 
+## Audit Documents — Second Pass (2026-04-13)
+
+A second pass covered the remaining claw code analysis files and deeper sections of the research docs.
+
+| File | Topic | Source |
+|------|-------|--------|
+| [11_tool_system_and_skills.md](11_tool_system_and_skills.md) | Tool registry layering, normalization, structured results, skills dispatch | Claw Code analysis |
+| [12_task_lifecycle_and_coordination.md](12_task_lifecycle_and_coordination.md) | Task spec validation, team/cron registry, worker boot lifecycle, typed events, recovery recipes | Claw Code analysis |
+| [13_prompt_architecture_and_testing.md](13_prompt_architecture_and_testing.md) | SystemPromptBuilder, instruction file discovery, scenario harness, mutation testing | Claw Code + Plan |
+| [14_orchestrator_gaps_and_trust.md](14_orchestrator_gaps_and_trust.md) | Trust resolution, config merge semantics, session autosave, knowledge graph impl, ACP/IPC daemon | Plan research docs |
+
 ## Priority Order
 
 The documents are roughly ordered by impact:
@@ -40,5 +51,7 @@ The documents are roughly ordered by impact:
 1. **01** and **02** are blockers — nothing useful can happen without a real execution path and git.
 2. **07** unblocks **01** — real LLM calls are needed before agent reasoning can work.
 3. **03** and **04** harden the runtime once execution works.
-4. **05**, **06**, **08** improve operational quality and debuggability.
-5. **09** and **10** expand the product surface and knowledge depth.
+4. **11** and **13** — tool dispatch correctness and prompt architecture are execution-quality blockers.
+5. **12** and **14** — task lifecycle, trust, config, and session persistence are reliability blockers.
+6. **05**, **06**, **08** improve operational quality and debuggability.
+7. **09** and **10** expand the product surface and knowledge depth.
