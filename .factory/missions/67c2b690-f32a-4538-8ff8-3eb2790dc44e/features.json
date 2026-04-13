@@ -16,8 +16,10 @@
         "cargo test -p swell-tools -- mcp_config -- --test-threads=4"
       ],
       "fulfills": [],
-      "status": "pending",
-      "workerSessionIds": []
+      "status": "completed",
+      "workerSessionIds": [
+        "199c6b0d-1684-4cdd-9421-4ec2fef47ab7"
+      ]
     },
     {
       "id": "mcp-lsp-tool-fix",
@@ -35,8 +37,31 @@
         "cargo test -p swell-tools -- mcp_lsp -- --test-threads=4"
       ],
       "fulfills": [],
-      "status": "pending",
-      "workerSessionIds": []
+      "status": "completed",
+      "workerSessionIds": [
+        "1d4b2a51-cac6-4817-ba7f-d3514d8da646"
+      ]
+    },
+    {
+      "id": "mcp-tool-annotations-fix",
+      "description": "Fix mcp-tool-annotations blocking issue: McpToolWrapper doesn't implement behavioral_hints() from the Tool trait. MCP tool annotations are stored but not exposed via the Tool trait interface.",
+      "skillName": "worker",
+      "milestone": "mcp",
+      "preconditions": [],
+      "expectedBehavior": [
+        "McpToolWrapper implements behavioral_hints() from Tool trait",
+        "McpToolAnnotations mapped to ToolBehavioralHints",
+        "MCP tool annotations exposed via Tool trait interface"
+      ],
+      "verificationSteps": [
+        "cargo build -p swell-tools",
+        "cargo test -p swell-tools -- tool_annotation -- --test-threads=4"
+      ],
+      "fulfills": [],
+      "status": "completed",
+      "workerSessionIds": [
+        "896b59cd-e3ed-431c-be80-2eccc9beebc7"
+      ]
     },
     {
       "id": "fix-validation-lint-gate-json",
