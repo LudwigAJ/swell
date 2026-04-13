@@ -1,6 +1,6 @@
 {
   "featureId": "mcp-treesitter-integration",
-  "reviewedAt": "2026-04-13T00:45:00Z",
+  "reviewedAt": "2026-04-13T01:50:00Z",
   "commitId": "63f8296",
   "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
@@ -25,20 +25,20 @@
   "sharedStateObservations": [
     {
       "area": "conventions",
-      "observation": "The test module doesn't follow the naming pattern shown in AGENTS.md. The existing MCP tests use `#[tokio::test]` and `#[test]` but the module name `mcp_treesitter_tests` follows a different convention than the existing `tests` module within `#[cfg(test)]`.",
-      "evidence": "The existing test module at line 1091 uses `mod tests {` but new tests use `mod mcp_treesitter_tests {`. AGENTS.md doesn't specify module naming conventions for test modules."
+      "observation": "The test module uses `mod mcp_treesitter_tests {` which differs from existing test module naming. The existing `tests` module at line 1091 uses `mod tests {` pattern. AGENTS.md Testing Guidelines state 'Unit tests per crate (`#[cfg(test)]` modules)' but doesn't specify naming conventions for named test sub-modules.",
+      "evidence": "Line 1095: `mod mcp_treesitter_tests {` vs existing line ~1091: `mod tests {`"
     },
     {
       "area": "knowledge",
-      "observation": "The feature references `https://github.com/wrale/mcp-server-tree-sitter` but this URL is not documented anywhere in the repository. Workers implementing MCP integrations need to discover this external tool independently.",
-      "evidence": "Comment at line 1106: `// Reference: https://github.com/wrale/mcp-server-tree-sitter`. No documentation in AGENTS.md or .factory/library about MCP server dependencies."
+      "observation": "The feature references `https://github.com/wrale/mcp-server-tree-sitter` in a code comment but this external dependency is not documented anywhere in the repository. Workers needing to implement MCP integrations must discover this tool independently.",
+      "evidence": "Comment at line 1106: `// Reference: https://github.com/wrale/mcp-server-tree-sitter`. No documentation in AGENTS.md or .factory/library/ about MCP server dependencies or where to find them."
     },
     {
       "area": "skills",
-      "observation": "The Rust skill file doesn't specifically cover MCP client testing patterns. The worker followed general Rust testing patterns correctly but had no specific guidance for MCP tool testing.",
-      "evidence": "SKILL.md covers ownership, borrowing, strings, errors, iterators, concurrency, memory - not MCP testing patterns. The worker created appropriate unit tests but had no skill guide for this specific task."
+      "observation": "The Rust skill file (~/.factory/skills/rust/SKILL.md) doesn't specifically cover MCP client testing patterns. The worker followed general Rust testing conventions but had no specific skill guidance for MCP tool testing, which has distinct patterns (Tool trait, McpToolInfo, McpToolWrapper, async_trait).",
+      "evidence": "SKILL.md covers ownership, borrowing, strings, errors, iterators, concurrency, memory - not MCP-specific patterns. The transcript shows the worker correctly implemented unit tests but had to derive MCP testing patterns from existing code."
     }
   ],
   "addressesFailureFrom": null,
-  "summary": "Feature implementation passes review. Tests are comprehensive and cover all expected tree-sitter tools. Code is idiomatic Rust with appropriate use of async_trait, tokio::test, and error handling. No blocking issues found. Two minor observations about unused constant values and an empty conditional block are non-blocking."
+  "summary": "Feature implementation passes review. Tests are comprehensive and cover all expected tree-sitter tools. Code is idiomatic Rust with appropriate use of async_trait, tokio::test, and error handling. No blocking issues found. Two minor observations about unused constant values and an empty conditional block are non-blocking. The cross-feature blocking issue (env vars not passed to process) is not specific to this feature's implementation scope."
 }
