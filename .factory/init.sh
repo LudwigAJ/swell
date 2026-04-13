@@ -1,26 +1,18 @@
 #!/bin/bash
-set -e
+# NOTE: This file should be executable (chmod +x .factory/init.sh)
+set -euo pipefail
 
-cd /Users/ludwigjonsson/Projects/swell
-
-echo "Loading SWELL settings from .swell/..."
-if [ -f ".swell/settings.json" ]; then
-    echo "  - Found settings.json"
-fi
-if [ -f ".swell/policies/default.yaml" ]; then
-    echo "  - Found policy rules"
-fi
-if [ -f ".swell/models.json" ]; then
-    echo "  - Found model configuration"
+# Ensure Rust toolchain is available
+if ! command -v cargo &> /dev/null; then
+    echo "ERROR: cargo not found. Install Rust via https://rustup.rs"
+    exit 1
 fi
 
-echo "Installing Rust dependencies..."
-cargo fetch
+# Verify workspace compiles
+echo "Checking workspace compilation..."
+cargo check --workspace 2>&1 || {
+    echo "ERROR: Workspace compilation failed"
+    exit 1
+}
 
-echo "Building workspace..."
-cargo build --workspace
-
-echo "Running tests..."
-cargo test --workspace
-
-echo "Setup complete."
+echo "Swell workspace ready."
