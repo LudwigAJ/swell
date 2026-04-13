@@ -14,6 +14,7 @@ pub mod agents;
 pub mod alerts;
 pub mod autonomy;
 pub mod backlog;
+pub mod context_chunking;
 pub mod context_pipeline;
 pub mod drift_detector;
 pub mod evidence_pipeline;
@@ -66,6 +67,10 @@ pub use autonomy::{ApprovalDecision, ApprovalRequest, AutonomyController};
 pub use backlog::{
     BacklogItem, BacklogSource, BacklogStats, DeduplicationConfig, PriorityScoringConfig,
     WorkBacklog,
+};
+pub use context_chunking::{
+    AstChunkingConfig, AstChunkProvider, ContextChunkingAssembler, ContextChunkingResult,
+    ChunkScorer, ScoringReason, ScoredChunk,
 };
 pub use context_pipeline::{
     ContextAssembler, ContextPipelineConfig, ContextPipelineResult, ContextTier,
