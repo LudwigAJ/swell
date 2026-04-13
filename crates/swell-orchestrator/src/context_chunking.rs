@@ -252,14 +252,12 @@ impl ChunkScorer {
         for seed_id in seed_ids {
             let direct_calls = self.call_graph.get(seed_id).cloned().unwrap_or_default();
             for called_id in &direct_calls {
-                if chunk_ids.contains(called_id) {
-                    if call_depth > 1 {
-                        call_depth = 1;
-                        relevance_score = relevance_score.max(self.config.direct_call_weight);
-                        scoring_reasons.push(ScoringReason::DirectCall {
-                            function: chunk.name.clone(),
-                        });
-                    }
+                if chunk_ids.contains(called_id) && call_depth > 1 {
+                    call_depth = 1;
+                    relevance_score = relevance_score.max(self.config.direct_call_weight);
+                    scoring_reasons.push(ScoringReason::DirectCall {
+                        function: chunk.name.clone(),
+                    });
                 }
             }
         }
@@ -537,7 +535,7 @@ impl ContextChunkingAssembler {
             .into_iter()
             .map(|(_, chunk)| {
                 // Score the single chunk
-                let scored_results = self.chunk_scorer.score_chunks(&[chunk.clone()], seed_function, "");
+                let scored_results = self.chunk_scorer.score_chunks(std::slice::from_ref(&chunk), seed_function, "");
                 if let Some(scored) = scored_results.into_iter().next() {
                     scored
                 } else {
