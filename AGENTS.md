@@ -39,30 +39,18 @@ swell/
 ## Core Crates
 
 ### swell-core
-Core types, traits, and state machine definitions. All other crates depend on this.
+Core types, traits, error types, and state machine definitions. **All other crates depend on this.**
 
 **Key Modules:**
 - `types.rs` - Task, Agent, State enums
 - `traits.rs` - Agent, Tool, Validator traits
 - `events.rs` - Event emitter for observability
-
-### swell-orchestrator
-Coordinates task planning and execution flow.
-
-**Key Modules:**
-- `orchestrator.rs` - Main orchestration loop
-- `scheduler.rs` - Task queue and dependency management
-- `policy.rs` - Policy evaluation engine
-- `autonomy.rs` - Autonomy level controller
-- `backlog.rs` - Work backlog aggregation
-
-**Agent Types:**
-- `planner_agent.rs` - Plan generation
-- `generator_agent.rs` - Code generation
-- `evaluator_agent.rs` - Validation evaluation
-- `coder_agent.rs` - General coding
-- `reviewer_agent.rs` - Code review
-- `refactorer_agent.rs` - Refactoring
+- `error.rs` - SwellError enum with all error variants
+- `circuit_breaker.rs` - Resilience pattern for external calls
+- `cost_tracking.rs` - Token and cost accounting
+- `kill_switch.rs` - Emergency stop mechanism
+- `langfuse.rs` - LLM observability integration
+- `opentelemetry.rs` - OpenTelemetry tracing setup
 
 ### swell-llm
 LLM backend implementations with model routing.
@@ -72,8 +60,12 @@ LLM backend implementations with model routing.
 - `openai.rs` - OpenAI API
 - `mock.rs` - Mock backend for testing
 
+**Key Types:**
+- `LlmBackend` trait - Interface for all LLM backends
+- `ModelRouter` - Routes requests to appropriate model
+
 ### swell-tools
-Tool implementations for code operations.
+Tool implementations for code operations and policy enforcement.
 
 **Tools:**
 - `file.rs` - Read, write, edit files
@@ -82,6 +74,9 @@ Tool implementations for code operations.
 - `search.rs` - Grep, glob for codebase exploration
 - `registry.rs` - Tool registry and permission tiers
 - `mcp.rs` - MCP client for external tools
+- `vault.rs` - Secret management
+- `cedar_policy.rs` - Authorization policy evaluation
+- `loop_detection.rs` - Doom loop prevention
 
 ### swell-validation
 Validation gates and test pipelines.
@@ -105,8 +100,45 @@ Memory system with SQLite persistence.
 ### swell-state
 State management and checkpoint persistence.
 
+**Modules:**
+- Checkpoint creation and restoration
+- State serialization/deserialization
+- Migration support
+
 ### swell-sandbox
-Sandbox isolation for tool execution (stub for MVP).
+Sandbox isolation for tool execution.
+
+**Features:**
+- Process isolation for shell commands
+- Linux: libcia-based containment (stub for MVP)
+- macOS/Windows: process isolation via token privileges
+
+### swell-skills
+Agent Skills loader following the [agentskills.io](https://agentskills.io) standard.
+
+**Features:**
+- Skill discovery from `.swell/skills/` directory
+- YAML frontmatter parsing for metadata
+- User-extensible skill registry
+- Skill conflict detection
+
+### swell-orchestrator
+Coordinates task planning and execution flow.
+
+**Key Modules:**
+- `orchestrator.rs` - Main orchestration loop
+- `scheduler.rs` - Task queue and dependency management
+- `policy.rs` - Policy evaluation engine
+- `autonomy.rs` - Autonomy level controller
+- `backlog.rs` - Work backlog aggregation
+
+**Agent Types:**
+- `planner_agent.rs` - Plan generation
+- `generator_agent.rs` - Code generation
+- `evaluator_agent.rs` - Validation evaluation
+- `coder_agent.rs` - General coding
+- `reviewer_agent.rs` - Code review
+- `refactorer_agent.rs` - Refactoring
 
 ### swell-daemon
 Daemon server running as Unix socket server.
@@ -332,6 +364,280 @@ These come with SWELL but can be replaced or extended:
 | `test-writing` | Unit tests, mocking, async tests |
 | `code-review` | Review checklist, clippy, security |
 | `refactoring` | Safe refactoring patterns, strangler fig |
+
+## Cross-Crate Dependency Graph
+
+The workspace follows a layered architecture where `swell-core` is the foundation that all other crates depend on.
+
+```
+                    ┌─────────────────────┐
+                    │     swell-core      │  (Base: types, traits, errors)
+                    │   (no dependencies) │
+                    └──────────┬──────────┘
+                               │
+          ┌────────────────────┼────────────────────┐
+          │                    │                    │
+          ▼                    ▼                    ▼
+   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+   │  swell-llm  │      │ swell-state │      │ swell-tools │
+   └──────┬──────┘      └──────┬──────┘      └──────┬──────┘
+          │                   │                   │
+          │           ┌───────┴───────┐           │
+          │           │               │           │
+          ▼           ▼               │           │
+   ┌─────────────┐ ┌───────────┐      │           │
+   │swell-validation│ │swell-memory│     │           │
+   └──────┬──────┘ └───────────┘      │           │
+          │                            │           │
+          └────────────┬───────────────┘           │
+                       │                           │
+                       ▼                           │
+              ┌─────────────────┐                   │
+              │swell-orchestrator│                  │
+              └────────┬────────┘                   │
+                       │                           │
+          ┌────────────┼────────────┐              │
+          │                         │              │
+          ▼                         ▼              │
+   ┌─────────────┐           ┌─────────────┐      │
+   │swell-daemon│           │swell-benchmark│     │
+   └─────────────┘           └─────────────┘      │
+                                          │
+                                          ▼
+                                   ┌─────────────┐
+                                   │  swell-cli  │
+                                   └─────────────┘
+
+   Independent crate (no internal deps):
+   ┌─────────────┐
+   │swell-sandbox│
+   └─────────────┘
+```
+
+### Dependency Summary
+
+| Crate | Dependencies | Role |
+|-------|-------------|------|
+| `swell-core` | None | Foundation: types, traits, errors, events |
+| `swell-llm` | swell-core | LLM backend implementations |
+| `swell-state` | swell-core | State management, checkpoints |
+| `swell-memory` | swell-core | SQLite-backed memory system |
+| `swell-tools` | swell-core | File, git, shell, search, MCP tools |
+| `swell-sandbox` | swell-core | Process isolation (cross-platform) |
+| `swell-skills` | swell-core | Agent skills loader |
+| `swell-validation` | swell-core, swell-llm | Lint, test, security gates |
+| `swell-orchestrator` | swell-core, swell-llm, swell-state, swell-tools, swell-validation | Task coordination |
+| `swell-daemon` | swell-core, swell-orchestrator | HTTP/WS server for task management |
+| `swell-benchmark` | swell-core, swell-orchestrator, swell-llm, swell-tools, swell-validation, swell-state | Evaluation suite |
+| `swell-cli` | swell-core | CLI client binary |
+
+## Error Handling Conventions
+
+SWELL uses a two-tier error handling strategy with `thiserror` for domain-specific errors and `anyhow` for context-rich error handling.
+
+### Domain Errors with `thiserror`
+
+Use `thiserror` for errors that represent specific failure modes in your domain:
+
+```rust
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum MyError {
+    #[error("Resource {0} not found")]
+    NotFound(Uuid),
+
+    #[error("Invalid operation: {0}")]
+    InvalidOperation(String),
+
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+}
+```
+
+**When to use `thiserror`:**
+- Define the primary error type for a crate
+- When errors need to implement `std::error::Error`
+- When you want exhaustive pattern matching on error variants
+
+### Context Errors with `anyhow`
+
+Use `anyhow` for operations that may fail in many ways and where context matters:
+
+```rust
+use anyhow::{Context, Result};
+
+fn load_config() -> Result<Config> {
+    let contents = std::fs::read_to_string("config.json")
+        .context("Failed to read config file")?;
+    serde_json::from_str(&contents)
+        .context("Failed to parse config JSON")?
+}
+```
+
+**When to use `anyhow`:**
+- In `fn main()` and test functions
+- At API boundaries where you want rich error messages
+- When errors should be user-friendly and informative
+
+### Central Error Type
+
+`swell-core/src/error.rs` defines `SwellError` - the canonical error type for the system:
+
+```rust
+pub enum SwellError {
+    TaskNotFound(Uuid),
+    AgentNotFound(Uuid),
+    InvalidStateTransition(String),
+    ToolExecutionFailed(String),
+    SandboxError(String),
+    LlmError(String),
+    DatabaseError(String),
+    BudgetExceeded(String),
+    PermissionDenied(String),
+    DoomLoopDetected,
+    KillSwitchTriggered,
+    ConfigError(String),
+    IoError(#[from] std::io::Error),
+}
+```
+
+### Error Propagation Patterns
+
+1. **Prefer `?` operator** for automatic error conversion
+2. **Use `context()`** from `anyhow` to add context at failure points
+3. **Implement `From`** for conversion between error types
+4. **Serialize errors** with `serde` when crossing network boundaries
+
+```rust
+// Good: Rich context on failure
+async fn fetch_data(url: &str) -> Result<Data> {
+    reqwest::get(url)
+        .await
+        .context("Failed to fetch data from {url}")?
+        .json::<Data>()
+        .await
+        .context("Failed to deserialize response")?
+}
+
+// Good: Domain error with source
+#[derive(Error, Debug)]
+pub enum StoreError {
+    #[error("Database error: {0}")]
+    Database(#[from] sqlx::Error),
+
+    #[error("Entity {id} not found")]
+    NotFound { id: Uuid },
+}
+```
+
+## Async Patterns
+
+SWELL uses Tokio as the async runtime with consistent patterns across all crates.
+
+### Runtime Configuration
+
+All async code runs on Tokio with full features:
+
+```toml
+# Cargo.toml workspace.dependencies
+tokio = { version = "1", features = ["full"] }
+```
+
+### Entry Points
+
+Use `#[tokio::main]` for binaries and `#[tokio::test]` for tests:
+
+```rust
+// Binary entry point
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt::init();
+    run().await
+}
+
+// Test entry point
+#[tokio::test]
+async fn test_something() {
+    let result = do_something().await;
+    assert!(result.is_ok());
+}
+```
+
+### Send + Sync Bounds
+
+All types that cross `.await` points or are shared between tasks must be `Send + Sync`:
+
+```rust
+// Good: Stateless service
+struct MyService {
+    // Fields are Send + Sync (built-in types or explicitly bounded)
+}
+
+// Good: Shared state with proper bounds
+impl State {
+    pub async fn update(&self, value: String) -> Result<()> {
+        let guard = self.data.lock().await;
+        // ...
+    }
+}
+
+// Caution: Arc<Mutex<T>> for shared mutable state
+let shared: Arc<Mutex<HashMap<K, V>>> = Arc::new(Mutex::new(HashMap::new()));
+```
+
+### Async Traits
+
+Use `async-trait` for async methods in traits:
+
+```rust
+use async_trait::async_trait;
+
+#[async_trait]
+pub trait LlmBackend: Send + Sync {
+    async fn complete(&self, prompt: &str) -> Result<String>;
+    async fn complete_streaming(&self, prompt: &str) -> Result<Vec<String>>;
+}
+```
+
+### Spawning Tasks
+
+Use `tokio::spawn` for fire-and-forget tasks and `spawn_blocking` for CPU-bound work:
+
+```rust
+// I/O-bound work: stay in async context
+let handle = tokio::spawn(async move {
+    read_file().await
+});
+
+// CPU-bound work: move to blocking thread pool
+let result = tokio::task::spawn_blocking(|| {
+    cpu_intensive_computation()
+}).await?;
+```
+
+### Channel Patterns
+
+Use Tokio channels for task-to-task communication:
+
+```rust
+use tokio::sync::mpsc;
+use tokio::sync::watch;
+
+// For multiple producers, single consumer: mpsc
+let (tx, mut rx) = mpsc::channel::<Event>(100);
+
+// For broadcast to many consumers: broadcast
+use tokio::sync::broadcast;
+let (tx, _rx) = broadcast::channel::<State>(10);
+```
+
+### Common Pitfalls
+
+1. **Blocking in async context** - Always use `spawn_blocking` for blocking operations
+2. **Missing `Send` bounds** - Ensure types shared across tasks implement `Send`
+3. **Silent task drops** - Store `JoinHandle` to await task completion
+4. **Deadlocks** - Avoid holding locks across `.await` points; use `Mutex` (not `RwLock`) carefully
 
 ## v2 Roadmap (Based on Research Documents)
 
