@@ -1,0 +1,17 @@
+{
+  "milestone": "ast",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "notes": "Milestone 'ast' features (treesitter-ast-parsing, ast-dependency-graph, ast-dependency-analysis, code-impact-analysis) do not fulfill any validation contract assertions. All have empty fulfills arrays. No user-testing assertions to validate for this milestone."
+}
