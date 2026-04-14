@@ -196,6 +196,28 @@ cargo clippy -p <crate> -- -D warnings
 
 Use crate-scoped validation by default for the directly affected package. Use `-- --test-threads=1` only for stateful, flaky, or explicitly serial tests. Reserve workspace-wide `cargo build/test/clippy` for explicit full-repo validation, cross-crate changes, or final release gates.
 
+### Compilation Times — Required Timeouts
+
+`swell-orchestrator` is the heaviest crate (~42k lines, pulls in tokio-full, reqwest, sqlx). Even with a warm incremental build cache, compiling and linking it takes **60–120 seconds** on macOS ARM64. Always use a sufficient timeout:
+
+| Scope | Minimum timeout |
+|-------|----------------|
+| `cargo test/build/check -p swell-orchestrator` | **180 s** |
+| `cargo test/build --workspace` | **300 s** |
+| `cargo test/build -p swell-core` (fast crates) | 60 s |
+
+**Exit code 124 = the timeout fired during compilation, not a test failure.** Retry with a longer timeout before investigating test logic.
+
+```bash
+# Correct — give the compiler enough time
+timeout 180 cargo test -p swell-orchestrator -- evidence_pipeline --test-threads=4
+
+# Workspace-wide (only when needed)
+timeout 300 cargo test --workspace -- --test-threads=4
+```
+
+**Never run `cargo clean`** unless explicitly asked — it destroys the incremental build cache and makes the next build 10× slower. **Never set `CARGO_INCREMENTAL=0`** for the same reason.
+
 ### Workspace-wide Validation (Opt-in)
 ```bash
 cargo build --workspace

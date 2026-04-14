@@ -323,15 +323,23 @@ Alternatively, configure in `.swell/settings.json`:
 
 ### Issue: Tests hang or timeout
 
-**Symptom**: `cargo test` hangs indefinitely.
+**Symptom**: `cargo test -p swell-orchestrator` exits with code 124 or never produces output.
 
-**Cause**: Async test not properly awaited, or infinite loop in test.
+**Cause**: `swell-orchestrator` is a large crate (~42k lines, heavy deps). Even with a warm
+incremental build cache, compiling and linking takes **60–120 seconds** on macOS ARM64.
+Exit code 124 means the timeout fired during compilation — it is not a test failure.
 
-**Solution**: Run tests with timeout:
+**Solution**: Use a sufficient timeout:
 ```bash
-cargo test -p <crate> -- --test-threads=1
+# Single crate (minimum 180 s)
+timeout 180 cargo test -p swell-orchestrator -- <filter> --test-threads=4
+
+# Workspace-wide (minimum 300 s)
+timeout 300 cargo test --workspace -- --test-threads=4
 ```
-Check for missing `.await` calls or infinite loops in test code.
+
+For genuinely hanging async tests (missing `.await`, infinite loop), add `--test-threads=1`
+and check for missing `.await` calls.
 
 ---
 
@@ -386,6 +394,38 @@ cargo fmt --all
 # Run all lints
 cargo clippy --workspace -- -D warnings
 ```
+
+### Build Cache Management
+
+The `target/` directory holds compiled artifacts and can grow large over time. Each unique
+compilation environment (different flags, env vars, or Cargo profile) creates a new incremental
+session directory — old ones are never automatically deleted by Cargo.
+
+**Expected sizes after a clean rebuild:**
+
+| Directory | Expected size |
+|---|---|
+| `target/debug/` | ~2–4 GB |
+| `target/debug/incremental/` | ~1 GB |
+| `target/release/` | ~2 GB (only after `--release` build) |
+
+**If `target/` grows beyond ~10 GB**, stale incremental sessions have accumulated.
+To reset to a minimal state:
+
+```bash
+# Wipe everything and rebuild from scratch (~50 s on macOS ARM64)
+cargo clean && cargo build --workspace
+```
+
+To clean only the stale incremental data (faster, preserves compiled deps):
+
+```bash
+# Remove only incremental session data (~1–30 GB when stale)
+rm -rf target/debug/incremental target/release/incremental
+```
+
+**Do not** set `CARGO_INCREMENTAL=0` or run `cargo clean` before every build — it destroys
+the dependency cache that makes incremental rebuilds fast.
 
 ---
 
