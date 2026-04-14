@@ -1,0 +1,28 @@
+{
+  "milestone": "M5-permissions-tools",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-PERM-001",
+    "VAL-PERM-002",
+    "VAL-PERM-003",
+    "VAL-PERM-004",
+    "VAL-PERM-005",
+    "VAL-PERM-006",
+    "VAL-PERM-007",
+    "VAL-PERM-008",
+    "VAL-PERM-009",
+    "VAL-PERM-010",
+    "VAL-PERM-011"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
