@@ -632,6 +632,30 @@ use tokio::sync::broadcast;
 let (tx, _rx) = broadcast::channel::<State>(10);
 ```
 
+### Select and Cancellation Safety
+
+Use `tokio::select!` for racing multiple async operations or waiting for a cancellation signal alongside work.
+
+```rust
+use tokio::select;
+use tokio_util::sync::CancellationToken;
+
+async fn do_cancellable_work(token: CancellationToken) -> Result<()> {
+    select! {
+        _ = token.cancelled() => {
+            // Cancellation requested, clean up
+            tracing::info!("Operation cancelled");
+            Ok(())
+        }
+        result = perform_long_operation() => {
+            result
+        }
+    }
+}
+```
+
+**Cancellation Safety Rule:** All futures used in `select!` branches must be cancellation-safe. If a future is dropped before completion, it should not lose data or leave the system in an inconsistent state. `tokio::sync::mpsc::Sender::send` is cancellation-safe, but reading from a `tokio::io::AsyncRead` is generally not.
+
 ### Common Pitfalls
 
 1. **Blocking in async context** - Always use `spawn_blocking` for blocking operations

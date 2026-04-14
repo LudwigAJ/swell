@@ -1,8 +1,26 @@
 {
   "features": [
     {
+      "id": "fix-evidence-pipeline-tests-hang",
+      "description": "Fix the hanging tests in evidence_pipeline.rs in swell-orchestrator: `test_evidence_pipeline_chunking` and `test_evidence_pipeline_process`. They currently take >60s each or hang indefinitely. Investigate concurrency/channel/locking issues causing this and fix them.",
+      "skillName": "Rust",
+      "milestone": "validation-fix",
+      "preconditions": [],
+      "expectedBehavior": [
+        "Tests complete in less than a few seconds",
+        "No hangs in evidence pipeline logic",
+        "Tests pass"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-orchestrator -- evidence_pipeline"
+      ],
+      "fulfills": [],
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
       "id": "mcp-env-vars-runtime-fix",
-      "description": "Fix mcp-server-config blocking issue: In McpClient::connect() where tokio::process::Command is built, add .envs(\u0026self.config.env) to pass the configured environment variables to the spawned server process. The env HashMap is parsed and stored but never applied at runtime.",
+      "description": "Fix mcp-server-config blocking issue: In McpClient::connect() where tokio::process::Command is built, add .envs(&self.config.env) to pass the configured environment variables to the spawned server process. The env HashMap is parsed and stored but never applied at runtime.",
       "skillName": "worker",
       "milestone": "mcp",
       "preconditions": [],
@@ -618,7 +636,7 @@
     },
     {
       "id": "mem-promotion-threshold",
-      "description": "Pattern promotion: ≥5 confirmations with confidence >0.6. Rule promotion: ≥10 confirmations with confidence >0.8.",
+      "description": "Pattern promotion: \u22655 confirmations with confidence >0.6. Rule promotion: \u226510 confirmations with confidence >0.8.",
       "skillName": "Rust",
       "preconditions": [],
       "expectedBehavior": [
@@ -1326,7 +1344,7 @@
     },
     {
       "id": "val-traceability-store",
-      "description": "Bidirectional links: Goal→Criteria→Tests→Results→Evidence for full traceability.",
+      "description": "Bidirectional links: Goal\u2192Criteria\u2192Tests\u2192Results\u2192Evidence for full traceability.",
       "skillName": "Rust",
       "preconditions": [],
       "expectedBehavior": [
@@ -1786,7 +1804,7 @@
     },
     {
       "id": "orch-model-fallback",
-      "description": "Model fallback chain: Sonnet → GPT-4o → Haiku for graceful degradation.",
+      "description": "Model fallback chain: Sonnet \u2192 GPT-4o \u2192 Haiku for graceful degradation.",
       "skillName": "Rust",
       "preconditions": [],
       "expectedBehavior": [
@@ -2405,7 +2423,7 @@
     },
     {
       "id": "orch-state-machine",
-      "description": "Complete TaskStateMachine with all 10 states (Created→Enriched→Ready→Assigned→Executing→Validating→Accepted/Rejected→Failed/Escalated). Invalid transition protection, plan attachment, iteration tracking, escalation after 3 failures.",
+      "description": "Complete TaskStateMachine with all 10 states (Created\u2192Enriched\u2192Ready\u2192Assigned\u2192Executing\u2192Validating\u2192Accepted/Rejected\u2192Failed/Escalated). Invalid transition protection, plan attachment, iteration tracking, escalation after 3 failures.",
       "skillName": "Rust",
       "preconditions": [
         "swell-core types defined"
@@ -2456,7 +2474,7 @@
     },
     {
       "id": "orch-execution-controller",
-      "description": "ExecutionController for Planner→Generator→Evaluator pipeline. execute_task and execute_batch with concurrency limits.",
+      "description": "ExecutionController for Planner\u2192Generator\u2192Evaluator pipeline. execute_task and execute_batch with concurrency limits.",
       "skillName": "Rust",
       "preconditions": [
         "Orchestrator complete"
@@ -2635,7 +2653,7 @@
       "expectedBehavior": [
         "Generator receives step",
         "Uses file tools for changes",
-        "ReAct: think→act→observe→repeat"
+        "ReAct: think\u2192act\u2192observe\u2192repeat"
       ],
       "verificationSteps": [
         "cargo build --workspace",
@@ -2817,7 +2835,7 @@
     },
     {
       "id": "agents-react-loop",
-      "description": "ReAct loop implementation (Think→Act→Observe→Repeat) for agent tool use with reflection on failures.",
+      "description": "ReAct loop implementation (Think\u2192Act\u2192Observe\u2192Repeat) for agent tool use with reflection on failures.",
       "skillName": "Rust",
       "preconditions": [
         "Agent trait implemented"
@@ -5147,8 +5165,7 @@
       "workerSessionIds": [
         "95d11cc7-24d5-45c1-a530-a5ffc3ac5321"
       ]
-    }
-  ,
+    },
     {
       "id": "fix-memory-blocking-issues",
       "description": "Cancelled: Investigation confirmed all mentioned functionality is already correctly implemented and tests pass. No bugs found.",
