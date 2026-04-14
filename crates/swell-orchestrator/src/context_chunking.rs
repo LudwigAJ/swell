@@ -22,7 +22,10 @@ use crate::context_pipeline::{ContextPipelineConfig, ContextTier, PipelineContex
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use swell_core::dependency_graph::DependencyGraph;
-use swell_core::{treesitter::{parse_source, CodeChunk, ChunkType, SourceLanguage}, KgRelation};
+use swell_core::{
+    treesitter::{parse_source, ChunkType, CodeChunk, SourceLanguage},
+    KgRelation,
+};
 use uuid::Uuid;
 
 // ============================================================================
@@ -194,7 +197,11 @@ impl ChunkScorer {
         let mut scored_chunks = Vec::new();
 
         // Find the seed function node ID
-        let seed_ids = self.name_to_ids.get(seed_function).cloned().unwrap_or_default();
+        let seed_ids = self
+            .name_to_ids
+            .get(seed_function)
+            .cloned()
+            .unwrap_or_default();
 
         for chunk in chunks {
             // Skip test files unless configured to include them
@@ -202,12 +209,8 @@ impl ChunkScorer {
                 continue;
             }
 
-            let scoring_result = self.score_single_chunk(
-                chunk,
-                &seed_ids,
-                seed_function,
-                file_path,
-            );
+            let scoring_result =
+                self.score_single_chunk(chunk, &seed_ids, seed_function, file_path);
 
             if scoring_result.relevance_score >= self.config.min_relevance_score {
                 scored_chunks.push(scoring_result);
@@ -246,7 +249,11 @@ impl ChunkScorer {
         }
 
         // Find node IDs for this chunk
-        let chunk_ids = self.name_to_ids.get(&chunk.name).cloned().unwrap_or_default();
+        let chunk_ids = self
+            .name_to_ids
+            .get(&chunk.name)
+            .cloned()
+            .unwrap_or_default();
 
         // Check direct calls from seed
         for seed_id in seed_ids {
@@ -265,12 +272,8 @@ impl ChunkScorer {
         // Check transitive calls (depth 2+)
         if call_depth == usize::MAX {
             for seed_id in seed_ids {
-                let transitive_depth = self.find_transitive_call_depth(
-                    *seed_id,
-                    &chunk_ids,
-                    0,
-                    &mut HashSet::new(),
-                );
+                let transitive_depth =
+                    self.find_transitive_call_depth(*seed_id, &chunk_ids, 0, &mut HashSet::new());
                 if let Some(depth) = transitive_depth {
                     call_depth = depth.min(call_depth);
                     let weight = self.config.transitive_call_weight / (depth as f32);
@@ -308,7 +311,11 @@ impl ChunkScorer {
             relevance_score,
             scoring_reasons,
             token_count: ScoredChunk::estimate_tokens(&chunk.source_code),
-            call_depth: if call_depth == usize::MAX { 0 } else { call_depth },
+            call_depth: if call_depth == usize::MAX {
+                0
+            } else {
+                call_depth
+            },
         }
     }
 
@@ -430,13 +437,9 @@ impl AstChunkProvider {
         chunks
             .iter()
             .map(|chunk| {
-                PipelineContextItem::new(
-                    chunk.source_code.clone(),
-                    tier,
-                    base_relevance,
-                )
-                .with_source_id(chunk.name.clone())
-                .with_priority((base_relevance * 100.0) as u32)
+                PipelineContextItem::new(chunk.source_code.clone(), tier, base_relevance)
+                    .with_source_id(chunk.name.clone())
+                    .with_priority((base_relevance * 100.0) as u32)
             })
             .collect()
     }
@@ -535,7 +538,9 @@ impl ContextChunkingAssembler {
             .into_iter()
             .map(|(_, chunk)| {
                 // Score the single chunk
-                let scored_results = self.chunk_scorer.score_chunks(std::slice::from_ref(&chunk), seed_function, "");
+                let scored_results =
+                    self.chunk_scorer
+                        .score_chunks(std::slice::from_ref(&chunk), seed_function, "");
                 if let Some(scored) = scored_results.into_iter().next() {
                     scored
                 } else {
@@ -564,9 +569,8 @@ impl ContextChunkingAssembler {
         let total_tokens: usize = all_scored.iter().map(|s| s.token_count).sum();
 
         // Apply token budget using ContextAssembler logic
-        let target_tokens =
-            (self.pipeline_config.max_tokens as f64 * self.pipeline_config.warning_threshold)
-                as usize;
+        let target_tokens = (self.pipeline_config.max_tokens as f64
+            * self.pipeline_config.warning_threshold) as usize;
 
         let mut included = Vec::new();
         let mut excluded = Vec::new();
@@ -1020,10 +1024,8 @@ fn deep() { println!("deep"); }
             ..Default::default()
         };
 
-        let mut assembler = ContextChunkingAssembler::with_configs(
-            config,
-            ContextPipelineConfig::default(),
-        );
+        let mut assembler =
+            ContextChunkingAssembler::with_configs(config, ContextPipelineConfig::default());
 
         let source = br#"
 fn main() { helper(); }
@@ -1059,7 +1061,8 @@ fn other() { println!("other"); }
         pipeline_config.max_tokens = 100; // Very small budget
         pipeline_config.warning_threshold = 0.8;
 
-        let mut assembler = ContextChunkingAssembler::with_configs(chunking_config, pipeline_config);
+        let mut assembler =
+            ContextChunkingAssembler::with_configs(chunking_config, pipeline_config);
 
         // Create many small functions
         let mut source = String::new();
@@ -1076,11 +1079,8 @@ fn other() { println!("other"); }
         let result = assembler.build_context(&files, "func0", None);
 
         // With very small budget, many chunks should be excluded
-        let total_included_tokens: usize = result
-            .included_chunks
-            .iter()
-            .map(|s| s.token_count)
-            .sum();
+        let total_included_tokens: usize =
+            result.included_chunks.iter().map(|s| s.token_count).sum();
 
         // Total tokens should be under the warning threshold
         assert!(total_included_tokens <= 100);
@@ -1106,11 +1106,13 @@ impl MyStruct {
         let result = assembler.build_context(&files, "new", None);
 
         // Should find struct and impl chunks
-        let has_struct = result
+        let has_struct = result.scored_chunks.iter().any(|s| {
+            s.chunk.chunk_type == ChunkType::Struct || s.chunk.chunk_type == ChunkType::Class
+        });
+        let has_impl = result
             .scored_chunks
             .iter()
-            .any(|s| s.chunk.chunk_type == ChunkType::Struct || s.chunk.chunk_type == ChunkType::Class);
-        let has_impl = result.scored_chunks.iter().any(|s| s.chunk.chunk_type == ChunkType::Method);
+            .any(|s| s.chunk.chunk_type == ChunkType::Method);
 
         // Results may vary based on what tree-sitter extracts
         // Just verify we got some chunks

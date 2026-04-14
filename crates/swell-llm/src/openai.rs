@@ -865,7 +865,8 @@ impl LlmBackend for OpenAIBackend {
         messages: Vec<LlmMessage>,
         tools: Option<Vec<LlmToolDefinition>>,
         config: LlmConfig,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError>
+    {
         self.stream(messages, tools, config).await
     }
 }
@@ -1175,6 +1176,7 @@ mod retry_tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Say hello".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig::default();
@@ -1229,6 +1231,7 @@ mod retry_tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Say hello".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig::default();
@@ -1287,6 +1290,7 @@ mod retry_tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Say hello".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig::default();
@@ -1354,6 +1358,7 @@ mod retry_tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Say hello".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig::default();
@@ -1416,6 +1421,7 @@ mod retry_tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Say hello".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig::default();
@@ -1478,6 +1484,7 @@ mod retry_tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Say hello".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig::default();

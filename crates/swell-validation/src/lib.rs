@@ -1583,10 +1583,12 @@ Please provide your review in the specified JSON format.
             LlmMessage {
                 role: LlmRole::System,
                 content: self.prompt_template.clone(),
+                tool_call_id: None,
             },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_prompt,
+                tool_call_id: None,
             },
         ];
 
@@ -1725,24 +1727,46 @@ impl ValidationGate for AiReviewGate {
 // ============================================================================
 
 /// A pipeline that runs multiple validation gates in order.
+///
+/// Uses `Arc<Mutex<Vec<Arc<Box<dyn ValidationGate>>>>> for thread-safe sharing:
+/// - `Arc<Mutex<Vec>>` enables cheap O(1) cloning of the entire pipeline
+/// - `Arc<Box<dyn Gate>>` allows cloning of individual gates without requiring Gate: Clone
+/// - `Mutex<Vec>` allows adding gates after construction via `add_gate()`
+///
+/// The gates Vec is small (< 10 gates typically), so cloning is cheap.
 pub struct ValidationPipeline {
-    gates: Vec<Box<dyn ValidationGate>>,
+    // Arc for cheap cloning, Mutex for interior mutability (add_gate)
+    // Arc<Box<dyn Gate>> allows cheap cloning of boxed trait objects
+    inner: std::sync::Arc<std::sync::Mutex<Vec<std::sync::Arc<Box<dyn ValidationGate>>>>>,
 }
 
 impl ValidationPipeline {
     /// Create a new empty pipeline.
     pub fn new() -> Self {
-        Self { gates: vec![] }
+        Self {
+            inner: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+        }
     }
 
     /// Create a pipeline with the given gates.
     pub fn with_gates(gates: Vec<Box<dyn ValidationGate>>) -> Self {
-        Self { gates }
+        // Wrap each Box in Arc for cheap cloning
+        let arc_gates: Vec<std::sync::Arc<Box<dyn ValidationGate>>> = gates
+            .into_iter()
+            .map(std::sync::Arc::new)
+            .collect();
+        Self {
+            inner: std::sync::Arc::new(std::sync::Mutex::new(arc_gates)),
+        }
     }
 
     /// Add a gate to the pipeline.
+    ///
+    /// Note: This is synchronous and uses `std::sync::Mutex` for interior mutability.
     pub fn add_gate<G: ValidationGate + 'static>(&mut self, gate: G) {
-        self.gates.push(Box::new(gate));
+        if let Ok(mut gates) = self.inner.lock() {
+            gates.push(std::sync::Arc::new(Box::new(gate)));
+        }
     }
 
     /// Run all gates in order.
@@ -1750,7 +1774,21 @@ impl ValidationPipeline {
         let mut all_messages = Vec::new();
         let mut all_passed = true;
 
-        for gate in &self.gates {
+        // Get a clone of all gate Arcs (dropping lock immediately)
+        let gates: Vec<std::sync::Arc<Box<dyn ValidationGate>>> = {
+            match self.inner.lock() {
+                Ok(guard) => guard.iter().map(std::sync::Arc::clone).collect(),
+                Err(e) => {
+                    return Err(SwellError::IoError(std::io::Error::other(format!(
+                        "Poisoned lock: {}",
+                        e
+                    ))));
+                }
+            }
+        };
+
+        // Now run the gates - no locks held during async operations
+        for gate in gates {
             let outcome = gate.validate(context.clone()).await?;
             all_passed &= outcome.passed;
             all_messages.extend(outcome.messages);
@@ -1767,6 +1805,16 @@ impl ValidationPipeline {
 impl Default for ValidationPipeline {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Clone for ValidationPipeline - clones the Arc pointer, providing cheap O(1) cloning.
+/// This allows the pipeline to be shared across agents without deep cloning gates.
+impl Clone for ValidationPipeline {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }
 

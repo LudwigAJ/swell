@@ -69,8 +69,8 @@ pub use backlog::{
     WorkBacklog,
 };
 pub use context_chunking::{
-    AstChunkingConfig, AstChunkProvider, ContextChunkingAssembler, ContextChunkingResult,
-    ChunkScorer, ScoringReason, ScoredChunk,
+    AstChunkProvider, AstChunkingConfig, ChunkScorer, ContextChunkingAssembler,
+    ContextChunkingResult, ScoredChunk, ScoringReason,
 };
 pub use context_pipeline::{
     ContextAssembler, ContextPipelineConfig, ContextPipelineResult, ContextTier,

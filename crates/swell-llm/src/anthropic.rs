@@ -635,7 +635,8 @@ impl LlmBackend for AnthropicBackend {
         messages: Vec<LlmMessage>,
         tools: Option<Vec<LlmToolDefinition>>,
         config: LlmConfig,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError>
+    {
         self.stream(messages, tools, config).await
     }
 }

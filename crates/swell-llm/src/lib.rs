@@ -68,6 +68,7 @@ mod tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Say hello".to_string(),
+            ..Default::default()
         }];
 
         let response = mock.chat(messages, None, config).await.unwrap();

@@ -73,8 +73,7 @@ impl LlmRetryConfig {
 /// - 422 Unprocessable Entity
 /// - Other 4xx errors
 pub fn is_retryable_status(status: StatusCode) -> bool {
-    status == StatusCode::TOO_MANY_REQUESTS
-        || status.as_u16() >= 500 && status.as_u16() < 600
+    status == StatusCode::TOO_MANY_REQUESTS || status.as_u16() >= 500 && status.as_u16() < 600
 }
 
 /// Calculate exponential backoff delay in seconds.
@@ -192,8 +191,7 @@ mod tests {
 
     #[test]
     fn test_calculate_backoff_custom_base() {
-        let config = LlmRetryConfig::new()
-            .with_base_delay_secs(0.5);
+        let config = LlmRetryConfig::new().with_base_delay_secs(0.5);
 
         // attempt 0: 0.5 * 2^0 = 0.5
         assert!((calculate_backoff(0, &config) - 0.5).abs() < 0.001);

@@ -9,11 +9,54 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use swell_core::{
     opentelemetry::gen_ai, opentelemetry::pricing, opentelemetry::GenAiSpanExt,
-    opentelemetry::LatencyTracker, StreamEvent, SwellError,
+    opentelemetry::LatencyTracker, LlmToolCall, StreamEvent, SwellError,
 };
 use tokio::sync::mpsc;
 
 static CALL_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Configuration for a mock tool call that MockLlm should emit during streaming.
+#[derive(Debug, Clone)]
+pub struct MockToolCall {
+    /// The tool call ID
+    pub id: String,
+    /// The tool name
+    pub name: String,
+    /// The tool arguments as JSON
+    pub arguments: serde_json::Value,
+    /// The result to return when this tool is called
+    pub result: String,
+    /// Whether the tool execution should be marked as successful
+    pub success: bool,
+}
+
+impl MockToolCall {
+    /// Create a new mock tool call.
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: serde_json::Value,
+        result: impl Into<String>,
+        success: bool,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            arguments,
+            result: result.into(),
+            success,
+        }
+    }
+
+    /// Convert to an LlmToolCall for stream emission.
+    pub fn to_llm_tool_call(&self) -> LlmToolCall {
+        LlmToolCall {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            arguments: self.arguments.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct MockLlm {
@@ -24,6 +67,8 @@ pub struct MockLlm {
     call_count: u64,
     /// If true, echoes back user message content in the response
     echo_user: bool,
+    /// Optional tool call to emit during streaming
+    tool_call: Option<MockToolCall>,
 }
 
 impl MockLlm {
@@ -34,6 +79,7 @@ impl MockLlm {
             should_fail: false,
             call_count: 0,
             echo_user: true,
+            tool_call: None,
         }
     }
 
@@ -44,6 +90,7 @@ impl MockLlm {
             should_fail: false,
             call_count: 0,
             echo_user: false,
+            tool_call: None,
         }
     }
 
@@ -54,7 +101,53 @@ impl MockLlm {
             should_fail: true,
             call_count: 0,
             echo_user: false,
+            tool_call: None,
         }
+    }
+
+    /// Configure this mock to emit a tool call during streaming.
+    ///
+    /// When configured, the stream() method will emit:
+    /// 1. ToolUse event with the configured tool call
+    /// 2. ToolResult event with the configured result
+    /// 3. Usage and MessageStop events
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mock = MockLlm::with_response("claude", "Tool executed")
+    ///     .with_tool_call(MockToolCall::new(
+    ///         "call_123",
+    ///         "file_read",
+    ///         serde_json::json!({"path": "/tmp/test.txt"}),
+    ///         "file contents",
+    ///         true,
+    ///     ));
+    /// ```
+    pub fn with_tool_call(mut self, tool_call: MockToolCall) -> Self {
+        self.tool_call = Some(tool_call);
+        self
+    }
+
+    /// Configure this mock to emit a tool call using the builder pattern.
+    ///
+    /// Convenience method that creates a MockToolCall from the provided arguments.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let mock = MockLlm::with_response("claude", "Done")
+    ///     .with_tool_use("call_123", "file_read",
+    ///         serde_json::json!({"path": "/tmp/test.txt"}),
+    ///         "file contents", true);
+    /// ```
+    pub fn with_tool_use(
+        self,
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: serde_json::Value,
+        result: impl Into<String>,
+        success: bool,
+    ) -> Self {
+        self.with_tool_call(MockToolCall::new(id, name, arguments, result, success))
     }
 
     /// Get the tracer for OpenTelemetry
@@ -153,7 +246,8 @@ impl LlmBackend for MockLlm {
         messages: Vec<LlmMessage>,
         _tools: Option<Vec<LlmToolDefinition>>,
         _config: LlmConfig,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError>
+    {
         CALL_COUNT.fetch_add(1, Ordering::SeqCst);
 
         if self.should_fail {
@@ -181,27 +275,55 @@ impl LlmBackend for MockLlm {
         let input_tokens: u64 = messages.iter().map(|m| m.content.len() as u64 / 4).sum();
         let output_tokens = 50u64;
 
+        // Clone tool_call for use in the spawned task
+        let tool_call = self.tool_call.clone();
+
         let (tx, rx) = mpsc::channel::<Result<StreamEvent, SwellError>>(100);
 
         // Spawn a task to emit the stream events
         tokio::spawn(async move {
+            // If configured with a tool call, emit ToolUse and ToolResult events
+            if let Some(tc) = tool_call {
+                // Emit ToolUse event
+                let _ = tx
+                    .send(Ok(StreamEvent::ToolUse {
+                        tool_call: tc.to_llm_tool_call(),
+                    }))
+                    .await;
+
+                // Emit ToolResult event
+                let _ = tx
+                    .send(Ok(StreamEvent::ToolResult {
+                        tool_call_id: tc.id.clone(),
+                        result: tc.result.clone(),
+                        success: tc.success,
+                    }))
+                    .await;
+            }
+
             // Emit text delta with the full content as both text and delta
             // Since this is a mock, we emit the entire response as one delta
-            let _ = tx.send(Ok(StreamEvent::TextDelta {
-                text: content.clone(),
-                delta: content,
-            })).await;
+            let _ = tx
+                .send(Ok(StreamEvent::TextDelta {
+                    text: content.clone(),
+                    delta: content,
+                }))
+                .await;
 
             // Emit usage
-            let _ = tx.send(Ok(StreamEvent::Usage {
-                input_tokens,
-                output_tokens,
-                cache_creation_input_tokens: None,
-                cache_read_input_tokens: None,
-            })).await;
+            let _ = tx
+                .send(Ok(StreamEvent::Usage {
+                    input_tokens,
+                    output_tokens,
+                    cache_creation_input_tokens: None,
+                    cache_read_input_tokens: None,
+                }))
+                .await;
 
             // Emit message stop
-            let _ = tx.send(Ok(StreamEvent::MessageStop { stop_reason: None })).await;
+            let _ = tx
+                .send(Ok(StreamEvent::MessageStop { stop_reason: None }))
+                .await;
         });
 
         Ok(Box::pin(MockStreamAdapter { rx }))
@@ -236,6 +358,7 @@ impl Stream for MockStreamAdapter {
 mod tests {
     use super::*;
     use crate::LlmRole;
+    use futures::StreamExt;
 
     #[tokio::test]
     async fn test_mock_response() {
@@ -243,6 +366,7 @@ mod tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Hello".to_string(),
+            ..Default::default()
         }];
 
         let response = mock
@@ -270,6 +394,7 @@ mod tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Test".to_string(),
+            ..Default::default()
         }];
 
         let response = mock
@@ -297,6 +422,7 @@ mod tests {
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: "Hello".to_string(),
+            ..Default::default()
         }];
 
         let result = mock
@@ -320,5 +446,192 @@ mod tests {
 
         let unhealthy = MockLlm::failing("gpt-4");
         assert!(!unhealthy.health_check().await);
+    }
+
+    #[tokio::test]
+    async fn test_stream_with_tool_call() {
+        // Create a mock LLM that returns a tool call
+        let mock = MockLlm::with_response("claude", "Tool executed")
+            .with_tool_use(
+                "call_123",
+                "file_read",
+                serde_json::json!({"path": "/tmp/test.txt"}),
+                "file contents here",
+                true,
+            );
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Read the file".to_string(),
+            ..Default::default()
+        }];
+
+        let stream = mock
+            .stream(
+                messages,
+                None,
+                LlmConfig {
+                    temperature: 0.7,
+                    max_tokens: 4096,
+                    stop_sequences: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        // Collect all events from the stream
+        let events: Vec<_> = stream.collect().await;
+
+        // Should have: ToolUse, ToolResult, TextDelta, Usage, MessageStop
+        assert!(events.len() >= 5, "Expected at least 5 events, got {}", events.len());
+
+        // First event should be ToolUse
+        let tool_use = match &events[0] {
+            Ok(StreamEvent::ToolUse { tool_call }) => tool_call,
+            other => panic!("Expected ToolUse as first event, got {:?}", other),
+        };
+        assert_eq!(tool_use.id, "call_123");
+        assert_eq!(tool_use.name, "file_read");
+        assert_eq!(tool_use.arguments["path"], "/tmp/test.txt");
+
+        // Second event should be ToolResult
+        let _tool_result = match &events[1] {
+            Ok(StreamEvent::ToolResult { tool_call_id, result, success }) => {
+                assert_eq!(tool_call_id, "call_123");
+                assert_eq!(result, "file contents here");
+                assert!(success);
+            }
+            other => panic!("Expected ToolResult as second event, got {:?}", other),
+        };
+
+        // Find the TextDelta event
+        let text_delta = events.iter()
+            .find_map(|e| match e {
+                Ok(StreamEvent::TextDelta { text, .. }) => Some(text.clone()),
+                _ => None,
+            })
+            .expect("Should have a TextDelta event");
+        assert!(text_delta.contains("Tool executed"));
+    }
+
+    #[tokio::test]
+    async fn test_stream_without_tool_call() {
+        // Create a mock LLM without tool call (text-only)
+        let mock = MockLlm::with_response("claude", "Hello, world!");
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Say hello".to_string(),
+            ..Default::default()
+        }];
+
+        let stream = mock
+            .stream(
+                messages,
+                None,
+                LlmConfig {
+                    temperature: 0.7,
+                    max_tokens: 4096,
+                    stop_sequences: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        // Collect all events
+        let events: Vec<_> = stream.collect().await;
+
+        // Should have: TextDelta, Usage, MessageStop (no ToolUse or ToolResult)
+        assert!(events.len() >= 3, "Expected at least 3 events, got {}", events.len());
+
+        // Verify no ToolUse or ToolResult events
+        for event in &events {
+            match event {
+                Ok(StreamEvent::ToolUse { .. }) | Ok(StreamEvent::ToolResult { .. }) => {
+                    panic!("Should not have tool events when tool_call is not configured");
+                }
+                _ => {}
+            }
+        }
+
+        // Find the TextDelta event
+        let text_delta = events.iter()
+            .find_map(|e| match e {
+                Ok(StreamEvent::TextDelta { text, .. }) => Some(text.clone()),
+                _ => None,
+            })
+            .expect("Should have a TextDelta event");
+        assert!(text_delta.contains("Hello, world!"));
+    }
+
+    #[tokio::test]
+    async fn test_stream_with_failed_tool() {
+        // Create a mock LLM that returns a failed tool call
+        let mock = MockLlm::with_response("claude", "Tool failed")
+            .with_tool_use(
+                "call_456",
+                "shell",
+                serde_json::json!({"command": "exit 1"}),
+                "Command failed: exit code 1",
+                false, // Tool execution failed
+            );
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Run command".to_string(),
+            ..Default::default()
+        }];
+
+        let stream = mock
+            .stream(
+                messages,
+                None,
+                LlmConfig {
+                    temperature: 0.7,
+                    max_tokens: 4096,
+                    stop_sequences: None,
+                },
+            )
+            .await
+            .unwrap();
+
+        let events: Vec<_> = stream.collect().await;
+
+        // Should have ToolUse, ToolResult, TextDelta, Usage, MessageStop
+        assert!(events.len() >= 5);
+
+        // Check ToolResult has success=false
+        let _tool_result = match &events[1] {
+            Ok(StreamEvent::ToolResult { tool_call_id, result, success }) => {
+                assert_eq!(tool_call_id, "call_456");
+                assert!(!success);
+                assert!(result.contains("failed"));
+            }
+            other => panic!("Expected ToolResult as second event, got {:?}", other),
+        };
+    }
+
+    #[tokio::test]
+    async fn test_mock_tool_call_builder() {
+        // Test the MockToolCall builder
+        let tool_call = MockToolCall::new(
+            "test_id",
+            "test_tool",
+            serde_json::json!({"arg1": "value1"}),
+            "result",
+            true,
+        );
+
+        assert_eq!(tool_call.id, "test_id");
+        assert_eq!(tool_call.name, "test_tool");
+        assert_eq!(tool_call.arguments["arg1"], "value1");
+        assert_eq!(tool_call.result, "result");
+        assert!(tool_call.success);
+
+        // Test conversion to LlmToolCall
+        let llm_tool_call = tool_call.to_llm_tool_call();
+        assert_eq!(llm_tool_call.id, "test_id");
+        assert_eq!(llm_tool_call.name, "test_tool");
+        assert_eq!(llm_tool_call.arguments["arg1"], "value1");
     }
 }

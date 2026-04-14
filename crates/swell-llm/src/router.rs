@@ -628,6 +628,7 @@ mod tests {
         let messages = vec![LlmMessage {
             role: crate::LlmRole::User,
             content: "Write a function".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig {
@@ -660,6 +661,7 @@ mod tests {
         let messages = vec![LlmMessage {
             role: crate::LlmRole::User,
             content: "Quick task".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig {
@@ -691,6 +693,7 @@ mod tests {
         let messages = vec![LlmMessage {
             role: crate::LlmRole::User,
             content: "Test".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig {
@@ -722,6 +725,7 @@ mod tests {
         let messages = vec![LlmMessage {
             role: crate::LlmRole::User,
             content: "Test".to_string(),
+            ..Default::default()
         }];
 
         let config = LlmConfig {

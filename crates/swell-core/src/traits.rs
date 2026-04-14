@@ -32,6 +32,21 @@ use uuid::Uuid;
 pub struct LlmMessage {
     pub role: LlmRole,
     pub content: String,
+    /// Optional tool call ID - used to track tool_use/tool_result pairs
+    /// for context compaction. When present, indicates this message is
+    /// a result of the specified tool call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+impl Default for LlmMessage {
+    fn default() -> Self {
+        Self {
+            role: LlmRole::User,
+            content: String::new(),
+            tool_call_id: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

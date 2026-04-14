@@ -33,6 +33,7 @@ async fn test_live_anthropic_sync_completion() {
     let messages = vec![LlmMessage {
         role: LlmRole::User,
         content: "Say 'hello' in exactly one word.".to_string(),
+        ..Default::default()
     }];
 
     let config = LlmConfig::default();
@@ -70,6 +71,7 @@ async fn test_live_anthropic_streaming() {
     let messages = vec![LlmMessage {
         role: LlmRole::User,
         content: "Count from 1 to 3, one number per message.".to_string(),
+        ..Default::default()
     }];
 
     let config = LlmConfig {
@@ -162,6 +164,7 @@ async fn test_live_openai_sync_completion() {
     let messages = vec![LlmMessage {
         role: LlmRole::User,
         content: "Say 'hello' in exactly one word.".to_string(),
+        ..Default::default()
     }];
 
     let config = LlmConfig::default();
@@ -200,6 +203,7 @@ async fn test_live_openai_streaming() {
     let messages = vec![LlmMessage {
         role: LlmRole::User,
         content: "Count from 1 to 3, one number per message.".to_string(),
+        ..Default::default()
     }];
 
     let config = LlmConfig {
@@ -289,7 +293,10 @@ fn test_env_var_is_read_via_std_env() {
     match result {
         Ok(key) => {
             assert!(!key.is_empty(), "MINIMAX_API_KEY should not be empty");
-            println!("MINIMAX_API_KEY is configured ([key present], length: {})", key.len());
+            println!(
+                "MINIMAX_API_KEY is configured ([key present], length: {})",
+                key.len()
+            );
         }
         Err(e) => {
             println!("MINIMAX_API_KEY not set (this is expected in CI): {}", e);
