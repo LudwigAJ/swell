@@ -28,6 +28,7 @@ pub mod mcp_config;
 pub mod mcp_lsp;
 pub mod opa_policy;
 pub mod os_sandbox;
+pub mod permissions;
 pub mod post_tool_hooks;
 pub mod pr_creation;
 pub mod registry;
@@ -91,6 +92,10 @@ pub use os_sandbox::{
     detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox,
     FilesystemPermission, LandlockSandbox, NetworkPolicy, OsSandbox, OsSandboxConfig,
     PlatformSandbox, SandboxAvailability, SandboxType, SeatbeltSandbox,
+};
+pub use permissions::{
+    InversePermissionMode, PermissionMode, PermissionResult, PermissionRule, PermissionRuleEffect,
+    ThreeLayerEvaluator, ToolSpec,
 };
 pub use post_tool_hooks::{
     tool_names, FormatHook, HookConfig, HookResult, HookTrigger, LintHook, PostToolHook,
