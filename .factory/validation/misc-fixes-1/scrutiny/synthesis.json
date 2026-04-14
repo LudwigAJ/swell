@@ -1,0 +1,38 @@
+{
+  "milestone": "misc-fixes-1",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "build": { "passed": true, "command": "cargo build --workspace", "exitCode": 0 },
+    "check": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "test_swell_llm": { "passed": true, "command": "cargo test -p swell-llm -- --test-threads=4", "exitCode": 0, "notes": "84 tests passed" },
+    "test_swell_core": { "passed": true, "command": "cargo test -p swell-core -- --test-threads=4", "exitCode": 0, "notes": "179 tests passed" },
+    "clippy": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "fmt": { "passed": true, "command": "cargo fmt --all", "exitCode": 0, "notes": "Fixed formatting issues in swell-llm before committing" }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [],
+  "previousRound": null,
+  "reviewReports": [
+    {
+      "featureId": "fix-api-key-partial-logging",
+      "status": "pass",
+      "commitId": "83f2935",
+      "summary": "The fix correctly implements the feature request. The partial API key logging (`&key[..key.len().min(8)]`) has been replaced with `key.len()` and a fixed string '[key present]', eliminating any API key leakage. Verification steps (cargo test and cargo clippy) both passed. The change is minimal and targeted."
+    },
+    {
+      "featureId": "llm-backend-trait-stream-method",
+      "status": "pass",
+      "commitId": "fdd73a8",
+      "summary": "Feature implementation is correct and complete. The stream() method was added to the LlmBackend trait with the correct signature matching the expected behavior. All three backends (Anthropic, OpenAI, Mock) implement the stream() method properly. Verification steps (cargo check, cargo test, cargo clippy) all pass with no issues."
+    }
+  ]
+}
