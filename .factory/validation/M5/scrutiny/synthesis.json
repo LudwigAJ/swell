@@ -1,0 +1,39 @@
+{
+  "milestone": "M5-permissions-tools",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "cargo test --workspace -- --test-threads=4", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "lint": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "swell-orchestrator/src/lib.rs",
+      "description": "Added ToolLayer::Builtin parameter to register() calls in register_web_search_tools function",
+      "sourceFeature": "perm-denial-surfacing (compilation fix)"
+    },
+    {
+      "target": "swell-orchestrator/src/execution.rs",
+      "description": "Added ToolLayer::Builtin parameter to register() calls in permission denial test functions",
+      "sourceFeature": "perm-denial-surfacing (compilation fix)"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add note about ToolRegistry::register API requiring ToolLayer parameter. When register() was updated from 2 to 3 arguments, several test files and register_web_search_tools() weren't updated.",
+      "evidence": "Features perm-denial-surfacing and tools-registry-layers both needed fixes for the new register API",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

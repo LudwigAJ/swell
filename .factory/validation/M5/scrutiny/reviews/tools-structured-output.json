@@ -1,0 +1,21 @@
+{
+  "featureId": "tools-structured-output",
+  "reviewedAt": "2026-04-14T23:15:00Z",
+  "commitId": "e06c027",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "ToolResultContent enum has correct variants: Text(String), Json(serde_json::Value), Error(String), Image { data: String, media_type: String }. ToolOutput uses is_error: bool and content: Vec<ToolResultContent> instead of old success/result/error fields. 490 tests pass in swell-tools and swell-orchestrator. One non-blocking stale doc comment in execution.rs line 153 mentions success:false but should say is_error:true.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "documentation",
+      "observation": "Stale doc comment in execution.rs line 153 still says 'success: false' but should say 'is_error: true'",
+      "evidence": "crates/swell-orchestrator/src/execution.rs:153"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature PASSED review. ToolResultContent enum correctly implemented with all required variants. 490 tests pass. Non-blocking stale doc comment noted."
+}

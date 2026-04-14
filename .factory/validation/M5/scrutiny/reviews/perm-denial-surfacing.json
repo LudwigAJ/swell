@@ -1,0 +1,21 @@
+{
+  "featureId": "perm-denial-surfacing",
+  "reviewedAt": "2026-04-14T23:10:00Z",
+  "commitId": "0f9e258",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Permission denials correctly surface as ToolOutput with is_error=true. Error message includes tool name and triggering permission rule (Deny tier). Tests verify all three permission tiers (Deny, Ask, Auto). Compilation issues in execution.rs and lib.rs were fixed as part of M5 validation - register() calls now include ToolLayer::Builtin parameter.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "ToolRegistry::register API changed after commit 0f9e258 was created, adding a third 'ToolLayer' parameter. The M5 validation fixed compilation errors in orchestrator tests and lib.rs.",
+      "evidence": "Fixed in this validation pass: execution.rs lines 1593, 1642, 1687 and lib.rs line 592"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature PASSED review after compilation fixes. Implementation correctly surfaces permission denials with is_error=true and denial message containing tool name and rule. Compilation errors fixed during M5 validation."
+}

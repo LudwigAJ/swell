@@ -586,16 +586,16 @@ impl Orchestrator {
 /// register_web_search_tools(&registry).await;
 /// ```
 pub async fn register_web_search_tools(registry: &swell_tools::ToolRegistry) {
-    use swell_tools::registry::ToolCategory;
+    use swell_tools::registry::{ToolCategory, ToolLayer};
 
     registry
-        .register(WebSearchTool::new(), ToolCategory::Search)
+        .register(WebSearchTool::new(), ToolCategory::Search, ToolLayer::Builtin)
         .await;
     registry
-        .register(DomainSearchTool::new(vec![]), ToolCategory::Search)
+        .register(DomainSearchTool::new(vec![]), ToolCategory::Search, ToolLayer::Builtin)
         .await;
     registry
-        .register(FetchPageTool::new(), ToolCategory::Search)
+        .register(FetchPageTool::new(), ToolCategory::Search, ToolLayer::Builtin)
         .await;
 }
 
