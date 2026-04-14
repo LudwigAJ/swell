@@ -40,6 +40,7 @@ pub mod soft_limits;
 pub mod stacked_prs;
 pub mod state_machine;
 pub mod stopping_conditions;
+pub mod team_registry;
 pub mod subagent;
 pub mod task_board;
 pub mod task_graph;
@@ -151,6 +152,7 @@ pub use stopping_conditions::{
     create_stopping_conditions, HardLimitType, HardLimitsError, SharedStoppingConditions,
     StoppingCondition, StoppingConditions,
 };
+pub use team_registry::{Team, TeamEvent, TeamRegistry, TeamTaskFailed};
 pub use subagent::{
     AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
     MAX_SUBAGENT_DEPTH,
