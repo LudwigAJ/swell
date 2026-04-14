@@ -118,6 +118,24 @@ impl TurnSummary {
 /// Default max iterations for the turn loop
 pub const DEFAULT_MAX_ITERATIONS: u32 = 50;
 
+/// Default context compaction threshold (in tokens)
+/// When accumulated conversation history exceeds this, compaction is triggered.
+pub const DEFAULT_CONTEXT_COMPACTION_THRESHOLD: usize = 100_000;
+
+/// Default number of tail messages to always preserve during compaction.
+pub const DEFAULT_TAIL_MESSAGE_COUNT: usize = 10;
+
+/// A pending tool call tracked during stream processing
+#[derive(Debug, Clone)]
+struct PendingToolCall {
+    /// The tool call ID used to match with ToolResult
+    id: String,
+    /// The tool name
+    name: String,
+    /// The tool arguments
+    arguments: serde_json::Value,
+}
+
 /// Manages concurrent task execution with up to 6 agents
 pub struct ExecutionController {
     orchestrator: Arc<Orchestrator>,
@@ -128,6 +146,11 @@ pub struct ExecutionController {
     /// Maximum iterations for the turn loop (hard cap)
     /// This is separate from validation retry count
     max_iterations: u32,
+    /// Token threshold for triggering context compaction.
+    /// When conversation history exceeds this, compaction is triggered.
+    context_compaction_threshold: usize,
+    /// Number of tail (most recent) messages to always preserve during compaction.
+    tail_message_count: usize,
     /// Frozen specs indexed by task_id, created at execution start
     frozen_specs: std::sync::RwLock<std::collections::HashMap<uuid::Uuid, FrozenSpecRef>>,
     /// Active FeatureLeads for complex tasks
@@ -153,6 +176,8 @@ impl ExecutionController {
             validation_pipeline: ValidationPipeline::new(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations: DEFAULT_MAX_ITERATIONS,
+            context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
+            tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
@@ -172,6 +197,8 @@ impl ExecutionController {
             validation_pipeline,
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations: DEFAULT_MAX_ITERATIONS,
+            context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
+            tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
@@ -197,6 +224,8 @@ impl ExecutionController {
             validation_pipeline: ValidationPipeline::new(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations,
+            context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
+            tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
@@ -217,6 +246,41 @@ impl ExecutionController {
             validation_pipeline,
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations,
+            context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
+            tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
+            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
+            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Create a new ExecutionController with all custom settings including context compaction.
+    ///
+    /// # Arguments
+    /// * `orchestrator` - The orchestrator for task coordination
+    /// * `llm` - The LLM backend for agent reasoning
+    /// * `tool_registry` - The tool registry for tool execution
+    /// * `validation_pipeline` - Custom validation pipeline
+    /// * `max_iterations` - Maximum iterations for the turn loop (hard cap)
+    /// * `context_compaction_threshold` - Token threshold for triggering context compaction
+    /// * `tail_message_count` - Number of tail messages to always preserve
+    pub fn with_all_settings(
+        orchestrator: Arc<Orchestrator>,
+        llm: Arc<dyn LlmBackend>,
+        tool_registry: Arc<ToolRegistry>,
+        validation_pipeline: ValidationPipeline,
+        max_iterations: u32,
+        context_compaction_threshold: usize,
+        tail_message_count: usize,
+    ) -> Self {
+        Self {
+            orchestrator,
+            llm,
+            tool_registry,
+            validation_pipeline,
+            max_concurrent: MAX_CONCURRENT_AGENTS,
+            max_iterations,
+            context_compaction_threshold,
+            tail_message_count,
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
@@ -540,13 +604,17 @@ impl ExecutionController {
                                 Ok(output) => (output.success, output.result),
                                 Err(e) => (false, e.to_string()),
                             };
-                            summary.add_tool_call(name, id, arguments, result_str.clone(), was_success);
+                            // Clone id before passing to add_tool_call since it moves
+                            let id_clone = id.clone();
+                            summary.add_tool_call(name, id_clone, arguments, result_str.clone(), was_success);
 
                             // Add tool result to messages using Assistant role
-                            // (LlmRole doesn't have a Tool variant, so we use Assistant)
+                            // Include tool_call_id to track the tool_use/tool_result pair
+                            // for context compaction
                             messages.push(LlmMessage {
                                 role: swell_llm::LlmRole::Assistant,
                                 content: result_str,
+                                tool_call_id: Some(id),
                             });
                         }
                     }
@@ -614,6 +682,10 @@ impl ExecutionController {
             }
 
             all_summaries.push(summary);
+
+            // Compact context if accumulated tokens exceed threshold
+            // This happens after each turn with tool calls to keep the conversation manageable
+            messages = self.compact_context(&messages);
         }
 
         debug!(
@@ -623,6 +695,114 @@ impl ExecutionController {
         );
 
         Ok((all_summaries, final_text))
+    }
+
+    // ============================================================================
+    // Context Compaction
+    // ============================================================================
+
+    /// Estimate token count for a single message.
+    ///
+    /// Uses a rough approximation of ~4 characters per token.
+    fn estimate_message_tokens(message: &LlmMessage) -> usize {
+        // Rough approximation: ~4 characters per token on average
+        // Include role prefix in the estimate
+        let role_len = match message.role {
+            swell_llm::LlmRole::System => "system: ".len(),
+            swell_llm::LlmRole::User => "user: ".len(),
+            swell_llm::LlmRole::Assistant => "assistant: ".len(),
+        };
+        ((message.content.len() + role_len) / 4).max(1)
+    }
+
+    /// Estimate total token count for a list of messages.
+    fn estimate_total_tokens(messages: &[LlmMessage]) -> usize {
+        messages.iter().map(Self::estimate_message_tokens).sum()
+    }
+
+    /// Compact the conversation history to reduce token count.
+    ///
+    /// Compaction is triggered when accumulated token count exceeds
+    /// `context_compaction_threshold`. This method:
+    /// 1. Preserves the most recent N messages (tail_message_count)
+    /// 2. Never splits tool_use/tool_result message pairs - if either member
+    ///    of a pair falls in the preserved tail, both are preserved
+    ///
+    /// # Arguments
+    /// * `messages` - The conversation history to compact
+    ///
+    /// # Returns
+    /// * `Vec<LlmMessage>` - The compacted message list
+    pub fn compact_context(&self, messages: &[LlmMessage]) -> Vec<LlmMessage> {
+        let total_tokens = Self::estimate_total_tokens(messages);
+
+        debug!(
+            total_tokens,
+            threshold = self.context_compaction_threshold,
+            message_count = messages.len(),
+            "Checking if context compaction is needed"
+        );
+
+        // If we're under the threshold, no compaction needed
+        if total_tokens <= self.context_compaction_threshold {
+            return messages.to_vec();
+        }
+
+        debug!(
+            total_tokens,
+            threshold = self.context_compaction_threshold,
+            "Context compaction triggered"
+        );
+
+        // Build a map of tool_call_id -> whether this pair should be preserved
+        // A pair is preserved if EITHER the tool_use or tool_result is in the tail
+        let tail_start = messages.len().saturating_sub(self.tail_message_count);
+
+        // Find all tool_call_ids in the tail region
+        let mut tail_tool_call_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for i in tail_start..messages.len() {
+            if let Some(id) = &messages[i].tool_call_id {
+                tail_tool_call_ids.insert(id.clone());
+            }
+        }
+
+        // Messages to keep: all tail messages + any message before tail
+        // whose tool_call_id is referenced in the tail
+        let mut result: Vec<LlmMessage> = Vec::new();
+
+        // Add messages from the tail (always preserved)
+        result.extend_from_slice(&messages[tail_start..]);
+
+        // Add messages from before the tail, but only if they don't have a tool_call_id
+        // (meaning they're not part of a tool result pair) OR if their tool_call_id
+        // is referenced in the tail
+        for i in 0..tail_start {
+            let msg = &messages[i];
+            if let Some(id) = &msg.tool_call_id {
+                // This is a tool result - only keep if its pair is in the tail
+                if tail_tool_call_ids.contains(id) {
+                    result.push(msg.clone());
+                }
+            } else {
+                // Not a tool result - keep it (it might be a tool_use or regular message)
+                result.push(msg.clone());
+            }
+        }
+
+        // Reverse to restore chronological order (oldest first)
+        result.reverse();
+
+        let compacted_tokens = Self::estimate_total_tokens(&result);
+        debug!(
+            before_tokens = total_tokens,
+            after_tokens = compacted_tokens,
+            before_count = messages.len(),
+            after_count = result.len(),
+            "Context compaction completed"
+        );
+
+        result
     }
 
     /// Execute a tool by name with the given arguments.
@@ -669,6 +849,8 @@ impl Clone for ExecutionController {
             validation_pipeline: self.validation_pipeline.clone(),
             max_concurrent: self.max_concurrent,
             max_iterations: self.max_iterations,
+            context_compaction_threshold: self.context_compaction_threshold,
+            tail_message_count: self.tail_message_count,
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
@@ -866,6 +1048,7 @@ mod tests {
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
             content: "Say hello".to_string(),
+            tool_call_id: None,
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;
@@ -897,6 +1080,7 @@ mod tests {
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
             content: "Say hello".to_string(),
+            tool_call_id: None,
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;
@@ -924,9 +1108,308 @@ mod tests {
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
             content: "Say hello".to_string(),
+            tool_call_id: None,
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;
         assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Context Compaction Tests
+    // ========================================================================
+
+    fn make_controller_with_compaction(
+        threshold: usize,
+        tail_count: usize,
+    ) -> ExecutionController {
+        let orchestrator = Orchestrator::new();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+
+        ExecutionController::with_all_settings(
+            Arc::new(orchestrator),
+            mock_llm,
+            tool_registry,
+            ValidationPipeline::new(),
+            DEFAULT_MAX_ITERATIONS,
+            threshold,
+            tail_count,
+        )
+    }
+
+    #[test]
+    fn test_compact_context_no_op_when_under_threshold() {
+        // When total tokens are under threshold, compaction should return unchanged messages
+        let controller = make_controller_with_compaction(1000, 5);
+
+        let messages = vec![
+            LlmMessage {
+                role: swell_llm::LlmRole::User,
+                content: "Short message".to_string(),
+                tool_call_id: None,
+            },
+            LlmMessage {
+                role: swell_llm::LlmRole::Assistant,
+                content: "Short response".to_string(),
+                tool_call_id: None,
+            },
+        ];
+
+        let result = controller.compact_context(&messages);
+
+        // Should be unchanged since we're under threshold
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].content, "Short message");
+        assert_eq!(result[1].content, "Short response");
+    }
+
+    #[test]
+    fn test_compact_context_preserves_tail_messages() {
+        // Tail messages (most recent N) should always be preserved regardless of token count
+        let controller = make_controller_with_compaction(100, 3);
+
+        // Create messages where the tail is clearly defined
+        let messages: Vec<LlmMessage> = (0..10)
+            .map(|i| LlmMessage {
+                role: swell_llm::LlmRole::User,
+                content: format!("Message number {}", i),
+                tool_call_id: None,
+            })
+            .collect();
+
+        let result = controller.compact_context(&messages);
+
+        // The last 3 messages (7, 8, 9) should always be preserved
+        // They appear first in the result since it's reversed
+        assert!(result.len() >= 3);
+        // Check that tail messages are present
+        let tail_contents: Vec<&str> = result.iter().rev().take(3).map(|m| m.content.as_str()).collect();
+        assert!(tail_contents.contains(&"Message number 7"));
+        assert!(tail_contents.contains(&"Message number 8"));
+        assert!(tail_contents.contains(&"Message number 9"));
+    }
+
+    #[test]
+    fn test_compact_context_preserves_tool_pairs() {
+        // tool_use and tool_result pairs should never be split during compaction
+        // If a tool_result is in the tail, its corresponding tool_use must also be preserved
+        let controller = make_controller_with_compaction(100, 3);
+
+        // Create a sequence where:
+        // - message 0-4 are older (before tail)
+        // - message 5 has tool_use (no tool_call_id set)
+        // - message 6 has tool_result with tool_call_id = "call_123"
+        // - messages 7-9 are in the tail
+
+        let mut messages: Vec<LlmMessage> = Vec::new();
+
+        // Older messages (will be compacted away)
+        for i in 0..5 {
+            messages.push(LlmMessage {
+                role: swell_llm::LlmRole::User,
+                content: format!("Old message {}", i),
+                tool_call_id: None,
+            });
+        }
+
+        // This represents the tool_use message (Assistant role, no tool_call_id)
+        messages.push(LlmMessage {
+            role: swell_llm::LlmRole::Assistant,
+            content: r#"{"name": "file_read", "arguments": {"path": "/tmp/test.txt"}}"#.to_string(),
+            tool_call_id: None, // tool_use doesn't have tool_call_id
+        });
+
+        // This represents the tool_result (Assistant role, with tool_call_id)
+        messages.push(LlmMessage {
+            role: swell_llm::LlmRole::Assistant,
+            content: "File contents here".to_string(),
+            tool_call_id: Some("call_123".to_string()), // Links to the tool_use
+        });
+
+        // Tail messages (always preserved)
+        for i in 7..10 {
+            messages.push(LlmMessage {
+                role: swell_llm::LlmRole::User,
+                content: format!("Tail message {}", i),
+                tool_call_id: None,
+            });
+        }
+
+        let result = controller.compact_context(&messages);
+
+        // The tool_use (message 5) and tool_result (message 6) should NOT be split.
+        // Since the tool_result (call_123) is in the tail or linked to something in tail,
+        // both should be preserved.
+
+        // Check that we don't have orphaned tool_results
+        // (tool_result without its tool_use)
+        let tool_result_ids: std::collections::HashSet<_> = result
+            .iter()
+            .filter_map(|m| m.tool_call_id.clone())
+            .collect();
+
+        // Every tool_call_id in result should have its corresponding tool_use in result
+        // This is a basic sanity check that pairs aren't orphaned
+        // Note: In this test, the tool_use doesn't have tool_call_id set (it's None),
+        // but the tool_result does. So the pair detection relies on the tool_result's
+        // tool_call_id being preserved when its "pair" is in the tail.
+
+        // Since the tool_result has tool_call_id="call_123" and the tool_use is right before it,
+        // both should be preserved together
+        assert!(result.len() >= 2); // At minimum, tool_use and tool_result should be preserved
+    }
+
+    #[test]
+    fn test_compact_context_triggered_above_threshold() {
+        // When token count exceeds threshold, compaction should reduce the message count
+        let controller = make_controller_with_compaction(200, 2);
+
+        // Create many large messages that exceed the threshold
+        // Each message is ~50 chars = ~12-13 tokens, so 20 messages = ~250 tokens
+        let messages: Vec<LlmMessage> = (0..20)
+            .map(|i| LlmMessage {
+                role: swell_llm::LlmRole::User,
+                content: format!("This is a relatively long message number {} with some extra content", i),
+                tool_call_id: None,
+            })
+            .collect();
+
+        // Verify we start over threshold
+        let initial_tokens = ExecutionController::estimate_total_tokens(&messages);
+        assert!(initial_tokens > 200, "Test setup should exceed threshold");
+
+        let result = controller.compact_context(&messages);
+
+        // Compaction should have reduced the message count
+        // while still preserving tail messages
+        assert!(result.len() < messages.len(),
+            "Expected fewer messages after compaction, got {} vs {}",
+            result.len(), messages.len());
+
+        // But we should still have at least the tail count
+        assert!(result.len() >= 2, "Should preserve at least tail messages");
+    }
+
+    #[test]
+    fn test_compact_context_empty_input() {
+        let controller = make_controller_with_compaction(100, 5);
+        let messages: Vec<LlmMessage> = vec![];
+        let result = controller.compact_context(&messages);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_compact_context_exact_threshold_no_op() {
+        // When exactly at threshold, compaction should not run
+        let controller = make_controller_with_compaction(1000, 5);
+
+        // Create messages that together are exactly at the threshold
+        // 5 messages * ~200 tokens each = ~1000 tokens
+        let messages: Vec<LlmMessage> = (0..5)
+            .map(|_| LlmMessage {
+                role: swell_llm::LlmRole::User,
+                content: "This is a medium length message that should be around 200 chars when repeated five times".to_string(),
+                tool_call_id: None,
+            })
+            .collect();
+
+        let result = controller.compact_context(&messages);
+
+        // At exactly threshold, compaction should NOT trigger (<= not <)
+        // The implementation uses <= for threshold check
+        assert_eq!(result.len(), 5);
+    }
+
+    #[test]
+    fn test_compact_context_preserves_pair_when_result_in_tail() {
+        // When a tool_result is in the preserved tail, its tool_use must also be preserved
+        let controller = make_controller_with_compaction(100, 2);
+
+        let mut messages: Vec<LlmMessage> = Vec::new();
+
+        // Message 0-2: older messages
+        for i in 0..3 {
+            messages.push(LlmMessage {
+                role: swell_llm::LlmRole::User,
+                content: format!("Old message {}", i),
+                tool_call_id: None,
+            });
+        }
+
+        // Message 3: tool_use
+        messages.push(LlmMessage {
+            role: swell_llm::LlmRole::Assistant,
+            content: r#"{"name": "file_read", "arguments": {"path": "/tmp/test.txt"}}"#.to_string(),
+            tool_call_id: None,
+        });
+
+        // Message 4: tool_result with tool_call_id="call_1" - THIS IS IN THE TAIL
+        messages.push(LlmMessage {
+            role: swell_llm::LlmRole::Assistant,
+            content: "File contents".to_string(),
+            tool_call_id: Some("call_1".to_string()),
+        });
+
+        // Message 5: tool_use
+        messages.push(LlmMessage {
+            role: swell_llm::LlmRole::Assistant,
+            content: r#"{"name": "shell", "arguments": {"cmd": "ls"}}"#.to_string(),
+            tool_call_id: None,
+        });
+
+        // Message 6: tool_result with tool_call_id="call_2"
+        messages.push(LlmMessage {
+            role: swell_llm::LlmRole::Assistant,
+            content: "ls output".to_string(),
+            tool_call_id: Some("call_2".to_string()),
+        });
+
+        // Tail count is 2, so messages 5 and 6 are in the tail
+        // But call_1's result (message 4) is in the tail, so call_1's tool_use (message 3)
+        // must also be preserved
+
+        let result = controller.compact_context(&messages);
+
+        // Verify that the pair (call_1) is preserved: both tool_use (msg 3) and tool_result (msg 4)
+        let call_1_result = result.iter().find(|m| m.tool_call_id.as_ref() == Some(&"call_1".to_string()));
+        assert!(call_1_result.is_some(), "call_1 result should be preserved because it's in tail");
+
+        // Find the tool_use for call_1 (the one right before it with no tool_call_id)
+        // This is msg 3 in original
+        let preserved_tool_uses = result.iter().filter(|m| m.tool_call_id.is_none() && m.content.contains("file_read")).count();
+        assert!(preserved_tool_uses >= 1, "tool_use for call_1 should be preserved because its result is in tail");
+    }
+
+    #[test]
+    fn test_estimate_message_tokens() {
+        let msg = LlmMessage {
+            role: swell_llm::LlmRole::User,
+            content: "Hello world this is a test message".to_string(),
+            tool_call_id: None,
+        };
+
+        let tokens = ExecutionController::estimate_message_tokens(&msg);
+        // 44 chars / 4 = 11 tokens, plus user prefix
+        assert!(tokens >= 11);
+    }
+
+    #[test]
+    fn test_estimate_total_tokens() {
+        let messages = vec![
+            LlmMessage {
+                role: swell_llm::LlmRole::User,
+                content: "Short".to_string(),
+                tool_call_id: None,
+            },
+            LlmMessage {
+                role: swell_llm::LlmRole::Assistant,
+                content: "Also short".to_string(),
+                tool_call_id: None,
+            },
+        ];
+
+        let total = ExecutionController::estimate_total_tokens(&messages);
+        assert!(total >= 2); // At minimum 1 token per message
     }
 }

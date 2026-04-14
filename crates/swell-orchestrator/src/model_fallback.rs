@@ -41,6 +41,7 @@ mod tests {
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
             content: "Write a function".to_string(),
+            tool_call_id: None,
         }];
 
         let config = swell_llm::LlmConfig {
@@ -81,6 +82,7 @@ mod tests {
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
             content: "Write a function".to_string(),
+            tool_call_id: None,
         }];
 
         let config = swell_llm::LlmConfig {
@@ -121,6 +123,7 @@ mod tests {
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
             content: "Write a function".to_string(),
+            tool_call_id: None,
         }];
 
         let config = swell_llm::LlmConfig {
@@ -161,6 +164,7 @@ mod tests {
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
             content: "Write a function".to_string(),
+            tool_call_id: None,
         }];
 
         let config = swell_llm::LlmConfig {
@@ -293,6 +297,7 @@ mod tests {
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
             content: "Code review task".to_string(),
+            tool_call_id: None,
         }];
 
         let config = swell_llm::LlmConfig {

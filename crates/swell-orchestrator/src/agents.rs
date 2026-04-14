@@ -544,10 +544,12 @@ impl Agent for PlannerAgent {
             LlmMessage {
                 role: LlmRole::System,
                 content: self.system_prompt.clone(),
+                tool_call_id: None,
             },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_message,
+                tool_call_id: None,
             },
         ];
 
@@ -923,6 +925,7 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: prompt,
+            tool_call_id: None,
         }];
 
         let config = LlmConfig {
@@ -2369,6 +2372,7 @@ Respond in JSON format: {{"complete": true/false, "confidence": 0.0-1.0}}"#,
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: prompt,
+            tool_call_id: None,
         }];
 
         let config = LlmConfig {
@@ -3833,6 +3837,7 @@ Generate the modified file content. Respond ONLY with JSON in this format:
                 let messages = vec![LlmMessage {
                     role: LlmRole::User,
                     content: prompt,
+                    tool_call_id: None,
                 }];
 
                 let config = LlmConfig {
@@ -4625,6 +4630,7 @@ Only report actual issues, not suggestions. Be specific and actionable."#,
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: prompt,
+            tool_call_id: None,
         }];
 
         let config = LlmConfig {
@@ -5279,6 +5285,7 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
         let messages = vec![LlmMessage {
             role: LlmRole::User,
             content: prompt,
+            tool_call_id: None,
         }];
 
         let config = LlmConfig {
@@ -5964,10 +5971,12 @@ impl Agent for DocWriterAgent {
             LlmMessage {
                 role: LlmRole::System,
                 content: system_prompt,
+                tool_call_id: None,
             },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_message,
+                tool_call_id: None,
             },
         ];
 
