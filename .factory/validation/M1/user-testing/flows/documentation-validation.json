@@ -1,0 +1,35 @@
+{
+  "groupId": "documentation-validation",
+  "assertionIds": ["VAL-DOC-001", "VAL-DOC-002", "VAL-DOC-003", "VAL-DOC-004", "VAL-DOC-005", "VAL-DOC-006", "VAL-DOC-007", "VAL-DOC-008", "VAL-DOC-009", "VAL-DOC-010", "VAL-DOC-011", "VAL-DOC-012"],
+  "surface": "cargo-test",
+  "tool": "cargo test (infrastructure missing)",
+  "status": "blocked",
+  "blockReason": "tests/ directory is empty - no cargo test exists to validate documentation assertions",
+  "manualVerification": {
+    "summary": "Manual inspection confirms all M1 documentation is complete and correct, but automated test infrastructure is missing",
+    "findings": {
+      "VAL-DOC-001": "README.md has Installation section with rustup, cargo build --workspace, ANTHROPIC_API_KEY",
+      "VAL-DOC-002": "README.md has Quickstart section with swell-daemon, swell task, swell watch",
+      "VAL-DOC-003": "README.md has End-to-End Workflow with 3+ CLI commands (task, watch, approve)",
+      "VAL-DOC-004": "README.md Crate Overview table lists all 12 crates",
+      "VAL-DOC-005": "README.md Troubleshooting section has 3 issues (connection refused, clippy, test timeout)",
+      "VAL-DOC-006": "AGENTS.md has Mermaid diagram with dependency relationships",
+      "VAL-DOC-007": "AGENTS.md Error Handling section covers thiserror and anyhow",
+      "VAL-DOC-008": "AGENTS.md lists all 12 crates including swell-skills",
+      "VAL-DOC-009": "All 12 per-crate AGENTS.md files exist",
+      "VAL-DOC-010": "Per-crate AGENTS.md files have Purpose, Public API, Architecture, Testing, Dependencies",
+      "VAL-DOC-011": "CONTRIBUTING.md has PR workflow, commit conventions, review process",
+      "VAL-DOC-012": "AGENTS.md Async Patterns section covers tokio, spawn, select, cancellation"
+    }
+  },
+  "frictions": [],
+  "blockers": [
+    {
+      "description": "tests/ directory is empty - no documentation validation tests exist",
+      "rootCause": "The validation contract specifies tests should exist in tests/ directory but they were not created",
+      "impact": "Cannot run automated validation via cargo test"
+    }
+  ],
+  "toolsUsed": [],
+  "evidence": []
+}

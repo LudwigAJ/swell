@@ -1,0 +1,87 @@
+{
+  "milestone": "M1",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 12,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 12
+  },
+  "passedAssertions": [],
+  "failedAssertions": [],
+  "blockedAssertions": [
+    {
+      "id": "VAL-DOC-001",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate README install prerequisites"
+    },
+    {
+      "id": "VAL-DOC-002",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate quickstart guide"
+    },
+    {
+      "id": "VAL-DOC-003",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate end-to-end workflow example"
+    },
+    {
+      "id": "VAL-DOC-004",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate crate table"
+    },
+    {
+      "id": "VAL-DOC-005",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate troubleshooting section"
+    },
+    {
+      "id": "VAL-DOC-006",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate dependency graph"
+    },
+    {
+      "id": "VAL-DOC-007",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate error handling conventions"
+    },
+    {
+      "id": "VAL-DOC-008",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate all 12 crates documented"
+    },
+    {
+      "id": "VAL-DOC-009",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate per-crate AGENTS.md files"
+    },
+    {
+      "id": "VAL-DOC-010",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate required sections"
+    },
+    {
+      "id": "VAL-DOC-011",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate CONTRIBUTING.md"
+    },
+    {
+      "id": "VAL-DOC-012",
+      "blockedBy": "Test infrastructure missing: tests/ directory is empty, no cargo test exists to validate async patterns guidance"
+    }
+  ],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "notes": {
+    "manualVerification": {
+      "VAL-DOC-001": "Manually verified: README.md contains 'cargo build', 'ANTHROPIC_API_KEY', and rustup reference in Installation section",
+      "VAL-DOC-002": "Manually verified: README.md has Quickstart section with swell-daemon, swell task, swell watch commands",
+      "VAL-DOC-003": "Manually verified: README.md has End-to-End Workflow section with 3+ CLI commands",
+      "VAL-DOC-004": "Manually verified: README.md Crate Overview table lists all 12 crates with descriptions",
+      "VAL-DOC-005": "Manually verified: README.md has Troubleshooting section with 3+ issues (connection refused, clippy, tests hang)",
+      "VAL-DOC-006": "Manually verified: AGENTS.md contains Mermaid dependency diagram with 6+ crate relationships",
+      "VAL-DOC-007": "Manually verified: AGENTS.md has Error Handling Conventions section with thiserror and anyhow",
+      "VAL-DOC-008": "Manually verified: AGENTS.md lists all 12 crate names including swell-skills",
+      "VAL-DOC-009": "Manually verified: All 12 per-crate AGENTS.md files exist at expected paths",
+      "VAL-DOC-010": "Manually verified: Per-crate AGENTS.md files contain Purpose, Public API, Architecture, Testing, Dependencies sections",
+      "VAL-DOC-011": "Manually verified: CONTRIBUTING.md exists with PR workflow, commit conventions (feat/fix/docs), review requirements",
+      "VAL-DOC-012": "Manually verified: AGENTS.md has Async Patterns section with tokio, spawn, select, cancellation"
+    },
+    "infrastructureGap": "The tests/ directory is empty. The validation contract specifies 'Tool: cargo test' with evidence being unit/integration tests that read and assert on documentation content. These tests do not exist. Manual verification confirms documentation content is correct, but automated validation cannot proceed without test infrastructure."
+  },
+  "cargoValidation": {
+    "cargoCheck": "passed",
+    "cargoClippy": "passed",
+    "cargoTest": "timed out after 180s (workspace has many tests)"
+  }
+}
