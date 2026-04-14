@@ -36,8 +36,31 @@ impl ReadFileTool {
         self
     }
 
-    /// Validate that the path is within the workspace boundaries
+    /// Validate that the path is within the workspace boundaries using two-layer safety:
+    /// 1. Prefix check: raw path must start with workspace prefix
+    /// 2. Canonical path check: resolved symlink target must still be within workspace
     fn validate_path(&self, path: &Path) -> Result<(), SwellError> {
+        // Layer 1: Prefix check - raw path must start with workspace prefix
+        if let Some(workspace) = &self.workspace_path {
+            let workspace_str = workspace.to_string_lossy();
+            let path_str = path.to_string_lossy();
+
+            if !path_str.starts_with(workspace_str.as_ref()) && !path_str.starts_with('/') {
+                // Path doesn't start with workspace prefix and isn't absolute
+                let abs_path = std::env::current_dir()
+                    .map(|cwd| cwd.join(path))
+                    .unwrap_or_else(|_| path.to_path_buf());
+                let abs_path_str = abs_path.to_string_lossy();
+                if !abs_path_str.starts_with(workspace_str.as_ref()) {
+                    return Err(SwellError::ToolExecutionFailed(format!(
+                        "Path '{}' is outside workspace boundaries",
+                        path.display()
+                    )));
+                }
+            }
+        }
+
+        // Layer 2: Canonical path check - resolve symlinks and verify target is within workspace
         let canonical_path = path
             .canonicalize()
             .map_err(|e| SwellError::ToolExecutionFailed(format!("Cannot resolve path: {}", e)))?;
@@ -49,7 +72,7 @@ impl ReadFileTool {
 
             if !canonical_path.starts_with(&canonical_workspace) {
                 return Err(SwellError::ToolExecutionFailed(format!(
-                    "Path '{}' is outside workspace boundaries",
+                    "Path '{}' is outside workspace boundaries (symlink escape detected)",
                     path.display()
                 )));
             }
@@ -167,21 +190,47 @@ impl WriteFileTool {
         self
     }
 
-    /// Validate that the path is within the workspace boundaries
+    /// Validate that the path is within the workspace boundaries using two-layer safety:
+    /// 1. Prefix check: raw path must start with workspace prefix
+    /// 2. Canonical path check: resolved symlink target must still be within workspace
     fn validate_path(&self, path: &Path) -> Result<(), SwellError> {
         // For write operations, we need to check if the parent directory exists
         // and is within the workspace, since the file may not exist yet
         let parent = path.parent().unwrap_or(Path::new("."));
 
-        // Canonicalize parent - if parent doesn't exist, we need to check parent of parent
-        // This handles the case where we're creating a new file in a new directory
-        let canonical_parent = if parent.exists() {
-            parent.canonicalize().map_err(|e| {
-                SwellError::ToolExecutionFailed(format!("Cannot resolve workspace parent: {}", e))
+        // Layer 1: Prefix check - raw path must start with workspace prefix
+        if let Some(workspace) = &self.workspace_path {
+            let workspace_str = workspace.to_string_lossy();
+            let parent_str = parent.to_string_lossy();
+
+            if !parent_str.starts_with(workspace_str.as_ref()) && !parent_str.starts_with('/') {
+                // Path doesn't start with workspace prefix and isn't absolute
+                let abs_parent = std::env::current_dir()
+                    .map(|cwd| cwd.join(parent))
+                    .unwrap_or_else(|_| parent.to_path_buf());
+                let abs_parent_str = abs_parent.to_string_lossy();
+                if !abs_parent_str.starts_with(workspace_str.as_ref()) {
+                    return Err(SwellError::ToolExecutionFailed(format!(
+                        "Path '{}' is outside workspace boundaries",
+                        path.display()
+                    )));
+                }
+            }
+        }
+
+        // Layer 2: Canonical path check - resolve symlinks and verify target is within workspace
+        // Canonicalize the PATH (not just parent) to detect symlink escape
+        // For existing files (including symlinks), this resolves the symlink to its real target
+        // For non-existent files, this finds the nearest existing parent
+        let canonical_path = if path.exists() {
+            // Path exists (could be a file or symlink) - canonicalize to resolve symlinks
+            path.canonicalize().map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Cannot resolve path: {}", e))
             })?
         } else {
-            // For non-existent paths, find the nearest existing parent
-            let mut current = parent;
+            // Path doesn't exist - find nearest existing parent
+            // This handles the case where we're creating a new file in a new directory
+            let mut current = path;
             while !current.exists() {
                 current = current.parent().unwrap_or(Path::new("."));
                 if current.as_os_str().is_empty() {
@@ -200,9 +249,9 @@ impl WriteFileTool {
                 SwellError::ToolExecutionFailed(format!("Cannot resolve workspace: {}", e))
             })?;
 
-            if !canonical_parent.starts_with(&canonical_workspace) {
+            if !canonical_path.starts_with(&canonical_workspace) {
                 return Err(SwellError::ToolExecutionFailed(format!(
-                    "Path '{}' is outside workspace boundaries",
+                    "Path '{}' is outside workspace boundaries (symlink escape detected)",
                     path.display()
                 )));
             }
@@ -716,18 +765,69 @@ impl Default for GitTool {
 #[derive(Debug, Clone)]
 pub struct FileEditTool {
     max_diff_size: usize,
+    workspace_path: Option<PathBuf>,
 }
 
 impl FileEditTool {
     pub fn new() -> Self {
         Self {
             max_diff_size: 1_000_000,
+            workspace_path: None,
         } // 1MB default
     }
 
     pub fn with_max_diff_size(mut self, size: usize) -> Self {
         self.max_diff_size = size;
         self
+    }
+
+    pub fn with_workspace_path(mut self, path: impl Into<PathBuf>) -> Self {
+        self.workspace_path = Some(path.into());
+        self
+    }
+
+    /// Validate that the path is within the workspace boundaries using two-layer safety:
+    /// 1. Prefix check: raw path must start with workspace prefix
+    /// 2. Canonical path check: resolved symlink target must still be within workspace
+    fn validate_path(&self, path: &Path) -> Result<(), SwellError> {
+        // Layer 1: Prefix check - raw path must start with workspace prefix
+        if let Some(workspace) = &self.workspace_path {
+            let workspace_str = workspace.to_string_lossy();
+            let path_str = path.to_string_lossy();
+
+            if !path_str.starts_with(workspace_str.as_ref()) && !path_str.starts_with('/') {
+                // Path doesn't start with workspace prefix and isn't absolute
+                let abs_path = std::env::current_dir()
+                    .map(|cwd| cwd.join(path))
+                    .unwrap_or_else(|_| path.to_path_buf());
+                let abs_path_str = abs_path.to_string_lossy();
+                if !abs_path_str.starts_with(workspace_str.as_ref()) {
+                    return Err(SwellError::ToolExecutionFailed(format!(
+                        "Path '{}' is outside workspace boundaries",
+                        path.display()
+                    )));
+                }
+            }
+        }
+
+        // Layer 2: Canonical path check - resolve symlinks and verify target is within workspace
+        let canonical_path = path
+            .canonicalize()
+            .map_err(|e| SwellError::ToolExecutionFailed(format!("Cannot resolve path: {}", e)))?;
+
+        if let Some(workspace) = &self.workspace_path {
+            let canonical_workspace = workspace.canonicalize().map_err(|e| {
+                SwellError::ToolExecutionFailed(format!("Cannot resolve workspace: {}", e))
+            })?;
+
+            if !canonical_path.starts_with(&canonical_workspace) {
+                return Err(SwellError::ToolExecutionFailed(format!(
+                    "Path '{}' is outside workspace boundaries (symlink escape detected)",
+                    path.display()
+                )));
+            }
+        }
+        Ok(())
     }
 
     /// Generate a unified diff between old and new content
@@ -865,6 +965,9 @@ impl Tool for FileEditTool {
             .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
 
         let path = Path::new(&args.path);
+
+        // Validate path is within workspace (two-layer safety: prefix + canonical)
+        self.validate_path(path)?;
 
         // Read current content
         if !path.exists() {
@@ -1598,5 +1701,214 @@ mod tests {
             "SearchTool should not be destructive"
         );
         assert!(hints.idempotent_hint, "SearchTool should be idempotent");
+    }
+
+    // =============================================================================
+    // Symlink Escape Prevention Tests (Two-Layer File Safety)
+    // =============================================================================
+
+    #[tokio::test]
+    async fn test_read_file_symlink_escape_prevention() {
+        use std::os::unix::fs::symlink;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let workspace = dir.path();
+
+        // Create a file inside workspace
+        let inside_file = workspace.join("inside.txt");
+        tokio::fs::write(&inside_file, "inside content").await.unwrap();
+
+        // Create a symlink inside workspace pointing to a file outside
+        let outside_file = std::env::temp_dir().join("swell_test_outside.txt");
+        tokio::fs::write(&outside_file, "outside content").await.unwrap();
+        let symlink_path = workspace.join("link_to_outside");
+        symlink(&outside_file, &symlink_path).unwrap();
+
+        let tool = ReadFileTool::new().with_workspace_path(workspace);
+
+        // Reading the actual file inside workspace should work
+        let result = tool
+            .execute(serde_json::json!({
+                "path": inside_file.to_str().unwrap()
+            }))
+            .await;
+        assert!(result.is_ok(), "Should be able to read file inside workspace");
+
+        // Reading via symlink that points outside should fail
+        let result = tool
+            .execute(serde_json::json!({
+                "path": symlink_path.to_str().unwrap()
+            }))
+            .await;
+        assert!(result.is_err(), "Symlink escape should be detected and rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("symlink") || err_msg.contains("outside workspace"),
+            "Error should mention symlink escape: {}",
+            err_msg
+        );
+
+        // Cleanup
+        drop(outside_file);
+    }
+
+    #[tokio::test]
+    async fn test_write_file_symlink_escape_prevention() {
+        use std::os::unix::fs::symlink;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let workspace = dir.path();
+
+        // Create a file inside workspace
+        let inside_file = workspace.join("inside.txt");
+        tokio::fs::write(&inside_file, "inside content").await.unwrap();
+
+        // Create a symlink inside workspace pointing to a file outside
+        let outside_file = std::env::temp_dir().join("swell_test_outside_write.txt");
+        tokio::fs::write(&outside_file, "outside content").await.unwrap();
+        let symlink_path = workspace.join("link_to_outside_write");
+        symlink(&outside_file, &symlink_path).unwrap();
+
+        let tool = WriteFileTool::new().with_workspace_path(workspace);
+
+        // Writing to actual file inside workspace should work
+        let result = tool
+            .execute(serde_json::json!({
+                "path": inside_file.to_str().unwrap(),
+                "content": "modified content"
+            }))
+            .await;
+        assert!(result.is_ok(), "Should be able to write to file inside workspace");
+
+        // Writing via symlink that points outside should fail
+        let result = tool
+            .execute(serde_json::json!({
+                "path": symlink_path.to_str().unwrap(),
+                "content": "try to escape"
+            }))
+            .await;
+        assert!(result.is_err(), "Symlink escape should be detected and rejected");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("symlink") || err_msg.contains("outside workspace"),
+            "Error should mention symlink escape: {}",
+            err_msg
+        );
+
+        // Cleanup
+        drop(outside_file);
+    }
+
+    #[tokio::test]
+    async fn test_file_edit_symlink_escape_prevention() {
+        use std::os::unix::fs::symlink;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let workspace = dir.path();
+
+        // Create a file inside workspace
+        let inside_file = workspace.join("inside.txt");
+        tokio::fs::write(&inside_file, "line1\nOLD_TEXT\nline3").await.unwrap();
+
+        // Create a symlink inside workspace pointing to a file outside
+        let outside_file = std::env::temp_dir().join("swell_test_outside_edit.txt");
+        tokio::fs::write(&outside_file, "outside content").await.unwrap();
+        let symlink_path = workspace.join("link_to_outside_edit");
+        symlink(&outside_file, &symlink_path).unwrap();
+
+        let tool = FileEditTool::new().with_workspace_path(workspace);
+
+        // Editing the actual file inside workspace should work
+        let result = tool
+            .execute(serde_json::json!({
+                "path": inside_file.to_str().unwrap(),
+                "old_str": "OLD_TEXT",
+                "new_str": "NEW_TEXT"
+            }))
+            .await;
+        assert!(result.is_ok(), "Should be able to edit file inside workspace");
+
+        // Cleanup temp files
+        drop(outside_file);
+    }
+
+    #[tokio::test]
+    async fn test_two_layer_file_safety_prefix_then_canonical() {
+        use std::os::unix::fs::symlink;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let workspace = dir.path();
+
+        // Create a directory structure:
+        // workspace/
+        //   real_file.txt
+        //   link_to_real -> real_file.txt (valid symlink in workspace)
+        //   link_to_escape -> /etc/passwd or similar (invalid symlink out of workspace)
+
+        let real_file = workspace.join("real_file.txt");
+        tokio::fs::write(&real_file, "content").await.unwrap();
+
+        // Create a valid symlink within workspace
+        let link_in_workspace = workspace.join("link_to_real");
+        symlink(&real_file, &link_in_workspace).unwrap();
+
+        // Create an invalid symlink pointing outside workspace
+        let link_to_escape = workspace.join("link_to_escape");
+        symlink("/etc/passwd", &link_to_escape).unwrap();
+
+        let tool = ReadFileTool::new().with_workspace_path(workspace);
+
+        // Reading real file should work
+        let result = tool
+            .execute(serde_json::json!({
+                "path": real_file.to_str().unwrap()
+            }))
+            .await;
+        assert!(result.is_ok());
+
+        // Reading via valid symlink in workspace should work
+        let result = tool
+            .execute(serde_json::json!({
+                "path": link_in_workspace.to_str().unwrap()
+            }))
+            .await;
+        assert!(result.is_ok(), "Valid symlink within workspace should work");
+
+        // Reading via symlink that escapes workspace should fail
+        let result = tool
+            .execute(serde_json::json!({
+                "path": link_to_escape.to_str().unwrap()
+            }))
+            .await;
+        assert!(result.is_err(), "Symlink escape to /etc/passwd should be blocked");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("symlink") || err_msg.contains("outside workspace"),
+            "Error should clearly indicate symlink escape: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_file_tool_validate_path_public_interface() {
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let workspace = dir.path();
+
+        let tool = ReadFileTool::new().with_workspace_path(workspace);
+
+        // Valid path inside workspace
+        let inside = workspace.join("test.txt");
+        tokio::fs::write(&inside, "content").await.unwrap();
+        assert!(tool.validate_path(&inside).is_ok());
+
+        // Path outside workspace
+        let outside = std::env::temp_dir().join("swell_nonexistent_file.txt");
+        assert!(tool.validate_path(&outside).is_err());
     }
 }
