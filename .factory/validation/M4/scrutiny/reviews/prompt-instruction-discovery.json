@@ -1,0 +1,28 @@
+{
+  "featureId": "prompt-instruction-discovery",
+  "reviewedAt": "2026-04-14T10:45:00Z",
+  "commitId": "5e2546476e53559044c66aa36bf824c1d3bef411",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All four feature requirements are implemented correctly: (1) PromptSection enum with Static/Dynamic categories, (2) DYNAMIC_BOUNDARY constant for Anthropic prompt caching, (3) discover_instruction_files() method for CLAUDE.md/AGENTS.md discovery, (4) get_git_snapshot() method with branch, commits, and modified files, (5) build() method reordered to place static sections before DYNAMIC_BOUNDARY and dynamic sections after.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2654,
+        "severity": "non_blocking",
+        "description": "discover_instruction_files() only checks repo_path directly, does not walk upward from workspace root. The requirement states 'walking from workspace root' which might imply traversing parent directories to find instruction files at higher levels. Current implementation only joins filename to repo_path."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/agents.rs",
+        "line": 2672,
+        "severity": "non_blocking",
+        "description": "get_git_snapshot() uses synchronous std::process::Command::new() calls. While this is acceptable for the current use case, it blocks the async runtime during git operations. Future consideration: use tokio's spawn_blocking for these calls."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes all verification criteria. SystemPromptBuilder enhanced with PromptSection enum (Static/Dynamic), DYNAMIC_BOUNDARY constant, instruction file discovery (CLAUDE.md, AGENTS.md), and git snapshot (branch, commits, modified files). The build() method correctly orders static sections before DYNAMIC_BOUNDARY and dynamic sections after. All 7 unit tests pass and clippy reports no warnings in the swell-orchestrator crate."
+}
