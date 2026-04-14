@@ -1,0 +1,17 @@
+{
+  "milestone": "misc-fixes-1",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "notes": "The misc-fixes-1 milestone contains two bug fix features: (1) fix-api-key-partial-logging removes partial API key logging in tests, (2) llm-backend-trait-stream-method adds stream() method to LlmBackend trait. Neither feature has fulfills relationships to validation assertions. All assertions that could be affected by these changes (VAL-LLM-001 through VAL-LIVE-004) were already marked as passed in a prior scrutiny validation round. No user-facing assertions required additional testing beyond what was already verified."
+}
