@@ -1,0 +1,22 @@
+{
+  "featureId": "llm-live-integration-tests",
+  "reviewedAt": "2026-04-14T07:09:00Z",
+  "commitId": "0eb8dc9",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is comprehensive and meets all requirements. Four #[ignore] tests cover both Anthropic-compatible and OpenAI-compatible endpoints with both sync and streaming modes. API key is read exclusively from MINIMAX_API_KEY env var. Additional verification tests confirm correct env var reading and detect hardcoded keys.",
+    "issues": [
+      {
+        "file": "crates/swell-llm/tests/minimax_live_tests.rs",
+        "line": 293,
+        "severity": "non_blocking",
+        "description": "test_env_var_is_read_via_std_env logs first 8 characters of API key value. While this is a minor leak, it could be improved by not logging any portion of the API key. Current pattern: `&key[..key.len().min(8)]`."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature successfully implements all required integration tests. All 4 live tests are properly marked #[ignore] and read API key exclusively from MINIMAX_API_KEY env var. Both Anthropic-compatible (https://api.minimax.io/anthropic) and OpenAI-compatible (https://api.minimax.io/v1) endpoints are tested with both sync and streaming modes using model MiniMax-M2.7. No hardcoded API keys found. One minor non-blocking issue: partial API key prefix is logged in test_env_var_is_read_via_std_env."
+}

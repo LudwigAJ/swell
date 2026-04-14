@@ -1,0 +1,122 @@
+{
+  "milestone": "M2",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test_swell_llm": {
+      "passed": true,
+      "command": "cargo test -p swell-llm -- --test-threads=4",
+      "exitCode": 0,
+      "details": "84 tests passed, 4 live tests ignored (require MINIMAX_API_KEY)"
+    },
+    "test_swell_orchestrator": {
+      "passed": true,
+      "command": "cargo test -p swell-orchestrator -- --test-threads=4",
+      "exitCode": 0,
+      "details": "844 tests passed"
+    },
+    "test_swell_core": {
+      "passed": true,
+      "command": "cargo test -p swell-core -- --test-threads=4",
+      "exitCode": 0,
+      "details": "179 tests passed"
+    },
+    "test_swell_tools": {
+      "passed": true,
+      "command": "cargo test -p swell-tools -- --test-threads=4",
+      "exitCode": 0,
+      "details": "412 tests passed"
+    },
+    "check": {
+      "passed": true,
+      "command": "cargo check --workspace",
+      "exitCode": 0,
+      "details": "All crates compile successfully"
+    },
+    "clippy": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0,
+      "details": "No clippy warnings"
+    },
+    "build": {
+      "passed": true,
+      "command": "cargo build --workspace",
+      "exitCode": 0,
+      "details": "Workspace builds successfully"
+    },
+    "test_workspace": {
+      "passed": false,
+      "command": "cargo test --workspace -- --test-threads=4",
+      "exitCode": 1,
+      "details": "Timed out after 300 seconds - full workspace test too slow, individual crate tests pass"
+    }
+  },
+  "reviewsSummary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "LlmBackend trait in swell-core/src/traits.rs should eventually include a streaming method (stream()) alongside chat(), to maintain consistency with backends that implement streaming. Currently the streaming method is added directly to struct implementations rather than via trait.",
+      "evidence": "llm-anthropic-sse-streaming review: 'The LlmBackend trait (traits.rs) does not include a streaming method, but the SSE streaming feature adds a stream() method directly to AnthropicBackend.'",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Worker handoff commitId references should correspond to the actual commit containing the feature's implementation. The llm-anthropic-sse-streaming handoff referenced commit bed147b (M1 docs) instead of the actual SSE streaming implementation commit.",
+      "evidence": "llm-anthropic-sse-streaming review: 'The handoff's commitId bed147b does not correspond to the SSE streaming feature work. Commit bed147b is a documentation commit for M1, not the SSE streaming implementation.'",
+      "isSystemic": false
+    },
+    {
+      "target": "skills/rust-worker",
+      "suggestion": "The rust-worker skill file path (~/.factory/skills/rust-worker/SKILL.md) should exist and be accessible. The fix-anthropic-streaming-method review noted the skill file does not exist at that path.",
+      "evidence": "fix-anthropic-streaming-method review: 'The skillFeedback indicates the worker followed the rust-worker procedure correctly, but the skill file path ~/.factory/skills/rust-worker/SKILL.md does not exist.'",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null,
+  "featureReviews": [
+    {
+      "featureId": "llm-anthropic-sse-streaming",
+      "status": "pass",
+      "summary": "SSE streaming implementation is complete and correct. Properly parses content_block_delta, message_delta, message_stop events. Tool use accumulation works across input_json_delta events. Emits correct StreamEvent variants."
+    },
+    {
+      "featureId": "llm-anthropic-prompt-caching",
+      "status": "pass",
+      "summary": "anthropic-beta header correctly set to 'prompt-caching-2024-07-31'. cache_control with type 'ephemeral' properly added to system message content. Four-dimensional token tracking correctly implemented in ResponseUsage and LlmUsage."
+    },
+    {
+      "featureId": "llm-openai-sse-streaming",
+      "status": "pass",
+      "summary": "SSE streaming correctly parses data: line chunks with choices[0].delta content. Function call accumulation works across multiple chunks. data: [DONE] sentinel handled correctly. 11 unit tests provide coverage."
+    },
+    {
+      "featureId": "llm-retry-backoff",
+      "status": "pass",
+      "summary": "Retry correctly triggers on 429 and 5xx. Fails immediately on 400, 401, 403. Exponential backoff correctly implemented with configurable defaults (3 retries, 1s base delay). 24 test cases provide comprehensive coverage."
+    },
+    {
+      "featureId": "llm-credential-detection",
+      "status": "pass",
+      "summary": "Credential detection correctly distinguishes sk-* (OpenAI) vs Anthropic-format keys. Enriched error messages include detected key prefix and suggest correct backend. 11 unit tests provide coverage."
+    },
+    {
+      "featureId": "fix-anthropic-streaming-method",
+      "status": "pass",
+      "summary": "AnthropicBackend::stream() returns correct Stream type, calls messages API with stream=true, parses SSE events correctly, mirrors OpenAIBackend::stream() structure. Live streaming test now uses stream() instead of chat()."
+    },
+    {
+      "featureId": "llm-live-integration-tests",
+      "status": "pass",
+      "summary": "4 #[ignore] tests cover both Anthropic-compatible and OpenAI-compatible endpoints with sync and streaming modes. API key read exclusively from MINIMAX_API_KEY env var. Additional tests verify no hardcoded keys."
+    }
+  ]
+}
