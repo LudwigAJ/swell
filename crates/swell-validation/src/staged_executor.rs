@@ -36,6 +36,8 @@ use std::time::Instant;
 use swell_core::{SwellError, ValidationContext, ValidationMessage, ValidationOutcome};
 use tokio::task;
 
+use crate::{cargo_test_semaphore, truncate_output};
+
 /// Test execution stages with progressive rigor
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum TestStage {
@@ -562,8 +564,13 @@ impl StagedTestExecutor {
         args.push("--".to_string());
         args.push("--test-threads=4".to_string());
 
+        let permit = cargo_test_semaphore()
+            .acquire_owned()
+            .await
+            .map_err(|_| SwellError::IoError(std::io::Error::other("Semaphore closed")))?;
         let ws = workspace_path.clone();
         let output = task::spawn_blocking(move || {
+            let _permit = permit;
             Command::new("cargo").args(&args).current_dir(&ws).output()
         })
         .await
@@ -590,11 +597,12 @@ impl StagedTestExecutor {
             messages.push(ValidationMessage {
                 level: swell_core::ValidationLevel::Error,
                 code: Some("STAGE1_UNIT_FAIL".to_string()),
-                message: format!("Unit tests failed:\n{}", failure_summary),
+                message: format!("Unit tests failed:\n{}", truncate_output(&failure_summary)),
                 file: None,
                 line: None,
             });
         }
+        drop(output);
 
         Ok(ValidationOutcome {
             passed,
@@ -617,8 +625,13 @@ impl StagedTestExecutor {
 
         // Run tests in tests/ directory (integration tests)
         if self.config.stage2.run_tests_dir {
+            let permit = cargo_test_semaphore()
+                .acquire_owned()
+                .await
+                .map_err(|_| SwellError::IoError(std::io::Error::other("Semaphore closed")))?;
             let ws = workspace_path.clone();
             let output = task::spawn_blocking(move || {
+                let _permit = permit;
                 Command::new("cargo")
                     .args(["test", "--test", "*", "--", "--test-threads=2"])
                     .current_dir(&ws)
@@ -630,13 +643,17 @@ impl StagedTestExecutor {
             })?
             .map_err(SwellError::IoError)?;
 
-            if !output.status.success() {
+            let passed = output.status.success();
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr_truncated = truncate_output(&stderr);
+            drop(output);
+
+            if !passed {
                 all_passed = false;
-                let stderr = String::from_utf8_lossy(&output.stderr);
                 all_messages.push(ValidationMessage {
                     level: swell_core::ValidationLevel::Error,
                     code: Some("STAGE2_INTEGRATION".to_string()),
-                    message: format!("Integration tests failed:\n{}", stderr),
+                    message: format!("Integration tests failed:\n{}", stderr_truncated),
                     file: None,
                     line: None,
                 });
@@ -672,8 +689,13 @@ impl StagedTestExecutor {
 
         // Run full test suite
         if self.config.stage3.run_full_tests {
+            let permit = cargo_test_semaphore()
+                .acquire_owned()
+                .await
+                .map_err(|_| SwellError::IoError(std::io::Error::other("Semaphore closed")))?;
             let ws = workspace_path.clone();
             let output = task::spawn_blocking(move || {
+                let _permit = permit;
                 Command::new("cargo")
                     .args(["test", "--", "--test-threads=4"])
                     .current_dir(&ws)
@@ -685,13 +707,17 @@ impl StagedTestExecutor {
             })?
             .map_err(SwellError::IoError)?;
 
-            if !output.status.success() {
+            let passed = output.status.success();
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr_truncated = truncate_output(&stderr);
+            drop(output);
+
+            if !passed {
                 all_passed = false;
-                let stderr = String::from_utf8_lossy(&output.stderr);
                 all_messages.push(ValidationMessage {
                     level: swell_core::ValidationLevel::Error,
                     code: Some("STAGE3_TESTS".to_string()),
-                    message: format!("Full test suite failed:\n{}", stderr),
+                    message: format!("Full test suite failed:\n{}", stderr_truncated),
                     file: None,
                     line: None,
                 });
@@ -798,8 +824,13 @@ impl StagedTestExecutor {
 
         // Run full test suite (final verification)
         if self.config.stage4.run_all_gates {
+            let permit = cargo_test_semaphore()
+                .acquire_owned()
+                .await
+                .map_err(|_| SwellError::IoError(std::io::Error::other("Semaphore closed")))?;
             let ws = workspace_path.clone();
             let output = task::spawn_blocking(move || {
+                let _permit = permit;
                 Command::new("cargo")
                     .args(["test", "--workspace", "--", "--test-threads=4"])
                     .current_dir(&ws)
@@ -811,13 +842,17 @@ impl StagedTestExecutor {
             })?
             .map_err(SwellError::IoError)?;
 
-            if !output.status.success() {
+            let passed = output.status.success();
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stderr_truncated = truncate_output(&stderr);
+            drop(output);
+
+            if !passed {
                 all_passed = false;
-                let stderr = String::from_utf8_lossy(&output.stderr);
                 all_messages.push(ValidationMessage {
                     level: swell_core::ValidationLevel::Error,
                     code: Some("STAGE4_TESTS".to_string()),
-                    message: format!("Workspace tests failed:\n{}", stderr),
+                    message: format!("Workspace tests failed:\n{}", stderr_truncated),
                     file: None,
                     line: None,
                 });

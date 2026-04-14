@@ -41,6 +41,40 @@ use swell_core::{
 use swell_llm::{LlmBackend, LlmConfig, LlmMessage, LlmRole};
 use tokio::task;
 
+/// Maximum bytes kept from cargo test output when storing error messages.
+/// Prevents huge allocations when test output is very verbose.
+const MAX_STORED_OUTPUT_BYTES: usize = 64 * 1024; // 64 KB
+
+/// Global semaphore that limits concurrent `cargo test` invocations to 1.
+///
+/// Running multiple `cargo test --workspace` processes simultaneously buffers
+/// their complete stdout/stderr in memory, which multiplies the memory footprint
+/// by the number of concurrent agents. This semaphore ensures only one
+/// `cargo test` runs at a time across all agents.
+static CARGO_TEST_SEMAPHORE: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> =
+    std::sync::OnceLock::new();
+
+/// Acquire a permit from the global cargo-test semaphore (1 permit total).
+pub(crate) fn cargo_test_semaphore() -> Arc<tokio::sync::Semaphore> {
+    CARGO_TEST_SEMAPHORE
+        .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(1)))
+        .clone()
+}
+
+/// Truncate a string to at most `MAX_STORED_OUTPUT_BYTES`, keeping the tail.
+fn truncate_output(s: &str) -> String {
+    if s.len() <= MAX_STORED_OUTPUT_BYTES {
+        s.to_string()
+    } else {
+        let start = s.len() - MAX_STORED_OUTPUT_BYTES;
+        // Advance to the next valid UTF-8 char boundary at or after `start`.
+        let start = (start..=s.len())
+            .find(|&i| s.is_char_boundary(i))
+            .unwrap_or(s.len());
+        format!("[...output truncated to last 64 KB...]\n{}", &s[start..])
+    }
+}
+
 // Re-export calibrated confidence for calibrated validation confidence (V2)
 pub mod calibrated_confidence;
 pub use calibrated_confidence::{
@@ -150,6 +184,12 @@ pub use self_improving_tests::{
     CostBenefitAnalysis, CostBenefitRecommendation, RetirementCandidate, RetirementPolicy,
     TestBenefit, TestCost, TestValue, TestValueConfig, TestValueGate, TestValueSummary,
     TestValueTracker, ValueComponents,
+};
+
+// Re-export ValidationOrchestrator for high-level validation entry point
+pub mod orchestrator;
+pub use orchestrator::{
+    TaskCompletionInput, TaskExecutionMetadata, TaskValidationResult, ValidationOrchestrator,
 };
 
 // ============================================================================
@@ -409,12 +449,10 @@ impl TestGate {
     /// Parse cargo test output and classify failures
     fn parse_test_output(stdout: &str, stderr: &str) -> ParsedTestOutput {
         let mut output = ParsedTestOutput::default();
-        let full_output = format!("{}\n{}", stdout, stderr);
 
-        // Try to extract test counts from the summary line
-        // Format: "test result: ok. X passed; Y failed; Z ignored; ..."
-        // or: "test result: FAILED. X passed; Y failed; Z ignored; ..."
-        for line in full_output.lines() {
+        // First pass: extract test counts and duration.
+        // Iterate over both streams with .chain() to avoid allocating a combined String.
+        for line in stdout.lines().chain(stderr.lines()) {
             let line = line.trim();
 
             // Parse summary line
@@ -456,13 +494,13 @@ impl TestGate {
 
         output.total = output.passed + output.failed + output.skipped;
 
-        // Parse individual failures
+        // Second pass: parse individual failure details.
         let mut current_test = None::<String>;
         let mut current_msg = Vec::new();
         let mut current_file = None::<String>;
         let mut current_line = None::<u32>;
 
-        for line in full_output.lines() {
+        for line in stdout.lines().chain(stderr.lines()) {
             let line = line.trim();
 
             // Test name line (rust test format)
@@ -601,21 +639,73 @@ impl ValidationGate for TestGate {
     async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
         let workspace_path = context.workspace_path.clone();
 
+        // Serialize concurrent `cargo test` invocations: running multiple
+        // workspace-wide test commands at once buffers large output Vec<u8>
+        // for each concurrent agent, causing memory spikes proportional to
+        // the number of agents (up to MAX_CONCURRENT_AGENTS = 6).
+        let permit = cargo_test_semaphore()
+            .acquire_owned()
+            .await
+            .map_err(|_| SwellError::IoError(std::io::Error::other("Semaphore closed")))?;
+
+        // Run cargo test with memory-limiting options:
+        // - --test-threads=1: Limit test parallelism to reduce memory usage
+        // - --jobs=1: Limit compilation parallelism to reduce memory usage
+        // - --workspace --exclude swell-integration-tests: Run workspace tests but exclude
+        //   integration tests to avoid recursion when validation is called from those tests
         let output = task::spawn_blocking(move || {
-            Command::new("cargo")
-                .args(["test", "--", "--format", "pretty"])
+            // Hold the permit for the duration of the blocking call so that no
+            // other agent can start a `cargo test` while this one is running.
+            let _permit = permit;
+
+            // First try with --workspace --exclude (requires Rust 1.64+)
+            let result = Command::new("cargo")
+                .args([
+                    "test",
+                    "--workspace",
+                    "--test-threads=1",
+                    "--jobs=1",
+                    "--exclude",
+                    "swell-integration-tests",
+                    "--",
+                    "--format=pretty",
+                ])
                 .current_dir(&workspace_path)
-                .output()
+                .output();
+
+            match result {
+                Ok(output) => output,
+                Err(_) => {
+                    // Fall back to running tests in current directory without --workspace
+                    // This happens when not in a workspace or cargo version is old
+                    Command::new("cargo")
+                        .args(["test", "--test-threads=1", "--jobs=1", "--", "--format=pretty"])
+                        .current_dir(&workspace_path)
+                        .output()
+                        .unwrap_or_else(|_| {
+                            // Last resort: just run tests with defaults
+                            Command::new("cargo")
+                                .args(["test"])
+                                .current_dir(&workspace_path)
+                                .output()
+                                .expect("Failed to run cargo test")
+                        })
+                }
+            }
         })
         .await
-        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
-        .map_err(SwellError::IoError)?;
+        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?;
 
         let passed = output.status.success();
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
 
         let parsed = Self::parse_test_output(&stdout, &stderr);
+        // Drop the raw output buffers as soon as we're done reading them to
+        // free the large Vec<u8> allocations promptly.
+        drop(stdout);
+        drop(stderr);
+        drop(output);
 
         let mut messages = Vec::new();
 
@@ -1816,6 +1906,16 @@ impl Clone for ValidationPipeline {
         Self {
             inner: self.inner.clone(),
         }
+    }
+}
+
+/// Debug for ValidationPipeline - shows the number of gates in the pipeline.
+impl std::fmt::Debug for ValidationPipeline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let gate_count = self.inner.lock().map(|g| g.len()).unwrap_or(0);
+        f.debug_struct("ValidationPipeline")
+            .field("gate_count", &gate_count)
+            .finish()
     }
 }
 

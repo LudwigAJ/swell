@@ -12,6 +12,7 @@ members = [
     "crates/swell-daemon",
     "crates/swell-skills",
     "crates/swell-benchmark",
+    "crates/swell-integration-tests",
     "clients/swell-cli",
 ]
 

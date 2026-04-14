@@ -288,6 +288,47 @@ async fn test_test_gate_classification() {
 }
 ```
 
+## Memory Management
+
+### Cargo Test Serialization
+
+`TestGate` and `StagedTestExecutor` use `Command::output()` which buffers the entire
+stdout + stderr of `cargo test` in `Vec<u8>` before returning. For a workspace-wide run
+this easily reaches hundreds of megabytes. The orchestrator's `execute_batch` can run up
+to `MAX_CONCURRENT_AGENTS` (6) agents in parallel, each triggering their own `cargo test`,
+multiplying peak memory by up to 6×.
+
+To prevent this, a **global semaphore** (`CARGO_TEST_SEMAPHORE`, 1 permit) in `lib.rs`
+serializes all `cargo test` invocations across agents. The permit is acquired before
+`spawn_blocking` and moved into the closure so it is held for the full duration of the
+subprocess. This ensures only one `cargo test --workspace` runs at a time.
+
+```rust
+// lib.rs — used by both TestGate and StagedTestExecutor
+pub(crate) fn cargo_test_semaphore() -> Arc<tokio::sync::Semaphore> { ... }
+
+// Acquire before spawning; move permit into closure to hold it
+let permit = cargo_test_semaphore().acquire_owned().await?;
+let output = task::spawn_blocking(move || {
+    let _permit = permit;
+    Command::new("cargo").args([...]).output()
+}).await??;
+```
+
+### Output Truncation
+
+Error messages stored in `ValidationMessage` are capped at 64 KB (`MAX_STORED_OUTPUT_BYTES`)
+via `truncate_output()`, keeping the **tail** (most recent output) which contains the
+failure details. Raw `output` (the `Vec<u8>` buffers) is explicitly `drop()`-ed immediately
+after parsing to release memory before any further async work.
+
+### Eliminated `full_output` Allocation
+
+`parse_test_output` previously allocated a combined `String` via
+`format!("{}\n{}", stdout, stderr)`, creating a third copy of the data alongside the two
+existing `Vec<u8>` buffers. This was replaced with `stdout.lines().chain(stderr.lines())`
+to iterate over both streams without any additional allocation.
+
 ## Dependencies
 
 ```toml

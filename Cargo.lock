@@ -3250,6 +3250,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "swell-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "swell-core",
+ "swell-llm",
+ "swell-validation",
+ "tokio",
+ "tokio-test",
+ "uuid",
+]
+
+[[package]]
 name = "swell-llm"
 version = "0.1.0"
 dependencies = [
