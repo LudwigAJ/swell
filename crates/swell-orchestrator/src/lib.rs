@@ -261,7 +261,7 @@ impl Orchestrator {
     /// Create a new task
     pub async fn create_task(&self, description: String) -> Task {
         let task = {
-            let mut sm = self.state_machine.write().await;
+            let sm = self.state_machine.write().await;
             sm.create_task(description)
         };
         let _ = self
@@ -305,7 +305,7 @@ impl Orchestrator {
         };
 
         {
-            let mut sm = self.state_machine.write().await;
+            let sm = self.state_machine.write().await;
             sm.assign_task(task_id, agent_id)?;
         }
 
@@ -340,13 +340,13 @@ impl Orchestrator {
 
     /// Set a plan for a task
     pub async fn set_plan(&self, task_id: Uuid, plan: Plan) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.write().await;
         sm.set_plan(task_id, plan)
     }
 
     /// Transition task through planning -> ready -> executing
     pub async fn start_task(&self, task_id: Uuid) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.write().await;
 
         // Only enrich if task is in Created state (not after retry)
         let task = sm.get_task(task_id)?;
@@ -377,7 +377,7 @@ impl Orchestrator {
 
     /// Transition to validating state
     pub async fn start_validation(&self, task_id: Uuid) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.write().await;
         sm.start_validation(task_id)
     }
 
@@ -387,17 +387,22 @@ impl Orchestrator {
         task_id: Uuid,
         result: ValidationResult,
     ) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.read().await;
 
-        // Store validation result
-        if let Ok(task) = sm.get_task_mut(task_id) {
+        // Store validation result using with_task_mut
+        let _ = sm.with_task_mut(task_id, |task| {
             task.validation_result = Some(result.clone());
-        }
+            Ok(())
+        });
 
         if result.passed {
+            drop(sm); // Release read lock before acquiring write lock
+            let sm = self.state_machine.write().await;
             sm.accept_task(task_id)?;
             info!(task_id = %task_id, "Task accepted");
         } else {
+            drop(sm); // Release read lock before acquiring write lock
+            let sm = self.state_machine.write().await;
             sm.reject_task(task_id)?;
             info!(task_id = %task_id, "Task rejected");
 
@@ -433,20 +438,24 @@ impl Orchestrator {
         let restored_task = self.checkpoint_manager.restore(task_id).await?;
 
         if let Some(task) = restored_task {
-            // Update the state machine with the restored task
-            let mut sm = self.state_machine.write().await;
-            let existing_task = sm.get_task_mut(task_id);
+            // Update the state machine with the restored task using upsert
+            let sm = self.state_machine.read().await;
+            let existing = sm.get_task(task_id);
 
-            match existing_task {
-                Ok(existing) => {
+            match existing {
+                Ok(_) => {
                     // Update existing task with restored state
-                    *existing = task.clone();
+                    drop(sm); // Release read lock
+                    let sm = self.state_machine.write().await;
+                    sm.upsert_task(task.clone());
                     info!(task_id = %task_id, "Task restored from checkpoint");
                 }
                 Err(_) => {
-                    // Task doesn't exist in state machine - this is unusual but we can handle it
-                    // by not inserting - the restored task is returned but not stored
-                    warn!(task_id = %task_id, "Task restored from checkpoint but not found in state machine");
+                    // Task doesn't exist in state machine - insert it
+                    drop(sm); // Release read lock
+                    let sm = self.state_machine.write().await;
+                    sm.upsert_task(task.clone());
+                    info!(task_id = %task_id, "Task restored from checkpoint");
                 }
             }
             Ok(Some(task))
@@ -516,13 +525,13 @@ impl Orchestrator {
 
     /// Pause a task (operator-initiated)
     pub async fn pause_task(&self, task_id: Uuid, reason: String) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.write().await;
         sm.pause_task(task_id, reason)
     }
 
     /// Resume a paused task
     pub async fn resume_task(&self, task_id: Uuid) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.write().await;
         sm.resume_task(task_id)
     }
 
@@ -532,7 +541,7 @@ impl Orchestrator {
         task_id: Uuid,
         instruction: String,
     ) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.write().await;
         sm.inject_instruction(task_id, instruction)
     }
 
@@ -542,13 +551,13 @@ impl Orchestrator {
         task_id: Uuid,
         new_scope: swell_core::TaskScope,
     ) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.write().await;
         sm.modify_scope(task_id, new_scope)
     }
 
     /// Restore original scope (revert modify_scope)
     pub async fn restore_original_scope(&self, task_id: Uuid) -> Result<(), SwellError> {
-        let mut sm = self.state_machine.write().await;
+        let sm = self.state_machine.write().await;
         sm.restore_original_scope(task_id)
     }
 
@@ -734,7 +743,7 @@ mod tests {
         orchestrator.set_plan(task.id, plan).await.unwrap();
         {
             let sm = orchestrator.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.enrich_task(task.id).unwrap();
             sm_guard.ready_task(task.id).unwrap();
         }
@@ -757,7 +766,7 @@ mod tests {
         orchestrator.set_plan(task.id, plan).await.unwrap();
         {
             let sm = orchestrator.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.enrich_task(task.id).unwrap();
             sm_guard.ready_task(task.id).unwrap();
         }
@@ -783,7 +792,7 @@ mod tests {
         orchestrator.set_plan(task.id, plan).await.unwrap();
         {
             let sm = orchestrator.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.enrich_task(task.id).unwrap();
             sm_guard.ready_task(task.id).unwrap();
         }
@@ -823,7 +832,7 @@ mod tests {
         // Transition task1 to Enriched
         {
             let sm = orchestrator.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.enrich_task(task1.id).unwrap();
         }
 
@@ -997,7 +1006,7 @@ mod tests {
         // Retry and second failure: Rejected with iteration_count=2
         {
             let sm = orchestrator.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.retry_task(task.id).unwrap();
         }
         orchestrator.start_task(task.id).await.unwrap();
@@ -1017,7 +1026,7 @@ mod tests {
         // Retry and third failure: iteration_count=3, still Rejected (model switch retry)
         {
             let sm = orchestrator.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.retry_task(task.id).unwrap();
         }
         orchestrator.start_task(task.id).await.unwrap();
@@ -1037,7 +1046,7 @@ mod tests {
         // Retry and fourth failure: escalates (iteration_count=4 >= threshold)
         {
             let sm = orchestrator.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.retry_task(task.id).unwrap();
         }
         orchestrator.start_task(task.id).await.unwrap();
