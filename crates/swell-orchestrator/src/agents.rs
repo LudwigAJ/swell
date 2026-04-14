@@ -2539,6 +2539,28 @@ impl Agent for ResearcherAgent {
 // SystemPromptBuilder - Assembles agent context from project config, conventions, memory blocks
 // ============================================================================
 
+/// Prompt section categories for ordering and Anthropic prompt caching.
+///
+/// Static sections contain content that rarely changes and can be cached.
+/// Dynamic sections contain content that changes per-task or per-turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PromptSection {
+    /// Static content - role instructions, project conventions, agent protocols
+    Static,
+    /// Dynamic content - task context, memory blocks, git state, tool results
+    Dynamic,
+}
+
+/// DYNAMIC_BOUNDARY marker for Anthropic prompt caching.
+///
+/// This marker separates static (cacheable) content from dynamic content.
+/// The static portion before this marker can be cached by Anthropic,
+/// while the dynamic portion after it is evaluated per-request.
+pub const DYNAMIC_BOUNDARY: &str = "\n\n[[DYNAMIC_BOUNDARY]]\n\n";
+
+/// Instruction file names to discover from workspace root
+const INSTRUCTION_FILES: &[&str] = &["CLAUDE.md", "AGENTS.md"];
+
 /// Configuration for building system prompts
 #[derive(Debug, Clone)]
 pub struct SystemPromptConfig {
@@ -2554,6 +2576,10 @@ pub struct SystemPromptConfig {
     pub include_conventions: bool,
     /// Max tokens for the prompt
     pub max_tokens: usize,
+    /// Include git snapshot in project context
+    pub include_git_snapshot: bool,
+    /// Include discovered instruction files (CLAUDE.md, AGENTS.md)
+    pub include_instruction_files: bool,
 }
 
 impl Default for SystemPromptConfig {
@@ -2565,6 +2591,8 @@ impl Default for SystemPromptConfig {
             include_memory: true,
             include_conventions: true,
             max_tokens: 8000,
+            include_git_snapshot: true,
+            include_instruction_files: true,
         }
     }
 }
@@ -2579,69 +2607,206 @@ impl SystemPromptBuilder {
         Self { config }
     }
 
-    /// Build a system prompt with the given task context
-    pub fn build(&self, task_context: &str, memory_blocks: &[MemoryBlock]) -> String {
-        let mut prompt = String::new();
+    /// Discover instruction files (CLAUDE.md, AGENTS.md) from workspace root.
+    ///
+    /// Walks from the configured `repo_path` upward to find instruction files.
+    /// Returns a map of filename to content for files that exist.
+    pub fn discover_instruction_files(&self) -> HashMap<String, String> {
+        let mut files = HashMap::new();
+        let repo_path = std::path::Path::new(&self.config.repo_path);
 
-        // Header with project info
-        prompt.push_str(&format!(
+        for &filename in INSTRUCTION_FILES {
+            let file_path = repo_path.join(filename);
+            if file_path.exists() {
+                if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    files.insert(filename.to_string(), content);
+                }
+            }
+        }
+
+        files
+    }
+
+    /// Get git snapshot including current branch, recent commits, and modified files.
+    ///
+    /// Returns a formatted string with git state information for project context.
+    pub fn get_git_snapshot(&self) -> String {
+        let repo_path = std::path::Path::new(&self.config.repo_path);
+
+        let mut snapshot = String::new();
+
+        // Get current branch
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["branch", "--show-current"])
+            .current_dir(repo_path)
+            .output()
+        {
+            let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !branch.is_empty() {
+                snapshot.push_str(&format!("Branch: {}\n", branch));
+            }
+        }
+
+        // Get recent commits (last 5)
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["log", "--oneline", "-5", "--decorate"])
+            .current_dir(repo_path)
+            .output()
+        {
+            let commits = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !commits.is_empty() {
+                snapshot.push_str("Recent commits:\n");
+                for line in commits.lines().take(5) {
+                    snapshot.push_str(&format!("  {}\n", line));
+                }
+            }
+        }
+
+        // Get modified/untracked files
+        if let Ok(output) = std::process::Command::new("git")
+            .args(["status", "--porcelain", "-b"])
+            .current_dir(repo_path)
+            .output()
+        {
+            let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !status.is_empty() {
+                snapshot.push_str("\nModified files:\n");
+                for line in status.lines().skip(1) {
+                    // Skip the first line (branch info)
+                    let trimmed = line.trim();
+                    if !trimmed.is_empty() && !trimmed.starts_with("?? ") {
+                        // Modified file
+                        if let Some(stripped) = trimmed.strip_prefix("M ") {
+                            snapshot.push_str(&format!("  {}\n", stripped));
+                        } else if let Some(stripped) = trimmed.strip_prefix(" ") {
+                            // Other status codes
+                            snapshot.push_str(&format!("  {}\n", stripped));
+                        }
+                    }
+                }
+                // Untracked files
+                for line in status.lines().skip(1) {
+                    let trimmed = line.trim();
+                    if let Some(stripped) = trimmed.strip_prefix("?? ") {
+                        snapshot.push_str(&format!("  {} (untracked)\n", stripped));
+                    }
+                }
+            }
+        }
+
+        if snapshot.is_empty() {
+            snapshot.push_str("(No git information available)\n");
+        }
+
+        snapshot
+    }
+
+    /// Build a system prompt with the given task context.
+    ///
+    /// Sections are ordered with static content (role instructions, conventions, protocols)
+    /// appearing before dynamic content (task context, memory blocks, git state).
+    /// The DYNAMIC_BOUNDARY marker is inserted between static and dynamic sections
+    /// to enable Anthropic prompt caching.
+    pub fn build(&self, task_context: &str, memory_blocks: &[MemoryBlock]) -> String {
+        // Collect sections as (category, content) tuples for ordering
+        let mut static_sections: Vec<String> = Vec::new();
+        let mut dynamic_sections: Vec<String> = Vec::new();
+
+        // Header with project info (static - doesn't change per task)
+        static_sections.push(format!(
             "# {} - {} Agent\n\n",
             self.config.project_name,
             format!("{:?}", self.config.for_role).to_lowercase()
         ));
 
-        // Role-specific instructions
-        prompt.push_str(&self.role_instructions());
-        prompt.push_str("\n\n");
+        // Role-specific instructions (static - doesn't change)
+        static_sections.push(self.role_instructions());
+        static_sections.push("\n\n".to_string());
 
-        // Project conventions if included
+        // Project conventions if included (static)
         if self.config.include_conventions {
-            prompt.push_str("## Project Conventions\n\n");
-            prompt.push_str(&self.project_conventions());
-            prompt.push_str("\n\n");
+            static_sections.push(format!(
+                "## Project Conventions\n\n{}\n\n",
+                self.project_conventions()
+            ));
         }
 
-        // Memory blocks if included
+        // Instruction files (CLAUDE.md, AGENTS.md) - static content
+        if self.config.include_instruction_files {
+            let instruction_files = self.discover_instruction_files();
+            for (filename, content) in &instruction_files {
+                static_sections.push(format!(
+                    "## {} Instructions\n\n{}\n\n",
+                    filename.replace(".md", ""),
+                    content
+                ));
+            }
+        }
+
+        // Structured handoffs between agents (static - protocol doesn't change)
+        static_sections.push(
+            r#"## Agent Handoff Protocol
+
+When receiving work from another agent, expect this structure:
+- What was done: Summary of completed work
+- Where artifacts are: File paths and locations
+- How to verify: Validation commands or test names
+- Known issues: Any problems to be aware of
+- What's next: Expected next steps
+
+"#
+            .to_string(),
+        );
+
+        // Context condensation guidelines (static - protocol doesn't change)
+        static_sections.push(format!(
+            r#"## Context Condensation
+
+Context window capacity: {} tokens
+When token utilization exceeds 75%:
+- Condense old tool results (keep only final outcomes)
+- Prioritize memory blocks by relevance
+- Remove redundant context
+- Keep system prompt and current task intact
+
+"#,
+            self.config.max_tokens
+        ));
+
+        // Tool usage guidelines (static - doesn't change per task)
+        static_sections.push(self.tool_guidelines());
+
+        // === DYNAMIC SECTIONS START AFTER DYNAMIC_BOUNDARY ===
+
+        // Memory blocks (dynamic - changes per task)
         if self.config.include_memory && !memory_blocks.is_empty() {
-            prompt.push_str("## Relevant Context\n\n");
+            let mut memory_content = "## Relevant Context\n\n".to_string();
             for block in memory_blocks {
-                prompt.push_str(&format!(
+                memory_content.push_str(&format!(
                     "### {} ({})\n{}\n\n",
                     block.label,
                     format!("{:?}", block.block_type).to_lowercase(),
                     block.content
                 ));
             }
+            dynamic_sections.push(memory_content);
         }
 
-        // Task context
-        prompt.push_str("## Current Task\n\n");
-        prompt.push_str(task_context);
-        prompt.push_str("\n\n");
+        // Git snapshot (dynamic - changes per task/execution)
+        if self.config.include_git_snapshot {
+            dynamic_sections.push(format!(
+                "## Project Git State\n\n{}\n\n",
+                self.get_git_snapshot()
+            ));
+        }
 
-        // Structured handoffs between agents
-        prompt.push_str("## Agent Handoff Protocol\n\n");
-        prompt.push_str("When receiving work from another agent, expect this structure:\n");
-        prompt.push_str("- What was done: Summary of completed work\n");
-        prompt.push_str("- Where artifacts are: File paths and locations\n");
-        prompt.push_str("- How to verify: Validation commands or test names\n");
-        prompt.push_str("- Known issues: Any problems to be aware of\n");
-        prompt.push_str("- What's next: Expected next steps\n\n");
+        // Task context (dynamic - unique per task)
+        dynamic_sections.push(format!("## Current Task\n\n{}\n\n", task_context));
 
-        // Context condensation trigger at 75% token utilization
-        prompt.push_str("## Context Condensation\n\n");
-        prompt.push_str(&format!(
-            "Context window capacity: {} tokens\n",
-            self.config.max_tokens
-        ));
-        prompt.push_str("When token utilization exceeds 75%:\n");
-        prompt.push_str("- Condense old tool results (keep only final outcomes)\n");
-        prompt.push_str("- Prioritize memory blocks by relevance\n");
-        prompt.push_str("- Remove redundant context\n");
-        prompt.push_str("- Keep system prompt and current task intact\n\n");
-
-        // Tool usage guidelines
-        prompt.push_str(&self.tool_guidelines());
+        // Assemble prompt with DYNAMIC_BOUNDARY marker between static and dynamic
+        let mut prompt = static_sections.join("");
+        prompt.push_str(DYNAMIC_BOUNDARY);
+        prompt.push_str(&dynamic_sections.join(""));
 
         prompt
     }
@@ -3506,6 +3671,8 @@ impl CoderAgent {
             include_memory: true,
             include_conventions: true,
             max_tokens: 8000,
+            include_git_snapshot: true,
+            include_instruction_files: true,
         };
 
         Self {
@@ -3975,6 +4142,8 @@ impl TestWriterAgent {
             include_memory: true,
             include_conventions: true,
             max_tokens: 8000,
+            include_git_snapshot: true,
+            include_instruction_files: true,
         };
 
         Self {
@@ -4312,6 +4481,8 @@ impl ReviewerAgent {
             include_memory: true,
             include_conventions: true,
             max_tokens: 8000,
+            include_git_snapshot: true,
+            include_instruction_files: true,
         };
 
         Self {
@@ -4906,6 +5077,8 @@ impl RefactorerAgent {
             include_memory: true,
             include_conventions: true,
             max_tokens: 8000,
+            include_git_snapshot: true,
+            include_instruction_files: true,
         };
 
         Self {
@@ -4966,6 +5139,8 @@ impl RefactorerAgent {
                 include_memory: true,
                 include_conventions: true,
                 max_tokens: 8000,
+                include_git_snapshot: true,
+                include_instruction_files: true,
             }),
             llm: None,
             tool_registry: Some(tool_registry),
@@ -5821,6 +5996,8 @@ impl DocWriterAgent {
             include_memory: true,
             include_conventions: true,
             max_tokens: 8000,
+            include_git_snapshot: true,
+            include_instruction_files: true,
         };
 
         Self {
@@ -5839,6 +6016,8 @@ impl DocWriterAgent {
             include_memory: true,
             include_conventions: true,
             max_tokens: 8000,
+            include_git_snapshot: true,
+            include_instruction_files: true,
         };
 
         Self {
@@ -6394,6 +6573,8 @@ mod tests {
         assert_eq!(config.for_role, AgentRole::Coder);
         assert!(config.include_memory);
         assert!(config.include_conventions);
+        assert!(config.include_git_snapshot);
+        assert!(config.include_instruction_files);
     }
 
     #[tokio::test]
@@ -6405,6 +6586,8 @@ mod tests {
             include_memory: true,
             include_conventions: true,
             max_tokens: 8000,
+            include_git_snapshot: false, // Disable for predictable output
+            include_instruction_files: false, // Disable for predictable output
         };
 
         let builder = SystemPromptBuilder::new(config);
@@ -6439,6 +6622,163 @@ mod tests {
 
         let usage = builder.calculate_usage(&prompt);
         assert!(usage > 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_system_prompt_builder_dynamic_boundary() {
+        let config = SystemPromptConfig {
+            project_name: "TestProject".to_string(),
+            repo_path: "/test".to_string(),
+            for_role: AgentRole::Coder,
+            include_memory: true,
+            include_conventions: true,
+            max_tokens: 8000,
+            include_git_snapshot: false,
+            include_instruction_files: false,
+        };
+
+        let builder = SystemPromptBuilder::new(config);
+        let memory_blocks = vec![];
+        let task_context = "Test task";
+
+        let prompt = builder.build(task_context, &memory_blocks);
+
+        // Verify DYNAMIC_BOUNDARY marker is present
+        assert!(
+            prompt.contains(DYNAMIC_BOUNDARY),
+            "Prompt should contain DYNAMIC_BOUNDARY marker"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_system_prompt_builder_section_ordering() {
+        let config = SystemPromptConfig {
+            project_name: "TestProject".to_string(),
+            repo_path: "/test".to_string(),
+            for_role: AgentRole::Coder,
+            include_memory: true,
+            include_conventions: true,
+            max_tokens: 8000,
+            include_git_snapshot: false,
+            include_instruction_files: false,
+        };
+
+        let builder = SystemPromptBuilder::new(config);
+        let memory_blocks = vec![];
+        let task_context = "Test task";
+
+        let prompt1 = builder.build(task_context, &memory_blocks);
+        let prompt2 = builder.build(task_context, &memory_blocks);
+
+        // Verify deterministic ordering - two builds produce identical output
+        assert_eq!(
+            prompt1, prompt2,
+            "Two builds with same input should produce identical output"
+        );
+
+        // Verify static content appears before DYNAMIC_BOUNDARY
+        let boundary_pos = prompt1.find(DYNAMIC_BOUNDARY).expect("DYNAMIC_BOUNDARY should exist");
+        let project_header_pos = prompt1.find("# TestProject").expect("Project header should exist");
+        let role_pos = prompt1.find("CODER").expect("Role should exist");
+
+        assert!(
+            project_header_pos < boundary_pos,
+            "Project header should appear before DYNAMIC_BOUNDARY"
+        );
+        assert!(
+            role_pos < boundary_pos,
+            "Role instructions should appear before DYNAMIC_BOUNDARY"
+        );
+
+        // Verify task context appears after DYNAMIC_BOUNDARY
+        let task_pos = prompt1.find("## Current Task").expect("Task context should exist");
+        assert!(
+            task_pos > boundary_pos,
+            "Task context should appear after DYNAMIC_BOUNDARY"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_system_prompt_builder_instruction_file_discovery() {
+        // Create a temp directory with instruction files
+        let temp_path = std::env::temp_dir().join("swell_test_instruction_discovery");
+        std::fs::create_dir_all(&temp_path).expect("Should create temp dir");
+
+        // Create CLAUDE.md
+        std::fs::write(
+            temp_path.join("CLAUDE.md"),
+            "# CLAUDE Instructions\n\nThis is CLAUDE.md content.",
+        )
+        .expect("Should write CLAUDE.md");
+
+        // Create AGENTS.md
+        std::fs::write(
+            temp_path.join("AGENTS.md"),
+            "# AGENTS Instructions\n\nThis is AGENTS.md content.",
+        )
+        .expect("Should write AGENTS.md");
+
+        let config = SystemPromptConfig {
+            project_name: "TestProject".to_string(),
+            repo_path: temp_path.to_str().unwrap().to_string(),
+            for_role: AgentRole::Coder,
+            include_memory: false,
+            include_conventions: false,
+            max_tokens: 8000,
+            include_git_snapshot: false,
+            include_instruction_files: true,
+        };
+
+        let builder = SystemPromptBuilder::new(config);
+        let files = builder.discover_instruction_files();
+
+        assert!(
+            files.contains_key("CLAUDE.md"),
+            "Should discover CLAUDE.md"
+        );
+        assert!(
+            files.contains_key("AGENTS.md"),
+            "Should discover AGENTS.md"
+        );
+        assert!(
+            files.get("CLAUDE.md").unwrap().contains("CLAUDE Instructions"),
+            "CLAUDE.md content should be readable"
+        );
+        assert!(
+            files.get("AGENTS.md").unwrap().contains("AGENTS Instructions"),
+            "AGENTS.md content should be readable"
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&temp_path);
+    }
+
+    #[tokio::test]
+    async fn test_system_prompt_builder_git_snapshot() {
+        // Use the actual repository path for this test
+        let config = SystemPromptConfig {
+            project_name: "TestProject".to_string(),
+            repo_path: ".".to_string(), // Use current directory
+            for_role: AgentRole::Coder,
+            include_memory: false,
+            include_conventions: false,
+            max_tokens: 8000,
+            include_git_snapshot: true,
+            include_instruction_files: false,
+        };
+
+        let builder = SystemPromptBuilder::new(config);
+        let git_snapshot = builder.get_git_snapshot();
+
+        // In a git repository, we should get some git information
+        // Even if there are no commits yet, we should get the branch
+        if !git_snapshot.contains("No git information available") {
+            // If we're in a git repo, verify we have branch or commits info
+            assert!(
+                git_snapshot.contains("Branch:") || git_snapshot.contains("Recent commits:"),
+                "Git snapshot should contain branch or commits info"
+            );
+        }
     }
 
     // ========================================================================
