@@ -6,7 +6,10 @@
 //! The stream parses `data:` line chunks from the OpenAI Chat Completions API,
 //! extracting `choices[0].delta.content` for text and `function_call` for tool calls.
 
-use crate::{calculate_backoff, credential::validate_openai_key, is_retryable_status, LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRetryConfig, LlmRole, LlmToolDefinition, LlmUsage};
+use crate::{
+    calculate_backoff, credential::validate_openai_key, is_retryable_status, LlmBackend, LlmConfig,
+    LlmMessage, LlmResponse, LlmRetryConfig, LlmRole, LlmToolDefinition, LlmUsage,
+};
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
 use opentelemetry::trace::{Span, Tracer};
@@ -120,7 +123,8 @@ impl OpenAIBackend {
         messages: Vec<LlmMessage>,
         tools: Option<Vec<LlmToolDefinition>>,
         config: LlmConfig,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError>
+    {
         #[derive(Serialize)]
         struct Request<'a> {
             model: &'a str,
@@ -237,10 +241,12 @@ impl OpenAIBackend {
                         let chunk_str = match String::from_utf8(bytes.to_vec()) {
                             Ok(s) => s,
                             Err(e) => {
-                                let _ = tx.send(Err(SwellError::LlmError(format!(
-                                    "Invalid UTF-8 in stream: {}",
-                                    e
-                                )))).await;
+                                let _ = tx
+                                    .send(Err(SwellError::LlmError(format!(
+                                        "Invalid UTF-8 in stream: {}",
+                                        e
+                                    ))))
+                                    .await;
                                 break;
                             }
                         };
@@ -274,17 +280,21 @@ impl OpenAIBackend {
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(Err(SwellError::LlmError(format!(
-                            "Stream read error: {}",
-                            e
-                        )))).await;
+                        let _ = tx
+                            .send(Err(SwellError::LlmError(format!(
+                                "Stream read error: {}",
+                                e
+                            ))))
+                            .await;
                         break;
                     }
                 }
             }
 
             // Send message stop event
-            let _ = tx.send(Ok(StreamEvent::MessageStop { stop_reason: None })).await;
+            let _ = tx
+                .send(Ok(StreamEvent::MessageStop { stop_reason: None }))
+                .await;
         });
 
         Ok(Box::pin(ReceiverStreamAdapter { rx }))
@@ -416,7 +426,10 @@ impl SseParser {
                         // If we have a name, start a new function call accumulator
                         if let Some(name) = &fc.name {
                             // Generate a unique ID for the tool call
-                            let id = format!("call_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
+                            let id = format!(
+                                "call_{}",
+                                uuid::Uuid::new_v4().to_string().replace("-", "")
+                            );
 
                             self.current_function_call = Some(FunctionCallAccumulator {
                                 id,
@@ -740,9 +753,7 @@ impl LlmBackend for OpenAIBackend {
                 );
                 return Err(SwellError::LlmError(format!(
                     "API error {} after {} attempts: {}",
-                    status,
-                    attempt,
-                    body
+                    status, attempt, body
                 )));
             } else {
                 // Non-retryable error (400, 401, 403) - fail immediately
@@ -752,7 +763,10 @@ impl LlmBackend for OpenAIBackend {
                     body = %body,
                     "OpenAI API non-retryable error"
                 );
-                return Err(SwellError::LlmError(format!("API error {}: {}", status, body)));
+                return Err(SwellError::LlmError(format!(
+                    "API error {}: {}",
+                    status, body
+                )));
             }
         };
 
@@ -845,6 +859,15 @@ impl LlmBackend for OpenAIBackend {
             .await
             .is_ok()
     }
+
+    async fn stream(
+        &self,
+        messages: Vec<LlmMessage>,
+        tools: Option<Vec<LlmToolDefinition>>,
+        config: LlmConfig,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError> {
+        self.stream(messages, tools, config).await
+    }
 }
 
 #[cfg(test)]
@@ -910,7 +933,8 @@ mod tests {
         assert!(result.is_none());
 
         // Second chunk: opening brace
-        let line2 = r#"data: {"choices":[{"delta":{"function_call":{"arguments":"{"},"index":0}}]}"#;
+        let line2 =
+            r#"data: {"choices":[{"delta":{"function_call":{"arguments":"{"},"index":0}}]}"#;
         let result = parser.parse_line(line2).unwrap();
         assert!(result.is_none()); // Still accumulating
 
@@ -920,7 +944,8 @@ mod tests {
         assert!(result.is_none());
 
         // Fourth chunk: location value (partial)
-        let line4 = r#"data: {"choices":[{"delta":{"function_call":{"arguments":"\"Los"},"index":0}}]}"#;
+        let line4 =
+            r#"data: {"choices":[{"delta":{"function_call":{"arguments":"\"Los"},"index":0}}]}"#;
         let result = parser.parse_line(line4).unwrap();
         assert!(result.is_none());
 
@@ -930,7 +955,8 @@ mod tests {
         assert!(result.is_none());
 
         // Sixth chunk: closing brace
-        let line6 = r#"data: {"choices":[{"delta":{"function_call":{"arguments":"}"},"index":0}}]}"#;
+        let line6 =
+            r#"data: {"choices":[{"delta":{"function_call":{"arguments":"}"},"index":0}}]}"#;
         let result = parser.parse_line(line6).unwrap();
         assert!(result.is_none());
 
@@ -1106,11 +1132,7 @@ mod retry_tests {
     #[test]
     fn test_openai_default_retry_config() {
         // Test that default retry config is applied when using new()
-        let backend = OpenAIBackend::new(
-            "gpt-4",
-            "test-key",
-        )
-        .expect("Failed to create backend");
+        let backend = OpenAIBackend::new("gpt-4", "test-key").expect("Failed to create backend");
 
         // Default: max_retries = 3, base_delay = 1.0, max_delay = 60.0
         assert_eq!(backend.retry_config.max_retries, 3);
@@ -1146,13 +1168,9 @@ mod retry_tests {
         let retry_config = LlmRetryConfig::new()
             .with_max_retries(3)
             .with_base_delay_secs(0.01); // Fast backoff for testing
-        let backend = OpenAIBackend::with_base_url_and_retry(
-            "gpt-4",
-            "test-key",
-            server.url(),
-            retry_config,
-        )
-        .expect("Failed to create backend");
+        let backend =
+            OpenAIBackend::with_base_url_and_retry("gpt-4", "test-key", server.url(), retry_config)
+                .expect("Failed to create backend");
 
         let messages = vec![LlmMessage {
             role: LlmRole::User,
@@ -1204,13 +1222,9 @@ mod retry_tests {
         let retry_config = LlmRetryConfig::new()
             .with_max_retries(3)
             .with_base_delay_secs(0.01);
-        let backend = OpenAIBackend::with_base_url_and_retry(
-            "gpt-4",
-            "test-key",
-            server.url(),
-            retry_config,
-        )
-        .expect("Failed to create backend");
+        let backend =
+            OpenAIBackend::with_base_url_and_retry("gpt-4", "test-key", server.url(), retry_config)
+                .expect("Failed to create backend");
 
         let messages = vec![LlmMessage {
             role: LlmRole::User,
@@ -1230,7 +1244,9 @@ mod retry_tests {
 
         let error = result.unwrap_err().to_string();
         assert!(
-            error.contains("500") || error.contains("server_error") || error.contains("Internal Server Error"),
+            error.contains("500")
+                || error.contains("server_error")
+                || error.contains("Internal Server Error"),
             "Error should mention server error (500), got: {}",
             error
         );
@@ -1264,13 +1280,9 @@ mod retry_tests {
         let retry_config = LlmRetryConfig::new()
             .with_max_retries(3)
             .with_base_delay_secs(0.01);
-        let backend = OpenAIBackend::with_base_url_and_retry(
-            "gpt-4",
-            "test-key",
-            server.url(),
-            retry_config,
-        )
-        .expect("Failed to create backend");
+        let backend =
+            OpenAIBackend::with_base_url_and_retry("gpt-4", "test-key", server.url(), retry_config)
+                .expect("Failed to create backend");
 
         let messages = vec![LlmMessage {
             role: LlmRole::User,
@@ -1295,7 +1307,8 @@ mod retry_tests {
         // Should contain "400" or indicate bad request
         assert!(
             error_msg.contains("400") || error_msg.contains("Bad Request"),
-            "Error should mention 400 or bad request, got: {}", error_msg
+            "Error should mention 400 or bad request, got: {}",
+            error_msg
         );
 
         // Verify minimal time elapsed (no retry delays)
@@ -1334,13 +1347,9 @@ mod retry_tests {
         let retry_config = LlmRetryConfig::new()
             .with_max_retries(3)
             .with_base_delay_secs(0.01);
-        let backend = OpenAIBackend::with_base_url_and_retry(
-            "gpt-4",
-            "test-key",
-            server.url(),
-            retry_config,
-        )
-        .expect("Failed to create backend");
+        let backend =
+            OpenAIBackend::with_base_url_and_retry("gpt-4", "test-key", server.url(), retry_config)
+                .expect("Failed to create backend");
 
         let messages = vec![LlmMessage {
             role: LlmRole::User,
@@ -1361,8 +1370,11 @@ mod retry_tests {
         let error_msg = error.to_string();
         // Should contain "401" or indicate unauthorized
         assert!(
-            error_msg.contains("401") || error_msg.contains("unauthorized") || error_msg.contains("Unauthorized"),
-            "Error should mention 401 or unauthorized, got: {}", error_msg
+            error_msg.contains("401")
+                || error_msg.contains("unauthorized")
+                || error_msg.contains("Unauthorized"),
+            "Error should mention 401 or unauthorized, got: {}",
+            error_msg
         );
 
         // Clean up mock
@@ -1397,13 +1409,9 @@ mod retry_tests {
         let retry_config = LlmRetryConfig::new()
             .with_max_retries(3)
             .with_base_delay_secs(0.01);
-        let backend = OpenAIBackend::with_base_url_and_retry(
-            "gpt-4",
-            "test-key",
-            server.url(),
-            retry_config,
-        )
-        .expect("Failed to create backend");
+        let backend =
+            OpenAIBackend::with_base_url_and_retry("gpt-4", "test-key", server.url(), retry_config)
+                .expect("Failed to create backend");
 
         let messages = vec![LlmMessage {
             role: LlmRole::User,
@@ -1424,8 +1432,11 @@ mod retry_tests {
         let error_msg = error.to_string();
         // Should contain "403" or indicate forbidden
         assert!(
-            error_msg.contains("403") || error_msg.contains("forbidden") || error_msg.contains("Forbidden"),
-            "Error should mention 403 or forbidden, got: {}", error_msg
+            error_msg.contains("403")
+                || error_msg.contains("forbidden")
+                || error_msg.contains("Forbidden"),
+            "Error should mention 403 or forbidden, got: {}",
+            error_msg
         );
 
         // Clean up mock
@@ -1460,13 +1471,9 @@ mod retry_tests {
         let retry_config = LlmRetryConfig::new()
             .with_max_retries(3)
             .with_base_delay_secs(0.01); // Fast backoff for testing
-        let backend = OpenAIBackend::with_base_url_and_retry(
-            "gpt-4",
-            "test-key",
-            server.url(),
-            retry_config,
-        )
-        .expect("Failed to create backend");
+        let backend =
+            OpenAIBackend::with_base_url_and_retry("gpt-4", "test-key", server.url(), retry_config)
+                .expect("Failed to create backend");
 
         let messages = vec![LlmMessage {
             role: LlmRole::User,

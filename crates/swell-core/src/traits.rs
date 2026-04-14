@@ -15,10 +15,12 @@
 //! - [`CheckpointStore`] - State persistence
 //! - [`ValidationGate`] - Quality assurance steps
 
-use crate::{AgentId, AgentRole, Plan, SwellError, Task, TaskState};
+use crate::{AgentId, AgentRole, Plan, StreamEvent, SwellError, Task, TaskState};
 use async_trait::async_trait;
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
+use std::pin::Pin;
 use uuid::Uuid;
 
 // ============================================================================
@@ -98,6 +100,17 @@ pub trait LlmBackend: Send + Sync {
 
     /// Check if the backend is healthy
     async fn health_check(&self) -> bool;
+
+    /// Generate a streaming chat completion
+    ///
+    /// Returns a stream of [`StreamEvent`]s that can be used to process
+    /// the response in real-time as tokens are generated.
+    async fn stream(
+        &self,
+        messages: Vec<LlmMessage>,
+        tools: Option<Vec<LlmToolDefinition>>,
+        config: LlmConfig,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError>;
 }
 
 /// Definition of a tool the LLM can call

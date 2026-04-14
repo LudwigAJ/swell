@@ -2,13 +2,16 @@
 
 use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition};
 use async_trait::async_trait;
+use futures::Stream;
 use opentelemetry::trace::{Span, Tracer};
 use opentelemetry::{global, KeyValue};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use swell_core::{
     opentelemetry::gen_ai, opentelemetry::pricing, opentelemetry::GenAiSpanExt,
-    opentelemetry::LatencyTracker, SwellError,
+    opentelemetry::LatencyTracker, StreamEvent, SwellError,
 };
+use tokio::sync::mpsc;
 
 static CALL_COUNT: AtomicU64 = AtomicU64::new(0);
 
@@ -144,6 +147,65 @@ impl LlmBackend for MockLlm {
     async fn health_check(&self) -> bool {
         !self.should_fail
     }
+
+    async fn stream(
+        &self,
+        messages: Vec<LlmMessage>,
+        _tools: Option<Vec<LlmToolDefinition>>,
+        _config: LlmConfig,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError> {
+        CALL_COUNT.fetch_add(1, Ordering::SeqCst);
+
+        if self.should_fail {
+            return Err(SwellError::LlmError("Mock failure".to_string()));
+        }
+
+        // Return the configured response, optionally echoing user message content
+        let content = if self.echo_user {
+            let user_content: String = messages
+                .iter()
+                .filter(|m| m.role == crate::LlmRole::User)
+                .map(|m| m.content.clone())
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            if user_content.is_empty() {
+                self.response.clone()
+            } else {
+                format!("{}: {}", self.response, user_content)
+            }
+        } else {
+            self.response.clone()
+        };
+
+        let input_tokens: u64 = messages.iter().map(|m| m.content.len() as u64 / 4).sum();
+        let output_tokens = 50u64;
+
+        let (tx, rx) = mpsc::channel::<Result<StreamEvent, SwellError>>(100);
+
+        // Spawn a task to emit the stream events
+        tokio::spawn(async move {
+            // Emit text delta with the full content as both text and delta
+            // Since this is a mock, we emit the entire response as one delta
+            let _ = tx.send(Ok(StreamEvent::TextDelta {
+                text: content.clone(),
+                delta: content,
+            })).await;
+
+            // Emit usage
+            let _ = tx.send(Ok(StreamEvent::Usage {
+                input_tokens,
+                output_tokens,
+                cache_creation_input_tokens: None,
+                cache_read_input_tokens: None,
+            })).await;
+
+            // Emit message stop
+            let _ = tx.send(Ok(StreamEvent::MessageStop { stop_reason: None })).await;
+        });
+
+        Ok(Box::pin(MockStreamAdapter { rx }))
+    }
 }
 
 pub fn get_call_count() -> u64 {
@@ -152,6 +214,22 @@ pub fn get_call_count() -> u64 {
 
 pub fn reset_call_count() {
     CALL_COUNT.store(0, Ordering::SeqCst);
+}
+
+/// Stream adapter for MockLlm streaming responses
+struct MockStreamAdapter {
+    rx: mpsc::Receiver<Result<StreamEvent, SwellError>>,
+}
+
+impl Stream for MockStreamAdapter {
+    type Item = Result<StreamEvent, SwellError>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.rx.poll_recv(cx)
+    }
 }
 
 #[cfg(test)]
