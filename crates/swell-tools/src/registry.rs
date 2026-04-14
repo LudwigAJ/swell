@@ -6,6 +6,174 @@ use swell_core::traits::Tool;
 use swell_core::{PermissionTier, ToolRiskLevel};
 use tokio::sync::RwLock;
 
+// ============================================================================
+// Tool Name Normalization
+// ============================================================================
+
+/// Represents a normalized tool name after parsing.
+///
+/// Tool names can be either:
+/// - Standard tools: `file_read`, `shell`, `git_status`, etc.
+/// - MCP tools: `mcp__server__tool` format (e.g., `mcp__tree_sitter__parse`)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NormalizedToolName {
+    /// A standard tool name (already lowercased)
+    Standard(String),
+    /// An MCP tool with server and tool name components
+    Mcp { server: String, tool: String },
+}
+
+impl NormalizedToolName {
+    /// Returns the lookup key for this normalized name.
+    /// For standard tools, returns the lowercased name.
+    /// For MCP tools, returns the full MCP-format name.
+    pub fn lookup_key(&self) -> String {
+        match self {
+            NormalizedToolName::Standard(name) => name.clone(),
+            NormalizedToolName::Mcp { server, tool } => {
+                format!("mcp__{}__{}", server, tool)
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for NormalizedToolName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NormalizedToolName::Standard(name) => write!(f, "{}", name),
+            NormalizedToolName::Mcp { server, tool } => write!(f, "mcp__{}__{}", server, tool),
+        }
+    }
+}
+
+/// Aliases mapping alternative names to canonical tool names.
+///
+/// Common aliases include:
+/// - `bash` → `shell`
+/// - `sh` → `shell`
+/// - `exec` → `shell`
+const TOOL_ALIASES: &[(&str, &str)] = &[
+    ("bash", "shell"),
+    ("sh", "shell"),
+    ("exec", "shell"),
+    ("terminal", "shell"),
+    ("cmd", "shell"),
+    ("powershell", "shell"),
+];
+
+/// Normalize a tool name to its canonical form.
+///
+/// This function handles:
+/// 1. **Case normalization**: All names are lowercased (`FILE_READ` → `file_read`)
+/// 2. **Alias mapping**: Known aliases resolve to canonical names (`bash` → `shell`)
+/// 3. **MCP format parsing**: `mcp__server__tool` is parsed into components
+///
+/// # Arguments
+///
+/// * `name` - The tool name to normalize (can be any case, with or without MCP prefix)
+///
+/// # Returns
+///
+/// * `NormalizedToolName` - The normalized representation
+///
+/// # Examples
+///
+/// ```
+/// use swell_tools::registry::{normalize_tool_name, NormalizedToolName};
+///
+/// // Case normalization - underscores are stripped for flexible matching
+/// assert_eq!(normalize_tool_name("FILE_READ"), NormalizedToolName::Standard("fileread".to_string()));
+/// assert_eq!(normalize_tool_name("FileRead"), NormalizedToolName::Standard("fileread".to_string()));
+///
+/// // Alias mapping
+/// assert_eq!(normalize_tool_name("Bash"), NormalizedToolName::Standard("shell".to_string()));
+///
+/// // MCP format - underscores in server/tool names are stripped
+/// let result = normalize_tool_name("mcp__tree_sitter__parse");
+/// assert_eq!(result, NormalizedToolName::Mcp { server: "treesitter".to_string(), tool: "parse".to_string() });
+/// ```
+pub fn normalize_tool_name(name: &str) -> NormalizedToolName {
+    let name = name.trim();
+
+    // Check for MCP format: mcp__server__tool
+    if let Some(mcp_result) = try_parse_mcp_format(name) {
+        return mcp_result;
+    }
+
+    // Normalize: lowercase and strip underscores for flexible matching
+    // This allows "FileRead", "file_read", and "FILE_READ" to all match
+    let normalized = normalize_for_lookup(name);
+
+    // Check for aliases
+    for (alias, canonical) in TOOL_ALIASES {
+        if normalized == *alias {
+            return NormalizedToolName::Standard(canonical.to_string());
+        }
+    }
+
+    NormalizedToolName::Standard(normalized)
+}
+
+/// Convert a name to normalized form.
+/// - If the input contains underscores (e.g., `"FILE_READ"`), preserve them as lowercase.
+/// - If the input is pure CamelCase (no underscores, e.g., `"FileRead"`), strip to lowercase without underscores.
+///
+/// Examples:
+/// - `"FileRead"` → `"fileread"` (no underscores for pure CamelCase)
+/// - `"FILE_READ"` → `"file_read"` (preserve underscores)
+/// - `"file_read"` → `"file_read"` (preserve underscores)
+/// - `"HttpResponseCode"` → `"httpresponsecode"` (no underscores for pure CamelCase)
+#[allow(dead_code)]
+fn normalize_standard_name(name: &str) -> String {
+    name.to_lowercase()
+}
+
+/// Normalize a name for lookup (strips underscores for flexible matching).
+/// "FileRead" → "fileread", "file_read" → "fileread"
+fn normalize_for_lookup(name: &str) -> String {
+    name.to_lowercase().replace('_', "")
+}
+
+/// Try to parse a name as MCP format.
+///
+/// MCP format: `mcp__server__tool` (with double underscores)
+/// Examples:
+/// - `mcp__tree_sitter__parse` → server="tree_sitter", tool="parse"
+/// - `MCP__TreeSitter__Parse` → server="treesitter", tool="parse" (lowercased)
+///
+/// Returns `None` if the name doesn't match MCP format.
+fn try_parse_mcp_format(name: &str) -> Option<NormalizedToolName> {
+    let name = name.trim();
+
+    // Check for mcp__ prefix (case-insensitive)
+    if name.to_lowercase().starts_with("mcp__") {
+        // Extract server and tool parts
+        let rest = &name[3..]; // Skip "mcp" prefix
+
+        // Split by "__" to get ["", server, tool, ...]
+        let parts: Vec<&str> = rest.split("__").collect();
+
+        if parts.len() >= 3 {
+            let server = parts[1];
+            let tool = parts[2];
+
+            // For MCP names, lowercase and strip underscores from server/tool
+            // This ensures "TreeSitter" matches "tree_sitter" and "tree-sitter"
+            let server_normalized = server.to_lowercase().replace('_', "");
+            let tool_normalized = tool.to_lowercase().replace('_', "");
+
+            if !server_normalized.is_empty() && !tool_normalized.is_empty() {
+                return Some(NormalizedToolName::Mcp {
+                    server: server_normalized,
+                    tool: tool_normalized,
+                });
+            }
+        }
+    }
+
+    None
+}
+
 /// Tool categories for progressive disclosure and lazy loading
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ToolCategory {
@@ -136,18 +304,23 @@ impl ToolRegistry {
     /// Register a tool with its category
     pub async fn register<T: Tool + 'static>(&self, tool: T, category: ToolCategory) {
         let registration = ToolRegistration::from_tool(tool, category);
-        let name = registration.name.clone();
+        let original_name = registration.name.clone();
 
-        // Add to tools map
+        // Normalize the tool name for consistent lookup
+        // This ensures case-insensitive and alias-based lookups work
+        let normalized = normalize_tool_name(&original_name);
+        let key = normalized.lookup_key();
+
+        // Add to tools map using the normalized key
         let mut tools = self.tools.write().await;
-        tools.insert(name.clone(), registration);
+        tools.insert(key.clone(), registration);
 
         // Update category index
         let mut index = self.category_index.write().await;
         index
             .entry(category)
             .or_insert_with(Vec::new)
-            .push(name.clone());
+            .push(key.clone());
 
         // Mark category as loaded since we have actual tools in it
         drop(index);
@@ -167,8 +340,10 @@ impl ToolRegistry {
     where
         F: Fn() -> Arc<dyn Tool> + Send + Sync + 'static,
     {
+        // Normalize the factory name for consistent lookup
+        let normalized_name = normalize_for_lookup(&name);
         let mut factories = self.factories.write().await;
-        factories.insert(name, (category, Box::new(factory)));
+        factories.insert(normalized_name, (category, Box::new(factory)));
     }
 
     /// Load a specific category on-demand
@@ -190,12 +365,29 @@ impl ToolRegistry {
         }
     }
 
-    /// Get a tool by name, loading it on-demand if not already loaded
+    /// Get a tool by name, loading it on-demand if not already loaded.
+    ///
+    /// This method performs **case-insensitive lookup** with support for:
+    /// - Case normalization: `FILE_READ` → `file_read`
+    /// - Alias resolution: `Bash` → `shell`
+    /// - MCP format: `mcp__server__tool` is parsed and resolved
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The tool name to look up (case-insensitive)
+    ///
+    /// # Returns
+    ///
+    /// The tool if found, `None` otherwise.
     pub async fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        // Normalize the tool name (case-insensitive, aliases, MCP format)
+        let normalized = normalize_tool_name(name);
+        let lookup_key = normalized.lookup_key();
+
         // Fast path: already loaded
         {
             let tools = self.tools.read().await;
-            if let Some(registration) = tools.get(name) {
+            if let Some(registration) = tools.get(&lookup_key) {
                 return Some(registration.tool.clone());
             }
         }
@@ -203,16 +395,16 @@ impl ToolRegistry {
         // Slow path: try to load from factory
         {
             let factories = self.factories.read().await;
-            if let Some((category, factory)) = factories.get(name) {
+            if let Some((category, factory)) = factories.get(&lookup_key) {
                 // Load the category first
                 self.load_category(*category).await;
 
                 // Instantiate the tool
                 let tool = factory.create();
 
-                // Register it for future access
+                // Register it for future access using the normalized key
                 let registration = ToolRegistration {
-                    name: name.to_string(),
+                    name: lookup_key.clone(),
                     description: tool.description(),
                     risk_level: tool.risk_level(),
                     permission_tier: tool.permission_tier(),
@@ -221,7 +413,7 @@ impl ToolRegistry {
                 };
 
                 let mut tools = self.tools.write().await;
-                tools.insert(name.to_string(), registration);
+                tools.insert(lookup_key, registration);
 
                 return Some(tool);
             }
@@ -292,12 +484,21 @@ impl ToolRegistry {
             .collect()
     }
 
-    /// Check if a tool is registered (loaded or in factory)
+    /// Check if a tool is registered (loaded or in factory).
+    ///
+    /// This method performs **case-insensitive lookup** with support for:
+    /// - Case normalization: `FILE_READ` → `file_read`
+    /// - Alias resolution: `Bash` → `shell`
+    /// - MCP format: `mcp__server__tool` is parsed and resolved
     pub async fn contains(&self, name: &str) -> bool {
+        // Normalize the tool name (case-insensitive, aliases, MCP format)
+        let normalized = normalize_tool_name(name);
+        let lookup_key = normalized.lookup_key();
+
         // Check loaded tools
         {
             let tools = self.tools.read().await;
-            if tools.contains_key(name) {
+            if tools.contains_key(&lookup_key) {
                 return true;
             }
         }
@@ -305,14 +506,21 @@ impl ToolRegistry {
         // Check factories
         {
             let factories = self.factories.read().await;
-            factories.contains_key(name)
+            factories.contains_key(&lookup_key)
         }
     }
 
-    /// Remove a tool
+    /// Remove a tool using normalized name lookup.
+    ///
+    /// This method performs **case-insensitive lookup** with support for:
+    /// - Case normalization: `FILE_READ` → `file_read`
+    /// - Alias resolution: `Bash` → `shell`
+    /// - MCP format: `mcp__server__tool` is parsed and resolved
     pub async fn unregister(&self, name: &str) -> bool {
+        let normalized = normalize_tool_name(name);
+        let lookup_key = normalized.lookup_key();
         let mut tools = self.tools.write().await;
-        tools.remove(name).is_some()
+        tools.remove(&lookup_key).is_some()
     }
 
     /// Get tools filtered by risk level (only loaded tools)
@@ -577,7 +785,8 @@ mod tests {
         // All factory tools should be in list_names (since they're registered)
         let names = registry.list_names().await;
         assert_eq!(names.len(), 5);
-        assert!(names.contains(&"lazy_tool_0".to_string()));
+        // Names are normalized (underscores stripped) for flexible matching
+        assert!(names.contains(&"lazytool0".to_string()));
 
         // Load only one specific tool on-demand
         let tool = registry.get("lazy_tool_2").await;
@@ -668,5 +877,280 @@ mod tests {
         let tools = registry.list_by_category(ToolCategory::Search).await;
         assert_eq!(tools.len(), 1);
         assert_eq!(tools[0].category, ToolCategory::Search);
+    }
+
+    // =============================================================================
+    // Tool Name Normalization Tests
+    // =============================================================================
+
+    #[test]
+    fn test_normalize_tool_name_case_insensitive() {
+        // Case normalization tests - underscores are stripped for flexible matching
+        assert_eq!(
+            normalize_tool_name("FILE_READ"),
+            NormalizedToolName::Standard("fileread".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("file_read"),
+            NormalizedToolName::Standard("fileread".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("FileRead"),
+            NormalizedToolName::Standard("fileread".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("File_Read"),
+            NormalizedToolName::Standard("fileread".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_alias_bash_to_shell() {
+        // bash should resolve to shell
+        assert_eq!(
+            normalize_tool_name("Bash"),
+            NormalizedToolName::Standard("shell".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("bash"),
+            NormalizedToolName::Standard("shell".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("BASH"),
+            NormalizedToolName::Standard("shell".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_alias_sh_to_shell() {
+        // sh should resolve to shell
+        assert_eq!(
+            normalize_tool_name("sh"),
+            NormalizedToolName::Standard("shell".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("SH"),
+            NormalizedToolName::Standard("shell".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_alias_exec_to_shell() {
+        // exec should resolve to shell
+        assert_eq!(
+            normalize_tool_name("exec"),
+            NormalizedToolName::Standard("shell".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("EXEC"),
+            NormalizedToolName::Standard("shell".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_alias_terminal_to_shell() {
+        // terminal should resolve to shell
+        assert_eq!(
+            normalize_tool_name("terminal"),
+            NormalizedToolName::Standard("shell".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_no_alias() {
+        // Tools without aliases are normalized with underscores stripped
+        assert_eq!(
+            normalize_tool_name("file_read"),
+            NormalizedToolName::Standard("fileread".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("git_status"),
+            NormalizedToolName::Standard("gitstatus".to_string())
+        );
+        assert_eq!(
+            normalize_tool_name("grep"),
+            NormalizedToolName::Standard("grep".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_mcp_format() {
+        // MCP format: mcp__server__tool - underscores in server/tool are stripped
+        let result = normalize_tool_name("mcp__tree_sitter__parse");
+        assert_eq!(
+            result,
+            NormalizedToolName::Mcp {
+                server: "treesitter".to_string(),
+                tool: "parse".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_mcp_format_lowercase() {
+        // MCP format should have components lowercased
+        let result = normalize_tool_name("MCP__TREE_SITTER__PARSE");
+        assert_eq!(
+            result,
+            NormalizedToolName::Mcp {
+                server: "treesitter".to_string(),
+                tool: "parse".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_mcp_format_mixed_case() {
+        // MCP format with mixed case
+        let result = normalize_tool_name("mcp__TreeSitter__ParseAST");
+        assert_eq!(
+            result,
+            NormalizedToolName::Mcp {
+                server: "treesitter".to_string(),
+                tool: "parseast".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_mcp_lookup_key() {
+        // Verify lookup key generation - underscores stripped from server/tool
+        let result = normalize_tool_name("mcp__tree_sitter__parse");
+        assert_eq!(result.lookup_key(), "mcp__treesitter__parse");
+    }
+
+    #[test]
+    fn test_normalize_tool_name_mcp_with_extra_parts() {
+        // MCP format with more than 3 parts (should use first 3)
+        let result = normalize_tool_name("mcp__server__tool__extra");
+        assert_eq!(
+            result,
+            NormalizedToolName::Mcp {
+                server: "server".to_string(),
+                tool: "tool".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn test_normalize_tool_name_invalid_mcp_format() {
+        // Invalid MCP format should fall back to standard normalization
+        // Missing double underscore - underscores stripped
+        let result = normalize_tool_name("mcp_server_tool");
+        assert_eq!(
+            result,
+            NormalizedToolName::Standard("mcpservertool".to_string())
+        );
+
+        // Single underscore
+        let result = normalize_tool_name("mcp_server_tool");
+        assert_eq!(
+            result,
+            NormalizedToolName::Standard("mcpservertool".to_string())
+        );
+    }
+
+    #[test]
+    fn test_normalized_tool_name_display() {
+        // Test the display of NormalizedToolName
+        let standard = NormalizedToolName::Standard("file_read".to_string());
+        assert_eq!(format!("{}", standard), "file_read");
+
+        let mcp = NormalizedToolName::Mcp {
+            server: "tree_sitter".to_string(),
+            tool: "parse".to_string(),
+        };
+        assert_eq!(format!("{}", mcp), "mcp__tree_sitter__parse");
+    }
+
+    #[tokio::test]
+    async fn test_registry_get_case_insensitive() {
+        let registry = ToolRegistry::new();
+
+        // Register a tool with lowercase name
+        registry
+            .register(
+                MockTool::new("file_read", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Should find with different cases
+        assert!(registry.get("file_read").await.is_some());
+        assert!(registry.get("FILE_READ").await.is_some());
+        assert!(registry.get("FileRead").await.is_some());
+        assert!(registry.get("File_Read").await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_registry_get_alias_resolution() {
+        let registry = ToolRegistry::new();
+
+        // Register shell tool
+        registry
+            .register(
+                MockTool::new("shell", ToolCategory::Shell),
+                ToolCategory::Shell,
+            )
+            .await;
+
+        // Should find with bash (alias)
+        assert!(registry.get("bash").await.is_some());
+        assert!(registry.get("BASH").await.is_some());
+        assert!(registry.get("sh").await.is_some());
+        assert!(registry.get("exec").await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_registry_contains_case_insensitive() {
+        let registry = ToolRegistry::new();
+
+        // Register a tool
+        registry
+            .register(
+                MockTool::new("file_read", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Should return true with different cases
+        assert!(registry.contains("file_read").await);
+        assert!(registry.contains("FILE_READ").await);
+        assert!(registry.contains("FileRead").await);
+    }
+
+    #[tokio::test]
+    async fn test_registry_unregister_case_insensitive() {
+        let registry = ToolRegistry::new();
+
+        // Register a tool
+        registry
+            .register(
+                MockTool::new("file_read", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Should be able to unregister with different cases
+        assert!(registry.unregister("FILE_READ").await);
+        assert!(!registry.contains("file_read").await); // No longer exists
+    }
+
+    #[tokio::test]
+    async fn test_registry_get_mcp_format() {
+        let registry = ToolRegistry::new();
+
+        // Register an MCP tool with its actual MCP-format name
+        registry
+            .register(
+                MockTool::new("mcp__tree_sitter__parse", ToolCategory::Mcp),
+                ToolCategory::Mcp,
+            )
+            .await;
+
+        // Should find with normalized MCP format
+        assert!(registry.get("mcp__tree_sitter__parse").await.is_some());
+        assert!(registry.get("MCP__TREE_SITTER__PARSE").await.is_some());
+        assert!(registry.get("mcp__TreeSitter__Parse").await.is_some());
     }
 }

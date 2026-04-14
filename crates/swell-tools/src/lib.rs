@@ -104,7 +104,9 @@ pub use post_tool_hooks::{
 pub use pr_creation::{
     EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
 };
-pub use registry::{CategoryInfo, ToolCategory, ToolRegistration, ToolRegistry};
+pub use registry::{
+    normalize_tool_name, CategoryInfo, NormalizedToolName, ToolCategory, ToolRegistration, ToolRegistry,
+};
 pub use resource_limits::{
     LimitCheckResult, LimitState, ResourceLimitError, ResourceLimitResult, SessionLimits,
     SessionResourceTracker,
