@@ -1770,12 +1770,12 @@ mod tests {
         entry.checks_passed = true;
         queue.add_pr(entry).unwrap();
 
-        let merge_result = queue.merge_next().unwrap();
+        let _merge_result = queue.merge_next().unwrap();
 
         let stats = queue.stats();
 
         assert_eq!(stats.total_merged, 1);
-        assert!(stats.avg_merge_time_ms >= 0);
+        // avg_merge_time_ms is tracked but may be 0 in unit tests (instantaneous mock merge)
     }
 
     // --- Error Messages Tests ---

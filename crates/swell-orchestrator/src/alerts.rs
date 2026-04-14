@@ -810,7 +810,7 @@ mod tests {
         manager.record_file_change(task_id);
 
         // Check alerts - should get warning about approaching max
-        let alerts = manager.check_loop_alerts(task_id);
+        let _alerts = manager.check_loop_alerts(task_id);
         // May or may not have alerts depending on cooldown
 
         // Remove loop state

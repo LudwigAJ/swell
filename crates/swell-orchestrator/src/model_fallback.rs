@@ -25,7 +25,7 @@ mod tests {
 
         let sonnet = create_mock_backend("claude-sonnet");
         let gpt_4o = create_mock_backend("gpt-4o");
-        let haiku: Arc<dyn LlmBackend> = create_mock_backend("claude-haiku");
+        let haiku = create_mock_backend("claude-haiku");
 
         // Register with Sonnet → GPT-4o → Haiku chain
         router.register(

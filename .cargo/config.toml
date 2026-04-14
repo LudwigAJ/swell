@@ -1,0 +1,7 @@
+# Cargo workspace configuration
+
+[gc]
+# Automatically prune stale entries from the global ~/.cargo/ registry cache.
+# Requires Rust 1.78+ (this workspace requires 1.94).
+# Cleans downloaded source tarballs and extracted crate sources older than 3 months.
+auto-clean-frequency = "1 month"

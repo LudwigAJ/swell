@@ -6269,7 +6269,7 @@ impl Agent for DocWriterAgent {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use swell_core::{LlmConfig, LlmMessage, LlmRole, MemoryBlock, MemoryBlockType, Task};
+    use swell_core::{MemoryBlock, MemoryBlockType, Task};
 
     // ========================================================================
     // AgentPool Tests
@@ -7445,7 +7445,7 @@ Then they should see all admin options
 
         let review: ReviewResult = serde_json::from_str(&result.output).unwrap();
         assert!(review.can_merge);
-        assert!(review.score >= 0);
+        assert!(review.score <= 100);
     }
 
     // ========================================================================
@@ -7473,7 +7473,7 @@ Then they should see all admin options
 
     #[tokio::test]
     async fn test_refactorer_agent_with_plan_extracts_files() {
-        let agent = RefactorerAgent::new("claude-sonnet".to_string());
+        let _agent = RefactorerAgent::new("claude-sonnet".to_string());
 
         let mut task = Task::new("Refactor auth module".to_string());
         task.plan = Some(Plan {
@@ -7658,7 +7658,7 @@ fn deeply_nested() {
 
     #[tokio::test]
     async fn test_refactorer_assess_risk() {
-        use super::{RefactorOpportunity, RefactorPlan};
+        use super::RefactorOpportunity;
 
         // Empty opportunities
         let risk = RefactorerAgent::assess_risk(&[]);
@@ -7981,7 +7981,7 @@ fn deeply_nested() {
         assert!(upper > 0.5);
 
         // 0% pass rate
-        let (lower, upper) = EvaluatorAgent::wilson_score_interval(0.0, 10);
+        let (_lower, upper) = EvaluatorAgent::wilson_score_interval(0.0, 10);
         assert!((upper - 0.28).abs() < 0.01); // Upper bound should be low
 
         // Edge case: n=0

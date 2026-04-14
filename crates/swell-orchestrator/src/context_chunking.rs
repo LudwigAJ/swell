@@ -996,17 +996,17 @@ fn deep() { println!("deep"); }
         // main is seed (depth 0)
         // helper is directly called by main (depth 1)
         // deep is transitively called (depth 2)
-        let main_chunk = result
+        let _main_chunk = result
             .scored_chunks
             .iter()
             .find(|s| s.chunk.name == "main")
             .expect("Should find main");
-        let helper_chunk = result
+        let _helper_chunk = result
             .scored_chunks
             .iter()
             .find(|s| s.chunk.name == "helper")
             .expect("Should find helper");
-        let deep_chunk = result
+        let _deep_chunk = result
             .scored_chunks
             .iter()
             .find(|s| s.chunk.name == "deep")
@@ -1106,10 +1106,10 @@ impl MyStruct {
         let result = assembler.build_context(&files, "new", None);
 
         // Should find struct and impl chunks
-        let has_struct = result.scored_chunks.iter().any(|s| {
+        let _has_struct = result.scored_chunks.iter().any(|s| {
             s.chunk.chunk_type == ChunkType::Struct || s.chunk.chunk_type == ChunkType::Class
         });
-        let has_impl = result
+        let _has_impl = result
             .scored_chunks
             .iter()
             .any(|s| s.chunk.chunk_type == ChunkType::Method);

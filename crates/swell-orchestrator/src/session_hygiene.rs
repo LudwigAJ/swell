@@ -740,7 +740,6 @@ mod tests {
         // Should be tracked now (elapsed may be 0 or very small)
         let elapsed = hygiene.get_session_elapsed_secs(session_id);
         assert!(elapsed.is_some());
-        assert!(elapsed.unwrap() >= 0);
     }
 
     #[test]
@@ -806,7 +805,7 @@ mod tests {
         assert!(hygiene.get_latest_checkpoint(session_id).is_none());
 
         hygiene.record_checkpoint(session_id);
-        let cp1 = hygiene.record_checkpoint(session_id);
+        let _cp1 = hygiene.record_checkpoint(session_id);
 
         // Latest should be the most recent
         let latest = hygiene.get_latest_checkpoint(session_id);
@@ -888,7 +887,7 @@ mod tests {
         assert_eq!(history.len(), 3);
 
         // Check that evaluations are present
-        for (cp, eval) in history {
+        for (_cp, eval) in history {
             assert!(eval.is_some());
         }
     }
@@ -903,7 +902,7 @@ mod tests {
         hygiene.start_session(session_id);
 
         // Create more checkpoints than max
-        for i in 0..5 {
+        for _i in 0..5 {
             hygiene.record_checkpoint(session_id);
         }
 

@@ -969,7 +969,7 @@ impl Default for ExecutionConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
+
     use std::sync::Arc;
     use swell_core::traits::Tool;
     use swell_llm::MockLlm;
@@ -1332,7 +1332,7 @@ mod tests {
 
         // Check that we don't have orphaned tool_results
         // (tool_result without its tool_use)
-        let tool_result_ids: std::collections::HashSet<_> = result
+        let _tool_result_ids: std::collections::HashSet<_> = result
             .iter()
             .filter_map(|m| m.tool_call_id.clone())
             .collect();

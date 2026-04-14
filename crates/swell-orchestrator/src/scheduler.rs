@@ -704,7 +704,7 @@ mod tests {
         assert!(pool.is_task_active(&task1));
 
         // Assign second task
-        let worker2 = pool.assign_task(task2, 100).unwrap();
+        let _worker2 = pool.assign_task(task2, 100).unwrap();
         assert_eq!(pool.busy_count(), 2);
         assert!(!pool.can_accept_work());
 
@@ -773,7 +773,7 @@ mod tests {
         // Schedule first task
         let result = scheduler.try_schedule(100);
         assert!(result.is_some());
-        let (worker_id, scheduled_task) = result.unwrap();
+        let (_worker_id, scheduled_task) = result.unwrap();
         assert_eq!(scheduled_task, task1);
         assert_eq!(scheduler.active_workers(), 1);
         assert_eq!(scheduler.queue_len(), 1);
@@ -899,14 +899,14 @@ mod tests {
         scheduler.enqueue(task3);
 
         // Complete first task, then schedule more
-        let (worker1, scheduled1) = scheduler.try_schedule(100).unwrap();
+        let (_worker1, scheduled1) = scheduler.try_schedule(100).unwrap();
         assert_eq!(scheduled1, task1);
 
         // Complete it
         scheduler.complete_task(&scheduled1);
 
         // Schedule next
-        let (worker2, scheduled2) = scheduler.try_schedule(101).unwrap();
+        let (_worker2, scheduled2) = scheduler.try_schedule(101).unwrap();
         assert_eq!(scheduled2, task2);
     }
 

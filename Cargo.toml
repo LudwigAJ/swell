@@ -80,8 +80,20 @@ tokio-test = "0.4"
 mockall = "0.13"
 
 [profile.dev]
-# Emit line tables only (equivalent to -g1).
-# Reduces the orchestrator test binary from ~41 MB to ~18-22 MB.
-# ld64 embeds 50-60% less debug data → ~35-50% faster re-link on incremental builds.
-# Backtraces still show file:line; lldb variable inspection is degraded (acceptable for CI/agents).
+# Emit line tables only for workspace crates (equivalent to -g1).
+# Reduces binary size and speeds up ld64 re-linking on every incremental build.
+# Backtraces still show file:line; lldb variable inspection is degraded (fine for CI/agents).
 debug = "line-tables-only"
+
+[profile.dev.package."*"]
+# External dependencies never need debug info — you won't step through tokio internals.
+# Eliminates debug sections from all downloaded crates → smaller binary, faster cold links.
+debug = 0
+
+[profile.release]
+# Thin LTO: better codegen than none, much faster than full LTO.
+lto = "thin"
+# Single codegen unit for maximum optimization (accepts slower release compile).
+codegen-units = 1
+# Strip symbol table from release binaries — smaller deployable, not needed at runtime.
+strip = "symbols"

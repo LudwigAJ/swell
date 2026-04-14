@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_cost_limit_exceeded() {
-        let limits = HardLimits::default();
+        let _limits = HardLimits::default();
         // Default limit is $100, so cost exceeding $100 should trigger
         // We can't directly test this without adding cost, but we can test the logic
         // This is implicitly tested by check_cost_limit tests
@@ -882,7 +882,7 @@ mod tests {
     #[tokio::test]
     async fn test_shared_hard_limits() {
         let limits = create_hard_limits();
-        let task_id = uuid::Uuid::new_v4();
+        let _task_id = uuid::Uuid::new_v4();
 
         // Read initial state
         {

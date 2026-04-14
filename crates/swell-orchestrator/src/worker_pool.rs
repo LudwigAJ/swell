@@ -665,7 +665,7 @@ mod tests {
         assert_eq!(pool.busy_count(), 0);
 
         // Should be able to acquire again
-        let (w2, _permit) = pool.acquire().await.unwrap();
+        let (_w2, _permit) = pool.acquire().await.unwrap();
         assert_eq!(pool.available_permits(), 2);
     }
 
@@ -675,7 +675,7 @@ mod tests {
 
         let result = pool.try_acquire();
         assert!(result.is_some());
-        let (worker_id, _permit) = result.unwrap();
+        let (_worker_id, _permit) = result.unwrap();
         // After try_acquire, a permit is consumed, but 2 remain (pool of 3)
         assert!(pool.can_accept_work()); // 2 permits still available
         assert_eq!(pool.available_permits(), 2);
@@ -743,7 +743,7 @@ mod tests {
         let (w1, p1) = pool.acquire().await.unwrap();
         pool.assign_task(w1, task1).unwrap();
 
-        let (w2, p2) = pool.acquire().await.unwrap();
+        let (w2, _p2) = pool.acquire().await.unwrap();
         pool.assign_task(w2, task2).unwrap();
 
         assert!(pool.is_task_active(&task1));
@@ -919,7 +919,7 @@ mod tests {
             let permits_clone = permits.clone();
             join_set.spawn(async move {
                 let result = {
-                    let mut pool = pool_clone.lock().await;
+                    let pool = pool_clone.lock().await;
                     // Just try to acquire a permit without marking worker as busy
                     // We only care about the semaphore limiting here
                     let permit = pool.semaphore.clone().try_acquire_owned();

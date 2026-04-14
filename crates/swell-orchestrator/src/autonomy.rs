@@ -393,7 +393,7 @@ mod tests {
             swell_core::RiskLevel::Low,
             swell_core::AutonomyLevel::Autonomous,
         );
-        let other_request_id = controller.request_approval(request).await;
+        let _other_request_id = controller.request_approval(request).await;
 
         // Clear task requests
         controller.clear_task_requests(task_id).await;

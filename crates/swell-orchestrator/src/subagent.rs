@@ -1016,7 +1016,7 @@ mod tests {
         let root1 = spawner
             .spawn_root(task1, "Task1 Root".to_string(), "".to_string())
             .unwrap();
-        let root2 = spawner
+        let _root2 = spawner
             .spawn_root(task2, "Task2 Root".to_string(), "".to_string())
             .unwrap();
 
