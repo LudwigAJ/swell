@@ -16,6 +16,7 @@ pub mod autonomy;
 pub mod backlog;
 pub mod context_chunking;
 pub mod context_pipeline;
+pub mod cron_registry;
 pub mod drift_detector;
 pub mod evidence_pipeline;
 pub mod execution;
@@ -171,6 +172,7 @@ pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
 };
+pub use cron_registry::{CronEntry, CronEvent, CronRegistry};
 
 // Re-export web search tools from swell-tools for convenience
 pub use swell_tools::web_search::{DomainSearchTool, FetchPageTool, WebSearchTool};

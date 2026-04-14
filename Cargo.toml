@@ -77,6 +77,9 @@ which = "6"
 # Concurrent hash map for fine-grained task locking
 dashmap = "5"
 
+# Cron expression parsing
+croner = "1"
+
 # Dev dependencies
 tempfile = "3"
 tokio-test = "0.4"

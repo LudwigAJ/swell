@@ -22,6 +22,7 @@ async-trait.workspace = true
 futures.workspace = true
 regex.workspace = true
 dashmap.workspace = true
+croner.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true
