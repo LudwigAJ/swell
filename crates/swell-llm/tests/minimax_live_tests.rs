@@ -289,10 +289,7 @@ fn test_env_var_is_read_via_std_env() {
     match result {
         Ok(key) => {
             assert!(!key.is_empty(), "MINIMAX_API_KEY should not be empty");
-            println!(
-                "MINIMAX_API_KEY is configured (value starts with: {})",
-                &key[..key.len().min(8)]
-            );
+            println!("MINIMAX_API_KEY is configured ([key present], length: {})", key.len());
         }
         Err(e) => {
             println!("MINIMAX_API_KEY not set (this is expected in CI): {}", e);
