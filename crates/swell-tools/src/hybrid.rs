@@ -476,7 +476,11 @@ mod tests {
     async fn test_hybrid_executor_routes_low_risk_locally() {
         let registry = Arc::new(ToolRegistry::new());
         registry
-            .register(ReadFileTool::new(), crate::registry::ToolCategory::File, crate::registry::ToolLayer::Builtin)
+            .register(
+                ReadFileTool::new(),
+                crate::registry::ToolCategory::File,
+                crate::registry::ToolLayer::Builtin,
+            )
             .await;
 
         let local = LocalExecutor::new(registry.clone());

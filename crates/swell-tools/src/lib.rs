@@ -35,6 +35,7 @@ pub mod registry;
 pub mod resource_limits;
 pub mod secret_scanning;
 pub mod self_healing_ci;
+pub mod skill;
 pub mod tools;
 pub mod vault;
 pub mod web_search;
@@ -120,6 +121,7 @@ pub use self_healing_ci::{
     CiFailure, CiFailureAnalysis, CiFix, CiHealingResult, CiHealingTool, CiSeverity, CodeChange,
     FailureCategory, FixType, RootCause,
 };
+pub use skill::{register_skills_from_workspace, SkillDiscovery, SkillInfo, SkillTool};
 pub use vault::{
     AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType, VaultClient,
     VaultClientConfig, VaultCredentialProvider, VaultDynamicSecret, VaultError,
@@ -141,7 +143,11 @@ mod tests {
     async fn test_registry_registration() {
         let registry = ToolRegistry::new();
         registry
-            .register(tools::ReadFileTool::new(), registry::ToolCategory::File, registry::ToolLayer::Builtin)
+            .register(
+                tools::ReadFileTool::new(),
+                registry::ToolCategory::File,
+                registry::ToolLayer::Builtin,
+            )
             .await;
         assert_eq!(registry.list().await.len(), 1);
     }

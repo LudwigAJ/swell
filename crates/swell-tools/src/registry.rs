@@ -403,7 +403,10 @@ impl ToolRegistry {
     }
 
     /// Get the tools map for a specific layer
-    async fn tools_for_layer(&self, layer: ToolLayer) -> Arc<RwLock<HashMap<String, ToolRegistration>>> {
+    async fn tools_for_layer(
+        &self,
+        layer: ToolLayer,
+    ) -> Arc<RwLock<HashMap<String, ToolRegistration>>> {
         match layer {
             ToolLayer::Builtin => self.builtin_tools.clone(),
             ToolLayer::Plugin => self.plugin_tools.clone(),
@@ -477,23 +480,36 @@ impl ToolRegistry {
     }
 
     /// Register a tool with its category in the Builtin layer (backward compatible).
-    pub async fn register_builtin<T: Tool + 'static>(&self, tool: T, category: ToolCategory) -> RegisterResult {
+    pub async fn register_builtin<T: Tool + 'static>(
+        &self,
+        tool: T,
+        category: ToolCategory,
+    ) -> RegisterResult {
         self.register(tool, category, ToolLayer::Builtin).await
     }
 
     /// Register a tool with its category in the Plugin layer.
-    pub async fn register_plugin<T: Tool + 'static>(&self, tool: T, category: ToolCategory) -> RegisterResult {
+    pub async fn register_plugin<T: Tool + 'static>(
+        &self,
+        tool: T,
+        category: ToolCategory,
+    ) -> RegisterResult {
         self.register(tool, category, ToolLayer::Plugin).await
     }
 
     /// Register a tool with its category in the Runtime layer.
-    pub async fn register_runtime<T: Tool + 'static>(&self, tool: T, category: ToolCategory) -> RegisterResult {
+    pub async fn register_runtime<T: Tool + 'static>(
+        &self,
+        tool: T,
+        category: ToolCategory,
+    ) -> RegisterResult {
         self.register(tool, category, ToolLayer::Runtime).await
     }
 
     /// Register a tool with default category (Misc) and default layer (Builtin)
     pub async fn register_<T: Tool + 'static>(&self, tool: T) -> RegisterResult {
-        self.register(tool, ToolCategory::Misc, ToolLayer::Builtin).await
+        self.register(tool, ToolCategory::Misc, ToolLayer::Builtin)
+            .await
     }
 
     /// Check if a tool name exists in other layers and return a warning if so.
@@ -1032,10 +1048,15 @@ mod tests {
         let load_count_clone = load_count.clone();
 
         registry
-            .register_factory("deferred_tool".to_string(), ToolCategory::File, ToolLayer::Builtin, move || {
-                let _count = load_count_clone.clone();
-                Arc::new(MockTool::new("deferred_tool", ToolCategory::File)) as Arc<dyn Tool>
-            })
+            .register_factory(
+                "deferred_tool".to_string(),
+                ToolCategory::File,
+                ToolLayer::Builtin,
+                move || {
+                    let _count = load_count_clone.clone();
+                    Arc::new(MockTool::new("deferred_tool", ToolCategory::File)) as Arc<dyn Tool>
+                },
+            )
             .await;
 
         // Tool should be in registry (as a factory) but not yet loaded
@@ -1106,9 +1127,12 @@ mod tests {
 
         // Register a factory
         registry
-            .register_factory("factory_tool".to_string(), ToolCategory::Git, ToolLayer::Builtin, || {
-                Arc::new(MockTool::new("factory_tool", ToolCategory::Git)) as Arc<dyn Tool>
-            })
+            .register_factory(
+                "factory_tool".to_string(),
+                ToolCategory::Git,
+                ToolLayer::Builtin,
+                || Arc::new(MockTool::new("factory_tool", ToolCategory::Git)) as Arc<dyn Tool>,
+            )
             .await;
         assert_eq!(registry.count().await, 2); // Total = 1 loaded + 1 factory
         assert_eq!(registry.loaded_count().await, 1); // Still only 1 loaded
