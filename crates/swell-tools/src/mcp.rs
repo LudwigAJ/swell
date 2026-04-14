@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use swell_core::traits::Tool;
 use swell_core::traits::ToolBehavioralHints;
-use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent, ToolRiskLevel};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
@@ -702,16 +702,16 @@ impl McpClient {
 
         if !success {
             return Ok(ToolOutput {
-                success: false,
-                result: String::new(),
-                error: error_msg.or(Some("Tool execution failed".to_string())),
+                is_error: true,
+                content: vec![ToolResultContent::Error(
+                    error_msg.unwrap_or_else(|| "Tool execution failed".to_string()),
+                )],
             });
         }
 
         Ok(ToolOutput {
-            success,
-            result: result_str,
-            error: error_msg,
+            is_error: false,
+            content: vec![ToolResultContent::Text(result_str)],
         })
     }
 

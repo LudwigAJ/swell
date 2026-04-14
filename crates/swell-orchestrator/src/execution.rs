@@ -10,13 +10,38 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::{
-    AgentContext, AgentResult, LlmMessage, StreamEvent, SwellError, ValidationResult,
+    AgentContext, AgentResult, LlmMessage, StreamEvent, SwellError, ToolOutput, ToolResultContent,
+    ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
 use swell_tools::ToolRegistry;
 use swell_validation::ValidationPipeline;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Extract text content from ToolResultContent
+fn extract_text_from_content(content: &[ToolResultContent]) -> String {
+    match content.first() {
+        Some(ToolResultContent::Text(s)) => s.clone(),
+        Some(ToolResultContent::Error(e)) => e.clone(),
+        Some(ToolResultContent::Json(v)) => serde_json::to_string(v).unwrap_or_default(),
+        Some(ToolResultContent::Image { data, .. }) => data.clone(),
+        None => String::new(),
+    }
+}
+
+// Test-only helper function for extracting error messages
+#[cfg(test)]
+fn extract_error_from_content(content: &[ToolResultContent]) -> String {
+    match content.first() {
+        Some(ToolResultContent::Error(e)) => e.clone(),
+        _ => String::new(),
+    }
+}
 
 // ============================================================================
 // Turn Loop Types
@@ -619,7 +644,9 @@ impl ExecutionController {
                         if let Some((id, name, arguments)) = current_tool_call.take() {
                             let tool_result = self.execute_tool(&name, arguments.clone()).await;
                             let (was_success, result_str) = match tool_result {
-                                Ok(output) => (output.success, output.result),
+                                Ok(output) => {
+                                    (!output.is_error, extract_text_from_content(&output.content))
+                                }
                                 Err(e) => (false, e.to_string()),
                             };
                             // Clone id before passing to add_tool_call since it moves
@@ -867,10 +894,9 @@ impl ExecutionController {
                 tier = ?tool.permission_tier(),
                 "Tool execution denied by permission system"
             );
-            return Ok(swell_core::traits::ToolOutput {
-                success: false,
-                result: String::new(),
-                error: Some(denial_message),
+            return Ok(ToolOutput {
+                is_error: true,
+                content: vec![ToolResultContent::Error(denial_message)],
             });
         }
 
@@ -1546,10 +1572,9 @@ mod tests {
             &self,
             _arguments: serde_json::Value,
         ) -> Result<swell_core::traits::ToolOutput, swell_core::SwellError> {
-            Ok(swell_core::traits::ToolOutput {
-                success: true,
-                result: "should not reach here".to_string(),
-                error: None,
+            Ok(ToolOutput {
+                is_error: false,
+                content: vec![ToolResultContent::Text("should not reach here".to_string())],
             })
         }
     }
@@ -1583,15 +1608,15 @@ mod tests {
 
         let output = result.unwrap();
         assert!(
-            !output.success,
-            "ToolOutput.success should be false for denied tool"
+            output.is_error,
+            "ToolOutput.is_error should be true for denied tool"
         );
         assert!(
-            output.error.is_some(),
-            "ToolOutput.error should contain denial message"
+            !output.content.is_empty(),
+            "ToolOutput.content should contain denial message"
         );
 
-        let error_msg = output.error.unwrap();
+        let error_msg = extract_error_from_content(&output.content);
         assert!(
             error_msg.contains("deny_test_tool"),
             "Error message should contain tool name: {}",
@@ -1623,15 +1648,16 @@ mod tests {
             .execute_tool("deny_test_tool", serde_json::json!({}))
             .await;
 
-        // Tool with Ask permission should execute (ToolOutput success=true)
+        // Tool with Ask permission should execute (ToolOutput is_error=false)
         // Note: The tool itself might fail, but the permission check should pass
         match result {
             Ok(output) => {
                 // Permission passed - tool executed
-                // The tool returns success:true with "should not reach here" but we don't care
+                // The tool returns is_error:false with "should not reach here" but we don't care
                 // about the tool's internal logic, only that permission was checked
+                let text = extract_text_from_content(&output.content);
                 assert!(
-                    output.success || output.result.contains("should not reach here"),
+                    !output.is_error || text.contains("should not reach here"),
                     "Tool execution should proceed for Ask permission"
                 );
             }

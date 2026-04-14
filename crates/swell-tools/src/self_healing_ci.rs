@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use swell_core::traits::Tool;
-use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent, ToolRiskLevel};
 use tracing::{info, warn};
 
 /// Tool for self-healing CI failures by analyzing errors and proposing corrections.
@@ -422,15 +422,10 @@ impl CiHealingTool {
             Some(cc) => cc.file.clone(),
             None => {
                 return Ok(ToolOutput {
-                    success: true,
-                    result: serde_json::json!({
-                        "applied": false,
-                        "reason": "Fix type requires manual intervention",
-                        "fix_description": fix.description,
-                        "file": null
-                    })
-                    .to_string(),
-                    error: Some("No file specified in fix".to_string()),
+                    is_error: true,
+                    content: vec![ToolResultContent::Error(
+                        "No file specified in fix".to_string(),
+                    )],
                 });
             }
         };
@@ -484,30 +479,26 @@ impl CiHealingTool {
             _ => {
                 // For other fixes, we cannot automatically apply without more context
                 return Ok(ToolOutput {
-                    success: !dry_run,
-                    result: serde_json::json!({
+                    is_error: dry_run,
+                    content: vec![ToolResultContent::Json(serde_json::json!({
                         "applied": false,
                         "reason": "Fix type requires manual intervention",
                         "fix_description": fix.description,
                         "file": file
-                    })
-                    .to_string(),
-                    error: None,
+                    }))],
                 });
             }
         };
 
         if dry_run {
             return Ok(ToolOutput {
-                success: true,
-                result: serde_json::json!({
+                is_error: false,
+                content: vec![ToolResultContent::Json(serde_json::json!({
                     "dry_run": true,
                     "would_change_file": file,
                     "proposed_content": new_content,
                     "fix_description": fix.description
-                })
-                .to_string(),
-                error: None,
+                }))],
             });
         }
 
@@ -518,14 +509,12 @@ impl CiHealingTool {
 
         info!(file = %file, "CI fix applied successfully");
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::json!({
+            is_error: false,
+            content: vec![ToolResultContent::Json(serde_json::json!({
                 "applied": true,
                 "file": file,
                 "fix_description": fix.description
-            })
-            .to_string(),
-            error: None,
+            }))],
         })
     }
 }
@@ -612,10 +601,11 @@ impl Tool for CiHealingTool {
                 };
 
                 Ok(ToolOutput {
-                    success: true,
-                    result: serde_json::to_string_pretty(&analysis)
-                        .unwrap_or_else(|_| "{}".to_string()),
-                    error: None,
+                    is_error: false,
+                    content: vec![ToolResultContent::Text(
+                        serde_json::to_string_pretty(&analysis)
+                            .unwrap_or_else(|_| "{}".to_string()),
+                    )],
                 })
             }
             "fix" => {
@@ -631,13 +621,8 @@ impl Tool for CiHealingTool {
                 for fix in fixes.iter().take(max_retries) {
                     match self.apply_fix(fix, dry_run).await {
                         Ok(result) => {
-                            let parsed: serde_json::Value =
-                                serde_json::from_str(&result.result).unwrap_or_default();
-                            if parsed
-                                .get("applied")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false)
-                            {
+                            let has_error = result.is_error;
+                            if !has_error {
                                 applied.push(fix.description.clone());
                             }
                         }
@@ -649,16 +634,14 @@ impl Tool for CiHealingTool {
                 }
 
                 Ok(ToolOutput {
-                    success: true,
-                    result: serde_json::json!({
+                    is_error: false,
+                    content: vec![ToolResultContent::Json(serde_json::json!({
                         "applied_count": applied.len(),
                         "failed_count": failed.len(),
                         "applied": applied,
                         "failed": failed,
                         "dry_run": dry_run
-                    })
-                    .to_string(),
-                    error: None,
+                    }))],
                 })
             }
             "auto_heal" => {
@@ -696,25 +679,33 @@ impl Tool for CiHealingTool {
 
                 let success_count = results.iter().filter(|r| r.success).count();
 
-                Ok(ToolOutput {
-                    success: all_succeeded && !results.is_empty(),
-                    result: serde_json::json!({
-                        "total_fixes": fixes.len(),
-                        "successful": success_count,
-                        "failed": fixes.len() - success_count,
-                        "retries": retry_count,
-                        "results": results
-                    })
-                    .to_string(),
-                    error: if !all_succeeded {
-                        Some(format!(
+                let (is_error, error_content) = if !all_succeeded {
+                    (
+                        true,
+                        Some(ToolResultContent::Error(format!(
                             "{} fixes failed after {} retries",
                             fixes.len() - success_count,
                             retry_count
-                        ))
-                    } else {
-                        None
-                    },
+                        ))),
+                    )
+                } else {
+                    (false, None)
+                };
+
+                let mut content_vec = vec![ToolResultContent::Json(serde_json::json!({
+                    "total_fixes": fixes.len(),
+                    "successful": success_count,
+                    "failed": fixes.len() - success_count,
+                    "retries": retry_count,
+                    "results": results
+                }))];
+                if let Some(err) = error_content {
+                    content_vec.push(err);
+                }
+
+                Ok(ToolOutput {
+                    is_error,
+                    content: content_vec,
                 })
             }
             _ => Err(SwellError::ToolExecutionFailed(format!(
@@ -833,9 +824,13 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
+        assert!(!result.is_error);
 
-        let analysis: CiFailureAnalysis = serde_json::from_str(&result.result).unwrap();
+        let content_str = match &result.content[0] {
+            ToolResultContent::Text(s) => s,
+            _ => panic!("Expected Text content"),
+        };
+        let analysis: CiFailureAnalysis = serde_json::from_str(content_str).unwrap();
         assert!(!analysis.failures.is_empty());
         assert!(!analysis.root_causes.is_empty());
         assert!(!analysis.suggested_fixes.is_empty());
@@ -967,8 +962,12 @@ test result: FAILED. 1 passed, 4 failed;
         };
 
         let result = tool.apply_fix(&fix, true).await.unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&result.result).unwrap();
+        let parsed = match &result.content[0] {
+            ToolResultContent::Json(v) => v.clone(),
+            _ => panic!("Expected Json content"),
+        };
 
+        assert!(!result.is_error);
         assert!(parsed.get("dry_run").and_then(|v| v.as_bool()).unwrap());
 
         // File should still be unchanged

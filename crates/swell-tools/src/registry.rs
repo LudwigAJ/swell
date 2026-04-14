@@ -585,7 +585,7 @@ impl Clone for ToolRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swell_core::ToolOutput;
+    use swell_core::{ToolOutput, ToolResultContent};
 
     /// A mock tool for testing
     struct MockTool {
@@ -624,9 +624,8 @@ mod tests {
             _: serde_json::Value,
         ) -> Result<ToolOutput, swell_core::SwellError> {
             Ok(ToolOutput {
-                success: true,
-                result: "executed".to_string(),
-                error: None,
+                is_error: false,
+                content: vec![ToolResultContent::Text("executed".to_string())],
             })
         }
     }

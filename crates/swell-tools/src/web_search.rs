@@ -16,7 +16,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use swell_core::traits::{Tool, ToolBehavioralHints};
-use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent, ToolRiskLevel};
 use tracing::info;
 
 /// Rate limiter for controlling request frequency
@@ -400,9 +400,8 @@ impl Tool for WebSearchTool {
         });
 
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::to_string_pretty(&response).unwrap_or_default(),
-            error: None,
+            is_error: false,
+            content: vec![ToolResultContent::Json(response)],
         })
     }
 }
@@ -665,9 +664,8 @@ impl Tool for DomainSearchTool {
         });
 
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::to_string_pretty(&response).unwrap_or_default(),
-            error: None,
+            is_error: false,
+            content: vec![ToolResultContent::Json(response)],
         })
     }
 }
@@ -1121,9 +1119,8 @@ impl Tool for FetchPageTool {
         });
 
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::to_string_pretty(&response).unwrap_or_default(),
-            error: None,
+            is_error: false,
+            content: vec![ToolResultContent::Json(response)],
         })
     }
 }

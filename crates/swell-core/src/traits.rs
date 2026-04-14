@@ -184,6 +184,8 @@ pub trait Agent: Send + Sync {
 // ============================================================================
 // Tool Protocol
 // ============================================================================
+// Tool Protocol
+// ============================================================================
 
 /// Input for tool execution
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -192,12 +194,33 @@ pub struct ToolInput {
     pub arguments: serde_json::Value,
 }
 
+/// Content variants for tool execution results.
+///
+/// This enum provides structured, type-safe tool result handling instead of
+/// freeform strings. Each variant carries its data in the appropriate format
+/// for downstream processing by agents and validation pipelines.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum ToolResultContent {
+    /// Plain text output from the tool
+    Text(String),
+    /// Structured JSON output - useful for tools that return structured data
+    Json(serde_json::Value),
+    /// Error message describing what went wrong
+    Error(String),
+    /// Image data with MIME type specification
+    Image { data: String, media_type: String },
+}
+
 /// Output from tool execution
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ToolOutput {
-    pub success: bool,
-    pub result: String,
-    pub error: Option<String>,
+    /// Signals failure to the LLM - when true, the tool execution failed
+    /// and the agent should handle the error appropriately.
+    pub is_error: bool,
+    /// Structured content from the tool execution.
+    /// Multiple content items can be present (e.g., text + image).
+    pub content: Vec<ToolResultContent>,
 }
 
 /// Behavioral hints for tool execution classification.

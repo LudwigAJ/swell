@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 use swell_core::traits::Tool;
-use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent, ToolRiskLevel};
 
 use super::mcp::McpClient;
 
@@ -188,22 +188,31 @@ impl Tool for LspDefinitionTool {
         // Call the MCP tool for LSP definitions
         let result = self.mcp_client.call_tool("definition", params).await?;
 
+        // Extract result string from ToolResultContent
+        let result_str = match result.content.first() {
+            Some(ToolResultContent::Text(s)) => s.clone(),
+            Some(ToolResultContent::Json(v)) => serde_json::to_string(v).unwrap_or_default(),
+            Some(ToolResultContent::Error(e)) => e.clone(),
+            Some(ToolResultContent::Image { data, .. }) => data.clone(),
+            None => String::new(),
+        };
+
         // Parse the result into LspLocation format
-        let locations: Vec<LspLocation> =
-            serde_json::from_str(&result.result).unwrap_or_else(|_| {
-                serde_json::from_str::<Vec<Value>>(&result.result)
-                    .map(|vals| {
-                        vals.into_iter()
-                            .filter_map(|v| serde_json::from_value(v).ok())
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            });
+        let locations: Vec<LspLocation> = serde_json::from_str(&result_str).unwrap_or_else(|_| {
+            serde_json::from_str::<Vec<Value>>(&result_str)
+                .map(|vals| {
+                    vals.into_iter()
+                        .filter_map(|v| serde_json::from_value(v).ok())
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
 
         Ok(ToolOutput {
-            success: result.success,
-            result: serde_json::to_string(&locations).unwrap_or_default(),
-            error: result.error,
+            is_error: result.is_error,
+            content: vec![ToolResultContent::Json(
+                serde_json::to_value(&locations).unwrap_or_default(),
+            )],
         })
     }
 }
@@ -264,21 +273,30 @@ impl Tool for LspReferencesTool {
 
         let result = self.mcp_client.call_tool("references", params).await?;
 
-        let locations: Vec<LspLocation> =
-            serde_json::from_str(&result.result).unwrap_or_else(|_| {
-                serde_json::from_str::<Vec<Value>>(&result.result)
-                    .map(|vals| {
-                        vals.into_iter()
-                            .filter_map(|v| serde_json::from_value(v).ok())
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            });
+        // Extract result string from ToolResultContent
+        let result_str = match result.content.first() {
+            Some(ToolResultContent::Text(s)) => s.clone(),
+            Some(ToolResultContent::Json(v)) => serde_json::to_string(v).unwrap_or_default(),
+            Some(ToolResultContent::Error(e)) => e.clone(),
+            Some(ToolResultContent::Image { data, .. }) => data.clone(),
+            None => String::new(),
+        };
+
+        let locations: Vec<LspLocation> = serde_json::from_str(&result_str).unwrap_or_else(|_| {
+            serde_json::from_str::<Vec<Value>>(&result_str)
+                .map(|vals| {
+                    vals.into_iter()
+                        .filter_map(|v| serde_json::from_value(v).ok())
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
 
         Ok(ToolOutput {
-            success: result.success,
-            result: serde_json::to_string(&locations).unwrap_or_default(),
-            error: result.error,
+            is_error: result.is_error,
+            content: vec![ToolResultContent::Json(
+                serde_json::to_value(&locations).unwrap_or_default(),
+            )],
         })
     }
 }
@@ -361,15 +379,25 @@ impl Tool for LspHoverTool {
 
         let result = self.mcp_client.call_tool("hover", params).await?;
 
-        let hover: LspHover = serde_json::from_str(&result.result).unwrap_or_else(|_| LspHover {
-            contents: result.result.clone(),
+        // Extract result string from ToolResultContent
+        let result_str = match result.content.first() {
+            Some(ToolResultContent::Text(s)) => s.clone(),
+            Some(ToolResultContent::Json(v)) => serde_json::to_string(v).unwrap_or_default(),
+            Some(ToolResultContent::Error(e)) => e.clone(),
+            Some(ToolResultContent::Image { data, .. }) => data.clone(),
+            None => String::new(),
+        };
+
+        let hover: LspHover = serde_json::from_str(&result_str).unwrap_or(LspHover {
+            contents: result_str,
             range: None,
         });
 
         Ok(ToolOutput {
-            success: result.success,
-            result: serde_json::to_string(&hover).unwrap_or_default(),
-            error: result.error,
+            is_error: result.is_error,
+            content: vec![ToolResultContent::Json(
+                serde_json::to_value(&hover).unwrap_or_default(),
+            )],
         })
     }
 }
@@ -431,9 +459,18 @@ impl Tool for LspDiagnosticsTool {
 
         let result = self.mcp_client.call_tool("diagnostics", params).await?;
 
+        // Extract result string from ToolResultContent
+        let result_str = match result.content.first() {
+            Some(ToolResultContent::Text(s)) => s.clone(),
+            Some(ToolResultContent::Json(v)) => serde_json::to_string(v).unwrap_or_default(),
+            Some(ToolResultContent::Error(e)) => e.clone(),
+            Some(ToolResultContent::Image { data, .. }) => data.clone(),
+            None => String::new(),
+        };
+
         let diagnostics: Vec<LspDiagnostic> =
-            serde_json::from_str(&result.result).unwrap_or_else(|_| {
-                serde_json::from_str::<Vec<Value>>(&result.result)
+            serde_json::from_str(&result_str).unwrap_or_else(|_| {
+                serde_json::from_str::<Vec<Value>>(&result_str)
                     .map(|vals| {
                         vals.into_iter()
                             .filter_map(|v| serde_json::from_value(v).ok())
@@ -443,9 +480,10 @@ impl Tool for LspDiagnosticsTool {
             });
 
         Ok(ToolOutput {
-            success: result.success,
-            result: serde_json::to_string(&diagnostics).unwrap_or_default(),
-            error: result.error,
+            is_error: result.is_error,
+            content: vec![ToolResultContent::Json(
+                serde_json::to_value(&diagnostics).unwrap_or_default(),
+            )],
         })
     }
 }
@@ -538,16 +576,26 @@ impl Tool for LspRenameTool {
 
         let result = self.mcp_client.call_tool("rename_symbol", params).await?;
 
+        // Extract result string from ToolResultContent
+        let result_str = match result.content.first() {
+            Some(ToolResultContent::Text(s)) => s.clone(),
+            Some(ToolResultContent::Json(v)) => serde_json::to_string(v).unwrap_or_default(),
+            Some(ToolResultContent::Error(e)) => e.clone(),
+            Some(ToolResultContent::Image { data, .. }) => data.clone(),
+            None => String::new(),
+        };
+
         let rename_result: LspRenameResult =
-            serde_json::from_str(&result.result).unwrap_or_else(|_| LspRenameResult {
+            serde_json::from_str(&result_str).unwrap_or_else(|_| LspRenameResult {
                 changes: std::collections::HashMap::new(),
-                success: result.success,
+                success: !result.is_error,
             });
 
         Ok(ToolOutput {
-            success: result.success,
-            result: serde_json::to_string(&rename_result).unwrap_or_default(),
-            error: result.error,
+            is_error: result.is_error,
+            content: vec![ToolResultContent::Json(
+                serde_json::to_value(&rename_result).unwrap_or_default(),
+            )],
         })
     }
 }

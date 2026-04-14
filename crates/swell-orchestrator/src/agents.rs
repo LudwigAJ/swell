@@ -12,7 +12,7 @@ use swell_core::traits::Agent;
 use swell_core::{
     AgentContext, AgentId, AgentResult, AgentRole, LlmBackend, LlmConfig, LlmMessage, LlmRole,
     MemoryBlock, Plan, PlanStep, RiskLevel, StepStatus, SwellError, ToolCallResult, ToolOutput,
-    ValidationGate,
+    ToolResultContent, ValidationGate,
 };
 use swell_state::CheckpointManager;
 use swell_tools::ToolRegistry;
@@ -20,6 +20,29 @@ use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::search_router::{SearchDepth, SearchRouter};
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Extract text content from ToolResultContent enum
+fn extract_text_from_content(content: &[ToolResultContent]) -> String {
+    match content.first() {
+        Some(ToolResultContent::Text(s)) => s.clone(),
+        Some(ToolResultContent::Error(e)) => e.clone(),
+        Some(ToolResultContent::Json(v)) => serde_json::to_string(&v).unwrap_or_default(),
+        Some(ToolResultContent::Image { data, .. }) => data.clone(),
+        None => String::new(),
+    }
+}
+
+/// Extract error message from ToolResultContent if present
+fn extract_error_from_content(content: &[ToolResultContent]) -> String {
+    match content.first() {
+        Some(ToolResultContent::Error(e)) => e.clone(),
+        _ => String::new(),
+    }
+}
 
 // ============================================================================
 // Structured Agent Handoffs - Per agent-team-orchestration skill
@@ -995,10 +1018,14 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
         // Execute the tool
         if let Some(tool) = registry.get(tool_name).await {
             let result: swell_core::ToolOutput = tool.execute(tool_args.clone()).await?;
-            if result.success {
-                Ok(format!("OK: {}", result.result))
+            let text = extract_text_from_content(&result.content);
+            if !result.is_error {
+                Ok(format!("OK: {}", text))
             } else {
-                Ok(format!("FAILED: {}", result.error.unwrap_or_default()))
+                Ok(format!(
+                    "FAILED: {}",
+                    extract_error_from_content(&result.content)
+                ))
             }
         } else {
             Ok(format!("ERROR: Tool '{}' not found", tool_name))
@@ -2283,10 +2310,11 @@ impl ResearcherAgent {
             let args = serde_json::json!({ "query": query });
             let result = tool.execute(args).await?;
 
-            if result.success {
+            if !result.is_error {
                 // Parse search results from the output
                 // Expected format: JSON array of {title, url, snippet}
-                if let Ok(results) = serde_json::from_str::<serde_json::Value>(&result.result) {
+                let text = extract_text_from_content(&result.content);
+                if let Ok(results) = serde_json::from_str::<serde_json::Value>(&text) {
                     let findings = self.parse_search_results(&results, query)?;
                     return Ok(findings);
                 }
@@ -2298,8 +2326,9 @@ impl ResearcherAgent {
             let args = serde_json::json!({ "query": query, "domains": ["docs.rs", "crates.io"] });
             let result = tool.execute(args).await?;
 
-            if result.success {
-                if let Ok(results) = serde_json::from_str::<serde_json::Value>(&result.result) {
+            if !result.is_error {
+                let text = extract_text_from_content(&result.content);
+                if let Ok(results) = serde_json::from_str::<serde_json::Value>(&text) {
                     let findings = self.parse_search_results(&results, query)?;
                     return Ok(findings);
                 }
@@ -3813,12 +3842,12 @@ impl CoderAgent {
         let args = serde_json::json!({ "path": path });
         let result: ToolOutput = tool.execute(args).await?;
 
-        if result.success {
-            Ok(result.result)
+        if !result.is_error {
+            Ok(extract_text_from_content(&result.content))
         } else {
-            Err(SwellError::ToolExecutionFailed(
-                result.error.unwrap_or_default(),
-            ))
+            Err(SwellError::ToolExecutionFailed(extract_error_from_content(
+                &result.content,
+            )))
         }
     }
 
@@ -3844,12 +3873,12 @@ impl CoderAgent {
         });
         let result: ToolOutput = tool.execute(args).await?;
 
-        if result.success {
-            Ok(result.result)
+        if !result.is_error {
+            Ok(extract_text_from_content(&result.content))
         } else {
-            Err(SwellError::ToolExecutionFailed(
-                result.error.unwrap_or_default(),
-            ))
+            Err(SwellError::ToolExecutionFailed(extract_error_from_content(
+                &result.content,
+            )))
         }
     }
 
@@ -4242,7 +4271,7 @@ impl TestWriterAgent {
                     "pattern": "**/*test*.rs"
                 });
                 if let Ok(result) = glob_tool.execute(args).await {
-                    if result.success {
+                    if !result.is_error {
                         // Parse glob results to find test patterns
                         // In real implementation, would analyze the content
                         patterns.push(TestPattern {
@@ -4572,12 +4601,12 @@ impl ReviewerAgent {
         let args = serde_json::json!({ "path": path });
         let result: ToolOutput = tool.execute(args).await?;
 
-        if result.success {
-            Ok(result.result)
+        if !result.is_error {
+            Ok(extract_text_from_content(&result.content))
         } else {
-            Err(SwellError::ToolExecutionFailed(
-                result.error.unwrap_or_default(),
-            ))
+            Err(SwellError::ToolExecutionFailed(extract_error_from_content(
+                &result.content,
+            )))
         }
     }
 
@@ -5202,12 +5231,12 @@ impl RefactorerAgent {
         let args = serde_json::json!({ "path": path });
         let result: ToolOutput = tool.execute(args).await?;
 
-        if result.success {
-            Ok(result.result)
+        if !result.is_error {
+            Ok(extract_text_from_content(&result.content))
         } else {
-            Err(SwellError::ToolExecutionFailed(
-                result.error.unwrap_or_default(),
-            ))
+            Err(SwellError::ToolExecutionFailed(extract_error_from_content(
+                &result.content,
+            )))
         }
     }
 
@@ -5660,12 +5689,12 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
         });
         let result: ToolOutput = tool.execute(args).await?;
 
-        if result.success {
-            Ok(result.result)
+        if !result.is_error {
+            Ok(extract_text_from_content(&result.content))
         } else {
-            Err(SwellError::ToolExecutionFailed(
-                result.error.unwrap_or_default(),
-            ))
+            Err(SwellError::ToolExecutionFailed(extract_error_from_content(
+                &result.content,
+            )))
         }
     }
 }
@@ -6703,8 +6732,12 @@ mod tests {
         );
 
         // Verify static content appears before DYNAMIC_BOUNDARY
-        let boundary_pos = prompt1.find(DYNAMIC_BOUNDARY).expect("DYNAMIC_BOUNDARY should exist");
-        let project_header_pos = prompt1.find("# TestProject").expect("Project header should exist");
+        let boundary_pos = prompt1
+            .find(DYNAMIC_BOUNDARY)
+            .expect("DYNAMIC_BOUNDARY should exist");
+        let project_header_pos = prompt1
+            .find("# TestProject")
+            .expect("Project header should exist");
         let role_pos = prompt1.find("CODER").expect("Role should exist");
 
         assert!(
@@ -6717,7 +6750,9 @@ mod tests {
         );
 
         // Verify task context appears after DYNAMIC_BOUNDARY
-        let task_pos = prompt1.find("## Current Task").expect("Task context should exist");
+        let task_pos = prompt1
+            .find("## Current Task")
+            .expect("Task context should exist");
         assert!(
             task_pos > boundary_pos,
             "Task context should appear after DYNAMIC_BOUNDARY"
@@ -6758,20 +6793,20 @@ mod tests {
         let builder = SystemPromptBuilder::new(config);
         let files = builder.discover_instruction_files();
 
+        assert!(files.contains_key("CLAUDE.md"), "Should discover CLAUDE.md");
+        assert!(files.contains_key("AGENTS.md"), "Should discover AGENTS.md");
         assert!(
-            files.contains_key("CLAUDE.md"),
-            "Should discover CLAUDE.md"
-        );
-        assert!(
-            files.contains_key("AGENTS.md"),
-            "Should discover AGENTS.md"
-        );
-        assert!(
-            files.get("CLAUDE.md").unwrap().contains("CLAUDE Instructions"),
+            files
+                .get("CLAUDE.md")
+                .unwrap()
+                .contains("CLAUDE Instructions"),
             "CLAUDE.md content should be readable"
         );
         assert!(
-            files.get("AGENTS.md").unwrap().contains("AGENTS Instructions"),
+            files
+                .get("AGENTS.md")
+                .unwrap()
+                .contains("AGENTS Instructions"),
             "AGENTS.md content should be readable"
         );
 

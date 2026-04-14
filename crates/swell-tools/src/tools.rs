@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use swell_core::traits::Tool;
 use swell_core::traits::ToolBehavioralHints;
-use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent, ToolRiskLevel};
 use tempfile::NamedTempFile;
 use tokio::fs as tokio_fs;
 use tokio::time::{timeout, Duration};
@@ -152,9 +152,8 @@ impl Tool for ReadFileTool {
 
         info!(path = %args.path, "File read successfully");
         Ok(ToolOutput {
-            success: true,
-            result: content,
-            error: None,
+            is_error: false,
+            content: vec![ToolResultContent::Text(content)],
         })
     }
 }
@@ -344,13 +343,12 @@ impl Tool for WriteFileTool {
             Ok(_) => {
                 info!(path = %args.path, "File written atomically");
                 Ok(ToolOutput {
-                    success: true,
-                    result: format!(
+                    is_error: false,
+                    content: vec![ToolResultContent::Text(format!(
                         "Wrote {} bytes to {} atomically",
                         args.content.len(),
                         args.path
-                    ),
-                    error: None,
+                    ))],
                 })
             }
             Err(e) => {
@@ -462,17 +460,12 @@ impl Tool for ShellTool {
         match result {
             Ok(Ok(output)) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
+                let _stderr = String::from_utf8_lossy(&output.stderr);
 
                 info!(command = %args.command, "Shell command executed");
                 Ok(ToolOutput {
-                    success: output.status.success(),
-                    result: stdout.to_string(),
-                    error: if output.status.success() {
-                        None
-                    } else {
-                        Some(stderr.to_string())
-                    },
+                    is_error: !output.status.success(),
+                    content: vec![ToolResultContent::Text(stdout.to_string())],
                 })
             }
             Ok(Err(e)) => Err(SwellError::ToolExecutionFailed(format!(
@@ -523,16 +516,11 @@ impl GitTool {
             .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let _stderr = String::from_utf8_lossy(&output.stderr);
 
         Ok(ToolOutput {
-            success: output.status.success(),
-            result: stdout.to_string(),
-            error: if output.status.success() {
-                None
-            } else {
-                Some(stderr.to_string())
-            },
+            is_error: !output.status.success(),
+            content: vec![ToolResultContent::Text(stdout.to_string())],
         })
     }
 
@@ -542,12 +530,18 @@ impl GitTool {
             .run_git(&["status", "--porcelain", "-b"], Some(cwd))
             .await?;
 
-        if !output.success {
+        if output.is_error {
             return Ok(output);
         }
 
+        // Extract text content from ToolOutput
+        let output_text = match output.content.first() {
+            Some(ToolResultContent::Text(text)) => text.clone(),
+            _ => String::new(),
+        };
+
         // Parse git status output for structured response
-        let lines: Vec<&str> = output.result.lines().collect();
+        let lines: Vec<&str> = output_text.lines().collect();
         let mut status_info = serde_json::json!({
             "branch": "",
             "is_dirty": false,
@@ -604,9 +598,8 @@ impl GitTool {
         }
 
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::to_string_pretty(&status_info).unwrap_or(output.result),
-            error: None,
+            is_error: false,
+            content: vec![ToolResultContent::Json(status_info)],
         })
     }
 
@@ -994,14 +987,12 @@ impl Tool for FileEditTool {
 
         if args.dry_run {
             return Ok(ToolOutput {
-                success: true,
-                result: serde_json::json!({
+                is_error: false,
+                content: vec![ToolResultContent::Json(serde_json::json!({
                     "dry_run": true,
                     "diff": diff,
                     "would_change": old_content != new_content
-                })
-                .to_string(),
-                error: None,
+                }))],
             });
         }
 
@@ -1025,14 +1016,12 @@ impl Tool for FileEditTool {
 
         info!(path = %args.path, "File edited successfully");
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::json!({
+            is_error: false,
+            content: vec![ToolResultContent::Json(serde_json::json!({
                 "dry_run": false,
                 "diff": diff,
                 "changed": true
-            })
-            .to_string(),
-            error: None,
+            }))],
         })
     }
 }
@@ -1084,19 +1073,13 @@ impl SearchTool {
         let results: Vec<&str> = stdout.lines().take(self.max_results).collect();
 
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::json!({
+            is_error: false,
+            content: vec![ToolResultContent::Json(serde_json::json!({
                 "matches": results,
                 "count": results.len(),
                 "pattern": pattern,
                 "path": path
-            })
-            .to_string(),
-            error: if !output.status.success() && results.is_empty() {
-                Some("No matches found or grep error".to_string())
-            } else {
-                None
-            },
+            }))],
         })
     }
 
@@ -1124,14 +1107,12 @@ impl SearchTool {
         }
 
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::json!({
+            is_error: false,
+            content: vec![ToolResultContent::Json(serde_json::json!({
                 "matches": matches,
                 "count": matches.len(),
                 "pattern": pattern
-            })
-            .to_string(),
-            error: None,
+            }))],
         })
     }
 
@@ -1194,15 +1175,13 @@ impl SearchTool {
         all_matches.truncate(self.max_results);
 
         Ok(ToolOutput {
-            success: true,
-            result: serde_json::json!({
+            is_error: false,
+            content: vec![ToolResultContent::Json(serde_json::json!({
                 "matches": all_matches,
                 "count": all_matches.len(),
                 "symbol": symbol,
                 "path": path
-            })
-            .to_string(),
-            error: None,
+            }))],
         })
     }
 }
@@ -1318,8 +1297,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
-        assert_eq!(result.result, "Hello, World!");
+        assert!(!result.is_error);
+        let content = match result.content.first() {
+            Some(ToolResultContent::Text(text)) => text.clone(),
+            _ => String::new(),
+        };
+        assert_eq!(content, "Hello, World!");
     }
 
     #[tokio::test]
@@ -1355,7 +1338,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
+        assert!(!result.is_error);
 
         let content = tokio::fs::read_to_string(&file_path).await.unwrap();
         assert_eq!(content, "Test content");
@@ -1391,8 +1374,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
-        assert!(result.result.contains("Hello, Shell!"));
+        assert!(!result.is_error);
+        let content = match result.content.first() {
+            Some(ToolResultContent::Text(text)) => text.clone(),
+            _ => String::new(),
+        };
+        assert!(content.contains("Hello, Shell!"));
     }
 
     #[tokio::test]
@@ -1407,7 +1394,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
+        assert!(!result.is_error);
     }
 
     #[tokio::test]
@@ -1446,10 +1433,21 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
+        assert!(!result.is_error);
         // Should be valid JSON with branch info
-        let parsed: serde_json::Value = serde_json::from_str(&result.result).unwrap();
-        assert!(parsed["branch"].is_string());
+        let content = match result.content.first() {
+            Some(ToolResultContent::Json(_)) => {
+                serde_json::to_string(result.content.first().unwrap()).unwrap_or_default()
+            }
+            Some(ToolResultContent::Text(text)) => text.clone(),
+            _ => String::new(),
+        };
+        // Extract JSON from the content - git_status returns a Json ToolResultContent
+        let json_content = match result.content.first() {
+            Some(ToolResultContent::Json(json_val)) => json_val.clone(),
+            _ => serde_json::Value::Null,
+        };
+        assert!(json_content["branch"].is_string());
     }
 
     #[tokio::test]
@@ -1475,7 +1473,7 @@ mod tests {
             .await;
 
         // Should fail because there's nothing to commit
-        assert!(result.is_err() || !result.as_ref().unwrap().success);
+        assert!(result.is_err() || result.as_ref().unwrap().is_error);
     }
 
     #[tokio::test]
@@ -1497,15 +1495,18 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
-        let parsed: serde_json::Value = serde_json::from_str(&result.result).unwrap();
-        assert!(parsed["dry_run"].as_bool().unwrap());
-        assert!(parsed["diff"].as_str().unwrap().contains("OLD_TEXT"));
-        assert!(parsed["diff"].as_str().unwrap().contains("NEW_TEXT"));
+        assert!(!result.is_error);
+        let json_content = match result.content.first() {
+            Some(ToolResultContent::Json(json_val)) => json_val.clone(),
+            _ => serde_json::Value::Null,
+        };
+        assert!(json_content["dry_run"].as_bool().unwrap());
+        assert!(json_content["diff"].as_str().unwrap().contains("OLD_TEXT"));
+        assert!(json_content["diff"].as_str().unwrap().contains("NEW_TEXT"));
 
         // Verify original content unchanged
-        let content = tokio::fs::read_to_string(&file_path).await.unwrap();
-        assert!(content.contains("OLD_TEXT"));
+        let file_content = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert!(file_content.contains("OLD_TEXT"));
     }
 
     #[tokio::test]
@@ -1527,12 +1528,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
+        assert!(!result.is_error);
 
         // Verify content changed
-        let content = tokio::fs::read_to_string(&file_path).await.unwrap();
-        assert!(content.contains("NEW_TEXT"));
-        assert!(!content.contains("OLD_TEXT"));
+        let file_content = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert!(file_content.contains("NEW_TEXT"));
+        assert!(!file_content.contains("OLD_TEXT"));
     }
 
     #[tokio::test]
@@ -1570,9 +1571,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
-        let parsed: serde_json::Value = serde_json::from_str(&result.result).unwrap();
-        assert!(parsed["count"].as_i64().unwrap() >= 1);
+        assert!(!result.is_error);
+        let json_content = match result.content.first() {
+            Some(ToolResultContent::Json(json_val)) => json_val.clone(),
+            _ => serde_json::Value::Null,
+        };
+        assert!(json_content["count"].as_i64().unwrap() >= 1);
     }
 
     #[tokio::test]
@@ -1595,9 +1599,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
-        let parsed: serde_json::Value = serde_json::from_str(&result.result).unwrap();
-        assert!(parsed["count"].as_i64().unwrap() >= 2);
+        assert!(!result.is_error);
+        let json_content = match result.content.first() {
+            Some(ToolResultContent::Json(json_val)) => json_val.clone(),
+            _ => serde_json::Value::Null,
+        };
+        assert!(json_content["count"].as_i64().unwrap() >= 2);
     }
 
     #[tokio::test]
@@ -1618,7 +1625,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.success);
+        assert!(!result.is_error);
     }
 
     // =============================================================================
@@ -1717,11 +1724,15 @@ mod tests {
 
         // Create a file inside workspace
         let inside_file = workspace.join("inside.txt");
-        tokio::fs::write(&inside_file, "inside content").await.unwrap();
+        tokio::fs::write(&inside_file, "inside content")
+            .await
+            .unwrap();
 
         // Create a symlink inside workspace pointing to a file outside
         let outside_file = std::env::temp_dir().join("swell_test_outside.txt");
-        tokio::fs::write(&outside_file, "outside content").await.unwrap();
+        tokio::fs::write(&outside_file, "outside content")
+            .await
+            .unwrap();
         let symlink_path = workspace.join("link_to_outside");
         symlink(&outside_file, &symlink_path).unwrap();
 
@@ -1733,7 +1744,10 @@ mod tests {
                 "path": inside_file.to_str().unwrap()
             }))
             .await;
-        assert!(result.is_ok(), "Should be able to read file inside workspace");
+        assert!(
+            result.is_ok(),
+            "Should be able to read file inside workspace"
+        );
 
         // Reading via symlink that points outside should fail
         let result = tool
@@ -1741,7 +1755,10 @@ mod tests {
                 "path": symlink_path.to_str().unwrap()
             }))
             .await;
-        assert!(result.is_err(), "Symlink escape should be detected and rejected");
+        assert!(
+            result.is_err(),
+            "Symlink escape should be detected and rejected"
+        );
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("symlink") || err_msg.contains("outside workspace"),
@@ -1763,11 +1780,15 @@ mod tests {
 
         // Create a file inside workspace
         let inside_file = workspace.join("inside.txt");
-        tokio::fs::write(&inside_file, "inside content").await.unwrap();
+        tokio::fs::write(&inside_file, "inside content")
+            .await
+            .unwrap();
 
         // Create a symlink inside workspace pointing to a file outside
         let outside_file = std::env::temp_dir().join("swell_test_outside_write.txt");
-        tokio::fs::write(&outside_file, "outside content").await.unwrap();
+        tokio::fs::write(&outside_file, "outside content")
+            .await
+            .unwrap();
         let symlink_path = workspace.join("link_to_outside_write");
         symlink(&outside_file, &symlink_path).unwrap();
 
@@ -1780,7 +1801,10 @@ mod tests {
                 "content": "modified content"
             }))
             .await;
-        assert!(result.is_ok(), "Should be able to write to file inside workspace");
+        assert!(
+            result.is_ok(),
+            "Should be able to write to file inside workspace"
+        );
 
         // Writing via symlink that points outside should fail
         let result = tool
@@ -1789,7 +1813,10 @@ mod tests {
                 "content": "try to escape"
             }))
             .await;
-        assert!(result.is_err(), "Symlink escape should be detected and rejected");
+        assert!(
+            result.is_err(),
+            "Symlink escape should be detected and rejected"
+        );
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("symlink") || err_msg.contains("outside workspace"),
@@ -1811,11 +1838,15 @@ mod tests {
 
         // Create a file inside workspace
         let inside_file = workspace.join("inside.txt");
-        tokio::fs::write(&inside_file, "line1\nOLD_TEXT\nline3").await.unwrap();
+        tokio::fs::write(&inside_file, "line1\nOLD_TEXT\nline3")
+            .await
+            .unwrap();
 
         // Create a symlink inside workspace pointing to a file outside
         let outside_file = std::env::temp_dir().join("swell_test_outside_edit.txt");
-        tokio::fs::write(&outside_file, "outside content").await.unwrap();
+        tokio::fs::write(&outside_file, "outside content")
+            .await
+            .unwrap();
         let symlink_path = workspace.join("link_to_outside_edit");
         symlink(&outside_file, &symlink_path).unwrap();
 
@@ -1829,7 +1860,10 @@ mod tests {
                 "new_str": "NEW_TEXT"
             }))
             .await;
-        assert!(result.is_ok(), "Should be able to edit file inside workspace");
+        assert!(
+            result.is_ok(),
+            "Should be able to edit file inside workspace"
+        );
 
         // Cleanup temp files
         drop(outside_file);
@@ -1884,7 +1918,10 @@ mod tests {
                 "path": link_to_escape.to_str().unwrap()
             }))
             .await;
-        assert!(result.is_err(), "Symlink escape to /etc/passwd should be blocked");
+        assert!(
+            result.is_err(),
+            "Symlink escape to /etc/passwd should be blocked"
+        );
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("symlink") || err_msg.contains("outside workspace"),

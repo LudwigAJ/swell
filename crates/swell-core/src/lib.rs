@@ -45,8 +45,8 @@ pub use traits::{
     KnowledgeGraph, LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolCall,
     LlmToolDefinition, LlmUsage, MemoryEntry, MemoryQuery, MemorySearchResult, MemoryStore,
     Sandbox, SandboxCommand, SandboxOutput, ServiceContainer, ToolCallResult, ToolInput,
-    ToolOutput, ValidationArtifact, ValidationContext, ValidationGate, ValidationLevel,
-    ValidationMessage, ValidationOutcome,
+    ToolOutput, ToolResultContent, ValidationArtifact, ValidationContext, ValidationGate,
+    ValidationLevel, ValidationMessage, ValidationOutcome,
 };
 
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};

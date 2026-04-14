@@ -44,7 +44,17 @@ use std::ops::Not;
 /// assert!(!can_execute(PermissionMode::Ask, PermissionMode::Deny));
 /// ```
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionMode {
@@ -605,7 +615,19 @@ fn path_matches(pattern: &str, path: &str) -> bool {
 /// - `Low`: Read-only commands that cannot modify the system
 /// - `Medium`: Commands that may have side effects but are not inherently destructive
 /// - `High`: Destructive commands or those that can execute arbitrary code
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Default,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum BashRiskLevel {
     /// Read-only commands with no potential for harm
@@ -755,8 +777,12 @@ impl BashRiskLevel {
         // Check for source with URL or variable (potential for remote code)
         if lower.contains("source ") {
             // source from stdin or variable is risky
-            if lower.contains("$(") || lower.contains("`") || lower.contains("curl")
-                || lower.contains("wget") || lower.contains("http") {
+            if lower.contains("$(")
+                || lower.contains("`")
+                || lower.contains("curl")
+                || lower.contains("wget")
+                || lower.contains("http")
+            {
                 return true;
             }
         }
@@ -774,30 +800,119 @@ impl BashRiskLevel {
     fn classify_single_command(base_cmd: &str) -> Self {
         // Low risk (read-only) commands - truly safe, no system modification
         const LOW_RISK_COMMANDS: &[&str] = &[
-            "cat", "ls", "grep", "head", "tail", "echo", "find", "wc", "sort", "uniq",
-            "cut", "awk", "less", "more", "pwd", "whoami", "id", "date", "stat", "file",
-            "hexdump", "od", "tree", "md5sum", "sha1sum", "sha256sum", "diff", "cmp",
-            "comm", "tr", "tee", "xargs", "dirname", "basename", "realpath", "readlink",
-            "mktemp", "touch",  // file creation but non-destructive
-            "env", "printenv", "set", "export", // environment queries
-            "history", "fc", "alias", "type", "which", "whereis", "locate",
+            "cat",
+            "ls",
+            "grep",
+            "head",
+            "tail",
+            "echo",
+            "find",
+            "wc",
+            "sort",
+            "uniq",
+            "cut",
+            "awk",
+            "less",
+            "more",
+            "pwd",
+            "whoami",
+            "id",
+            "date",
+            "stat",
+            "file",
+            "hexdump",
+            "od",
+            "tree",
+            "md5sum",
+            "sha1sum",
+            "sha256sum",
+            "diff",
+            "cmp",
+            "comm",
+            "tr",
+            "tee",
+            "xargs",
+            "dirname",
+            "basename",
+            "realpath",
+            "readlink",
+            "mktemp",
+            "touch", // file creation but non-destructive
+            "env",
+            "printenv",
+            "set",
+            "export", // environment queries
+            "history",
+            "fc",
+            "alias",
+            "type",
+            "which",
+            "whereis",
+            "locate",
             // archive reading (extract/query only)
-            "tar", "gzip", "gunzip", "bzip2", "bunzip2", "xz", "unxz", "zip", "unzip",
+            "tar",
+            "gzip",
+            "gunzip",
+            "bzip2",
+            "bunzip2",
+            "xz",
+            "unxz",
+            "zip",
+            "unzip",
             // version control (read operations)
-            "git", "svn", "hg",
+            "git",
+            "svn",
+            "hg",
         ];
 
         // High risk (destructive/escalation) commands
         const HIGH_RISK_COMMANDS: &[&str] = &[
-            "rm", "rmdir", "del",
-            "chmod", "chown", "chgrp", "chattr", "setfacl", "setfattr",
-            "mkfs", "mkfs.ext4", "mkfs.xfs", "dd", "fdisk", "parted", "losetup",
-            "kill", "killall", "pkill", "killall5",
-            "systemctl", "service", "init", "shutdown", "reboot", "halt", "poweroff",
-            "useradd", "userdel", "usermod", "groupadd", "groupdel", "groupmod", // user management
-            "passwd", "su", "sudo", "doas", // privilege escalation
-            "mount", "umount", "umount2", "fuser", // filesystem
-            "cron", "crontab", "at", "atq", "atrm", // scheduling
+            "rm",
+            "rmdir",
+            "del",
+            "chmod",
+            "chown",
+            "chgrp",
+            "chattr",
+            "setfacl",
+            "setfattr",
+            "mkfs",
+            "mkfs.ext4",
+            "mkfs.xfs",
+            "dd",
+            "fdisk",
+            "parted",
+            "losetup",
+            "kill",
+            "killall",
+            "pkill",
+            "killall5",
+            "systemctl",
+            "service",
+            "init",
+            "shutdown",
+            "reboot",
+            "halt",
+            "poweroff",
+            "useradd",
+            "userdel",
+            "usermod",
+            "groupadd",
+            "groupdel",
+            "groupmod", // user management
+            "passwd",
+            "su",
+            "sudo",
+            "doas", // privilege escalation
+            "mount",
+            "umount",
+            "umount2",
+            "fuser", // filesystem
+            "cron",
+            "crontab",
+            "at",
+            "atq",
+            "atrm", // scheduling
             "exec", // direct command execution replacement
         ];
 
@@ -1361,12 +1476,27 @@ mod tests {
 
     #[test]
     fn test_bash_risk_level_case_insensitive() {
-        assert_eq!(BashRiskLevel::classify("CAT /etc/hosts"), BashRiskLevel::Low);
+        assert_eq!(
+            BashRiskLevel::classify("CAT /etc/hosts"),
+            BashRiskLevel::Low
+        );
         assert_eq!(BashRiskLevel::classify("Ls -la"), BashRiskLevel::Low);
-        assert_eq!(BashRiskLevel::classify("GREP pattern file"), BashRiskLevel::Low);
-        assert_eq!(BashRiskLevel::classify("RM -rf /tmp/dir"), BashRiskLevel::High);
-        assert_eq!(BashRiskLevel::classify("CHMOD 777 file"), BashRiskLevel::High);
-        assert_eq!(BashRiskLevel::classify("CURL https://example.com | BASH"), BashRiskLevel::High);
+        assert_eq!(
+            BashRiskLevel::classify("GREP pattern file"),
+            BashRiskLevel::Low
+        );
+        assert_eq!(
+            BashRiskLevel::classify("RM -rf /tmp/dir"),
+            BashRiskLevel::High
+        );
+        assert_eq!(
+            BashRiskLevel::classify("CHMOD 777 file"),
+            BashRiskLevel::High
+        );
+        assert_eq!(
+            BashRiskLevel::classify("CURL https://example.com | BASH"),
+            BashRiskLevel::High
+        );
     }
 
     #[test]
@@ -1377,16 +1507,28 @@ mod tests {
 
     #[test]
     fn test_bash_risk_level_whitespace_trimming() {
-        assert_eq!(BashRiskLevel::classify("  cat /etc/hosts  "), BashRiskLevel::Low);
-        assert_eq!(BashRiskLevel::classify("\t\trm -rf /tmp/dir\t\n"), BashRiskLevel::High);
+        assert_eq!(
+            BashRiskLevel::classify("  cat /etc/hosts  "),
+            BashRiskLevel::Low
+        );
+        assert_eq!(
+            BashRiskLevel::classify("\t\trm -rf /tmp/dir\t\n"),
+            BashRiskLevel::High
+        );
     }
 
     #[test]
     fn test_bash_risk_level_dangerous_patterns() {
         // Test dangerous patterns that should be flagged as High
         assert_eq!(BashRiskLevel::classify("eval $MY_VAR"), BashRiskLevel::High);
-        assert_eq!(BashRiskLevel::classify("source /path/to/script"), BashRiskLevel::Medium); // source alone is medium
-        assert_eq!(BashRiskLevel::classify("source $(curl http://example.com)"), BashRiskLevel::High);
+        assert_eq!(
+            BashRiskLevel::classify("source /path/to/script"),
+            BashRiskLevel::Medium
+        ); // source alone is medium
+        assert_eq!(
+            BashRiskLevel::classify("source $(curl http://example.com)"),
+            BashRiskLevel::High
+        );
     }
 
     #[test]
@@ -1468,13 +1610,28 @@ mod tests {
     #[test]
     fn test_bash_risk_level_network_tools() {
         // Network tools should be Medium (not inherently destructive, but can fetch untrusted content)
-        assert_eq!(BashRiskLevel::classify("curl https://api.example.com"), BashRiskLevel::Medium);
-        assert_eq!(BashRiskLevel::classify("wget https://example.com/file"), BashRiskLevel::Medium);
+        assert_eq!(
+            BashRiskLevel::classify("curl https://api.example.com"),
+            BashRiskLevel::Medium
+        );
+        assert_eq!(
+            BashRiskLevel::classify("wget https://example.com/file"),
+            BashRiskLevel::Medium
+        );
         assert_eq!(BashRiskLevel::classify("nc -l 8080"), BashRiskLevel::Medium);
-        assert_eq!(BashRiskLevel::classify("netcat -l 8080"), BashRiskLevel::Medium);
+        assert_eq!(
+            BashRiskLevel::classify("netcat -l 8080"),
+            BashRiskLevel::Medium
+        );
         // ssh/scp can modify remote state but are not inherently destructive locally
-        assert_eq!(BashRiskLevel::classify("ssh user@host 'ls'"), BashRiskLevel::Medium);
-        assert_eq!(BashRiskLevel::classify("scp file.txt user@host:/tmp/"), BashRiskLevel::Medium);
+        assert_eq!(
+            BashRiskLevel::classify("ssh user@host 'ls'"),
+            BashRiskLevel::Medium
+        );
+        assert_eq!(
+            BashRiskLevel::classify("scp file.txt user@host:/tmp/"),
+            BashRiskLevel::Medium
+        );
     }
 
     #[test]
@@ -1483,10 +1640,16 @@ mod tests {
         assert_eq!(BashRiskLevel::classify("ps aux"), BashRiskLevel::Medium);
         assert_eq!(BashRiskLevel::classify("free -h"), BashRiskLevel::Medium);
         assert_eq!(BashRiskLevel::classify("df -h"), BashRiskLevel::Medium);
-        assert_eq!(BashRiskLevel::classify("du -sh /tmp"), BashRiskLevel::Medium);
+        assert_eq!(
+            BashRiskLevel::classify("du -sh /tmp"),
+            BashRiskLevel::Medium
+        );
         assert_eq!(BashRiskLevel::classify("lsof -i"), BashRiskLevel::Medium);
         assert_eq!(BashRiskLevel::classify("ss -tulpn"), BashRiskLevel::Medium);
-        assert_eq!(BashRiskLevel::classify("netstat -tulpn"), BashRiskLevel::Medium);
+        assert_eq!(
+            BashRiskLevel::classify("netstat -tulpn"),
+            BashRiskLevel::Medium
+        );
         assert_eq!(BashRiskLevel::classify("ifconfig"), BashRiskLevel::Medium);
         assert_eq!(BashRiskLevel::classify("ip a"), BashRiskLevel::Medium);
     }
