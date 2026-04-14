@@ -134,6 +134,150 @@ pub struct TaskScope {
     pub allowed_operations: Vec<String>,
 }
 
+/// Specification for task execution policies and validation requirements
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskSpec {
+    /// Tests that must pass for task completion (test names or globs)
+    #[serde(default)]
+    pub acceptance_tests: Vec<String>,
+    /// Policy for committing changes
+    #[serde(default)]
+    pub commit_policy: CommitPolicy,
+    /// Policy for escalating issues
+    #[serde(default)]
+    pub escalation_policy: EscalationPolicy,
+}
+
+/// Policy for when and how to commit changes
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "type", content = "config")]
+pub enum CommitPolicy {
+    /// Commit after each step completes
+    EveryStep,
+    /// Commit only at the end after all validation passes
+    #[default]
+    AfterValidation,
+    /// Never commit automatically
+    Never,
+    /// Custom commit rules
+    Custom {
+        /// Minimum number of steps between commits
+        min_steps_between_commits: u32,
+        /// Whether to require a clean diff before committing
+        require_clean_diff: bool,
+    },
+}
+
+/// Policy for when to escalate issues to a human
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(tag = "type", content = "config")]
+pub enum EscalationPolicy {
+    /// Never escalate automatically
+    #[default]
+    Never,
+    /// Escalate after N consecutive failures
+    AfterConsecutiveFailures(u32),
+    /// Escalate when task budget is exceeded
+    OnBudgetExceeded,
+    /// Escalate when specific error patterns are detected
+    OnErrorPatterns(Vec<String>),
+}
+
+impl TaskSpec {
+    /// Create a new TaskSpec with validation
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - `acceptance_tests` contains empty strings
+    /// - `CommitPolicy::Custom` has `min_steps_between_commits` set to 0
+    /// - `EscalationPolicy::AfterConsecutiveFailures` is set to 0
+    /// - `EscalationPolicy::OnErrorPatterns` contains empty patterns
+    pub fn new(
+        acceptance_tests: Vec<String>,
+        commit_policy: CommitPolicy,
+        escalation_policy: EscalationPolicy,
+    ) -> Result<Self, TaskSpecValidationError> {
+        // Validate acceptance_tests
+        if acceptance_tests.iter().any(|t| t.trim().is_empty()) {
+            return Err(TaskSpecValidationError::EmptyAcceptanceTest);
+        }
+
+        // Validate commit_policy
+        if let CommitPolicy::Custom {
+            min_steps_between_commits,
+            ..
+        } = &commit_policy
+        {
+            if *min_steps_between_commits == 0 {
+                return Err(TaskSpecValidationError::InvalidCommitPolicy(
+                    "min_steps_between_commits cannot be 0".to_string(),
+                ));
+            }
+        }
+
+        // Validate escalation_policy
+        match &escalation_policy {
+            EscalationPolicy::AfterConsecutiveFailures(n) if *n == 0 => {
+                return Err(TaskSpecValidationError::InvalidEscalationPolicy(
+                    "consecutive failures threshold cannot be 0".to_string(),
+                ));
+            }
+            EscalationPolicy::OnErrorPatterns(patterns) => {
+                if patterns.iter().any(|p| p.trim().is_empty()) {
+                    return Err(TaskSpecValidationError::InvalidEscalationPolicy(
+                        "error patterns cannot be empty strings".to_string(),
+                    ));
+                }
+            }
+            _ => {}
+        }
+
+        Ok(Self {
+            acceptance_tests,
+            commit_policy,
+            escalation_policy,
+        })
+    }
+
+    /// Create a TaskSpec with default/empty policies
+    pub fn default_spec() -> Self {
+        Self {
+            acceptance_tests: Vec::new(),
+            commit_policy: CommitPolicy::AfterValidation,
+            escalation_policy: EscalationPolicy::Never,
+        }
+    }
+}
+
+/// Errors that can occur during TaskSpec validation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskSpecValidationError {
+    /// An acceptance test name was empty
+    EmptyAcceptanceTest,
+    /// The commit policy had invalid configuration
+    InvalidCommitPolicy(String),
+    /// The escalation policy had invalid configuration
+    InvalidEscalationPolicy(String),
+}
+
+impl std::fmt::Display for TaskSpecValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TaskSpecValidationError::EmptyAcceptanceTest => {
+                write!(f, "acceptance test names cannot be empty")
+            }
+            TaskSpecValidationError::InvalidCommitPolicy(msg) => {
+                write!(f, "invalid commit policy: {}", msg)
+            }
+            TaskSpecValidationError::InvalidEscalationPolicy(msg) => {
+                write!(f, "invalid escalation policy: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for TaskSpecValidationError {}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TaskSource {
     UserRequest,
@@ -631,5 +775,205 @@ mod tests {
         guard.add_cost(1_000_000);
         assert!(!guard.is_warning_threshold());
         assert!(guard.is_hard_stop());
+    }
+
+    // =============================================================================
+    // TaskSpec tests
+    // =============================================================================
+
+    #[test]
+    fn test_task_spec_default_spec() {
+        let spec = TaskSpec::default_spec();
+        assert!(spec.acceptance_tests.is_empty());
+        assert_eq!(spec.commit_policy, CommitPolicy::AfterValidation);
+        assert_eq!(spec.escalation_policy, EscalationPolicy::Never);
+    }
+
+    #[test]
+    fn test_task_spec_valid_creation() {
+        let spec = TaskSpec::new(
+            vec!["test_foo".to_string(), "test_bar".to_string()],
+            CommitPolicy::EveryStep,
+            EscalationPolicy::AfterConsecutiveFailures(3),
+        )
+        .expect("valid spec should be created");
+        assert_eq!(spec.acceptance_tests.len(), 2);
+    }
+
+    #[test]
+    fn test_task_spec_valid_custom_commit_policy() {
+        let spec = TaskSpec::new(
+            vec!["test_foo".to_string()],
+            CommitPolicy::Custom {
+                min_steps_between_commits: 2,
+                require_clean_diff: true,
+            },
+            EscalationPolicy::Never,
+        )
+        .expect("valid spec should be created");
+        match spec.commit_policy {
+            CommitPolicy::Custom {
+                min_steps_between_commits,
+                require_clean_diff,
+            } => {
+                assert_eq!(min_steps_between_commits, 2);
+                assert!(require_clean_diff);
+            }
+            _ => panic!("expected Custom commit policy"),
+        }
+    }
+
+    #[test]
+    fn test_task_spec_valid_error_patterns() {
+        let spec = TaskSpec::new(
+            vec![],
+            CommitPolicy::Never,
+            EscalationPolicy::OnErrorPatterns(vec![
+                "error_oom".to_string(),
+                "error_timeout".to_string(),
+            ]),
+        )
+        .expect("valid spec should be created");
+        match spec.escalation_policy {
+            EscalationPolicy::OnErrorPatterns(patterns) => {
+                assert_eq!(patterns.len(), 2);
+            }
+            _ => panic!("expected OnErrorPatterns escalation policy"),
+        }
+    }
+
+    #[test]
+    fn test_task_spec_rejects_empty_acceptance_test() {
+        let result = TaskSpec::new(
+            vec!["test_foo".to_string(), "".to_string(), "test_bar".to_string()],
+            CommitPolicy::AfterValidation,
+            EscalationPolicy::Never,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            TaskSpecValidationError::EmptyAcceptanceTest
+        );
+    }
+
+    #[test]
+    fn test_task_spec_rejects_zero_commit_interval() {
+        let result = TaskSpec::new(
+            vec!["test_foo".to_string()],
+            CommitPolicy::Custom {
+                min_steps_between_commits: 0,
+                require_clean_diff: false,
+            },
+            EscalationPolicy::Never,
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            TaskSpecValidationError::InvalidCommitPolicy(
+                "min_steps_between_commits cannot be 0".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_task_spec_rejects_zero_failure_threshold() {
+        let result = TaskSpec::new(
+            vec![],
+            CommitPolicy::AfterValidation,
+            EscalationPolicy::AfterConsecutiveFailures(0),
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            TaskSpecValidationError::InvalidEscalationPolicy(
+                "consecutive failures threshold cannot be 0".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_task_spec_rejects_empty_error_pattern() {
+        let result = TaskSpec::new(
+            vec![],
+            CommitPolicy::Never,
+            EscalationPolicy::OnErrorPatterns(vec![
+                "error_oom".to_string(),
+                "".to_string(),
+            ]),
+        );
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            TaskSpecValidationError::InvalidEscalationPolicy(
+                "error patterns cannot be empty strings".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_task_spec_serde_roundtrip_every_step() {
+        let spec = TaskSpec::new(
+            vec!["test_a".to_string(), "test_b".to_string()],
+            CommitPolicy::EveryStep,
+            EscalationPolicy::AfterConsecutiveFailures(5),
+        )
+        .expect("valid spec");
+
+        let serialized = serde_json::to_string(&spec).expect("should serialize");
+        let deserialized: TaskSpec =
+            serde_json::from_str(&serialized).expect("should deserialize");
+
+        assert_eq!(spec.acceptance_tests, deserialized.acceptance_tests);
+        assert_eq!(spec.commit_policy, deserialized.commit_policy);
+        assert_eq!(spec.escalation_policy, deserialized.escalation_policy);
+    }
+
+    #[test]
+    fn test_task_spec_serde_roundtrip_custom_policy() {
+        let spec = TaskSpec::new(
+            vec!["test_*.rs".to_string()],
+            CommitPolicy::Custom {
+                min_steps_between_commits: 3,
+                require_clean_diff: true,
+            },
+            EscalationPolicy::OnErrorPatterns(vec!["E001".to_string(), "E002".to_string()]),
+        )
+        .expect("valid spec");
+
+        let serialized = serde_json::to_string(&spec).expect("should serialize");
+        let deserialized: TaskSpec =
+            serde_json::from_str(&serialized).expect("should deserialize");
+
+        assert_eq!(spec.acceptance_tests, deserialized.acceptance_tests);
+        match (&spec.commit_policy, &deserialized.commit_policy) {
+            (
+                CommitPolicy::Custom {
+                    min_steps_between_commits: a,
+                    require_clean_diff: b,
+                },
+                CommitPolicy::Custom {
+                    min_steps_between_commits: c,
+                    require_clean_diff: d,
+                },
+            ) => {
+                assert_eq!(a, c);
+                assert_eq!(b, d);
+            }
+            _ => panic!("expected Custom commit policy in roundtrip"),
+        }
+        assert_eq!(spec.escalation_policy, deserialized.escalation_policy);
+    }
+
+    #[test]
+    fn test_task_spec_serde_roundtrip_default_spec() {
+        let spec = TaskSpec::default_spec();
+
+        let serialized = serde_json::to_string(&spec).expect("should serialize");
+        let deserialized: TaskSpec =
+            serde_json::from_str(&serialized).expect("should deserialize");
+
+        assert_eq!(spec.acceptance_tests, deserialized.acceptance_tests);
+        assert_eq!(spec.commit_policy, deserialized.commit_policy);
+        assert_eq!(spec.escalation_policy, deserialized.escalation_policy);
     }
 }
