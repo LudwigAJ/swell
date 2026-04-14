@@ -1,0 +1,15 @@
+{
+  "featureId": "fix-git-snapshot-blocking-async",
+  "reviewedAt": "2026-04-14T12:58:00Z",
+  "commitId": "5075e498ead0eda363cf7ae2e4270229206a31f6",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The fix correctly wraps all three blocking git commands (branch, log, status) with tokio::task::spawn_blocking. The function signature remains async. build() is also made async to properly await get_git_snapshot(). All call sites are updated to use .await.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Review passed. The get_git_snapshot() function now correctly uses spawn_blocking for all three git commands (git branch --show-current, git log --oneline -5 --decorate, git status --porcelain -b). The async pattern is consistent and error handling gracefully degrades when git commands fail. All call sites and tests properly use .await."
+}
