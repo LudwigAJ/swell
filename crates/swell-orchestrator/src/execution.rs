@@ -9,7 +9,9 @@ use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use swell_core::traits::Agent;
-use swell_core::{AgentContext, AgentResult, LlmMessage, StreamEvent, SwellError, ValidationResult};
+use swell_core::{
+    AgentContext, AgentResult, LlmMessage, StreamEvent, SwellError, ValidationResult,
+};
 use swell_llm::{LlmBackend, LlmToolDefinition};
 use swell_tools::ToolRegistry;
 use swell_validation::ValidationPipeline;
@@ -94,7 +96,14 @@ impl TurnSummary {
     }
 
     /// Add a tool call to this turn
-    pub fn add_tool_call(&mut self, name: String, id: String, arguments: serde_json::Value, result: String, success: bool) {
+    pub fn add_tool_call(
+        &mut self,
+        name: String,
+        id: String,
+        arguments: serde_json::Value,
+        result: String,
+        success: bool,
+    ) {
         self.tool_calls.push(TurnToolCall {
             name,
             id,
@@ -550,7 +559,10 @@ impl ExecutionController {
             let mut summary = TurnSummary::new(turn_number);
 
             // Call the LLM with streaming
-            let stream = self.llm.stream(messages.clone(), tools.clone(), Default::default()).await;
+            let stream = self
+                .llm
+                .stream(messages.clone(), tools.clone(), Default::default())
+                .await;
 
             let stream_result = match stream {
                 Ok(s) => s,
@@ -575,7 +587,11 @@ impl ExecutionController {
                 match event {
                     Ok(StreamEvent::TextDelta { text, delta }) => {
                         accumulated_text = text;
-                        debug!(turn = turn_number, delta_len = delta.len(), "Received text delta");
+                        debug!(
+                            turn = turn_number,
+                            delta_len = delta.len(),
+                            "Received text delta"
+                        );
                     }
                     Ok(StreamEvent::ToolUse { tool_call }) => {
                         debug!(
@@ -585,13 +601,14 @@ impl ExecutionController {
                             "Received tool use event"
                         );
                         // Store the tool call to be executed when we get the result
-                        current_tool_call = Some((
-                            tool_call.id,
-                            tool_call.name,
-                            tool_call.arguments,
-                        ));
+                        current_tool_call =
+                            Some((tool_call.id, tool_call.name, tool_call.arguments));
                     }
-                    Ok(StreamEvent::ToolResult { tool_call_id, result: _, success }) => {
+                    Ok(StreamEvent::ToolResult {
+                        tool_call_id,
+                        result: _,
+                        success,
+                    }) => {
                         debug!(
                             turn = turn_number,
                             tool_call_id = %tool_call_id,
@@ -607,7 +624,13 @@ impl ExecutionController {
                             };
                             // Clone id before passing to add_tool_call since it moves
                             let id_clone = id.clone();
-                            summary.add_tool_call(name, id_clone, arguments, result_str.clone(), was_success);
+                            summary.add_tool_call(
+                                name,
+                                id_clone,
+                                arguments,
+                                result_str.clone(),
+                                was_success,
+                            );
 
                             // Add tool result to messages using Assistant role
                             // Include tool_call_id to track the tool_use/tool_result pair
@@ -631,9 +654,7 @@ impl ExecutionController {
                         summary.cache_read_input_tokens = cache_read_input_tokens;
                         debug!(
                             turn = turn_number,
-                            input_tokens,
-                            output_tokens,
-                            "Received usage event"
+                            input_tokens, output_tokens, "Received usage event"
                         );
                     }
                     Ok(StreamEvent::MessageStop { stop_reason }) => {
@@ -672,12 +693,18 @@ impl ExecutionController {
                 );
             } else if final_text.is_empty() {
                 summary.outcome = TurnOutcome::EmptyResponse;
-                warn!(turn = turn_number, "Turn produced empty response, terminating");
+                warn!(
+                    turn = turn_number,
+                    "Turn produced empty response, terminating"
+                );
                 all_summaries.push(summary);
                 break;
             } else {
                 summary.outcome = TurnOutcome::TextOnly;
-                debug!(turn = turn_number, "Turn completed with text only, terminating");
+                debug!(
+                    turn = turn_number,
+                    "Turn completed with text only, terminating"
+                );
                 all_summaries.push(summary);
                 break;
             }
@@ -760,7 +787,8 @@ impl ExecutionController {
         let tail_start = messages.len().saturating_sub(self.tail_message_count);
 
         // Find all tool_call_ids in the tail region
-        let mut tail_tool_call_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut tail_tool_call_ids: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         for msg in messages.iter().skip(tail_start) {
             if let Some(id) = &msg.tool_call_id {
@@ -812,9 +840,10 @@ impl ExecutionController {
         arguments: serde_json::Value,
     ) -> Result<swell_core::traits::ToolOutput, SwellError> {
         // Find the tool in the registry
-        let tool = self.tool_registry.get(name).await.ok_or_else(|| {
-            SwellError::ToolExecutionFailed(format!("Tool not found: {}", name))
-        })?;
+        let tool =
+            self.tool_registry.get(name).await.ok_or_else(|| {
+                SwellError::ToolExecutionFailed(format!("Tool not found: {}", name))
+            })?;
 
         // Execute the tool
         tool.execute(arguments).await
@@ -1119,10 +1148,7 @@ mod tests {
     // Context Compaction Tests
     // ========================================================================
 
-    fn make_controller_with_compaction(
-        threshold: usize,
-        tail_count: usize,
-    ) -> ExecutionController {
+    fn make_controller_with_compaction(threshold: usize, tail_count: usize) -> ExecutionController {
         let orchestrator = Orchestrator::new();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
@@ -1184,7 +1210,12 @@ mod tests {
         // They appear first in the result since it's reversed
         assert!(result.len() >= 3);
         // Check that tail messages are present
-        let tail_contents: Vec<&str> = result.iter().rev().take(3).map(|m| m.content.as_str()).collect();
+        let tail_contents: Vec<&str> = result
+            .iter()
+            .rev()
+            .take(3)
+            .map(|m| m.content.as_str())
+            .collect();
         assert!(tail_contents.contains(&"Message number 7"));
         assert!(tail_contents.contains(&"Message number 8"));
         assert!(tail_contents.contains(&"Message number 9"));
@@ -1270,7 +1301,10 @@ mod tests {
         let messages: Vec<LlmMessage> = (0..20)
             .map(|i| LlmMessage {
                 role: swell_llm::LlmRole::User,
-                content: format!("This is a relatively long message number {} with some extra content", i),
+                content: format!(
+                    "This is a relatively long message number {} with some extra content",
+                    i
+                ),
                 tool_call_id: None,
             })
             .collect();
@@ -1283,9 +1317,12 @@ mod tests {
 
         // Compaction should have reduced the message count
         // while still preserving tail messages
-        assert!(result.len() < messages.len(),
+        assert!(
+            result.len() < messages.len(),
             "Expected fewer messages after compaction, got {} vs {}",
-            result.len(), messages.len());
+            result.len(),
+            messages.len()
+        );
 
         // But we should still have at least the tail count
         assert!(result.len() >= 2, "Should preserve at least tail messages");
@@ -1372,13 +1409,24 @@ mod tests {
         let result = controller.compact_context(&messages);
 
         // Verify that the pair (call_1) is preserved: both tool_use (msg 3) and tool_result (msg 4)
-        let call_1_result = result.iter().find(|m| m.tool_call_id.as_ref() == Some(&"call_1".to_string()));
-        assert!(call_1_result.is_some(), "call_1 result should be preserved because it's in tail");
+        let call_1_result = result
+            .iter()
+            .find(|m| m.tool_call_id.as_ref() == Some(&"call_1".to_string()));
+        assert!(
+            call_1_result.is_some(),
+            "call_1 result should be preserved because it's in tail"
+        );
 
         // Find the tool_use for call_1 (the one right before it with no tool_call_id)
         // This is msg 3 in original
-        let preserved_tool_uses = result.iter().filter(|m| m.tool_call_id.is_none() && m.content.contains("file_read")).count();
-        assert!(preserved_tool_uses >= 1, "tool_use for call_1 should be preserved because its result is in tail");
+        let preserved_tool_uses = result
+            .iter()
+            .filter(|m| m.tool_call_id.is_none() && m.content.contains("file_read"))
+            .count();
+        assert!(
+            preserved_tool_uses >= 1,
+            "tool_use for call_1 should be preserved because its result is in tail"
+        );
     }
 
     #[test]

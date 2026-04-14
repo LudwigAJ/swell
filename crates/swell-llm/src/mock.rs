@@ -451,14 +451,13 @@ mod tests {
     #[tokio::test]
     async fn test_stream_with_tool_call() {
         // Create a mock LLM that returns a tool call
-        let mock = MockLlm::with_response("claude", "Tool executed")
-            .with_tool_use(
-                "call_123",
-                "file_read",
-                serde_json::json!({"path": "/tmp/test.txt"}),
-                "file contents here",
-                true,
-            );
+        let mock = MockLlm::with_response("claude", "Tool executed").with_tool_use(
+            "call_123",
+            "file_read",
+            serde_json::json!({"path": "/tmp/test.txt"}),
+            "file contents here",
+            true,
+        );
 
         let messages = vec![LlmMessage {
             role: LlmRole::User,
@@ -483,7 +482,11 @@ mod tests {
         let events: Vec<_> = stream.collect().await;
 
         // Should have: ToolUse, ToolResult, TextDelta, Usage, MessageStop
-        assert!(events.len() >= 5, "Expected at least 5 events, got {}", events.len());
+        assert!(
+            events.len() >= 5,
+            "Expected at least 5 events, got {}",
+            events.len()
+        );
 
         // First event should be ToolUse
         let tool_use = match &events[0] {
@@ -496,7 +499,11 @@ mod tests {
 
         // Second event should be ToolResult
         let _tool_result = match &events[1] {
-            Ok(StreamEvent::ToolResult { tool_call_id, result, success }) => {
+            Ok(StreamEvent::ToolResult {
+                tool_call_id,
+                result,
+                success,
+            }) => {
                 assert_eq!(tool_call_id, "call_123");
                 assert_eq!(result, "file contents here");
                 assert!(success);
@@ -505,7 +512,8 @@ mod tests {
         };
 
         // Find the TextDelta event
-        let text_delta = events.iter()
+        let text_delta = events
+            .iter()
             .find_map(|e| match e {
                 Ok(StreamEvent::TextDelta { text, .. }) => Some(text.clone()),
                 _ => None,
@@ -542,7 +550,11 @@ mod tests {
         let events: Vec<_> = stream.collect().await;
 
         // Should have: TextDelta, Usage, MessageStop (no ToolUse or ToolResult)
-        assert!(events.len() >= 3, "Expected at least 3 events, got {}", events.len());
+        assert!(
+            events.len() >= 3,
+            "Expected at least 3 events, got {}",
+            events.len()
+        );
 
         // Verify no ToolUse or ToolResult events
         for event in &events {
@@ -555,7 +567,8 @@ mod tests {
         }
 
         // Find the TextDelta event
-        let text_delta = events.iter()
+        let text_delta = events
+            .iter()
             .find_map(|e| match e {
                 Ok(StreamEvent::TextDelta { text, .. }) => Some(text.clone()),
                 _ => None,
@@ -567,14 +580,13 @@ mod tests {
     #[tokio::test]
     async fn test_stream_with_failed_tool() {
         // Create a mock LLM that returns a failed tool call
-        let mock = MockLlm::with_response("claude", "Tool failed")
-            .with_tool_use(
-                "call_456",
-                "shell",
-                serde_json::json!({"command": "exit 1"}),
-                "Command failed: exit code 1",
-                false, // Tool execution failed
-            );
+        let mock = MockLlm::with_response("claude", "Tool failed").with_tool_use(
+            "call_456",
+            "shell",
+            serde_json::json!({"command": "exit 1"}),
+            "Command failed: exit code 1",
+            false, // Tool execution failed
+        );
 
         let messages = vec![LlmMessage {
             role: LlmRole::User,
@@ -602,7 +614,11 @@ mod tests {
 
         // Check ToolResult has success=false
         let _tool_result = match &events[1] {
-            Ok(StreamEvent::ToolResult { tool_call_id, result, success }) => {
+            Ok(StreamEvent::ToolResult {
+                tool_call_id,
+                result,
+                success,
+            }) => {
                 assert_eq!(tool_call_id, "call_456");
                 assert!(!success);
                 assert!(result.contains("failed"));

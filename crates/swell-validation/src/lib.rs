@@ -1734,10 +1734,13 @@ impl ValidationGate for AiReviewGate {
 /// - `Mutex<Vec>` allows adding gates after construction via `add_gate()`
 ///
 /// The gates Vec is small (< 10 gates typically), so cloning is cheap.
+type SharedGates = std::sync::Arc<std::sync::Mutex<Vec<std::sync::Arc<Box<dyn ValidationGate>>>>>;
+
 pub struct ValidationPipeline {
     // Arc for cheap cloning, Mutex for interior mutability (add_gate)
     // Arc<Box<dyn Gate>> allows cheap cloning of boxed trait objects
-    inner: std::sync::Arc<std::sync::Mutex<Vec<std::sync::Arc<Box<dyn ValidationGate>>>>>,
+    #[allow(clippy::type_complexity)]
+    inner: SharedGates,
 }
 
 impl ValidationPipeline {
@@ -1751,10 +1754,8 @@ impl ValidationPipeline {
     /// Create a pipeline with the given gates.
     pub fn with_gates(gates: Vec<Box<dyn ValidationGate>>) -> Self {
         // Wrap each Box in Arc for cheap cloning
-        let arc_gates: Vec<std::sync::Arc<Box<dyn ValidationGate>>> = gates
-            .into_iter()
-            .map(std::sync::Arc::new)
-            .collect();
+        let arc_gates: Vec<std::sync::Arc<Box<dyn ValidationGate>>> =
+            gates.into_iter().map(std::sync::Arc::new).collect();
         Self {
             inner: std::sync::Arc::new(std::sync::Mutex::new(arc_gates)),
         }
