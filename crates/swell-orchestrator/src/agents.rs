@@ -2630,17 +2630,24 @@ impl SystemPromptBuilder {
     /// Get git snapshot including current branch, recent commits, and modified files.
     ///
     /// Returns a formatted string with git state information for project context.
-    pub fn get_git_snapshot(&self) -> String {
-        let repo_path = std::path::Path::new(&self.config.repo_path);
+    pub async fn get_git_snapshot(&self) -> String {
+        let repo_path = std::path::Path::new(&self.config.repo_path).to_path_buf();
 
         let mut snapshot = String::new();
 
         // Get current branch
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["branch", "--show-current"])
-            .current_dir(repo_path)
-            .output()
-        {
+        let repo_path_branch = repo_path.clone();
+        let branch_output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("git")
+                .args(["branch", "--show-current"])
+                .current_dir(&repo_path_branch)
+                .output()
+        })
+        .await
+        .ok()
+        .and_then(|r| r.ok());
+
+        if let Some(output) = branch_output {
             let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !branch.is_empty() {
                 snapshot.push_str(&format!("Branch: {}\n", branch));
@@ -2648,11 +2655,18 @@ impl SystemPromptBuilder {
         }
 
         // Get recent commits (last 5)
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["log", "--oneline", "-5", "--decorate"])
-            .current_dir(repo_path)
-            .output()
-        {
+        let repo_path_log = repo_path.clone();
+        let log_output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("git")
+                .args(["log", "--oneline", "-5", "--decorate"])
+                .current_dir(&repo_path_log)
+                .output()
+        })
+        .await
+        .ok()
+        .and_then(|r| r.ok());
+
+        if let Some(output) = log_output {
             let commits = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !commits.is_empty() {
                 snapshot.push_str("Recent commits:\n");
@@ -2663,11 +2677,18 @@ impl SystemPromptBuilder {
         }
 
         // Get modified/untracked files
-        if let Ok(output) = std::process::Command::new("git")
-            .args(["status", "--porcelain", "-b"])
-            .current_dir(repo_path)
-            .output()
-        {
+        let repo_path_status = repo_path.clone();
+        let status_output = tokio::task::spawn_blocking(move || {
+            std::process::Command::new("git")
+                .args(["status", "--porcelain", "-b"])
+                .current_dir(&repo_path_status)
+                .output()
+        })
+        .await
+        .ok()
+        .and_then(|r| r.ok());
+
+        if let Some(output) = status_output {
             let status = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !status.is_empty() {
                 snapshot.push_str("\nModified files:\n");
@@ -2707,7 +2728,7 @@ impl SystemPromptBuilder {
     /// appearing before dynamic content (task context, memory blocks, git state).
     /// The DYNAMIC_BOUNDARY marker is inserted between static and dynamic sections
     /// to enable Anthropic prompt caching.
-    pub fn build(&self, task_context: &str, memory_blocks: &[MemoryBlock]) -> String {
+    pub async fn build(&self, task_context: &str, memory_blocks: &[MemoryBlock]) -> String {
         // Collect sections as (category, content) tuples for ordering
         let mut static_sections: Vec<String> = Vec::new();
         let mut dynamic_sections: Vec<String> = Vec::new();
@@ -2796,7 +2817,7 @@ When token utilization exceeds 75%:
         if self.config.include_git_snapshot {
             dynamic_sections.push(format!(
                 "## Project Git State\n\n{}\n\n",
-                self.get_git_snapshot()
+                self.get_git_snapshot().await
             ));
         }
 
@@ -3917,7 +3938,8 @@ impl Agent for CoderAgent {
 
         let _prompt = self
             .system_prompt_builder
-            .build(&task_context, &context.memory_blocks);
+            .build(&task_context, &context.memory_blocks)
+            .await;
 
         // If no tool registry, return stub response
         if self.tool_registry.is_none() {
@@ -4410,7 +4432,8 @@ impl Agent for TestWriterAgent {
 
         let _prompt = self
             .system_prompt_builder
-            .build(&task_context, &context.memory_blocks);
+            .build(&task_context, &context.memory_blocks)
+            .await;
 
         // Parse acceptance criteria from task description
         let spec = self.parse_given_when_then(&context.task.description);
@@ -4949,7 +4972,8 @@ impl Agent for ReviewerAgent {
 
         let _prompt = self
             .system_prompt_builder
-            .build(&task_context, &context.memory_blocks);
+            .build(&task_context, &context.memory_blocks)
+            .await;
 
         // If no tool registry is configured, use stub mode
         if self.tool_registry.is_none() {
@@ -5717,7 +5741,8 @@ impl Agent for RefactorerAgent {
 
         let _prompt = self
             .system_prompt_builder
-            .build(&task_context, &context.memory_blocks);
+            .build(&task_context, &context.memory_blocks)
+            .await;
 
         // If no tool registry is configured, use stub mode
         if self.tool_registry.is_none() && self.llm.is_none() {
@@ -6100,7 +6125,8 @@ impl Agent for DocWriterAgent {
 
         let _prompt = self
             .system_prompt_builder
-            .build(&task_context, &context.memory_blocks);
+            .build(&task_context, &context.memory_blocks)
+            .await;
 
         // If no LLM backend is configured, return stub response
         let Some(llm) = &self.llm else {
@@ -6602,7 +6628,7 @@ mod tests {
         }];
 
         let task_context = "Add login functionality";
-        let prompt = builder.build(task_context, &memory_blocks);
+        let prompt = builder.build(task_context, &memory_blocks).await;
 
         assert!(prompt.contains("TestProject"));
         assert!(prompt.contains("CODER"));
@@ -6641,7 +6667,7 @@ mod tests {
         let memory_blocks = vec![];
         let task_context = "Test task";
 
-        let prompt = builder.build(task_context, &memory_blocks);
+        let prompt = builder.build(task_context, &memory_blocks).await;
 
         // Verify DYNAMIC_BOUNDARY marker is present
         assert!(
@@ -6667,8 +6693,8 @@ mod tests {
         let memory_blocks = vec![];
         let task_context = "Test task";
 
-        let prompt1 = builder.build(task_context, &memory_blocks);
-        let prompt2 = builder.build(task_context, &memory_blocks);
+        let prompt1 = builder.build(task_context, &memory_blocks).await;
+        let prompt2 = builder.build(task_context, &memory_blocks).await;
 
         // Verify deterministic ordering - two builds produce identical output
         assert_eq!(
@@ -6768,7 +6794,7 @@ mod tests {
         };
 
         let builder = SystemPromptBuilder::new(config);
-        let git_snapshot = builder.get_git_snapshot();
+        let git_snapshot = builder.get_git_snapshot().await;
 
         // In a git repository, we should get some git information
         // Even if there are no commits yet, we should get the branch
