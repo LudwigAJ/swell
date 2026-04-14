@@ -679,7 +679,13 @@ impl ValidationGate for TestGate {
                     // Fall back to running tests in current directory without --workspace
                     // This happens when not in a workspace or cargo version is old
                     Command::new("cargo")
-                        .args(["test", "--test-threads=1", "--jobs=1", "--", "--format=pretty"])
+                        .args([
+                            "test",
+                            "--test-threads=1",
+                            "--jobs=1",
+                            "--",
+                            "--format=pretty",
+                        ])
                         .current_dir(&workspace_path)
                         .output()
                         .unwrap_or_else(|_| {
@@ -694,7 +700,9 @@ impl ValidationGate for TestGate {
             }
         })
         .await
-        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?;
+        .map_err(|e| {
+            SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+        })?;
 
         let passed = output.status.success();
         let stdout = String::from_utf8_lossy(&output.stdout);

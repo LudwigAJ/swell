@@ -65,22 +65,26 @@ async fn test_validate_task_completion_success_path() {
     // Create a mock scenario for successful completion
     let scenario = vec![
         // Step 1: Planner generates a plan
-        ScenarioStep::text(r#"{
+        ScenarioStep::text(
+            r#"{
             "steps": [
                 {"description": "Create test file", "tool": "file_write"},
                 {"description": "Verify test passes", "tool": "shell"}
             ],
             "affected_files": ["tests/new_test.rs"],
             "risk_level": "low"
-        }"#),
+        }"#,
+        ),
         // Step 2: Generator produces output
         ScenarioStep::text("Successfully created tests/new_test.rs with 5 test cases."),
         // Step 3: Evaluator confirms success
-        ScenarioStep::text(r#"{
+        ScenarioStep::text(
+            r#"{
             "success": true,
             "output": "All 5 tests passed.",
             "issues": []
-        }"#),
+        }"#,
+        ),
     ];
     let _mock_llm = ScenarioMockLlm::new("test-model", scenario);
 
@@ -138,23 +142,27 @@ async fn test_validate_task_completion_failure_path() {
     // Create a mock scenario for failure
     let scenario = vec![
         // Step 1: Planner generates a plan
-        ScenarioStep::text(r#"{
+        ScenarioStep::text(
+            r#"{
             "steps": [
                 {"description": "Modify existing file", "tool": "file_edit"}
             ],
             "affected_files": ["src/lib.rs"],
             "risk_level": "medium"
-        }"#),
+        }"#,
+        ),
         // Step 2: Generator produces output
         ScenarioStep::text("Modified src/lib.rs but introduced a bug."),
         // Step 3: Evaluator reports failure
-        ScenarioStep::text(r#"{
+        ScenarioStep::text(
+            r#"{
             "success": false,
             "output": "Tests failed.",
             "issues": [
                 {"file": "src/lib.rs", "line": 10, "severity": "error", "message": "unused variable"}
             ]
-        }"#),
+        }"#,
+        ),
     ];
     let _mock_llm = ScenarioMockLlm::new("test-model", scenario);
 
@@ -182,7 +190,10 @@ async fn test_validate_task_completion_failure_path() {
     let result = orchestrator.validate_task_completion(input).await;
 
     // Verify result structure
-    assert!(result.is_ok(), "Validation should complete without error even for failing tasks");
+    assert!(
+        result.is_ok(),
+        "Validation should complete without error even for failing tasks"
+    );
     let validation_result = result.unwrap();
 
     // Verify result has expected structure
@@ -295,7 +306,11 @@ async fn test_task_validation_result_serialization() {
     assert_eq!(deserialized.passed, result.passed);
     assert_eq!(deserialized.gates_run, result.gates_run);
     assert_eq!(
-        deserialized.execution_metadata.as_ref().unwrap().iteration_count,
+        deserialized
+            .execution_metadata
+            .as_ref()
+            .unwrap()
+            .iteration_count,
         3
     );
 }
@@ -309,20 +324,22 @@ async fn test_scenario_mock_llm_with_validation() {
     // Create a more complex scenario with multiple turns
     let scenario = vec![
         // Turn 1: Plan creation
-        ScenarioStep::text(r#"{
+        ScenarioStep::text(
+            r#"{
             "steps": [
                 {"description": "Read existing code", "tool": "file_read"},
                 {"description": "Modify function", "tool": "file_edit"}
             ],
             "affected_files": ["src/lib.rs"],
             "risk_level": "medium"
-        }"#),
+        }"#,
+        ),
         // Turn 2: Execution with tool call
         ScenarioStep::tool_use(
             "call_1",
             "file_read",
             serde_json::json!({"path": "src/lib.rs"}),
-            "fn example() {}",  // Simulated file content
+            "fn example() {}", // Simulated file content
             true,
         ),
         // Turn 3: Continue with text
@@ -335,11 +352,13 @@ async fn test_scenario_mock_llm_with_validation() {
             true,
         ),
         // Turn 4: Validation confirmation
-        ScenarioStep::text(r#"{
+        ScenarioStep::text(
+            r#"{
             "success": true,
             "output": "Task completed successfully.",
             "issues": []
-        }"#),
+        }"#,
+        ),
     ];
 
     let mock_llm = ScenarioMockLlm::new("test-model", scenario);
@@ -520,7 +539,8 @@ async fn test_full_pipeline_integration() {
     // Create a comprehensive scenario simulating the full pipeline
     let scenario = vec![
         // Turn 1: Planner creates structured plan
-        ScenarioStep::text(r#"{
+        ScenarioStep::text(
+            r#"{
             "steps": [
                 {"description": "Initialize task", "tool": "shell"},
                 {"description": "Create test", "tool": "file_write"},
@@ -528,7 +548,8 @@ async fn test_full_pipeline_integration() {
             ],
             "affected_files": ["tests/integration_test.rs"],
             "risk_level": "low"
-        }"#),
+        }"#,
+        ),
         // Turn 2: Generator creates the test file
         ScenarioStep::text_with_tool_use(
             "Creating integration test file...",
@@ -551,11 +572,13 @@ async fn test_full_pipeline_integration() {
             true,
         ),
         // Turn 4: Evaluator confirms success
-        ScenarioStep::text(r#"{
+        ScenarioStep::text(
+            r#"{
             "success": true,
             "output": "All 5 integration tests passed.",
             "issues": []
-        }"#),
+        }"#,
+        ),
     ];
 
     // Create the mock LLM
@@ -677,7 +700,11 @@ async fn test_task_completion_input_serialization() {
     assert_eq!(deserialized.workspace_path, input.workspace_path);
     assert_eq!(deserialized.changed_files.len(), input.changed_files.len());
     assert_eq!(
-        deserialized.execution_metadata.as_ref().unwrap().iteration_count,
+        deserialized
+            .execution_metadata
+            .as_ref()
+            .unwrap()
+            .iteration_count,
         3
     );
 }

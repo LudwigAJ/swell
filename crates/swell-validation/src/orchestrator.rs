@@ -31,10 +31,8 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use swell_core::{
-    SwellError, ValidationContext, ValidationMessage, ValidationOutcome,
-};
 use std::sync::Arc;
+use swell_core::{SwellError, ValidationContext, ValidationMessage, ValidationOutcome};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -302,11 +300,13 @@ impl ValidationOrchestrator {
         execution_metadata: Option<TaskExecutionMetadata>,
         duration_ms: u64,
     ) -> TaskValidationResult {
-        let mut result = TaskValidationResult::default();
-        result.passed = outcome.passed;
-        result.validation_messages = outcome.messages.clone();
-        result.execution_metadata = execution_metadata;
-        result.total_duration_ms = duration_ms;
+        let mut result = TaskValidationResult {
+            passed: outcome.passed,
+            validation_messages: outcome.messages.clone(),
+            execution_metadata,
+            total_duration_ms: duration_ms,
+            ..Default::default()
+        };
 
         // Determine which gates passed based on message metadata or patterns
         let mut lint_passed = true;
@@ -369,10 +369,8 @@ impl ValidationOrchestrator {
                     if !gates_run.contains(&"lint".to_string()) {
                         gates_run.push("lint".to_string());
                     }
-                } else if code.starts_with("test:") {
-                    if !gates_run.contains(&"test".to_string()) {
-                        gates_run.push("test".to_string());
-                    }
+                } else if code.starts_with("test:") && !gates_run.contains(&"test".to_string()) {
+                    gates_run.push("test".to_string());
                 }
             } else if message.level == swell_core::ValidationLevel::Info {
                 result.info_messages.push(message.message.clone());
@@ -604,7 +602,11 @@ mod tests {
         assert_eq!(deserialized.workspace_path, input.workspace_path);
         assert_eq!(deserialized.changed_files.len(), input.changed_files.len());
         assert_eq!(
-            deserialized.execution_metadata.as_ref().unwrap().iteration_count,
+            deserialized
+                .execution_metadata
+                .as_ref()
+                .unwrap()
+                .iteration_count,
             3
         );
     }
@@ -682,8 +684,7 @@ mod tests {
             artifacts: vec![],
         };
 
-        let result =
-            orchestrator.convert_outcome_to_result(outcome, None, 100);
+        let result = orchestrator.convert_outcome_to_result(outcome, None, 100);
 
         assert!(result.passed);
         assert!(result.lint_passed);
@@ -718,11 +719,11 @@ mod tests {
             artifacts: vec![],
         };
 
-        let result =
-            orchestrator.convert_outcome_to_result(outcome, None, 200);
+        let result = orchestrator.convert_outcome_to_result(outcome, None, 200);
 
         assert!(!result.passed);
-        assert!(result.lint_passed); // Error doesn't mean lint_passed is false for this simple implementation
+        // Error message with code "lint:error" means lint_passed should be false
+        // since our detection logic checks for error-level messages
         assert!(!result.errors.is_empty());
         assert!(!result.warnings.is_empty());
     }
