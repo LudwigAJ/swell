@@ -63,7 +63,7 @@ pub async fn handle_command(
                             warn!(task_id = %task_id, error = %e, "Failed to start task");
                             let correlation_id = EventEmitter::new_correlation_id();
                             event_emitter
-                                .emit_error(format!("Failed to start task: {}", e), correlation_id)
+                                .emit_error(format!("Failed to start task: {}", e), None, correlation_id)
                                 .await
                         }
                     }
@@ -72,7 +72,7 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Task not found for approval");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Task not found: {}", e), correlation_id)
+                        .emit_error(format!("Task not found: {}", e), None, correlation_id)
                         .await
                 }
             }
@@ -92,7 +92,7 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Task not found for rejection");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Task not found: {}", e), correlation_id)
+                        .emit_error(format!("Task not found: {}", e), None, correlation_id)
                         .await
                 }
             }
@@ -112,7 +112,7 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Task not found for cancellation");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Task not found: {}", e), correlation_id)
+                        .emit_error(format!("Task not found: {}", e), None, correlation_id)
                         .await
                 }
             }
@@ -144,7 +144,7 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Task not found for watching");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Task not found: {}", e), correlation_id)
+                        .emit_error(format!("Task not found: {}", e), None, correlation_id)
                         .await
                 }
             }
@@ -163,7 +163,7 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Failed to pause task");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Failed to pause task: {}", e), correlation_id)
+                        .emit_error(format!("Failed to pause task: {}", e), None, correlation_id)
                         .await
                 }
             }
@@ -183,7 +183,7 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Failed to resume task");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Failed to resume task: {}", e), correlation_id)
+                        .emit_error(format!("Failed to resume task: {}", e), None, correlation_id)
                         .await
                 }
             }
@@ -209,6 +209,7 @@ pub async fn handle_command(
                     event_emitter
                         .emit_error(
                             format!("Failed to inject instruction: {}", e),
+                            None,
                             correlation_id,
                         )
                         .await
@@ -235,7 +236,7 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Failed to modify scope");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Failed to modify scope: {}", e), correlation_id)
+                        .emit_error(format!("Failed to modify scope: {}", e), None, correlation_id)
                         .await
                 }
             }
@@ -625,6 +626,7 @@ mod tests {
         let correlation_id = Uuid::new_v4();
         let event = DaemonEvent::Error {
             message: "Test error message".to_string(),
+            failure_class: None,
             correlation_id,
         };
         let json = event_to_json(&event).unwrap();
@@ -711,6 +713,7 @@ mod tests {
         match event {
             DaemonEvent::Error {
                 message,
+                failure_class: _,
                 correlation_id,
             } => {
                 assert!(!message.is_empty());

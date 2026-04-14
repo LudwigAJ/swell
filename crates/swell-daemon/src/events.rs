@@ -20,7 +20,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use swell_core::{CorrelationId, DaemonEvent, Task, TaskState};
+use swell_core::{CorrelationId, DaemonEvent, FailureClass, Task, TaskState};
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
@@ -174,6 +174,7 @@ impl EventEmitter {
             let (tx, rx) = broadcast::channel(1);
             tx.send(DaemonEvent::Error {
                 message: "EventEmitter shutting down".to_string(),
+                failure_class: None,
                 correlation_id: Uuid::nil(),
             })
             .ok();
@@ -305,11 +306,13 @@ impl EventEmitter {
         &self,
         task_id: Uuid,
         error: String,
+        failure_class: Option<FailureClass>,
         correlation_id: CorrelationId,
     ) -> DaemonEvent {
         let event = DaemonEvent::TaskFailed {
             id: task_id,
             error: error.clone(),
+            failure_class,
             correlation_id,
         };
 
@@ -329,9 +332,15 @@ impl EventEmitter {
     }
 
     /// Emit an error event and record it in the log
-    pub async fn emit_error(&self, message: String, correlation_id: CorrelationId) -> DaemonEvent {
+    pub async fn emit_error(
+        &self,
+        message: String,
+        failure_class: Option<FailureClass>,
+        correlation_id: CorrelationId,
+    ) -> DaemonEvent {
         let event = DaemonEvent::Error {
             message: message.clone(),
+            failure_class,
             correlation_id,
         };
 
@@ -526,18 +535,20 @@ mod tests {
         let error = "Validation failed".to_string();
 
         let event = emitter
-            .emit_task_failed(task_id, error.clone(), correlation_id)
+            .emit_task_failed(task_id, error.clone(), None, correlation_id)
             .await;
 
         match event {
             DaemonEvent::TaskFailed {
                 id,
                 error: err,
+                failure_class,
                 correlation_id: cid,
             } => {
                 assert_eq!(id, task_id);
                 assert_eq!(err, error);
                 assert_eq!(cid, correlation_id);
+                assert!(failure_class.is_none());
             }
             other => panic!("Expected TaskFailed event, got: {:?}", other),
         }
@@ -551,15 +562,17 @@ mod tests {
         let correlation_id = EventEmitter::new_correlation_id();
         let message = "Something went wrong".to_string();
 
-        let event = emitter.emit_error(message.clone(), correlation_id).await;
+        let event = emitter.emit_error(message.clone(), None, correlation_id).await;
 
         match event {
             DaemonEvent::Error {
                 message: msg,
+                failure_class,
                 correlation_id: cid,
             } => {
                 assert_eq!(msg, message);
                 assert_eq!(cid, correlation_id);
+                assert!(failure_class.is_none());
             }
             other => panic!("Expected Error event, got: {:?}", other),
         }
@@ -618,7 +631,7 @@ mod tests {
         let task = Task::new("Test".to_string());
         emitter.emit_task_created(&task).await;
         emitter
-            .emit_error("Test error".to_string(), EventEmitter::new_correlation_id())
+            .emit_error("Test error".to_string(), None, EventEmitter::new_correlation_id())
             .await;
 
         let all = emitter.get_all_events().await;
@@ -689,17 +702,17 @@ mod tests {
         assert_eq!(emitter.event_count().await, 0);
 
         emitter
-            .emit_error("Error 1".to_string(), EventEmitter::new_correlation_id())
+            .emit_error("Error 1".to_string(), None, EventEmitter::new_correlation_id())
             .await;
         assert_eq!(emitter.event_count().await, 1);
 
         emitter
-            .emit_error("Error 2".to_string(), EventEmitter::new_correlation_id())
+            .emit_error("Error 2".to_string(), None, EventEmitter::new_correlation_id())
             .await;
         assert_eq!(emitter.event_count().await, 2);
 
         emitter
-            .emit_error("Error 3".to_string(), EventEmitter::new_correlation_id())
+            .emit_error("Error 3".to_string(), None, EventEmitter::new_correlation_id())
             .await;
         assert_eq!(emitter.event_count().await, 3);
     }
@@ -710,7 +723,7 @@ mod tests {
         let before = Utc::now();
 
         emitter
-            .emit_error("Test".to_string(), EventEmitter::new_correlation_id())
+            .emit_error("Test".to_string(), None, EventEmitter::new_correlation_id())
             .await;
 
         let after = Utc::now();

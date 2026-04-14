@@ -507,6 +507,7 @@ fn handle_event(event: &DaemonEvent) {
         DaemonEvent::TaskFailed {
             id,
             error,
+            failure_class: _,
             correlation_id: _,
         } => {
             eprintln!("[{}] Task failed: {}", id, error);
@@ -520,6 +521,7 @@ fn handle_event(event: &DaemonEvent) {
         }
         DaemonEvent::Error {
             message,
+            failure_class: _,
             correlation_id: _,
         } => {
             eprintln!("Error: {}", message);

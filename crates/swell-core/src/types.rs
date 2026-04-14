@@ -595,6 +595,39 @@ pub enum CliCommand {
 /// share the same correlation ID.
 pub type CorrelationId = Uuid;
 
+/// Classification of failures for error handling and recovery.
+///
+/// This enum provides typed error categories enabling granular failure handling,
+/// retry decisions, and escalation policies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureClass {
+    /// Network connectivity issues (connection refused, timeout, DNS failure)
+    NetworkError,
+    /// LLM API errors (rate limits, model errors, API key issues)
+    LlmError,
+    /// Tool execution failures (tool not found, invalid input, execution error)
+    ToolError,
+    /// Permission denied by policy or access control
+    PermissionDenied,
+    /// Budget or cost limit exceeded
+    BudgetExceeded,
+    /// Operation timed out
+    Timeout,
+    /// Rate limited by external service
+    RateLimited,
+    /// Invalid state transition or state machine error
+    InvalidState,
+    /// Parse error in input or response
+    ParseError,
+    /// Configuration error (missing config, invalid config)
+    ConfigError,
+    /// Sandbox isolation error
+    SandboxError,
+    /// Internal error (bugs, unexpected state)
+    InternalError,
+}
+
 /// CLI <-> Daemon protocol messages
 /// Events include a correlation ID to track related events across operations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -622,10 +655,12 @@ pub enum DaemonEvent {
     TaskFailed {
         id: Uuid,
         error: String,
+        failure_class: Option<FailureClass>,
         correlation_id: CorrelationId,
     },
     Error {
         message: String,
+        failure_class: Option<FailureClass>,
         correlation_id: CorrelationId,
     },
 }
@@ -975,5 +1010,341 @@ mod tests {
         assert_eq!(spec.acceptance_tests, deserialized.acceptance_tests);
         assert_eq!(spec.commit_policy, deserialized.commit_policy);
         assert_eq!(spec.escalation_policy, deserialized.escalation_policy);
+    }
+
+    // =========================================================================
+    // FailureClass Tests
+    // =========================================================================
+
+    #[test]
+    fn test_failure_class_count() {
+        // Verify we have at least 12 failure classes as required
+        let variants = [
+            FailureClass::NetworkError,
+            FailureClass::LlmError,
+            FailureClass::ToolError,
+            FailureClass::PermissionDenied,
+            FailureClass::BudgetExceeded,
+            FailureClass::Timeout,
+            FailureClass::RateLimited,
+            FailureClass::InvalidState,
+            FailureClass::ParseError,
+            FailureClass::ConfigError,
+            FailureClass::SandboxError,
+            FailureClass::InternalError,
+        ];
+        assert_eq!(variants.len(), 12, "FailureClass must have at least 12 variants");
+    }
+
+    #[test]
+    fn test_failure_class_exhaustive_match() {
+        // This test ensures all variants are handled - if a new variant is added
+        // without updating this test, it will fail with a non-exhaustive match warning
+        let check_class = |fc: FailureClass| match fc {
+            FailureClass::NetworkError => "NetworkError",
+            FailureClass::LlmError => "LlmError",
+            FailureClass::ToolError => "ToolError",
+            FailureClass::PermissionDenied => "PermissionDenied",
+            FailureClass::BudgetExceeded => "BudgetExceeded",
+            FailureClass::Timeout => "Timeout",
+            FailureClass::RateLimited => "RateLimited",
+            FailureClass::InvalidState => "InvalidState",
+            FailureClass::ParseError => "ParseError",
+            FailureClass::ConfigError => "ConfigError",
+            FailureClass::SandboxError => "SandboxError",
+            FailureClass::InternalError => "InternalError",
+        };
+
+        for fc in [
+            FailureClass::NetworkError,
+            FailureClass::LlmError,
+            FailureClass::ToolError,
+            FailureClass::PermissionDenied,
+            FailureClass::BudgetExceeded,
+            FailureClass::Timeout,
+            FailureClass::RateLimited,
+            FailureClass::InvalidState,
+            FailureClass::ParseError,
+            FailureClass::ConfigError,
+            FailureClass::SandboxError,
+            FailureClass::InternalError,
+        ] {
+            let name = check_class(fc);
+            assert!(!name.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_failure_class_serde_roundtrip() {
+        let classes = [
+            FailureClass::NetworkError,
+            FailureClass::LlmError,
+            FailureClass::ToolError,
+            FailureClass::PermissionDenied,
+            FailureClass::BudgetExceeded,
+            FailureClass::Timeout,
+            FailureClass::RateLimited,
+            FailureClass::InvalidState,
+            FailureClass::ParseError,
+            FailureClass::ConfigError,
+            FailureClass::SandboxError,
+            FailureClass::InternalError,
+        ];
+
+        for original in classes {
+            let json = serde_json::to_string(&original).expect("should serialize");
+            let deserialized: FailureClass =
+                serde_json::from_str(&json).expect("should deserialize");
+            assert_eq!(original, deserialized, "Roundtrip failed for {:?}", original);
+        }
+    }
+
+    #[test]
+    fn test_failure_class_snake_case_serialization() {
+        let original = FailureClass::PermissionDenied;
+        let json = serde_json::to_string(&original).expect("should serialize");
+        assert_eq!(json, "\"permission_denied\"", "Should use snake_case");
+    }
+
+    #[test]
+    fn test_failure_class_deserialization_from_snake_case() {
+        let json = "\"rate_limited\"";
+        let deserialized: FailureClass =
+            serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(deserialized, FailureClass::RateLimited);
+    }
+
+    // =========================================================================
+    // DaemonEvent with FailureClass Tests
+    // =========================================================================
+
+    #[test]
+    fn test_daemon_event_task_failed_with_failure_class() {
+        let task_id = Uuid::new_v4();
+        let correlation_id = Uuid::new_v4();
+        let event = DaemonEvent::TaskFailed {
+            id: task_id,
+            error: "Connection refused".to_string(),
+            failure_class: Some(FailureClass::NetworkError),
+            correlation_id,
+        };
+
+        let json = serde_json::to_string(&event).expect("should serialize");
+        let deserialized: DaemonEvent =
+            serde_json::from_str(&json).expect("should deserialize");
+
+        match deserialized {
+            DaemonEvent::TaskFailed {
+                id,
+                error,
+                failure_class,
+                correlation_id: cid,
+            } => {
+                assert_eq!(id, task_id);
+                assert_eq!(error, "Connection refused");
+                assert_eq!(failure_class, Some(FailureClass::NetworkError));
+                assert_eq!(cid, correlation_id);
+            }
+            other => panic!("Expected TaskFailed event, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_daemon_event_task_failed_without_failure_class() {
+        let task_id = Uuid::new_v4();
+        let correlation_id = Uuid::new_v4();
+        let event = DaemonEvent::TaskFailed {
+            id: task_id,
+            error: "Something went wrong".to_string(),
+            failure_class: None,
+            correlation_id,
+        };
+
+        let json = serde_json::to_string(&event).expect("should serialize");
+        let deserialized: DaemonEvent =
+            serde_json::from_str(&json).expect("should deserialize");
+
+        match deserialized {
+            DaemonEvent::TaskFailed {
+                failure_class, ..
+            } => {
+                assert!(failure_class.is_none());
+            }
+            other => panic!("Expected TaskFailed event, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_daemon_event_error_with_failure_class() {
+        let correlation_id = Uuid::new_v4();
+        let event = DaemonEvent::Error {
+            message: "LLM rate limit exceeded".to_string(),
+            failure_class: Some(FailureClass::RateLimited),
+            correlation_id,
+        };
+
+        let json = serde_json::to_string(&event).expect("should serialize");
+        let deserialized: DaemonEvent =
+            serde_json::from_str(&json).expect("should deserialize");
+
+        match deserialized {
+            DaemonEvent::Error {
+                message,
+                failure_class,
+                correlation_id: cid,
+            } => {
+                assert_eq!(message, "LLM rate limit exceeded");
+                assert_eq!(failure_class, Some(FailureClass::RateLimited));
+                assert_eq!(cid, correlation_id);
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_daemon_event_error_without_failure_class() {
+        let correlation_id = Uuid::new_v4();
+        let event = DaemonEvent::Error {
+            message: "Generic error".to_string(),
+            failure_class: None,
+            correlation_id,
+        };
+
+        let json = serde_json::to_string(&event).expect("should serialize");
+        let deserialized: DaemonEvent =
+            serde_json::from_str(&json).expect("should deserialize");
+
+        match deserialized {
+            DaemonEvent::Error {
+                failure_class, ..
+            } => {
+                assert!(failure_class.is_none());
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_daemon_event_all_variants_serde() {
+        let task_id = Uuid::new_v4();
+        let correlation_id = Uuid::new_v4();
+
+        let events = vec![
+            DaemonEvent::TaskCreated {
+                id: task_id,
+                correlation_id,
+            },
+            DaemonEvent::TaskStateChanged {
+                id: task_id,
+                state: TaskState::Executing,
+                correlation_id,
+            },
+            DaemonEvent::TaskProgress {
+                id: task_id,
+                message: "Working...".to_string(),
+                correlation_id,
+            },
+            DaemonEvent::TaskCompleted {
+                id: task_id,
+                pr_url: Some("https://github.com/example/pull/1".to_string()),
+                correlation_id,
+            },
+            DaemonEvent::TaskFailed {
+                id: task_id,
+                error: "Failed".to_string(),
+                failure_class: Some(FailureClass::ToolError),
+                correlation_id,
+            },
+            DaemonEvent::Error {
+                message: "Error occurred".to_string(),
+                failure_class: Some(FailureClass::InternalError),
+                correlation_id,
+            },
+        ];
+
+        for event in events {
+            let json = serde_json::to_string(&event).expect("should serialize");
+            let _deserialized: DaemonEvent =
+                serde_json::from_str(&json).expect("should deserialize");
+            // Verify the JSON is valid and contains expected structure
+            let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse as JSON");
+            assert!(parsed.get("type").is_some(), "Missing 'type' field in JSON for {:?}", event);
+        }
+    }
+
+    #[test]
+    fn test_correlation_id_links_related_events() {
+        // All events in a task lifecycle should share the same correlation_id
+        let correlation_id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+
+        let created = DaemonEvent::TaskCreated {
+            id: task_id,
+            correlation_id,
+        };
+        let state_changed = DaemonEvent::TaskStateChanged {
+            id: task_id,
+            state: TaskState::Executing,
+            correlation_id,
+        };
+        let failed = DaemonEvent::TaskFailed {
+            id: task_id,
+            error: "Test failure".to_string(),
+            failure_class: Some(FailureClass::InternalError),
+            correlation_id,
+        };
+
+        // Extract correlation IDs and verify they match
+        let check_cid = |event: &DaemonEvent| -> Uuid {
+            match event {
+                DaemonEvent::TaskCreated { correlation_id, .. } => *correlation_id,
+                DaemonEvent::TaskStateChanged { correlation_id, .. } => *correlation_id,
+                DaemonEvent::TaskFailed { correlation_id, .. } => *correlation_id,
+                DaemonEvent::Error { correlation_id, .. } => *correlation_id,
+                DaemonEvent::TaskProgress { correlation_id, .. } => *correlation_id,
+                DaemonEvent::TaskCompleted { correlation_id, .. } => *correlation_id,
+            }
+        };
+
+        assert_eq!(check_cid(&created), correlation_id);
+        assert_eq!(check_cid(&state_changed), correlation_id);
+        assert_eq!(check_cid(&failed), correlation_id);
+    }
+
+    #[test]
+    fn test_different_tasks_have_different_correlation_ids() {
+        let correlation_id_1 = Uuid::new_v4();
+        let correlation_id_2 = Uuid::new_v4();
+        let task_id_1 = Uuid::new_v4();
+        let task_id_2 = Uuid::new_v4();
+
+        let event_1 = DaemonEvent::TaskFailed {
+            id: task_id_1,
+            error: "Error 1".to_string(),
+            failure_class: Some(FailureClass::NetworkError),
+            correlation_id: correlation_id_1,
+        };
+        let event_2 = DaemonEvent::TaskFailed {
+            id: task_id_2,
+            error: "Error 2".to_string(),
+            failure_class: Some(FailureClass::LlmError),
+            correlation_id: correlation_id_2,
+        };
+
+        // Correlation IDs should be different
+        assert_ne!(correlation_id_1, correlation_id_2);
+
+        // Verify in JSON that correlation IDs are different
+        let json_1 = serde_json::to_string(&event_1).expect("should serialize");
+        let json_2 = serde_json::to_string(&event_2).expect("should serialize");
+
+        let parsed_1: serde_json::Value = serde_json::from_str(&json_1).expect("should parse");
+        let parsed_2: serde_json::Value = serde_json::from_str(&json_2).expect("should parse");
+
+        // The payload should have different correlation IDs
+        let payload_1_cid = parsed_1.get("payload").and_then(|p| p.get("correlation_id"));
+        let payload_2_cid = parsed_2.get("payload").and_then(|p| p.get("correlation_id"));
+
+        assert_ne!(payload_1_cid, payload_2_cid);
     }
 }

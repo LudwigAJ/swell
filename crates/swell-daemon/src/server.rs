@@ -258,6 +258,7 @@ async fn handle_connection_with_shutdown(
             let correlation_id = EventEmitter::new_correlation_id();
             let response = DaemonEvent::Error {
                 message: format!("Invalid command: {}", e),
+                failure_class: None,
                 correlation_id,
             };
             let response_json = serde_json::to_string(&response)?;
@@ -316,6 +317,7 @@ async fn handle_watch_connection(
             let correlation_id = EventEmitter::new_correlation_id();
             DaemonEvent::Error {
                 message: format!("Task not found: {}", task_id),
+                failure_class: None,
                 correlation_id,
             }
         }

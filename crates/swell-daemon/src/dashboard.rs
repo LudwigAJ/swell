@@ -259,6 +259,7 @@ impl From<DaemonEvent> for DashboardEvent {
             DaemonEvent::TaskFailed {
                 id,
                 error,
+                failure_class: _,
                 correlation_id,
             } => DashboardEvent::TaskFailed {
                 id,
@@ -267,6 +268,7 @@ impl From<DaemonEvent> for DashboardEvent {
             },
             DaemonEvent::Error {
                 message,
+                failure_class: _,
                 correlation_id,
             } => DashboardEvent::Error {
                 message,
