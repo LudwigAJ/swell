@@ -94,8 +94,8 @@ pub use os_sandbox::{
     PlatformSandbox, SandboxAvailability, SandboxType, SeatbeltSandbox,
 };
 pub use permissions::{
-    InversePermissionMode, PermissionMode, PermissionResult, PermissionRule, PermissionRuleEffect,
-    ThreeLayerEvaluator, ToolSpec,
+    BashRiskLevel, InversePermissionMode, PermissionMode, PermissionResult, PermissionRule,
+    PermissionRuleEffect, ThreeLayerEvaluator, ToolSpec,
 };
 pub use post_tool_hooks::{
     tool_names, FormatHook, HookConfig, HookResult, HookTrigger, LintHook, PostToolHook,
