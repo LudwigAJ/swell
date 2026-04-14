@@ -14,6 +14,7 @@ pub mod agents;
 pub mod alerts;
 pub mod autonomy;
 pub mod backlog;
+pub mod checkpoint_wiring;
 pub mod context_chunking;
 pub mod context_pipeline;
 pub mod cron_registry;

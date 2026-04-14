@@ -10,6 +10,7 @@ use tracing::{info, warn};
 /// to be read and written concurrently without global lock contention.
 /// DashMap shards the underlying HashMap, so operations on different shards
 /// don't block each other.
+#[derive(Debug)]
 pub struct TaskStateMachine {
     /// DashMap provides sharded concurrent access - reads to different tasks
     /// don't block each other. The RwLock inside each task allows writes
