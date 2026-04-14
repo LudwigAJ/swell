@@ -1,0 +1,22 @@
+{
+  "featureId": "docs-agents-root-update",
+  "reviewedAt": "2026-04-14T00:30:00Z",
+  "commitId": "7f43dea",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Root AGENTS.md was successfully updated with: (1) Cross-Crate Dependency Graph section with ASCII diagram and dependency table for all 12 crates; (2) Error Handling Conventions section covering thiserror/anyhow patterns, SwellError central type, and propagation patterns with code examples; (3) Async Patterns section covering Tokio runtime, Send+Sync bounds, async traits, task spawning, and channel patterns. All 12 workspace crates are listed with accurate module-level descriptions.",
+    "issues": [
+      {
+        "file": "AGENTS.md",
+        "line": 465,
+        "severity": "non_blocking",
+        "description": "Async Patterns section does not explicitly cover `select` or cancellation patterns. The section covers tokio::main, #[tokio::test], Send+Sync bounds, async-trait, spawn, spawn_blocking, mpsc/broadcast channels, and common pitfalls. However, the task prompt mentioned 'tokio, spawn, select, cancellation' and these are absent. Note: The feature's expectedBehavior only states 'covering Tokio runtime and Send+Sync requirements', which is satisfied."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Documentation feature successfully implemented. The root AGENTS.md now contains all required sections: Cross-Crate Dependency Graph (with 12+ crate relationships), Error Handling Conventions (thiserror vs anyhow), and Async Patterns. All 12 workspace crates are listed with accurate descriptions. One minor observation: async patterns section omits `select` and cancellation coverage, though this was not explicitly required by the feature's expectedBehavior specification."
+}

@@ -260,8 +260,15 @@ impl EvidencePipeline {
 
         let mut offset = 0;
         let mut chunk_index = 0;
+        const MAX_ITER: usize = 10_000_000;
+        let mut iter_count = 0;
 
         while offset < content_len {
+            iter_count += 1;
+            if iter_count > MAX_ITER {
+                tracing::error!("evidence_pipeline: chunk_content exceeded MAX_ITER; aborting");
+                break;
+            }
             let end = (offset + chunk_size).min(content_len);
 
             // Adjust end to not cut words
@@ -304,7 +311,12 @@ impl EvidencePipeline {
                 // Prevent infinite loop if we can't make progress
                 break;
             }
-            offset = actual_end.saturating_sub(overlap);
+            let new_offset = actual_end.saturating_sub(overlap);
+            if new_offset <= offset {
+                // No forward progress possible (content shorter than overlap); done
+                break;
+            }
+            offset = new_offset;
             chunk_index += 1;
         }
 
@@ -395,10 +407,19 @@ impl EvidencePipeline {
         sources.retain(|s| seen_urls.insert(s.url.clone()));
 
         // Then, deduplicate by content similarity
+        const MAX_ITER: usize = 10_000_000;
+        let mut iter_count = 0;
         let mut i = 0;
         while i < sources.len() {
             let mut j = i + 1;
             while j < sources.len() {
+                iter_count += 1;
+                if iter_count > MAX_ITER {
+                    tracing::error!(
+                        "evidence_pipeline: deduplicate_sources exceeded MAX_ITER; aborting"
+                    );
+                    return;
+                }
                 if self.content_similarity(&sources[i], &sources[j])
                     > self.config.dedup_similarity_threshold
                 {
@@ -816,7 +837,10 @@ mod tests {
             "Test Article".to_string(),
             Utc::now(),
             None,
-            "This is a test article with some content that we want to process.".to_string(),
+            "This is a test article with some content that we want to process. \
+             It contains enough text to satisfy the minimum chunk size requirement \
+             and produce at least one evidence chunk from the pipeline."
+                .to_string(),
         );
 
         assert_eq!(source.url, "https://example.com/article");

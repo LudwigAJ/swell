@@ -944,7 +944,16 @@ impl FetchPageTool {
             let open_pattern = format!("<{}", element);
             let close_pattern = format!("</{}>", element);
 
+            let mut iter_count = 0usize;
             while result.contains(&open_pattern) || result.contains(&close_pattern) {
+                iter_count += 1;
+                if iter_count > 10_000_000 {
+                    tracing::error!(
+                        "web_search: remove_elements exceeded MAX_ITER for element '{}'; aborting",
+                        element
+                    );
+                    break;
+                }
                 // Find and remove opening tags with content
                 if let Some(start) = result.find(&open_pattern) {
                     let after_open = &result[start..];

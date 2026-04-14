@@ -1,0 +1,15 @@
+{
+  "featureId": "docs-per-crate-agents-core",
+  "reviewedAt": "2026-04-14T00:15:00Z",
+  "commitId": "4d558dd",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 4 per-crate AGENTS.md files created successfully with all 5 required sections. Each file accurately documents the crate's purpose, public API with code signatures, architecture with diagrams, testing patterns, and dependencies.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature docs-per-crate-agents-core passes review. Worker created comprehensive AGENTS.md files for swell-core (187 lines, 8.4KB), swell-llm (196 lines, 7.1KB), swell-tools (258 lines, 10.3KB), and swell-orchestrator (295 lines, 14.3KB). Each file contains all 5 required sections (Purpose, Public API, Architecture, Testing, Dependencies) with accurate code references, architecture diagrams, and testing patterns. Transcript shows worker followed the docs-worker skill procedure correctly, reading mission.md, validation-contract.md, exploring each crate's lib.rs and Cargo.toml before creating the documentation files. No issues found."
+}

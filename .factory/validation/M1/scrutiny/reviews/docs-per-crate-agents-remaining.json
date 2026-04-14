@@ -1,0 +1,15 @@
+{
+  "featureId": "docs-per-crate-agents-remaining",
+  "reviewedAt": "2026-04-14T00:25:00Z",
+  "commitId": "df871ed6b02a0425f76ccd5a61ce736c245737e0",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 4 per-crate AGENTS.md files were created with substantial content (229-289 lines each, 1049 lines total). Each file contains all 5 required sections (Purpose, Public API, Architecture, Testing, Dependencies) with meaningful documentation derived from actual source code analysis.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature docs-per-crate-agents-remaining PASSED review. The worker created comprehensive AGENTS.md files for swell-benchmark (289 lines), swell-skills (282 lines), swell-daemon (249 lines), and swell-cli (229 lines) in clients/. All files contain the 5 required sections with actual documentation of types, functions, architecture diagrams, and test patterns derived from source code analysis. The total count of per-crate AGENTS.md files is now 12, fulfilling VAL-DOC-009 and VAL-DOC-010."
+}
