@@ -33,6 +33,7 @@ pub mod metrics;
 pub mod model_fallback;
 pub mod novelty_check;
 pub mod policy;
+pub mod recovery_recipe;
 pub mod retry_policy;
 pub mod scheduler;
 pub mod search_router;
@@ -131,6 +132,9 @@ pub use policy::{
 };
 pub use retry_policy::{
     RetryDecision, RetryPolicy, RetryState, MAX_RETRIES_BEFORE_ESCALATION, MODEL_SWITCH_RETRY_COUNT,
+};
+pub use recovery_recipe::{
+    BackoffStrategy, FailureScenario, RecoveryRecipe, RecoveryStep, RecoverySteps,
 };
 pub use scheduler::{
     Scheduler, SchedulerConfig, SchedulerStats, TaskPriority, DEFAULT_MAX_WORKERS, MAX_MAX_WORKERS,
