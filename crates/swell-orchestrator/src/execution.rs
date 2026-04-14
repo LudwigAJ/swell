@@ -834,6 +834,14 @@ impl ExecutionController {
     }
 
     /// Execute a tool by name with the given arguments.
+    ///
+    /// Returns a `ToolOutput` with `success: false` and error details when:
+    /// - The tool requires `PermissionTier::Deny` permission (which is never allowed)
+    /// - The tool is not found
+    ///
+    /// The error message in the `ToolOutput` includes:
+    /// - The tool name that was denied
+    /// - The triggering permission rule (Deny tier requirement)
     async fn execute_tool(
         &self,
         name: &str,
@@ -844,6 +852,27 @@ impl ExecutionController {
             self.tool_registry.get(name).await.ok_or_else(|| {
                 SwellError::ToolExecutionFailed(format!("Tool not found: {}", name))
             })?;
+
+        // Check permission tier - Deny tier is never allowed
+        // This surfaces permission denials as ToolOutput with is_error=true in the transcript
+        if tool.permission_tier() == swell_core::PermissionTier::Deny {
+            let denial_message = format!(
+                "Permission denied: tool '{}' requires {:?} permission. \
+                 This tool is blocked by the permission system's deny rule.",
+                name,
+                tool.permission_tier()
+            );
+            tracing::warn!(
+                tool = %name,
+                tier = ?tool.permission_tier(),
+                "Tool execution denied by permission system"
+            );
+            return Ok(swell_core::traits::ToolOutput {
+                success: false,
+                result: String::new(),
+                error: Some(denial_message),
+            });
+        }
 
         // Execute the tool
         tool.execute(arguments).await
@@ -914,7 +943,9 @@ impl Default for ExecutionConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use std::sync::Arc;
+    use swell_core::traits::Tool;
     use swell_llm::MockLlm;
     use swell_tools::ToolRegistry;
 
@@ -1460,5 +1491,187 @@ mod tests {
 
         let total = ExecutionController::estimate_total_tokens(&messages);
         assert!(total >= 2); // At minimum 1 token per message
+    }
+
+    // ========================================================================
+    // Permission Denial Surfacing Tests
+    // ========================================================================
+
+    /// A test tool that requires Deny permission tier
+    struct DenyPermissionTool {
+        permission_tier: swell_core::PermissionTier,
+    }
+
+    impl DenyPermissionTool {
+        fn new(permission_tier: swell_core::PermissionTier) -> Self {
+            Self { permission_tier }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Tool for DenyPermissionTool {
+        fn name(&self) -> &str {
+            "deny_test_tool"
+        }
+
+        fn description(&self) -> String {
+            "A test tool for permission denial surfacing".to_string()
+        }
+
+        fn risk_level(&self) -> swell_core::ToolRiskLevel {
+            swell_core::ToolRiskLevel::Read
+        }
+
+        fn permission_tier(&self) -> swell_core::PermissionTier {
+            self.permission_tier
+        }
+
+        fn behavioral_hints(&self) -> swell_core::traits::ToolBehavioralHints {
+            swell_core::traits::ToolBehavioralHints {
+                read_only_hint: true,
+                destructive_hint: false,
+                idempotent_hint: true,
+            }
+        }
+
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            })
+        }
+
+        async fn execute(
+            &self,
+            _arguments: serde_json::Value,
+        ) -> Result<swell_core::traits::ToolOutput, swell_core::SwellError> {
+            Ok(swell_core::traits::ToolOutput {
+                success: true,
+                result: "should not reach here".to_string(),
+                error: None,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_tool_returns_error_on_deny_permission() {
+        // Test that execute_tool returns ToolOutput with success=false
+        // when the tool requires Deny permission tier
+        let orchestrator = Orchestrator::new();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+
+        // Register a tool that requires Deny permission
+        let deny_tool = DenyPermissionTool::new(swell_core::PermissionTier::Deny);
+        tool_registry
+            .register(deny_tool, swell_tools::registry::ToolCategory::Misc)
+            .await;
+
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+
+        let result = controller
+            .execute_tool("deny_test_tool", serde_json::json!({}))
+            .await;
+
+        // Should return Ok with ToolOutput (not Err)
+        assert!(
+            result.is_ok(),
+            "execute_tool should return Ok even for denied tools, got: {:?}",
+            result
+        );
+
+        let output = result.unwrap();
+        assert!(
+            !output.success,
+            "ToolOutput.success should be false for denied tool"
+        );
+        assert!(
+            output.error.is_some(),
+            "ToolOutput.error should contain denial message"
+        );
+
+        let error_msg = output.error.unwrap();
+        assert!(
+            error_msg.contains("deny_test_tool"),
+            "Error message should contain tool name: {}",
+            error_msg
+        );
+        assert!(
+            error_msg.contains("denied") || error_msg.contains("Deny"),
+            "Error message should indicate permission denial: {}",
+            error_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_execute_tool_allows_non_deny_permission() {
+        // Test that tools with non-Deny permission (Auto, Ask) are allowed through
+        let orchestrator = Orchestrator::new();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+
+        // Register a tool that requires Ask permission (should be allowed)
+        let ask_tool = DenyPermissionTool::new(swell_core::PermissionTier::Ask);
+        tool_registry
+            .register(ask_tool, swell_tools::registry::ToolCategory::Misc)
+            .await;
+
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+
+        let result = controller
+            .execute_tool("deny_test_tool", serde_json::json!({}))
+            .await;
+
+        // Tool with Ask permission should execute (ToolOutput success=true)
+        // Note: The tool itself might fail, but the permission check should pass
+        match result {
+            Ok(output) => {
+                // Permission passed - tool executed
+                // The tool returns success:true with "should not reach here" but we don't care
+                // about the tool's internal logic, only that permission was checked
+                assert!(
+                    output.success || output.result.contains("should not reach here"),
+                    "Tool execution should proceed for Ask permission"
+                );
+            }
+            Err(e) => {
+                // If it errored, it should be because the tool's execute failed,
+                // not because of permission denial
+                let err_str = e.to_string();
+                assert!(
+                    !err_str.contains("denied") && !err_str.contains("Deny"),
+                    "Error should not be permission denial for Ask tier: {}",
+                    err_str
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_tool_auto_permission_allowed() {
+        // Test that tools with Auto permission are allowed through
+        let orchestrator = Orchestrator::new();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+
+        // Register a tool that requires Auto permission
+        let auto_tool = DenyPermissionTool::new(swell_core::PermissionTier::Auto);
+        tool_registry
+            .register(auto_tool, swell_tools::registry::ToolCategory::Misc)
+            .await;
+
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+
+        let result = controller
+            .execute_tool("deny_test_tool", serde_json::json!({}))
+            .await;
+
+        // Tool with Auto permission should execute
+        assert!(
+            result.is_ok(),
+            "Tool with Auto permission should not be denied: {:?}",
+            result
+        );
     }
 }
