@@ -9,13 +9,18 @@ use futures::stream::{self, StreamExt};
 use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::{AgentContext, AgentResult, SwellError, ValidationResult};
-use swell_llm::MockLlm;
+use swell_llm::LlmBackend;
+use swell_tools::ToolRegistry;
+use swell_validation::ValidationPipeline;
 use tracing::info;
 use uuid::Uuid;
 
 /// Manages concurrent task execution with up to 6 agents
 pub struct ExecutionController {
     orchestrator: Arc<Orchestrator>,
+    llm: Arc<dyn LlmBackend>,
+    tool_registry: Arc<ToolRegistry>,
+    validation_pipeline: ValidationPipeline,
     max_concurrent: usize,
     /// Frozen specs indexed by task_id, created at execution start
     frozen_specs: std::sync::RwLock<std::collections::HashMap<uuid::Uuid, FrozenSpecRef>>,
@@ -24,9 +29,40 @@ pub struct ExecutionController {
 }
 
 impl ExecutionController {
-    pub fn new(orchestrator: Arc<Orchestrator>) -> Self {
+    /// Create a new ExecutionController with injected dependencies.
+    ///
+    /// # Arguments
+    /// * `orchestrator` - The orchestrator for task coordination
+    /// * `llm` - The LLM backend for agent reasoning
+    /// * `tool_registry` - The tool registry for tool execution
+    pub fn new(
+        orchestrator: Arc<Orchestrator>,
+        llm: Arc<dyn LlmBackend>,
+        tool_registry: Arc<ToolRegistry>,
+    ) -> Self {
         Self {
             orchestrator,
+            llm,
+            tool_registry,
+            validation_pipeline: ValidationPipeline::new(),
+            max_concurrent: MAX_CONCURRENT_AGENTS,
+            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
+            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Create a new ExecutionController with a custom validation pipeline.
+    pub fn with_pipeline(
+        orchestrator: Arc<Orchestrator>,
+        llm: Arc<dyn LlmBackend>,
+        tool_registry: Arc<ToolRegistry>,
+        validation_pipeline: ValidationPipeline,
+    ) -> Self {
+        Self {
+            orchestrator,
+            llm,
+            tool_registry,
+            validation_pipeline,
             max_concurrent: MAX_CONCURRENT_AGENTS,
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
@@ -81,16 +117,9 @@ impl ExecutionController {
         let needs_planning = task.plan.is_none();
 
         if needs_planning {
-            // Use MockLlm for PlannerAgent since we don't have a real LLM in MVP
-            let mock_response = r#"{
-                "steps": [{"description": "Execute task", "affected_files": [], "expected_tests": [], "risk_level": "medium", "dependencies": []}],
-                "total_estimated_tokens": 1000,
-                "risk_assessment": "Medium risk"
-            }"#;
-            let mock_llm = Arc::new(MockLlm::with_response("claude-sonnet", mock_response));
-
-            // Run PlannerAgent to create the plan
-            let planner = PlannerAgent::with_llm("claude-sonnet".to_string(), mock_llm);
+            // Run PlannerAgent with injected LLM backend
+            let planner_llm = self.llm.clone();
+            let planner = PlannerAgent::with_llm("claude-sonnet".to_string(), planner_llm);
             let session_id = Uuid::new_v4();
             let context = AgentContext {
                 task,
@@ -169,8 +198,13 @@ impl ExecutionController {
         }
 
         // Step 3: Run GeneratorAgent to implement the plan
-        let generator = GeneratorAgent::new("claude-sonnet".to_string())
-            .with_checkpoint_manager(self.orchestrator.checkpoint_manager());
+        // Wire GeneratorAgent with injected LLM backend and ToolRegistry
+        let generator = GeneratorAgent::with_llm_and_tools(
+            "claude-sonnet".to_string(),
+            self.llm.clone(),
+            self.tool_registry.clone(),
+        )
+        .with_checkpoint_manager(self.orchestrator.checkpoint_manager());
 
         let session_id = Uuid::new_v4();
         let context = AgentContext {
@@ -186,8 +220,10 @@ impl ExecutionController {
         self.orchestrator.start_validation(task_id).await?;
 
         // Step 5: Run EvaluatorAgent with validation pipeline
-        // Use new() for MVP stub mode - with_defaults requires LLM which isn't available in execution context
-        let evaluator = EvaluatorAgent::new("claude-sonnet".to_string());
+        let evaluator = EvaluatorAgent::with_pipeline(
+            "claude-sonnet".to_string(),
+            self.validation_pipeline.clone(),
+        );
         let eval_context = AgentContext {
             task: self.orchestrator.get_task(task_id).await?,
             memory_blocks: Vec::new(),
@@ -264,6 +300,9 @@ impl Clone for ExecutionController {
     fn clone(&self) -> Self {
         Self {
             orchestrator: self.orchestrator.clone(),
+            llm: self.llm.clone(),
+            tool_registry: self.tool_registry.clone(),
+            validation_pipeline: self.validation_pipeline.clone(),
             max_concurrent: self.max_concurrent,
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
@@ -292,18 +331,25 @@ impl Default for ExecutionConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use swell_llm::MockLlm;
+    use swell_tools::ToolRegistry;
 
     #[tokio::test]
     async fn test_execution_controller_creation() {
         let orchestrator = Orchestrator::new();
-        let controller = ExecutionController::new(Arc::new(orchestrator));
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
         assert_eq!(controller.max_concurrent, MAX_CONCURRENT_AGENTS);
     }
 
     #[tokio::test]
     async fn test_batch_execution() {
         let orchestrator = Orchestrator::new();
-        let controller = ExecutionController::new(Arc::new(orchestrator));
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Create some tasks
         let task1 = controller
