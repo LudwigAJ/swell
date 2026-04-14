@@ -1,0 +1,54 @@
+{
+  "groupId": "scenario-mock",
+  "testedAt": "2026-04-14T12:30:00Z",
+  "isolation": {
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell",
+    "testCrate": "swell-llm",
+    "noExternalServices": true
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-PROMPT-005",
+      "title": "ScenarioMockLlm supports multi-turn scripted scenarios",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-llm -- scenario", "expected": "Tests for multi-turn scenario pass", "observed": "test_scenario_mock_basic_multi_turn passed" },
+        { "action": "Create scenario with 3 text responses", "expected": "Scenario accepts Vec<ScenarioStep>", "observed": "Scenario created with text responses ['Response 1', 'Response 2', 'Response 3']" },
+        { "action": "Call chat() 3 times in sequence", "expected": "Each call returns next scripted response", "observed": "First call returned 'Response 1', second 'Response 2', third 'Response 3'" }
+      ],
+      "evidence": {
+        "testResults": [
+          "cargo test -p swell-llm: 102 tests passed, 0 failed",
+          "test_scenario_mock_basic_multi_turn: ok",
+          "test_scenario_mock_stream_multi_turn: ok"
+        ],
+        "testCode": "crates/swell-llm/src/mock.rs:1017-1052"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROMPT-006",
+      "title": "ScenarioMockLlm can script tool_use responses",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-llm -- scenario", "expected": "Tests for tool_use scripting pass", "observed": "test_scenario_mock_with_tool_use passed" },
+        { "action": "Create scenario with tool_use step", "expected": "tool_use step includes name, id, arguments", "observed": "tool_use step created with name='file_read', id='call_1', arguments={'path': '/tmp/test.txt'}" },
+        { "action": "Call chat() and verify tool_calls", "expected": "Response contains tool_calls", "observed": "Response had tool_calls with correct id, name, and arguments" },
+        { "action": "Stream test for tool_use", "expected": "Stream emits ToolUse and ToolResult events", "observed": "test_scenario_mock_stream_with_tool_use passed" }
+      ],
+      "evidence": {
+        "testResults": [
+          "cargo test -p swell-llm: 102 tests passed, 0 failed",
+          "test_scenario_mock_with_tool_use: ok",
+          "test_scenario_mock_stream_with_tool_use: ok"
+        ],
+        "testCode": "crates/swell-llm/src/mock.rs:1082-1123"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions (VAL-PROMPT-005, VAL-PROMPT-006): Both passed. All 102 swell-llm tests passed. ScenarioMockLlm correctly supports multi-turn scripted scenarios (returns responses A, B, C in sequence) and can script tool_use responses with proper tool name, id, and arguments formatting."
+}

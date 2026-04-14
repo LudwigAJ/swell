@@ -1,0 +1,14 @@
+cargo test -p swell-orchestrator -- test_system_prompt_builder
+
+Result: All 7 tests passed (including the 4 tests for VAL-PROMPT-001 through VAL-PROMPT-004)
+
+Tests run:
+- test_system_prompt_builder_default_config ... ok
+- test_system_prompt_builder_usage_calculation ... ok
+- test_system_prompt_builder_section_ordering ... ok
+- test_system_prompt_builder_build ... ok
+- test_system_prompt_builder_dynamic_boundary ... ok
+- test_system_prompt_builder_instruction_file_discovery ... ok
+- test_system_prompt_builder_git_snapshot ... ok
+
+Date: 2026-04-14

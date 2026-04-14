@@ -1,0 +1,56 @@
+{
+  "groupId": "integration-tests",
+  "testedAt": "2026-04-14T10:42:00Z",
+  "isolation": {
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell",
+    "testType": "integration tests",
+    "noExternalServices": true
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-PROMPT-007",
+      "title": "Integration tests exist for full execution path",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-integration-tests --test prompt_integration_tests", "expected": "Tests exist covering plan→generate→validate", "observed": "12 tests passed covering full execution path" },
+        { "action": "Verify integration tests cover plan, generation, and validation stages", "expected": "Tests reference planning, generation, and validation", "observed": "Tests verify ValidationOrchestrator with plan→generate→validate pipeline" }
+      ],
+      "evidence": {
+        "testOutput": "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 64.45s",
+        "testFiles": ["crates/swell-integration-tests/tests/prompt_integration_tests.rs"],
+        "keyTests": [
+          "test_validate_task_completion_success_path",
+          "test_validate_task_completion_failure_path",
+          "test_full_pipeline_integration",
+          "test_scenario_mock_llm_with_validation"
+        ]
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROMPT-008",
+      "title": "ValidationOrchestrator provides single validate_task_completion entry point",
+      "status": "pass",
+      "steps": [
+        { "action": "cargo test -p swell-validation -- orchestrator", "expected": "ValidationOrchestrator::validate_task_completion exists and chains all gates", "observed": "16 tests passed confirming single entry point exists and chains lint→test→security gates" },
+        { "action": "Inspect ValidationOrchestrator source", "expected": "validate_task_completion method chains all gates in sequence", "observed": "validate_task_completion runs pipeline and returns aggregate result with gates_run tracking" }
+      ],
+      "evidence": {
+        "testOutput": "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 331 filtered out; finished in 17.92s",
+        "sourceFile": "crates/swell-validation/src/orchestrator.rs",
+        "keyMethods": [
+          "ValidationOrchestrator::validate_task_completion",
+          "ValidationOrchestrator::new",
+          "ValidationOrchestrator::with_all_gates",
+          "ValidationOrchestrator::with_fast_gates"
+        ],
+        "gatesTracked": ["lint", "test", "security", "ai_review"]
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 2 assertions (VAL-PROMPT-007, VAL-PROMPT-008): both passed. Integration tests for full execution path exist in swell-integration-tests crate (12 tests passed). ValidationOrchestrator provides single validate_task_completion entry point that chains all configured validation gates (16 tests passed)."
+}

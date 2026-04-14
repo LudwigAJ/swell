@@ -1,0 +1,25 @@
+{
+  "milestone": "M4",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-PROMPT-001",
+    "VAL-PROMPT-002",
+    "VAL-PROMPT-003",
+    "VAL-PROMPT-004",
+    "VAL-PROMPT-005",
+    "VAL-PROMPT-006",
+    "VAL-PROMPT-007",
+    "VAL-PROMPT-008"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}

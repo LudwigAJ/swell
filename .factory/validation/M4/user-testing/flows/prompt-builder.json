@@ -1,0 +1,67 @@
+{
+  "groupId": "prompt-builder",
+  "testedAt": "2026-04-14T12:00:00Z",
+  "isolation": {
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell",
+    "testCrate": "swell-orchestrator",
+    "noExternalServices": true
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-PROMPT-001",
+      "title": "SystemPromptBuilder discovers instruction files from workspace root",
+      "status": "pass",
+      "steps": [
+        { "action": "Run cargo test -p swell-orchestrator -- test_system_prompt_builder_instruction_file_discovery", "expected": "Test passes", "observed": "Test passed" }
+      ],
+      "evidence": {
+        "testOutput": "test_system_prompt_builder_instruction_file_discovery ... ok",
+        "testDetails": "Creates temp directory with CLAUDE.md and AGENTS.md, verifies discover_instruction_files() finds both files and reads their content"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROMPT-002",
+      "title": "SystemPromptBuilder inserts DYNAMIC_BOUNDARY marker",
+      "status": "pass",
+      "steps": [
+        { "action": "Run cargo test -p swell-orchestrator -- test_system_prompt_builder_dynamic_boundary", "expected": "Test passes", "observed": "Test passed" }
+      ],
+      "evidence": {
+        "testOutput": "test_system_prompt_builder_dynamic_boundary ... ok",
+        "testDetails": "Builds system prompt and asserts it contains DYNAMIC_BOUNDARY marker between static and dynamic sections"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROMPT-003",
+      "title": "PromptSection has ordering guarantees",
+      "status": "pass",
+      "steps": [
+        { "action": "Run cargo test -p swell-orchestrator -- test_system_prompt_builder_section_ordering", "expected": "Test passes", "observed": "Test passed" }
+      ],
+      "evidence": {
+        "testOutput": "test_system_prompt_builder_section_ordering ... ok",
+        "testDetails": "Verifies deterministic ordering: static sections before DYNAMIC_BOUNDARY, task context after DYNAMIC_BOUNDARY, and two builds with same input produce identical output"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-PROMPT-004",
+      "title": "Project context includes git snapshot",
+      "status": "pass",
+      "steps": [
+        { "action": "Run cargo test -p swell-orchestrator -- test_system_prompt_builder_git_snapshot", "expected": "Test passes", "observed": "Test passed" }
+      ],
+      "evidence": {
+        "testOutput": "test_system_prompt_builder_git_snapshot ... ok",
+        "testDetails": "Uses actual repository path, verifies get_git_snapshot() returns branch or commits info"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 4 assertions (VAL-PROMPT-001 to VAL-PROMPT-004): all 4 passed. Tests verify SystemPromptBuilder discovers instruction files (CLAUDE.md, AGENTS.md), inserts DYNAMIC_BOUNDARY marker, provides deterministic section ordering with static content before dynamic, and includes git snapshot (branch and commits) in project context."
+}
