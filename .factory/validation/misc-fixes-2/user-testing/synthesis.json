@@ -1,0 +1,64 @@
+{
+  "milestone": "misc-fixes-2",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "blocked": 0,
+    "note": "misc-fixes-2 contains 2 bug fixes (no new feature assertions). User testing validates no regressions via full test suite."
+  },
+  "passedAssertions": [],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "validationResults": {
+    "swell-orchestrator": {
+      "tests": {
+        "passed": 869,
+        "failed": 0,
+        "command": "cargo test -p swell-orchestrator -- --test-threads=4",
+        "exitCode": 0
+      },
+      "clippy": {
+        "passed": true,
+        "command": "cargo clippy -p swell-orchestrator -- -D warnings",
+        "exitCode": 0
+      }
+    },
+    "swell-integration-tests": {
+      "tests": {
+        "passed": 12,
+        "failed": 0,
+        "command": "cargo test -p swell-integration-tests -- --test-threads=4",
+        "exitCode": 0
+      },
+      "key_tests": [
+        "test_full_pipeline_integration (validates VAL-PROMPT-007)",
+        "test_validate_task_completion_success_path",
+        "test_validate_task_completion_failure_path"
+      ]
+    },
+    "build": {
+      "passed": true,
+      "command": "cargo build -p swell-orchestrator -p swell-integration-tests",
+      "exitCode": 0
+    }
+  },
+  "bugFixesValidated": [
+    {
+      "feature": "fix-integration-test-useless-assertions",
+      "file": "crates/swell-integration-tests/tests/prompt_integration_tests.rs",
+      "change": "replace u64 >= 0 with > 0 assertions",
+      "validatedBy": "All 12 integration tests pass"
+    },
+    {
+      "feature": "fix-git-snapshot-blocking-async",
+      "file": "crates/swell-orchestrator/src/agents.rs",
+      "change": "wrap blocking git calls with spawn_blocking",
+      "validatedBy": "869 orchestrator tests pass including async git operations"
+    }
+  ],
+  "appliedUpdates": [],
+  "previousRound": null
+}
