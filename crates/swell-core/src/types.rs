@@ -486,6 +486,74 @@ pub enum DaemonEvent {
     },
 }
 
+// ============================================================================
+// LLM Streaming Events
+// ============================================================================
+
+/// Events emitted during LLM streaming responses.
+///
+/// Used by the `chat_streaming` method on `LlmBackend` to provide
+/// real-time updates as the model generates content.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum StreamEvent {
+    /// A text delta event - partial text content
+    TextDelta {
+        /// The accumulated text so far
+        text: String,
+        /// The delta (增量) of text in this event
+        delta: String,
+    },
+
+    /// A tool use event - the model wants to call a tool
+    ToolUse {
+        /// The complete tool call with name and arguments
+        tool_call: LlmToolCall,
+    },
+
+    /// A tool result event - result from executing a tool
+    ToolResult {
+        /// The tool call ID this result corresponds to
+        tool_call_id: String,
+        /// The result content
+        result: String,
+        /// Whether the tool execution was successful
+        success: bool,
+    },
+
+    /// Usage statistics from the streaming response
+    Usage {
+        /// Tokens used in the prompt/input
+        input_tokens: u64,
+        /// Tokens generated in the response/output
+        output_tokens: u64,
+        /// Tokens written to provider-managed cache (Anthropic)
+        cache_creation_input_tokens: Option<u64>,
+        /// Tokens read from provider-managed cache (Anthropic)
+        cache_read_input_tokens: Option<u64>,
+    },
+
+    /// Stream completion event
+    MessageStop {
+        /// The reason the stream ended (e.g., "end_turn", "max_tokens", "stop_sequence")
+        stop_reason: Option<String>,
+    },
+
+    /// Error event during streaming
+    Error {
+        /// Error message
+        message: String,
+    },
+}
+
+/// A tool call request from an LLM (used in streaming context)
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LlmToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

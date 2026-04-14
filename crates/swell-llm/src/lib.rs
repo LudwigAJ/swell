@@ -17,14 +17,17 @@
 //! ```
 
 pub mod anthropic;
+pub mod credential;
 pub mod mock;
 pub mod openai;
+pub mod retry;
 pub mod router;
 pub mod traits;
 
 pub use anthropic::AnthropicBackend;
 pub use mock::MockLlm;
 pub use openai::OpenAIBackend;
+pub use retry::{calculate_backoff, is_retryable_status, LlmRetryConfig};
 pub use router::{
     CostOptimizer, ModelRoute, ModelRouter, ModelRouterBuilder, RouteConfig, TaskType,
 };

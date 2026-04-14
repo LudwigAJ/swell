@@ -135,6 +135,8 @@ impl LlmBackend for MockLlm {
                 input_tokens,
                 output_tokens,
                 total_tokens: input_tokens + output_tokens,
+                cache_creation_input_tokens: None,
+                cache_read_input_tokens: None,
             },
         })
     }

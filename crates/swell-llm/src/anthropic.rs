@@ -7,16 +7,18 @@
 //! provider-managed cache creation. The API response includes `cache_creation_input_tokens`
 //! (tokens written to cache) and `cache_read_input_tokens` (tokens read from cache).
 
-use crate::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRole, LlmToolDefinition, LlmUsage};
+use crate::{calculate_backoff, credential::validate_anthropic_key, is_retryable_status, LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmRetryConfig, LlmRole, LlmToolDefinition, LlmUsage};
 use async_trait::async_trait;
 use opentelemetry::trace::{Span, Tracer};
 use opentelemetry::KeyValue;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use swell_core::{
     opentelemetry::{gen_ai, pricing, GenAiSpanExt, LatencyTracker},
     record_llm_cost, LlmToolCall, SwellError,
 };
+use tokio::time::sleep;
 use tracing::{debug, warn};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -108,14 +110,29 @@ pub struct AnthropicBackend {
     model: String,
     api_key: String,
     client: Client,
+    retry_config: LlmRetryConfig,
 }
 
 impl AnthropicBackend {
     pub fn new(model: impl Into<String>, api_key: impl Into<String>) -> Self {
+        let api_key = api_key.into();
+        // Validate API key format to detect OpenAI keys being used with Anthropic backend
+        if let Err(e) = validate_anthropic_key(&api_key) {
+            tracing::warn!(error = %e, "Anthropic backend created with potentially mismatched API key format");
+        }
+        Self::with_retry_config(model, api_key, LlmRetryConfig::default())
+    }
+
+    pub fn with_retry_config(
+        model: impl Into<String>,
+        api_key: impl Into<String>,
+        retry_config: LlmRetryConfig,
+    ) -> Self {
         Self {
             model: model.into(),
             api_key: api_key.into(),
             client: Client::new(),
+            retry_config,
         }
     }
 
@@ -206,34 +223,87 @@ impl LlmBackend for AnthropicBackend {
 
         debug!(model = %self.model, "Anthropic API request");
 
-        // Make HTTP request with prompt caching beta header
-        let response = match self
-            .client
-            .post(ANTHROPIC_API_URL)
-            .header("x-api-key", &self.api_key)
-            .header("anthropic-version", "2023-06-01")
-            .header("anthropic-beta", PROMPT_CACHING_BETA)
-            .header("content-type", "application/json")
-            .json(&request)
-            .send()
-            .await
-        {
-            Ok(resp) => resp,
-            Err(e) => {
-                return Err(SwellError::LlmError(format!("Request failed: {}", e)));
+        // Retry loop for retryable errors (429, 5xx)
+        let max_attempts = self.retry_config.max_retries + 1; // +1 for initial attempt
+        let mut attempt = 0;
+
+        let response = loop {
+            attempt += 1;
+
+            // Make HTTP request with prompt caching beta header
+            let resp = match self
+                .client
+                .post(ANTHROPIC_API_URL)
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("anthropic-beta", PROMPT_CACHING_BETA)
+                .header("content-type", "application/json")
+                .json(&request)
+                .send()
+                .await
+            {
+                Ok(resp) => resp,
+                Err(e) => {
+                    // Network error - retry if attempts remaining
+                    if attempt < max_attempts {
+                        let delay_secs = calculate_backoff(attempt, &self.retry_config);
+                        warn!(
+                            attempt = attempt,
+                            error = %e,
+                            delay_secs = delay_secs,
+                            "Anthropic request failed, retrying"
+                        );
+                        sleep(Duration::from_secs_f64(delay_secs)).await;
+                        continue;
+                    }
+                    return Err(SwellError::LlmError(format!("Request failed: {}", e)));
+                }
+            };
+
+            let status = resp.status();
+
+            // Check if we should retry
+            if status.is_success() {
+                // Success - break with the response
+                break resp;
+            } else if is_retryable_status(status) && attempt < max_attempts {
+                // Retryable error (429, 5xx) - retry with backoff
+                let body = resp.text().await.unwrap_or_default();
+                let delay_secs = calculate_backoff(attempt, &self.retry_config);
+                warn!(
+                    attempt = attempt,
+                    status = %status,
+                    body = %body,
+                    delay_secs = delay_secs,
+                    "Anthropic API error, retrying"
+                );
+                sleep(Duration::from_secs_f64(delay_secs)).await;
+                continue;
+            } else if is_retryable_status(status) {
+                // Retryable error but no attempts left
+                let body = resp.text().await.unwrap_or_default();
+                warn!(
+                    status = %status,
+                    body = %body,
+                    "Anthropic API error: max retries exceeded"
+                );
+                return Err(SwellError::LlmError(format!(
+                    "API error {} after {} attempts: {}",
+                    status,
+                    attempt,
+                    body
+                )));
+            } else {
+                // Non-retryable error (400, 401, 403) - fail immediately
+                let body = resp.text().await.unwrap_or_default();
+                warn!(
+                    status = %status,
+                    body = %body,
+                    "Anthropic API non-retryable error"
+                );
+                return Err(SwellError::LlmError(format!("API error {}: {}", status, body)));
             }
         };
-
-        // Check status
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            warn!(status = %status, body = %body, "Anthropic API error");
-            return Err(SwellError::LlmError(format!(
-                "API error {}: {}",
-                status, body
-            )));
-        }
 
         // Parse response
         let api_response: Response = match response.json().await {
@@ -469,5 +539,114 @@ mod tests {
         assert_eq!(usage.output_tokens, 50);
         assert_eq!(usage.cache_creation_input_tokens, None);
         assert_eq!(usage.cache_read_input_tokens, Some(300));
+    }
+}
+
+// ============================================================================
+// Retry Behavior Integration Tests
+// ============================================================================
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+    use reqwest::StatusCode;
+
+    #[test]
+    fn test_anthropic_fails_immediately_on_bad_request() {
+        // Verify 400 is not retryable
+        let status_400 = StatusCode::from_u16(400).unwrap();
+        assert!(!is_retryable_status(status_400));
+    }
+
+    #[test]
+    fn test_anthropic_fails_immediately_on_unauthorized() {
+        // Verify 401 is not retryable
+        let status_401 = StatusCode::from_u16(401).unwrap();
+        assert!(!is_retryable_status(status_401));
+    }
+
+    #[test]
+    fn test_anthropic_fails_immediately_on_forbidden() {
+        // Verify 403 is not retryable
+        let status_403 = StatusCode::from_u16(403).unwrap();
+        assert!(!is_retryable_status(status_403));
+    }
+
+    #[test]
+    fn test_anthropic_retry_on_server_error() {
+        // Verify 500 is retryable
+        let status_500 = StatusCode::from_u16(500).unwrap();
+        assert!(is_retryable_status(status_500));
+
+        // Verify 502 is retryable
+        let status_502 = StatusCode::from_u16(502).unwrap();
+        assert!(is_retryable_status(status_502));
+
+        // Verify 503 is retryable
+        let status_503 = StatusCode::from_u16(503).unwrap();
+        assert!(is_retryable_status(status_503));
+
+        // Verify 504 is retryable
+        let status_504 = StatusCode::from_u16(504).unwrap();
+        assert!(is_retryable_status(status_504));
+    }
+
+    #[test]
+    fn test_anthropic_retry_config_in_backend() {
+        // Test that retry config is properly stored in backend
+        let retry_config = LlmRetryConfig::new()
+            .with_max_retries(5)
+            .with_base_delay_secs(2.0)
+            .with_max_delay_secs(30.0);
+
+        let backend = AnthropicBackend::with_retry_config(
+            "claude-sonnet-4-20250514",
+            "test-key",
+            retry_config.clone(),
+        );
+
+        assert_eq!(backend.retry_config.max_retries, 5);
+        assert_eq!(backend.retry_config.base_delay_secs, 2.0);
+        assert_eq!(backend.retry_config.max_delay_secs, 30.0);
+    }
+
+    #[test]
+    fn test_anthropic_default_retry_config() {
+        // Test that default retry config is applied when using new()
+        let backend = AnthropicBackend::new(
+            "claude-sonnet-4-20250514",
+            "test-key",
+        );
+
+        // Default: max_retries = 3, base_delay = 1.0, max_delay = 60.0
+        assert_eq!(backend.retry_config.max_retries, 3);
+        assert_eq!(backend.retry_config.base_delay_secs, 1.0);
+        assert_eq!(backend.retry_config.max_delay_secs, 60.0);
+    }
+
+    #[tokio::test]
+    async fn test_anthropic_retry_config_with_mockito_server() {
+        // This test validates the retry config is properly stored when a server URL is needed
+        use mockito::Server;
+
+        let server = Server::new_async().await;
+
+        // Create backend with only 3 retries
+        // Note: We don't make actual HTTP requests in this test, just verify config is stored
+        let retry_config = LlmRetryConfig::new()
+            .with_max_retries(3)
+            .with_base_delay_secs(0.01);
+        let backend = AnthropicBackend::with_retry_config(
+            "claude-sonnet-4-20250514",
+            "test-key",
+            retry_config,
+        );
+
+        // Verify retry config
+        assert_eq!(backend.retry_config.max_retries, 3);
+
+        // Keep server alive for the test duration
+        let _server_url = server.url();
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
     }
 }

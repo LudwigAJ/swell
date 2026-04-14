@@ -39,13 +39,8 @@ pub enum LlmRole {
     Assistant,
 }
 
-/// A tool call request from an LLM
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LlmToolCall {
-    pub id: String,
-    pub name: String,
-    pub arguments: serde_json::Value,
-}
+// Re-export LlmToolCall from types for convenience
+pub use crate::LlmToolCall;
 
 /// Response from an LLM
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -55,12 +50,18 @@ pub struct LlmResponse {
     pub usage: LlmUsage,
 }
 
-/// Token usage statistics
+/// Token usage statistics (four-dimensional for Anthropic cache support)
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct LlmUsage {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub total_tokens: u64,
+    /// Tokens written to provider-managed cache (Anthropic)
+    #[serde(default)]
+    pub cache_creation_input_tokens: Option<u64>,
+    /// Tokens read from provider-managed cache (Anthropic)
+    #[serde(default)]
+    pub cache_read_input_tokens: Option<u64>,
 }
 
 /// Configuration for an LLM call
@@ -69,6 +70,16 @@ pub struct LlmConfig {
     pub temperature: f32,
     pub max_tokens: u64,
     pub stop_sequences: Option<Vec<String>>,
+}
+
+impl Default for LlmConfig {
+    fn default() -> Self {
+        Self {
+            temperature: 1.0,
+            max_tokens: 8192,
+            stop_sequences: None,
+        }
+    }
 }
 
 /// LLM backend abstraction - allows swapping between providers
