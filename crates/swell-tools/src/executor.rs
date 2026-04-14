@@ -216,7 +216,7 @@ mod tests {
     async fn test_executor_permission_denied() {
         let registry = ToolRegistry::new();
         registry
-            .register(ReadFileTool::new(), crate::registry::ToolCategory::File)
+            .register(ReadFileTool::new(), crate::registry::ToolCategory::File, crate::registry::ToolLayer::Builtin)
             .await;
 
         let executor = ToolExecutor::new(registry);

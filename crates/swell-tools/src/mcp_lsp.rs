@@ -674,30 +674,35 @@ impl LspBridgeManager {
                     .register(
                         LspDefinitionTool::new(client.clone()),
                         super::registry::ToolCategory::Mcp,
+                        super::registry::ToolLayer::Plugin,
                     )
                     .await;
                 registry
                     .register(
                         LspReferencesTool::new(client.clone()),
                         super::registry::ToolCategory::Mcp,
+                        super::registry::ToolLayer::Plugin,
                     )
                     .await;
                 registry
                     .register(
                         LspHoverTool::new(client.clone()),
                         super::registry::ToolCategory::Mcp,
+                        super::registry::ToolLayer::Plugin,
                     )
                     .await;
                 registry
                     .register(
                         LspDiagnosticsTool::new(client.clone()),
                         super::registry::ToolCategory::Mcp,
+                        super::registry::ToolLayer::Plugin,
                     )
                     .await;
                 registry
                     .register(
                         LspRenameTool::new(client.clone()),
                         super::registry::ToolCategory::Mcp,
+                        super::registry::ToolLayer::Plugin,
                     )
                     .await;
             }

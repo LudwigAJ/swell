@@ -859,7 +859,7 @@ impl McpManager {
         for info in tools {
             let wrapper = McpToolWrapper::new(info, client.clone());
             registry
-                .register(wrapper, crate::registry::ToolCategory::Mcp)
+                .register(wrapper, crate::registry::ToolCategory::Mcp, crate::registry::ToolLayer::Plugin)
                 .await;
         }
 

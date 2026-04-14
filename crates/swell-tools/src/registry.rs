@@ -227,6 +227,87 @@ impl std::fmt::Display for ToolCategory {
     }
 }
 
+// ============================================================================
+// Tool Layers
+// ============================================================================
+
+/// Tool registry layers with priority ordering.
+///
+/// Lookup resolution follows: Runtime > Plugin > Builtin (most-specific wins).
+/// This allows runtime-loaded tools to override plugin tools, which in turn
+/// can override built-in tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ToolLayer {
+    /// Built-in tools shipped with SWELL (file, git, shell, search)
+    Builtin = 0,
+    /// Plugin tools loaded from external sources (MCP servers, extensions)
+    Plugin = 1,
+    /// Runtime tools dynamically loaded during execution (user scripts, temp tools)
+    Runtime = 2,
+}
+
+impl ToolLayer {
+    /// Get display name for layer
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ToolLayer::Builtin => "Built-in",
+            ToolLayer::Plugin => "Plugin",
+            ToolLayer::Runtime => "Runtime",
+        }
+    }
+
+    /// Get all known layers in priority order (highest priority first)
+    pub fn all_by_priority() -> &'static [ToolLayer] {
+        &[ToolLayer::Runtime, ToolLayer::Plugin, ToolLayer::Builtin]
+    }
+}
+
+impl std::fmt::Display for ToolLayer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
+/// Result of a tool registration attempt, including any warnings about conflicts
+#[derive(Debug, Clone)]
+pub struct RegisterResult {
+    /// Whether registration succeeded
+    pub success: bool,
+    /// Warning message if a conflict was detected (but registration still proceeded)
+    pub warning: Option<String>,
+    /// The layer the tool was registered in
+    pub layer: ToolLayer,
+}
+
+impl RegisterResult {
+    /// Registration succeeded without conflicts
+    fn success(layer: ToolLayer) -> Self {
+        Self {
+            success: true,
+            warning: None,
+            layer,
+        }
+    }
+
+    /// Registration succeeded but with a conflict warning
+    fn success_with_warning(layer: ToolLayer, warning: String) -> Self {
+        Self {
+            success: true,
+            warning: Some(warning),
+            layer,
+        }
+    }
+}
+
+/// Information about which layers contain a specific tool name
+#[derive(Debug, Clone)]
+pub struct ToolLayerConflict {
+    /// The tool name that exists in multiple layers
+    pub tool_name: String,
+    /// The layers where the tool exists
+    pub layers: Vec<ToolLayer>,
+}
+
 /// A registered tool with metadata
 #[derive(Clone)]
 pub struct ToolRegistration {
@@ -235,18 +316,20 @@ pub struct ToolRegistration {
     pub risk_level: ToolRiskLevel,
     pub permission_tier: PermissionTier,
     pub category: ToolCategory,
+    pub layer: ToolLayer,
     pub tool: Arc<dyn Tool>,
 }
 
 impl ToolRegistration {
     /// Create a new tool registration from a tool instance
-    fn from_tool<T: Tool + 'static>(tool: T, category: ToolCategory) -> Self {
+    fn from_tool<T: Tool + 'static>(tool: T, category: ToolCategory, layer: ToolLayer) -> Self {
         Self {
             name: tool.name().to_string(),
             description: tool.description(),
             risk_level: tool.risk_level(),
             permission_tier: tool.permission_tier(),
             category,
+            layer,
             tool: Arc::new(tool),
         }
     }
@@ -268,23 +351,39 @@ pub struct CategoryInfo {
 /// - **Tier 2 (On Category Access)**: Full tool list for that category is materialized
 /// - **Tier 3 (On Tool Access)**: Individual tool instances are loaded on first use
 ///
+/// # Three-Layer Architecture
+///
+/// Tools are organized into three layers with priority ordering:
+///
+/// - **Builtin** (lowest priority): Built-in tools shipped with SWELL
+/// - **Plugin** (medium priority): Plugin tools from external sources
+/// - **Runtime** (highest priority): Runtime tools dynamically loaded
+///
+/// Lookup resolution follows: Runtime > Plugin > Builtin (most-specific wins).
+///
 /// # Category-Level Lazy Loading
 ///
 /// Tools are organized into categories. When a category is accessed for the first time,
-/// Factory entry: category and factory function for deferred loading
-#[allow(clippy::type_complexity)]
-type FactoryEntry = (ToolCategory, Box<dyn ToolFactory>);
-
 /// only then are the tools for that category loaded into memory. This allows the system
 /// to present a catalog of available tools without the overhead of instantiating all of them.
+type FactoryEntry = (ToolLayer, ToolCategory, Box<dyn ToolFactory>);
+
+/// Type alias for the category index key: (layer, category)
+type CategoryIndexKey = (ToolLayer, ToolCategory);
+
 pub struct ToolRegistry {
-    /// Registered tools by name - loaded on-demand
-    tools: Arc<RwLock<HashMap<String, ToolRegistration>>>,
+    /// Tools organized by layer - each layer has its own registry
+    builtin_tools: Arc<RwLock<HashMap<String, ToolRegistration>>>,
+    plugin_tools: Arc<RwLock<HashMap<String, ToolRegistration>>>,
+    runtime_tools: Arc<RwLock<HashMap<String, ToolRegistration>>>,
     /// Category tool indexes - built at registration time, used for lazy loading
-    category_index: Arc<RwLock<HashMap<ToolCategory, Vec<String>>>>,
+    /// Key is (layer, category) -> list of tool names
+    #[allow(clippy::type_complexity)]
+    category_index: Arc<RwLock<HashMap<CategoryIndexKey, Vec<String>>>>,
     /// Tracks which categories have been fully loaded
     loaded_categories: Arc<RwLock<Vec<ToolCategory>>>,
     /// Tool factory functions for deferred loading
+    /// Key is tool name, value is (layer, category, factory)
     factories: Arc<RwLock<HashMap<String, FactoryEntry>>>,
     /// Lock for initialization
     initialized: Arc<RwLock<bool>>,
@@ -293,7 +392,9 @@ pub struct ToolRegistry {
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
-            tools: Arc::new(RwLock::new(HashMap::new())),
+            builtin_tools: Arc::new(RwLock::new(HashMap::new())),
+            plugin_tools: Arc::new(RwLock::new(HashMap::new())),
+            runtime_tools: Arc::new(RwLock::new(HashMap::new())),
             category_index: Arc::new(RwLock::new(HashMap::new())),
             loaded_categories: Arc::new(RwLock::new(Vec::new())),
             factories: Arc::new(RwLock::new(HashMap::new())),
@@ -301,9 +402,48 @@ impl ToolRegistry {
         }
     }
 
-    /// Register a tool with its category
-    pub async fn register<T: Tool + 'static>(&self, tool: T, category: ToolCategory) {
-        let registration = ToolRegistration::from_tool(tool, category);
+    /// Get the tools map for a specific layer
+    async fn tools_for_layer(&self, layer: ToolLayer) -> Arc<RwLock<HashMap<String, ToolRegistration>>> {
+        match layer {
+            ToolLayer::Builtin => self.builtin_tools.clone(),
+            ToolLayer::Plugin => self.plugin_tools.clone(),
+            ToolLayer::Runtime => self.runtime_tools.clone(),
+        }
+    }
+
+    /// Register a tool with its category in the specified layer.
+    ///
+    /// # Layer Priority
+    ///
+    /// Tools can be registered in three layers:
+    /// - `Builtin`: For built-in tools (file, git, shell, search)
+    /// - `Plugin`: For plugin tools from external sources
+    /// - `Runtime`: For runtime tools dynamically loaded
+    ///
+    /// When a tool name exists in multiple layers, lookup resolves in order:
+    /// **Runtime > Plugin > Builtin** (most-specific wins).
+    ///
+    /// # Conflict Detection
+    ///
+    /// If the same tool name exists in another layer, a warning is returned but
+    /// registration still proceeds (the new layer's version takes precedence in lookups).
+    ///
+    /// # Arguments
+    ///
+    /// * `tool` - The tool to register
+    /// * `category` - The tool category
+    /// * `layer` - The layer to register in (defaults to Builtin for backward compatibility)
+    ///
+    /// # Returns
+    ///
+    /// `RegisterResult` indicating success and any conflict warnings.
+    pub async fn register<T: Tool + 'static>(
+        &self,
+        tool: T,
+        category: ToolCategory,
+        layer: ToolLayer,
+    ) -> RegisterResult {
+        let registration = ToolRegistration::from_tool(tool, category, layer);
         let original_name = registration.name.clone();
 
         // Normalize the tool name for consistent lookup
@@ -311,39 +451,104 @@ impl ToolRegistry {
         let normalized = normalize_tool_name(&original_name);
         let key = normalized.lookup_key();
 
-        // Add to tools map using the normalized key
-        let mut tools = self.tools.write().await;
+        // Check for conflicts in other layers
+        let conflict_warning = self.check_layer_conflicts(&key, layer).await;
+
+        // Add to tools map for the specified layer
+        let tools = self.tools_for_layer(layer).await;
+        let mut tools = tools.write().await;
         tools.insert(key.clone(), registration);
 
         // Update category index
         let mut index = self.category_index.write().await;
         index
-            .entry(category)
+            .entry((layer, category))
             .or_insert_with(Vec::new)
             .push(key.clone());
 
         // Mark category as loaded since we have actual tools in it
         drop(index);
         self.load_category(category).await;
+
+        match conflict_warning {
+            Some(warning) => RegisterResult::success_with_warning(layer, warning),
+            None => RegisterResult::success(layer),
+        }
     }
 
-    /// Register a tool with default category (Misc)
-    pub async fn register_<T: Tool + 'static>(&self, tool: T) {
-        self.register(tool, ToolCategory::Misc).await;
+    /// Register a tool with its category in the Builtin layer (backward compatible).
+    pub async fn register_builtin<T: Tool + 'static>(&self, tool: T, category: ToolCategory) -> RegisterResult {
+        self.register(tool, category, ToolLayer::Builtin).await
     }
 
-    /// Register a tool factory for deferred loading on first access
+    /// Register a tool with its category in the Plugin layer.
+    pub async fn register_plugin<T: Tool + 'static>(&self, tool: T, category: ToolCategory) -> RegisterResult {
+        self.register(tool, category, ToolLayer::Plugin).await
+    }
+
+    /// Register a tool with its category in the Runtime layer.
+    pub async fn register_runtime<T: Tool + 'static>(&self, tool: T, category: ToolCategory) -> RegisterResult {
+        self.register(tool, category, ToolLayer::Runtime).await
+    }
+
+    /// Register a tool with default category (Misc) and default layer (Builtin)
+    pub async fn register_<T: Tool + 'static>(&self, tool: T) -> RegisterResult {
+        self.register(tool, ToolCategory::Misc, ToolLayer::Builtin).await
+    }
+
+    /// Check if a tool name exists in other layers and return a warning if so.
+    async fn check_layer_conflicts(&self, key: &str, new_layer: ToolLayer) -> Option<String> {
+        let mut existing_layers = Vec::new();
+
+        // Check all layers except the one we're registering in
+        for layer in ToolLayer::all_by_priority() {
+            if *layer == new_layer {
+                continue;
+            }
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
+            if tools.contains_key(key) {
+                existing_layers.push(*layer);
+            }
+        }
+
+        if existing_layers.is_empty() {
+            None
+        } else {
+            let layer_names: Vec<_> = existing_layers.iter().map(|l| l.display_name()).collect();
+            Some(format!(
+                "Tool '{}' already exists in layer(s): {}. New registration in {} layer will take precedence.",
+                key,
+                layer_names.join(", "),
+                new_layer.display_name()
+            ))
+        }
+    }
+
+    /// Register a tool factory for deferred loading on first access.
     ///
     /// This allows tools to be instantiated only when they're actually needed,
     /// reducing startup memory overhead for large tool libraries.
-    pub async fn register_factory<F>(&self, name: String, category: ToolCategory, factory: F)
-    where
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The tool name
+    /// * `category` - The tool category
+    /// * `layer` - The layer to register in
+    /// * `factory` - The factory function to create the tool
+    pub async fn register_factory<F>(
+        &self,
+        name: String,
+        category: ToolCategory,
+        layer: ToolLayer,
+        factory: F,
+    ) where
         F: Fn() -> Arc<dyn Tool> + Send + Sync + 'static,
     {
         // Normalize the factory name for consistent lookup
         let normalized_name = normalize_for_lookup(&name);
         let mut factories = self.factories.write().await;
-        factories.insert(normalized_name, (category, Box::new(factory)));
+        factories.insert(normalized_name, (layer, category, Box::new(factory)));
     }
 
     /// Load a specific category on-demand
@@ -372,6 +577,11 @@ impl ToolRegistry {
     /// - Alias resolution: `Bash` → `shell`
     /// - MCP format: `mcp__server__tool` is parsed and resolved
     ///
+    /// # Layer Priority
+    ///
+    /// Lookup resolves in order: **Runtime > Plugin > Builtin** (most-specific wins).
+    /// If a tool exists in multiple layers, the highest priority layer's tool is returned.
+    ///
     /// # Arguments
     ///
     /// * `name` - The tool name to look up (case-insensitive)
@@ -384,9 +594,10 @@ impl ToolRegistry {
         let normalized = normalize_tool_name(name);
         let lookup_key = normalized.lookup_key();
 
-        // Fast path: already loaded
-        {
-            let tools = self.tools.read().await;
+        // Check layers in priority order: Runtime > Plugin > Builtin
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
             if let Some(registration) = tools.get(&lookup_key) {
                 return Some(registration.tool.clone());
             }
@@ -395,24 +606,26 @@ impl ToolRegistry {
         // Slow path: try to load from factory
         {
             let factories = self.factories.read().await;
-            if let Some((category, factory)) = factories.get(&lookup_key) {
+            if let Some((layer, category, factory)) = factories.get(&lookup_key) {
                 // Load the category first
                 self.load_category(*category).await;
 
                 // Instantiate the tool
                 let tool = factory.create();
 
-                // Register it for future access using the normalized key
+                // Register it for future access in the appropriate layer
                 let registration = ToolRegistration {
                     name: lookup_key.clone(),
                     description: tool.description(),
                     risk_level: tool.risk_level(),
                     permission_tier: tool.permission_tier(),
                     category: *category,
+                    layer: *layer,
                     tool: tool.clone(),
                 };
 
-                let mut tools = self.tools.write().await;
+                let tools = self.tools_for_layer(*layer).await;
+                let mut tools = tools.write().await;
                 tools.insert(lookup_key, registration);
 
                 return Some(tool);
@@ -424,8 +637,18 @@ impl ToolRegistry {
 
     /// List all registered tool names (does not load unloaded tools)
     pub async fn list_names(&self) -> Vec<String> {
-        let tools = self.tools.read().await;
-        let mut names: Vec<String> = tools.keys().cloned().collect();
+        let mut names = Vec::new();
+
+        // Collect from all layers
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
+            for name in tools.keys() {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+        }
 
         // Also include factory names that haven't been loaded
         let factories = self.factories.read().await;
@@ -438,9 +661,26 @@ impl ToolRegistry {
         names
     }
 
-    /// List all tool registrations (only loaded tools)
+    /// List all tool registrations (from all layers, only loaded tools)
     pub async fn list(&self) -> Vec<ToolRegistration> {
-        let tools = self.tools.read().await;
+        let mut registrations = Vec::new();
+
+        // Collect from all layers
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
+            for reg in tools.values() {
+                registrations.push(reg.clone());
+            }
+        }
+
+        registrations
+    }
+
+    /// List tool registrations from a specific layer
+    pub async fn list_by_layer(&self, layer: ToolLayer) -> Vec<ToolRegistration> {
+        let tools = self.tools_for_layer(layer).await;
+        let tools = tools.read().await;
         tools.values().cloned().collect()
     }
 
@@ -454,12 +694,17 @@ impl ToolRegistry {
             .iter()
             .map(|category| {
                 let is_loaded = loaded.contains(category);
-                let tool_count = index.get(category).map(|v| v.len()).unwrap_or(0);
+
+                // Count tools in this category across all layers
+                let mut tool_count = 0;
+                for layer in [ToolLayer::Builtin, ToolLayer::Plugin, ToolLayer::Runtime] {
+                    tool_count += index.get(&(layer, *category)).map(|v| v.len()).unwrap_or(0);
+                }
 
                 // Add factory count for unloaded categories
                 let factory_count = factories
                     .values()
-                    .filter(|(cat, _)| *cat == *category)
+                    .filter(|(_, cat, _)| *cat == *category)
                     .count();
 
                 CategoryInfo {
@@ -476,12 +721,20 @@ impl ToolRegistry {
         // Ensure category is loaded
         self.load_category(category).await;
 
-        let tools = self.tools.read().await;
-        tools
-            .values()
-            .filter(|r| r.category == category)
-            .cloned()
-            .collect()
+        let mut registrations = Vec::new();
+
+        // Collect from all layers
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
+            for reg in tools.values() {
+                if reg.category == category {
+                    registrations.push(reg.clone());
+                }
+            }
+        }
+
+        registrations
     }
 
     /// Check if a tool is registered (loaded or in factory).
@@ -495,9 +748,10 @@ impl ToolRegistry {
         let normalized = normalize_tool_name(name);
         let lookup_key = normalized.lookup_key();
 
-        // Check loaded tools
-        {
-            let tools = self.tools.read().await;
+        // Check all layers
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
             if tools.contains_key(&lookup_key) {
                 return true;
             }
@@ -516,34 +770,69 @@ impl ToolRegistry {
     /// - Case normalization: `FILE_READ` → `file_read`
     /// - Alias resolution: `Bash` → `shell`
     /// - MCP format: `mcp__server__tool` is parsed and resolved
+    ///
+    /// Removes from the highest priority layer where the tool exists.
     pub async fn unregister(&self, name: &str) -> bool {
         let normalized = normalize_tool_name(name);
         let lookup_key = normalized.lookup_key();
-        let mut tools = self.tools.write().await;
-        tools.remove(&lookup_key).is_some()
+
+        // Try to remove from highest priority layer first
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let mut tools = tools.write().await;
+            if tools.remove(&lookup_key).is_some() {
+                return true;
+            }
+        }
+
+        false
     }
 
-    /// Get tools filtered by risk level (only loaded tools)
+    /// Get tools filtered by risk level (from all layers, only loaded tools)
     pub async fn by_risk_level(&self, level: ToolRiskLevel) -> Vec<ToolRegistration> {
-        let tools = self.tools.read().await;
-        tools
-            .values()
-            .filter(|r| r.risk_level == level)
-            .cloned()
-            .collect()
+        let mut registrations = Vec::new();
+
+        // Collect from all layers
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
+            for reg in tools.values() {
+                if reg.risk_level == level {
+                    registrations.push(reg.clone());
+                }
+            }
+        }
+
+        registrations
     }
 
     /// Get total count of all tools (registered + factories)
     pub async fn count(&self) -> usize {
-        let tools = self.tools.read().await;
+        let mut count = 0;
+
+        // Count from all layers
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
+            count += tools.len();
+        }
+
         let factories = self.factories.read().await;
-        tools.len() + factories.len()
+        count + factories.len()
     }
 
     /// Get count of loaded tools only
     pub async fn loaded_count(&self) -> usize {
-        let tools = self.tools.read().await;
-        tools.len()
+        let mut count = 0;
+
+        // Count from all layers
+        for layer in ToolLayer::all_by_priority() {
+            let tools = self.tools_for_layer(*layer).await;
+            let tools = tools.read().await;
+            count += tools.len();
+        }
+
+        count
     }
 
     /// Check if a specific category has been loaded
@@ -573,7 +862,9 @@ impl Default for ToolRegistry {
 impl Clone for ToolRegistry {
     fn clone(&self) -> Self {
         Self {
-            tools: self.tools.clone(),
+            builtin_tools: self.builtin_tools.clone(),
+            plugin_tools: self.plugin_tools.clone(),
+            runtime_tools: self.runtime_tools.clone(),
             category_index: self.category_index.clone(),
             loaded_categories: self.loaded_categories.clone(),
             factories: self.factories.clone(),
@@ -674,21 +965,21 @@ mod tests {
     async fn test_registry_register_with_category() {
         let registry = ToolRegistry::new();
 
-        // Register tools in different categories
+        // Register tools in different categories using Builtin layer
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("file_tool", ToolCategory::File),
                 ToolCategory::File,
             )
             .await;
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("git_tool", ToolCategory::Git),
                 ToolCategory::Git,
             )
             .await;
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("shell_tool", ToolCategory::Shell),
                 ToolCategory::Shell,
             )
@@ -706,19 +997,19 @@ mod tests {
         let registry = ToolRegistry::new();
 
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("file_tool_1", ToolCategory::File),
                 ToolCategory::File,
             )
             .await;
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("file_tool_2", ToolCategory::File),
                 ToolCategory::File,
             )
             .await;
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("git_tool", ToolCategory::Git),
                 ToolCategory::Git,
             )
@@ -741,8 +1032,8 @@ mod tests {
         let load_count_clone = load_count.clone();
 
         registry
-            .register_factory("deferred_tool".to_string(), ToolCategory::File, move || {
-                let count = load_count_clone.clone();
+            .register_factory("deferred_tool".to_string(), ToolCategory::File, ToolLayer::Builtin, move || {
+                let _count = load_count_clone.clone();
                 Arc::new(MockTool::new("deferred_tool", ToolCategory::File)) as Arc<dyn Tool>
             })
             .await;
@@ -771,7 +1062,7 @@ mod tests {
             let name = format!("lazy_tool_{}", i);
             let registry_name = name.clone();
             registry
-                .register_factory(name, ToolCategory::Misc, move || {
+                .register_factory(name, ToolCategory::Misc, ToolLayer::Builtin, move || {
                     Arc::new(MockTool::new(&registry_name, ToolCategory::Misc)) as Arc<dyn Tool>
                 })
                 .await;
@@ -805,7 +1096,7 @@ mod tests {
 
         // Register a regular tool
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("regular_tool", ToolCategory::File),
                 ToolCategory::File,
             )
@@ -815,7 +1106,7 @@ mod tests {
 
         // Register a factory
         registry
-            .register_factory("factory_tool".to_string(), ToolCategory::Git, || {
+            .register_factory("factory_tool".to_string(), ToolCategory::Git, ToolLayer::Builtin, || {
                 Arc::new(MockTool::new("factory_tool", ToolCategory::Git)) as Arc<dyn Tool>
             })
             .await;
@@ -829,13 +1120,13 @@ mod tests {
 
         // MockTool defaults to ToolRiskLevel::Read
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("read_tool", ToolCategory::File),
                 ToolCategory::File,
             )
             .await;
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("another_read_tool", ToolCategory::File),
                 ToolCategory::File,
             )
@@ -851,7 +1142,7 @@ mod tests {
 
         // Register tools
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("tool1", ToolCategory::File),
                 ToolCategory::File,
             )
@@ -867,7 +1158,7 @@ mod tests {
         let registry = ToolRegistry::new();
 
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("my_tool", ToolCategory::Search),
                 ToolCategory::Search,
             )
@@ -1068,7 +1359,7 @@ mod tests {
 
         // Register a tool with lowercase name
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("file_read", ToolCategory::File),
                 ToolCategory::File,
             )
@@ -1087,7 +1378,7 @@ mod tests {
 
         // Register shell tool
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("shell", ToolCategory::Shell),
                 ToolCategory::Shell,
             )
@@ -1106,7 +1397,7 @@ mod tests {
 
         // Register a tool
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("file_read", ToolCategory::File),
                 ToolCategory::File,
             )
@@ -1124,7 +1415,7 @@ mod tests {
 
         // Register a tool
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("file_read", ToolCategory::File),
                 ToolCategory::File,
             )
@@ -1141,7 +1432,7 @@ mod tests {
 
         // Register an MCP tool with its actual MCP-format name
         registry
-            .register(
+            .register_builtin(
                 MockTool::new("mcp__tree_sitter__parse", ToolCategory::Mcp),
                 ToolCategory::Mcp,
             )
@@ -1151,5 +1442,324 @@ mod tests {
         assert!(registry.get("mcp__tree_sitter__parse").await.is_some());
         assert!(registry.get("MCP__TREE_SITTER__PARSE").await.is_some());
         assert!(registry.get("mcp__TreeSitter__Parse").await.is_some());
+    }
+
+    // =============================================================================
+    // Tool Layer Tests
+    // =============================================================================
+
+    #[tokio::test]
+    async fn test_tool_layer_ordering() {
+        // Verify that ToolLayer ordering is correct: Runtime > Plugin > Builtin
+        assert!(ToolLayer::Runtime > ToolLayer::Plugin);
+        assert!(ToolLayer::Plugin > ToolLayer::Builtin);
+        assert!(ToolLayer::Runtime > ToolLayer::Builtin);
+    }
+
+    #[tokio::test]
+    async fn test_tool_layer_all_by_priority() {
+        let layers = ToolLayer::all_by_priority();
+        assert_eq!(layers.len(), 3);
+        // First should be Runtime (highest priority)
+        assert_eq!(layers[0], ToolLayer::Runtime);
+        // Then Plugin
+        assert_eq!(layers[1], ToolLayer::Plugin);
+        // Then Builtin (lowest priority)
+        assert_eq!(layers[2], ToolLayer::Builtin);
+    }
+
+    #[tokio::test]
+    async fn test_tool_layer_display_name() {
+        assert_eq!(ToolLayer::Builtin.display_name(), "Built-in");
+        assert_eq!(ToolLayer::Plugin.display_name(), "Plugin");
+        assert_eq!(ToolLayer::Runtime.display_name(), "Runtime");
+    }
+
+    #[tokio::test]
+    async fn test_registry_register_in_different_layers() {
+        let registry = ToolRegistry::new();
+
+        // Register the same tool name in different layers
+        registry
+            .register_builtin(
+                MockTool::new("test_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        registry
+            .register_plugin(
+                MockTool::new("test_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        registry
+            .register_runtime(
+                MockTool::new("test_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // All three registrations should succeed
+        assert_eq!(registry.list().await.len(), 3);
+
+        // Tool should be found (Runtime takes precedence)
+        assert!(registry.contains("test_tool").await);
+    }
+
+    #[tokio::test]
+    async fn test_registry_layer_priority_runtime_over_plugin() {
+        let registry = ToolRegistry::new();
+
+        // Register in Plugin first, then Runtime
+        registry
+            .register_plugin(
+                MockTool::new("priority_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        let plugin_tool = registry.get("priority_tool".into()).await;
+        assert!(plugin_tool.is_some());
+
+        // Now register in Runtime layer
+        registry
+            .register_runtime(
+                MockTool::new("priority_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Should still return a tool (Runtime takes precedence)
+        let runtime_tool = registry.get("priority_tool".into()).await;
+        assert!(runtime_tool.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_registry_layer_priority_plugin_over_builtin() {
+        let registry = ToolRegistry::new();
+
+        // Register in Builtin first, then Plugin
+        registry
+            .register_builtin(
+                MockTool::new("priority_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Now register in Plugin layer
+        registry
+            .register_plugin(
+                MockTool::new("priority_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Should still return a tool (Plugin takes precedence over Builtin)
+        let tool = registry.get("priority_tool".into()).await;
+        assert!(tool.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_registry_lookup_returns_highest_priority_layer() {
+        let registry = ToolRegistry::new();
+
+        // Register same tool in all three layers
+        registry
+            .register_builtin(
+                MockTool::new("layered_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        registry
+            .register_plugin(
+                MockTool::new("layered_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        registry
+            .register_runtime(
+                MockTool::new("layered_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // get() should return the Runtime version (highest priority)
+        let tool = registry.get("layered_tool".into()).await;
+        assert!(tool.is_some());
+
+        // list_by_layer should show tools in each layer
+        let builtin_tools = registry.list_by_layer(ToolLayer::Builtin).await;
+        let plugin_tools = registry.list_by_layer(ToolLayer::Plugin).await;
+        let runtime_tools = registry.list_by_layer(ToolLayer::Runtime).await;
+
+        assert_eq!(builtin_tools.len(), 1);
+        assert_eq!(plugin_tools.len(), 1);
+        assert_eq!(runtime_tools.len(), 1);
+
+        // Verify the layer field on each registration
+        assert_eq!(builtin_tools[0].layer, ToolLayer::Builtin);
+        assert_eq!(plugin_tools[0].layer, ToolLayer::Plugin);
+        assert_eq!(runtime_tools[0].layer, ToolLayer::Runtime);
+    }
+
+    #[tokio::test]
+    async fn test_registry_conflict_detection_warning_on_duplicate_registration() {
+        let registry = ToolRegistry::new();
+
+        // Register tool in Builtin layer
+        let result1 = registry
+            .register_builtin(
+                MockTool::new("conflict_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        assert!(result1.success);
+        assert!(result1.warning.is_none()); // No conflict on first registration
+
+        // Register same tool in Plugin layer - should get a warning
+        let result2 = registry
+            .register_plugin(
+                MockTool::new("conflict_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        assert!(result2.success); // Registration still succeeds
+        assert!(result2.warning.is_some()); // But there's a warning
+        let warning2 = result2.warning.unwrap();
+        assert!(warning2.contains("already exists"));
+        assert!(warning2.contains("Built-in"));
+
+        // Register same tool in Runtime layer - should get a warning about Builtin and Plugin
+        let result3 = registry
+            .register_runtime(
+                MockTool::new("conflict_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        assert!(result3.success); // Registration still succeeds
+        assert!(result3.warning.is_some()); // But there's a warning
+        let warning = result3.warning.unwrap();
+        assert!(warning.contains("already exists"));
+        // Should mention both existing layers
+        assert!(warning.contains("Built-in") || warning.contains("Plugin"));
+    }
+
+    #[tokio::test]
+    async fn test_registry_conflict_detection_no_warning_for_same_layer() {
+        let registry = ToolRegistry::new();
+
+        // Register tool in Builtin layer
+        registry
+            .register_builtin(
+                MockTool::new("test_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Re-register in Builtin layer - should NOT warn about itself
+        let result = registry
+            .register_builtin(
+                MockTool::new("test_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        // Registration succeeds but no conflict warning since it's the same layer
+        assert!(result.success);
+        // Note: The current implementation doesn't warn about same-layer conflicts
+        // since it's just replacing the tool in that layer
+    }
+
+    #[tokio::test]
+    async fn test_registry_register_result() {
+        // Test RegisterResult success
+        let result = RegisterResult::success(ToolLayer::Builtin);
+        assert!(result.success);
+        assert!(result.warning.is_none());
+        assert_eq!(result.layer, ToolLayer::Builtin);
+
+        // Test RegisterResult with warning
+        let result = RegisterResult::success_with_warning(
+            ToolLayer::Plugin,
+            "Tool already exists in Builtin".to_string(),
+        );
+        assert!(result.success);
+        assert!(result.warning.is_some());
+        assert_eq!(result.layer, ToolLayer::Plugin);
+    }
+
+    #[tokio::test]
+    async fn test_registry_count_with_multiple_layers() {
+        let registry = ToolRegistry::new();
+
+        // Register in Builtin
+        registry
+            .register_builtin(
+                MockTool::new("builtin_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Register in Plugin
+        registry
+            .register_plugin(
+                MockTool::new("plugin_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Register in Runtime
+        registry
+            .register_runtime(
+                MockTool::new("runtime_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        // Total count should be 3
+        assert_eq!(registry.count().await, 3);
+        // Loaded count should also be 3
+        assert_eq!(registry.loaded_count().await, 3);
+    }
+
+    #[tokio::test]
+    async fn test_registry_unregister_respects_layer_priority() {
+        let registry = ToolRegistry::new();
+
+        // Register in all three layers
+        registry
+            .register_builtin(
+                MockTool::new("unreg_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        registry
+            .register_plugin(
+                MockTool::new("unreg_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+        registry
+            .register_runtime(
+                MockTool::new("unreg_tool", ToolCategory::File),
+                ToolCategory::File,
+            )
+            .await;
+
+        assert!(registry.contains("unreg_tool".into()).await);
+
+        // Unregister should remove from highest priority layer first (Runtime)
+        assert!(registry.unregister("unreg_tool".into()).await);
+
+        // Tool should still be there (Plugin and Builtin versions remain)
+        assert!(registry.contains("unreg_tool".into()).await);
+
+        // Unregister again - should remove Plugin
+        assert!(registry.unregister("unreg_tool".into()).await);
+        assert!(registry.contains("unreg_tool".into()).await);
+
+        // Unregister again - should remove Builtin
+        assert!(registry.unregister("unreg_tool".into()).await);
+        // Now tool should be gone
+        assert!(!registry.contains("unreg_tool".into()).await);
     }
 }

@@ -141,7 +141,7 @@ mod tests {
     async fn test_registry_registration() {
         let registry = ToolRegistry::new();
         registry
-            .register(tools::ReadFileTool::new(), registry::ToolCategory::File)
+            .register(tools::ReadFileTool::new(), registry::ToolCategory::File, registry::ToolLayer::Builtin)
             .await;
         assert_eq!(registry.list().await.len(), 1);
     }
