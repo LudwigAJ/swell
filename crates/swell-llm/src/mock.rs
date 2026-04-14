@@ -15,6 +15,364 @@ use tokio::sync::mpsc;
 
 static CALL_COUNT: AtomicU64 = AtomicU64::new(0);
 
+/// A step in a scripted scenario - either a text response or a tool call.
+///
+/// This is used by [`ScenarioMockLlm`] to define multi-turn conversations.
+#[derive(Debug, Clone)]
+pub enum ScenarioStep {
+    /// A text response without any tool calls
+    Text(String),
+    /// A response with a tool call that should be executed
+    ToolUse {
+        /// The tool call ID
+        id: String,
+        /// The tool name
+        name: String,
+        /// The tool arguments as JSON
+        arguments: serde_json::Value,
+        /// The result to return when this tool is called
+        result: String,
+        /// Whether the tool execution should be marked as successful
+        success: bool,
+    },
+    /// A response with both text and a tool call
+    TextWithToolUse {
+        /// The text content
+        text: String,
+        /// The tool call ID
+        id: String,
+        /// The tool name
+        name: String,
+        /// The tool arguments as JSON
+        arguments: serde_json::Value,
+        /// The result to return when this tool is called
+        result: String,
+        /// Whether the tool execution should be marked as successful
+        success: bool,
+    },
+}
+
+impl ScenarioStep {
+    /// Create a text-only step
+    pub fn text(content: impl Into<String>) -> Self {
+        ScenarioStep::Text(content.into())
+    }
+
+    /// Create a tool_use-only step
+    pub fn tool_use(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: serde_json::Value,
+        result: impl Into<String>,
+        success: bool,
+    ) -> Self {
+        ScenarioStep::ToolUse {
+            id: id.into(),
+            name: name.into(),
+            arguments,
+            result: result.into(),
+            success,
+        }
+    }
+
+    /// Create a step with both text and tool use
+    pub fn text_with_tool_use(
+        text: impl Into<String>,
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: serde_json::Value,
+        result: impl Into<String>,
+        success: bool,
+    ) -> Self {
+        ScenarioStep::TextWithToolUse {
+            text: text.into(),
+            id: id.into(),
+            name: name.into(),
+            arguments,
+            result: result.into(),
+            success,
+        }
+    }
+}
+
+/// Error returned when a scenario is exhausted or invalid.
+#[derive(Debug, thiserror::Error)]
+pub enum ScenarioError {
+    #[error("Scenario exhausted: all {0} steps have been consumed")]
+    Exhausted(usize),
+
+    #[error("Invalid step index {index} for scenario with {total} steps")]
+    InvalidIndex { index: usize, total: usize },
+}
+
+/// ScenarioMockLlm - a mock LLM that returns pre-scripted responses in sequence.
+///
+/// This is useful for deterministic testing of multi-turn agent interactions.
+/// Each call to [`LlmBackend::chat`] or [`LlmBackend::stream`] returns the next
+/// response in the scenario sequence.
+///
+/// # Example
+/// ```ignore
+/// use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+///
+/// let scenario = vec![
+///     ScenarioStep::tool_use("call_1", "file_read", json!({"path": "/tmp/test.txt"}), "contents", true),
+///     ScenarioStep::text("File contents retrieved successfully"),
+/// ];
+/// let mock = ScenarioMockLlm::new("claude", scenario);
+/// ```
+#[derive(Debug)]
+pub struct ScenarioMockLlm {
+    model: String,
+    steps: Vec<ScenarioStep>,
+    current_index: std::sync::atomic::AtomicUsize,
+}
+
+impl ScenarioMockLlm {
+    /// Create a new ScenarioMockLlm with the given scripted steps.
+    pub fn new(model: impl Into<String>, steps: Vec<ScenarioStep>) -> Self {
+        Self {
+            model: model.into(),
+            steps,
+            current_index: 0.into(),
+        }
+    }
+
+    /// Create a ScenarioMockLlm from a vector of text responses.
+    ///
+    /// Each string becomes a [`ScenarioStep::Text`] step.
+    pub fn with_text_responses(model: impl Into<String>, responses: Vec<String>) -> Self {
+        let steps = responses.into_iter().map(ScenarioStep::Text).collect();
+        Self::new(model, steps)
+    }
+
+    /// Get the number of steps in this scenario.
+    pub fn len(&self) -> usize {
+        self.steps.len()
+    }
+
+    /// Check if this scenario has no steps.
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+
+    /// Get the current step index.
+    pub fn current_index(&self) -> usize {
+        self.current_index.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Reset the scenario to the beginning.
+    pub fn reset(&self) {
+        self.current_index
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Get the total number of steps.
+    pub fn total_steps(&self) -> usize {
+        self.steps.len()
+    }
+}
+
+#[async_trait]
+impl LlmBackend for ScenarioMockLlm {
+    fn model(&self) -> &str {
+        &self.model
+    }
+
+    async fn chat(
+        &self,
+        messages: Vec<LlmMessage>,
+        _tools: Option<Vec<LlmToolDefinition>>,
+        _config: LlmConfig,
+    ) -> Result<LlmResponse, SwellError> {
+        let index = self
+            .current_index
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        if index >= self.steps.len() {
+            return Err(SwellError::LlmError(format!(
+                "Scenario exhausted: step {} requested but scenario only has {} steps",
+                index,
+                self.steps.len()
+            )));
+        }
+
+        let step = &self.steps[index];
+        let input_tokens: u64 = messages.iter().map(|m| m.content.len() as u64 / 4).sum();
+        let output_tokens = 50u64;
+
+        match step {
+            ScenarioStep::Text(content) => Ok(LlmResponse {
+                content: content.clone(),
+                tool_calls: None,
+                usage: crate::LlmUsage {
+                    input_tokens,
+                    output_tokens,
+                    total_tokens: input_tokens + output_tokens,
+                    cache_creation_input_tokens: None,
+                    cache_read_input_tokens: None,
+                },
+            }),
+            ScenarioStep::ToolUse {
+                id,
+                name,
+                arguments,
+                ..
+            } => Ok(LlmResponse {
+                content: String::new(),
+                tool_calls: Some(vec![LlmToolCall {
+                    id: id.clone(),
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                }]),
+                usage: crate::LlmUsage {
+                    input_tokens,
+                    output_tokens,
+                    total_tokens: input_tokens + output_tokens,
+                    cache_creation_input_tokens: None,
+                    cache_read_input_tokens: None,
+                },
+            }),
+            ScenarioStep::TextWithToolUse {
+                text,
+                id,
+                name,
+                arguments,
+                ..
+            } => Ok(LlmResponse {
+                content: text.clone(),
+                tool_calls: Some(vec![LlmToolCall {
+                    id: id.clone(),
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                }]),
+                usage: crate::LlmUsage {
+                    input_tokens,
+                    output_tokens,
+                    total_tokens: input_tokens + output_tokens,
+                    cache_creation_input_tokens: None,
+                    cache_read_input_tokens: None,
+                },
+            }),
+        }
+    }
+
+    async fn health_check(&self) -> bool {
+        true
+    }
+
+    async fn stream(
+        &self,
+        messages: Vec<LlmMessage>,
+        _tools: Option<Vec<LlmToolDefinition>>,
+        _config: LlmConfig,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent, SwellError>> + Send>>, SwellError>
+    {
+        let index = self
+            .current_index
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        if index >= self.steps.len() {
+            return Err(SwellError::LlmError(format!(
+                "Scenario exhausted: step {} requested but scenario only has {} steps",
+                index,
+                self.steps.len()
+            )));
+        }
+
+        let step = &self.steps[index];
+        let input_tokens: u64 = messages.iter().map(|m| m.content.len() as u64 / 4).sum();
+        let output_tokens = 50u64;
+
+        let (content, tool_call_opt) = match step {
+            ScenarioStep::Text(text) => (text.clone(), None),
+            ScenarioStep::ToolUse {
+                id,
+                name,
+                arguments,
+                result,
+                success,
+            } => {
+                let tc = (
+                    id.clone(),
+                    name.clone(),
+                    arguments.clone(),
+                    result.clone(),
+                    *success,
+                );
+                (String::new(), Some(tc))
+            }
+            ScenarioStep::TextWithToolUse {
+                text,
+                id,
+                name,
+                arguments,
+                result,
+                success,
+            } => {
+                let tc = (
+                    id.clone(),
+                    name.clone(),
+                    arguments.clone(),
+                    result.clone(),
+                    *success,
+                );
+                (text.clone(), Some(tc))
+            }
+        };
+
+        let (tx, rx) = mpsc::channel::<Result<StreamEvent, SwellError>>(100);
+
+        tokio::spawn(async move {
+            // If there's a tool call, emit ToolUse and ToolResult events first
+            if let Some((id, name, arguments, result, success)) = tool_call_opt {
+                let tool_call = LlmToolCall {
+                    id: id.clone(),
+                    name: name.clone(),
+                    arguments: arguments.clone(),
+                };
+
+                let _ = tx.send(Ok(StreamEvent::ToolUse { tool_call })).await;
+
+                let _ = tx
+                    .send(Ok(StreamEvent::ToolResult {
+                        tool_call_id: id,
+                        result,
+                        success,
+                    }))
+                    .await;
+            }
+
+            // Emit text delta if there's content
+            if !content.is_empty() {
+                let _ = tx
+                    .send(Ok(StreamEvent::TextDelta {
+                        text: content.clone(),
+                        delta: content,
+                    }))
+                    .await;
+            }
+
+            // Emit usage
+            let _ = tx
+                .send(Ok(StreamEvent::Usage {
+                    input_tokens,
+                    output_tokens,
+                    cache_creation_input_tokens: None,
+                    cache_read_input_tokens: None,
+                }))
+                .await;
+
+            // Emit message stop
+            let _ = tx
+                .send(Ok(StreamEvent::MessageStop { stop_reason: None }))
+                .await;
+        });
+
+        Ok(Box::pin(MockStreamAdapter { rx }))
+    }
+}
+
 /// Configuration for a mock tool call that MockLlm should emit during streaming.
 #[derive(Debug, Clone)]
 pub struct MockToolCall {
@@ -649,5 +1007,465 @@ mod tests {
         assert_eq!(llm_tool_call.id, "test_id");
         assert_eq!(llm_tool_call.name, "test_tool");
         assert_eq!(llm_tool_call.arguments["arg1"], "value1");
+    }
+
+    // =========================================================================
+    // ScenarioMockLlm Tests
+    // =========================================================================
+
+    #[tokio::test]
+    async fn test_scenario_mock_basic_multi_turn() {
+        // VAL-PROMPT-005: ScenarioMockLlm supports multi-turn scripted scenarios
+        let scenario = vec![
+            ScenarioStep::text("Response 1"),
+            ScenarioStep::text("Response 2"),
+            ScenarioStep::text("Response 3"),
+        ];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Turn 1".to_string(),
+            ..Default::default()
+        }];
+
+        // First call returns first response
+        let response = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        assert_eq!(response.content, "Response 1");
+
+        // Second call returns second response
+        let response = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        assert_eq!(response.content, "Response 2");
+
+        // Third call returns third response
+        let response = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        assert_eq!(response.content, "Response 3");
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_exhaustion_error() {
+        // Scenario exhaustion produces a clear error
+        let scenario = vec![ScenarioStep::text("Only one")];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Turn 1".to_string(),
+            ..Default::default()
+        }];
+
+        // First call succeeds
+        let response = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        assert_eq!(response.content, "Only one");
+
+        // Second call should fail with scenario exhausted error
+        let err = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Scenario exhausted"));
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_with_tool_use() {
+        // VAL-PROMPT-006: ScenarioMockLlm can script tool_use responses
+        let scenario = vec![
+            ScenarioStep::tool_use(
+                "call_1",
+                "file_read",
+                serde_json::json!({"path": "/tmp/test.txt"}),
+                "file contents",
+                true,
+            ),
+            ScenarioStep::text("Done reading the file"),
+        ];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Read the file".to_string(),
+            ..Default::default()
+        }];
+
+        // First response should have tool_calls
+        let response = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        assert!(response.content.is_empty());
+        assert!(response.tool_calls.is_some());
+        let tool_calls = response.tool_calls.unwrap();
+        assert_eq!(tool_calls.len(), 1);
+        assert_eq!(tool_calls[0].id, "call_1");
+        assert_eq!(tool_calls[0].name, "file_read");
+        assert_eq!(tool_calls[0].arguments["path"], "/tmp/test.txt");
+
+        // Second response should be text
+        let response = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        assert_eq!(response.content, "Done reading the file");
+        assert!(response.tool_calls.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_stream_multi_turn() {
+        // Test streaming across multiple turns
+        let scenario = vec![
+            ScenarioStep::text("First response"),
+            ScenarioStep::text("Second response"),
+        ];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Turn 1".to_string(),
+            ..Default::default()
+        }];
+
+        // First stream
+        let stream = mock
+            .stream(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        let events: Vec<_> = stream.collect().await;
+        let text1 = events
+            .iter()
+            .find_map(|e| match e {
+                Ok(StreamEvent::TextDelta { text, .. }) => Some(text.clone()),
+                _ => None,
+            })
+            .expect("Should have text");
+        assert_eq!(text1, "First response");
+
+        // Second stream
+        let stream = mock
+            .stream(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        let events: Vec<_> = stream.collect().await;
+        let text2 = events
+            .iter()
+            .find_map(|e| match e {
+                Ok(StreamEvent::TextDelta { text, .. }) => Some(text.clone()),
+                _ => None,
+            })
+            .expect("Should have text");
+        assert_eq!(text2, "Second response");
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_stream_with_tool_use() {
+        // Test streaming with tool_use events
+        let scenario = vec![ScenarioStep::text_with_tool_use(
+            "File has been read",
+            "call_1",
+            "file_read",
+            serde_json::json!({"path": "/tmp/test.txt"}),
+            "file contents here",
+            true,
+        )];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Read the file".to_string(),
+            ..Default::default()
+        }];
+
+        let stream = mock
+            .stream(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        let events: Vec<_> = stream.collect().await;
+
+        // Should have: ToolUse, ToolResult, TextDelta, Usage, MessageStop
+        assert!(
+            events.len() >= 5,
+            "Expected at least 5 events, got {}",
+            events.len()
+        );
+
+        // Find ToolUse event
+        let tool_use = events
+            .iter()
+            .find_map(|e| match e {
+                Ok(StreamEvent::ToolUse { tool_call }) => Some(tool_call.clone()),
+                _ => None,
+            })
+            .expect("Should have ToolUse event");
+        assert_eq!(tool_use.id, "call_1");
+        assert_eq!(tool_use.name, "file_read");
+
+        // Find ToolResult event
+        let tool_result = events
+            .iter()
+            .find_map(|e| match e {
+                Ok(StreamEvent::ToolResult {
+                    tool_call_id,
+                    result,
+                    success,
+                }) => Some((tool_call_id.clone(), result.clone(), *success)),
+                _ => None,
+            })
+            .expect("Should have ToolResult event");
+        assert_eq!(tool_result.0, "call_1");
+        assert_eq!(tool_result.1, "file contents here");
+        assert!(tool_result.2);
+
+        // Find TextDelta event
+        let text = events
+            .iter()
+            .find_map(|e| match e {
+                Ok(StreamEvent::TextDelta { text, .. }) => Some(text.clone()),
+                _ => None,
+            })
+            .expect("Should have TextDelta event");
+        assert_eq!(text, "File has been read");
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_with_text_responses_helper() {
+        // Test the with_text_responses helper
+        let mock = ScenarioMockLlm::with_text_responses(
+            "claude",
+            vec!["A".to_string(), "B".to_string(), "C".to_string()],
+        );
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Test".to_string(),
+            ..Default::default()
+        }];
+
+        assert_eq!(
+            mock.chat(messages.clone(), None, LlmConfig::default())
+                .await
+                .unwrap()
+                .content,
+            "A"
+        );
+        assert_eq!(
+            mock.chat(messages.clone(), None, LlmConfig::default())
+                .await
+                .unwrap()
+                .content,
+            "B"
+        );
+        assert_eq!(
+            mock.chat(messages.clone(), None, LlmConfig::default())
+                .await
+                .unwrap()
+                .content,
+            "C"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_reset() {
+        // Test the reset functionality
+        let scenario = vec![ScenarioStep::text("First"), ScenarioStep::text("Second")];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Test".to_string(),
+            ..Default::default()
+        }];
+
+        // Consume first response
+        assert_eq!(
+            mock.chat(messages.clone(), None, LlmConfig::default())
+                .await
+                .unwrap()
+                .content,
+            "First"
+        );
+
+        // Reset and consume again
+        mock.reset();
+        assert_eq!(
+            mock.chat(messages.clone(), None, LlmConfig::default())
+                .await
+                .unwrap()
+                .content,
+            "First"
+        );
+        assert_eq!(
+            mock.chat(messages.clone(), None, LlmConfig::default())
+                .await
+                .unwrap()
+                .content,
+            "Second"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_empty_scenario() {
+        // Test behavior with empty scenario
+        let scenario: Vec<ScenarioStep> = vec![];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Test".to_string(),
+            ..Default::default()
+        }];
+
+        // Any call should fail
+        let err = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Scenario exhausted"));
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_failed_tool() {
+        // Test script for a failed tool execution
+        let scenario = vec![ScenarioStep::tool_use(
+            "call_fail",
+            "shell",
+            serde_json::json!({"command": "exit 1"}),
+            "Command failed with exit code 1",
+            false, // Tool failed
+        )];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Run command".to_string(),
+            ..Default::default()
+        }];
+
+        let response = mock
+            .chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        assert!(response.tool_calls.is_some());
+        assert_eq!(response.tool_calls.as_ref().unwrap()[0].name, "shell");
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_stream_exhaustion() {
+        // Test streaming exhaustion error
+        let scenario = vec![ScenarioStep::text("Only one")];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Test".to_string(),
+            ..Default::default()
+        }];
+
+        // First stream succeeds
+        let stream = mock
+            .stream(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+        let events: Vec<_> = stream.collect().await;
+        assert!(!events.is_empty());
+
+        // Second stream fails
+        match mock
+            .stream(messages.clone(), None, LlmConfig::default())
+            .await
+        {
+            Ok(_) => panic!("Expected error but got Ok"),
+            Err(err) => {
+                assert!(err.to_string().contains("Scenario exhausted"));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_model_name() {
+        // Verify model name is returned correctly
+        let scenario = vec![ScenarioStep::text("Response")];
+        let mock = ScenarioMockLlm::new("gpt-5", scenario);
+        assert_eq!(mock.model(), "gpt-5");
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_health_check() {
+        // Verify health check returns true
+        let scenario = vec![ScenarioStep::text("Response")];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+        assert!(mock.health_check().await);
+    }
+
+    #[tokio::test]
+    async fn test_scenario_step_helpers() {
+        // Test the ScenarioStep helper methods
+        let text_step = ScenarioStep::text("Hello");
+        assert!(matches!(text_step, ScenarioStep::Text(s) if s == "Hello"));
+
+        let tool_step = ScenarioStep::tool_use(
+            "id1",
+            "tool_name",
+            serde_json::json!({"key": "value"}),
+            "result",
+            true,
+        );
+        assert!(matches!(
+            tool_step,
+            ScenarioStep::ToolUse { id, name, arguments: _, result: _, success }
+            if id == "id1" && name == "tool_name" && success == true
+        ));
+
+        let combined = ScenarioStep::text_with_tool_use(
+            "text content",
+            "id2",
+            "another_tool",
+            serde_json::json!({"arg": 123}),
+            "tool result",
+            false,
+        );
+        assert!(matches!(
+            combined,
+            ScenarioStep::TextWithToolUse { text, id, name: _, arguments: _, result: _, success }
+            if text == "text content" && id == "id2" && success == false
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_scenario_mock_info_methods() {
+        // Test len, is_empty, current_index, total_steps
+        let scenario = vec![
+            ScenarioStep::text("1"),
+            ScenarioStep::text("2"),
+            ScenarioStep::text("3"),
+        ];
+        let mock = ScenarioMockLlm::new("claude", scenario);
+
+        assert_eq!(mock.len(), 3);
+        assert!(!mock.is_empty());
+        assert_eq!(mock.current_index(), 0);
+        assert_eq!(mock.total_steps(), 3);
+
+        // Consume one
+        let messages = vec![LlmMessage {
+            role: LlmRole::User,
+            content: "Test".to_string(),
+            ..Default::default()
+        }];
+        mock.chat(messages.clone(), None, LlmConfig::default())
+            .await
+            .unwrap();
+
+        assert_eq!(mock.current_index(), 1);
     }
 }

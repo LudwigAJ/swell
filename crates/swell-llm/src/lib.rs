@@ -25,7 +25,7 @@ pub mod router;
 pub mod traits;
 
 pub use anthropic::AnthropicBackend;
-pub use mock::MockLlm;
+pub use mock::{MockLlm, ScenarioMockLlm, ScenarioStep};
 pub use openai::OpenAIBackend;
 pub use retry::{calculate_backoff, is_retryable_status, LlmRetryConfig};
 pub use router::{
