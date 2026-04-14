@@ -47,6 +47,7 @@ pub mod task_board;
 pub mod task_graph;
 pub mod tiered_merge;
 pub mod value_scorer;
+pub mod worker_boot;
 pub mod worker_pool;
 
 pub use agents::{
@@ -168,6 +169,7 @@ pub use value_scorer::{
     BlockingImpactScore, SpecAlignmentScore, TaskDependency, TaskScore, ValueScorer,
     ValueScorerConfig,
 };
+pub use worker_boot::{WorkerBoot, WorkerBootError, WorkerBootState};
 pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
