@@ -106,7 +106,7 @@ async fn test_validate_task_completion_success_path() {
 
     // Verify result has expected structure
     assert!(
-        validation_result.total_duration_ms >= 0,
+        validation_result.total_duration_ms > 0,
         "Should report validation duration"
     );
     assert!(
@@ -198,7 +198,7 @@ async fn test_validate_task_completion_failure_path() {
 
     // Verify result has expected structure
     assert!(
-        validation_result.total_duration_ms >= 0,
+        validation_result.total_duration_ms > 0,
         "Should report validation duration"
     );
     assert!(
@@ -657,7 +657,7 @@ async fn test_full_pipeline_integration() {
     );
 
     // Verify the structure is complete
-    assert!(validation_result.total_duration_ms >= 0);
+    assert!(validation_result.total_duration_ms > 0);
     assert!(!validation_result.gates_run.is_empty());
 
     // Verify execution metadata is preserved
