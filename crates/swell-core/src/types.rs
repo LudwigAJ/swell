@@ -590,6 +590,10 @@ pub enum CliCommand {
         task_id: Uuid,
         scope: TaskScope,
     },
+    /// Get full task details by ID
+    TaskGet {
+        task_id: Uuid,
+    },
 }
 
 /// A correlation ID used to track related events across the system.
@@ -711,6 +715,13 @@ pub enum DaemonEvent {
         step_name: String,
         passed: bool,
         duration_ms: u64,
+        correlation_id: CorrelationId,
+    },
+    /// Full task details returned by TaskGet command
+    TaskDetails {
+        id: Uuid,
+        /// JSON serialized Task object containing all task fields
+        task_json: String,
         correlation_id: CorrelationId,
     },
 }

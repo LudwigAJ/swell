@@ -24,6 +24,7 @@ use uuid::Uuid;
 /// - `TaskResume` - Resumes a paused task (operator intervention)
 /// - `TaskInjectInstruction` - Injects instructions into a task (operator intervention)
 /// - `TaskModifyScope` - Modifies task scope boundaries (operator intervention)
+/// - `TaskGet` - Returns full task details as JSON (description, plan, state, scope, cost, timestamps)
 ///
 /// # Error Handling
 /// Returns `DaemonEvent::Error` with a message for:
@@ -270,6 +271,29 @@ pub async fn handle_command(
                             None,
                             correlation_id,
                         )
+                        .await
+                }
+            }
+        }
+        CliCommand::TaskGet { task_id } => {
+            let orch = orchestrator.lock().await;
+            match orch.get_task(task_id).await {
+                Ok(task) => {
+                    info!(task_id = %task_id, state = ?task.state, "Task details requested");
+                    let task_json =
+                        serde_json::to_string(&task).unwrap_or_else(|_| "{}".to_string());
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    DaemonEvent::TaskDetails {
+                        id: task_id,
+                        task_json,
+                        correlation_id,
+                    }
+                }
+                Err(e) => {
+                    warn!(task_id = %task_id, error = %e, "Task not found for TaskGet");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_error(format!("Task not found: {}", e), None, correlation_id)
                         .await
                 }
             }
@@ -1273,5 +1297,131 @@ mod tests {
             }
             other => panic!("Expected TaskModifyScope command, got: {:?}", other),
         }
+    }
+
+    // --- TaskGet Tests ---
+
+    #[tokio::test]
+    async fn test_parse_task_get_command() {
+        let task_id = Uuid::new_v4();
+        let json = format!(
+            r#"{{"type":"TaskGet","payload":{{"task_id":"{}"}}}}"#,
+            task_id
+        );
+        let command = parse_command(&json).unwrap();
+
+        match command {
+            CliCommand::TaskGet { task_id: id } => {
+                assert_eq!(id, task_id);
+            }
+            other => panic!("Expected TaskGet command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_get_nonexistent_returns_error() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let fake_id = Uuid::new_v4();
+        let command = CliCommand::TaskGet { task_id: fake_id };
+
+        let event = handle_command(command, orch, emitter).await;
+
+        match event {
+            DaemonEvent::Error { message, .. } => {
+                assert!(message.contains("not found") || message.contains("TaskNotFound"));
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_get_existing_task_returns_task_details() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        // Create a task
+        let task = orch.lock().await.create_task("Test task description".to_string()).await;
+        let task_id = task.id;
+
+        let command = CliCommand::TaskGet { task_id };
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+
+        match event {
+            DaemonEvent::TaskDetails {
+                id,
+                task_json,
+                correlation_id,
+            } => {
+                assert_eq!(id, task_id);
+                assert!(correlation_id != Uuid::nil());
+                assert!(!task_json.is_empty());
+
+                // Verify the JSON deserializes to a Task with all required fields
+                let retrieved_task: swell_core::Task =
+                    serde_json::from_str(&task_json).expect("task_json should deserialize to Task");
+
+                // Verify all required fields are present
+                assert_eq!(retrieved_task.id, task_id);
+                assert_eq!(retrieved_task.description, "Test task description");
+                assert!(retrieved_task.plan.is_none()); // No plan set yet
+                assert_eq!(retrieved_task.state, TaskState::Created);
+                assert!(retrieved_task.created_at <= chrono::Utc::now());
+                assert!(retrieved_task.updated_at <= chrono::Utc::now());
+                // Verify scope is present (TaskScope default)
+                assert_eq!(retrieved_task.current_scope.files.len(), 0);
+                // Verify cost fields are present
+                assert_eq!(retrieved_task.token_budget, 1_000_000);
+                assert_eq!(retrieved_task.tokens_used, 0);
+            }
+            other => panic!("Expected TaskDetails event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_get_with_plan_includes_plan_details() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+
+        // Create a task with a plan
+        let task = orch.lock().await.create_task("Test task with plan".to_string()).await;
+        let plan = create_test_plan(task.id);
+        orch.lock().await.set_plan(task.id, plan).await.unwrap();
+
+        let command = CliCommand::TaskGet { task_id: task.id };
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+
+        match event {
+            DaemonEvent::TaskDetails {
+                id: _,
+                task_json,
+                correlation_id: _,
+            } => {
+                let retrieved_task: swell_core::Task =
+                    serde_json::from_str(&task_json).expect("task_json should deserialize to Task");
+
+                // Verify plan is included
+                assert!(retrieved_task.plan.is_some());
+                let plan = retrieved_task.plan.unwrap();
+                assert_eq!(plan.steps.len(), 1);
+                assert_eq!(plan.steps[0].description, "Test step");
+            }
+            other => panic!("Expected TaskDetails event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_task_get_event_serialization() {
+        let task_id = Uuid::new_v4();
+        let correlation_id = Uuid::new_v4();
+        let event = DaemonEvent::TaskDetails {
+            id: task_id,
+            task_json: r#"{"id":"00000000-0000-0000-0000-000000000000","description":"test"}"#.to_string(),
+            correlation_id,
+        };
+        let json = event_to_json(&event).unwrap();
+        assert!(json.contains("TaskDetails"));
+        assert!(json.contains(&task_id.to_string()));
+        assert!(json.contains(&correlation_id.to_string()));
     }
 }

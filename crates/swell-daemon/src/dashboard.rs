@@ -368,6 +368,16 @@ impl From<DaemonEvent> for DashboardEvent {
                 ),
                 correlation_id,
             },
+            // TaskDetails contains full task JSON - emit as progress with task ID
+            DaemonEvent::TaskDetails {
+                id,
+                task_json,
+                correlation_id,
+            } => DashboardEvent::TaskProgress {
+                id,
+                message: format!("Task details retrieved ({} bytes)", task_json.len()),
+                correlation_id,
+            },
         }
     }
 }
