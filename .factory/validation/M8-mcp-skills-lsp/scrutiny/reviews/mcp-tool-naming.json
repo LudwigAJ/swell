@@ -1,0 +1,15 @@
+{
+  "featureId": "mcp-tool-naming",
+  "reviewedAt": "2026-04-15T06:30:00Z",
+  "commitId": "8545d99",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation fully satisfies the validation assertion VAL-MCP-004. McpToolWrapper was modified to store a cached normalized_name field computed in new() as format!('mcp__{}__{}', server.to_lowercase(), tool.to_lowercase()), and the Tool trait name() method now returns &self.normalized_name instead of &self.info.name. A comprehensive test file (crates/swell-tools/tests/mcp_tool_naming.rs) was added covering: TreeSitter+ParseAST→mcp__treesitter__parseast, uppercase normalization, underscore preservation, mixed case, single words, empty server edge case, and registry discovery. All 10 tests pass, 131 MCP tests pass, clippy clean.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "PASS — The MCP tool naming convention is correctly implemented. McpToolWrapper::new() now computes normalized_name as format!('mcp__{}__{}', server.to_lowercase(), tool.to_lowercase()) at construction time, caching the result for the lifetime of the wrapper. The Tool trait name() method returns &self.normalized_name. Validation assertion VAL-MCP-004 is satisfied: a server 'TreeSitter' with tool 'ParseAST' is registered as 'mcp__treesitter__parseast'. 10 dedicated tests + 131 MCP tests pass; clippy clean. The worker also included MCP-003 failure classification (McpFailureClass, McpConnectionError) from a prior incomplete worker session, which was correctly committed as part of this work."
+}

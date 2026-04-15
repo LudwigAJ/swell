@@ -1,0 +1,15 @@
+{
+  "featureId": "mcp-failure-classification",
+  "reviewedAt": "2026-04-15T05:07:00Z",
+  "commitId": "8545d99e0cd53e457db597f4335c604dbf4bb9a4",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The feature implements failure classification for MCP connections with two new types (McpFailureClass, McpConnectionError) in mcp.rs and retry-with-backoff logic in mcp_config.rs. Recoverable errors (timeout, connection refused) trigger retries with exponential backoff; non-recoverable errors (binary not found, protocol mismatch) fail immediately.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "PASS — VAL-MCP-003 satisfied. McpFailureClass correctly classifies connection failures: timeout/connection-refused → Recoverable (retry with backoff); binary-not-found/protocol-mismatch → NonRecoverable (immediate fail). McpConfigManager::connect_with_retry() implements the retry logic and marks server as Failed for non-recoverable errors. 23 unit tests cover the classification logic with comprehensive coverage of phase-specific error patterns."
+}

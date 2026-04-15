@@ -1,0 +1,21 @@
+{
+  "featureId": "lsp-registry-and-tools",
+  "reviewedAt": "2026-04-15T06:39:00Z",
+  "commitId": "5d81d69bea475ce961bd164baced6415f15e073c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is complete and correct. LspRegistry maps languages to LSP server configs, all four required LSP tools (lsp_definition, lsp_references, lsp_hover, lsp_diagnostics) are implemented with proper Tool trait implementations (name, description, input_schema), and graceful degradation is implemented in all 5 LSP tools when the MCP/LSP server is disconnected.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Feature specifies skillName 'rust-worker' but this skill does not exist at ~/.factory/skills/rust-worker/SKILL.md. The worker transcript shows the skill was not found and the worker fell back to 'mission-worker-base' and 'rust' skills. If rust-worker is intended as a skill for this codebase's Rust development workflow, it should be created or the feature should reference an existing skill.",
+      "evidence": "Feature: { \"skillName\": \"rust-worker\" } but ~/.factory/skills/rust-worker/SKILL.md does not exist. Transcript shows skill lookup returned error and worker proceeded with 'mission-worker-base' and 'rust' skills."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS — LspRegistry correctly maps LspLanguage (Rust, Cpp) to LspServerConfig with server_name and command fields. LspRegistry::get(Rust) returns rust-analyzer config, LspRegistry::get(Unknown) returns None. All 4 required LSP tools (lsp_definition, lsp_references, lsp_hover, lsp_diagnostics) implement the Tool trait with correct name(), description(), and input_schema(). Graceful degradation is implemented: disconnected LSP server returns ToolOutput { is_error: true } instead of propagating errors. 15 integration tests pass covering all validation assertions (VAL-MCP-006, VAL-MCP-007, VAL-MCP-008). Note: feature specifies skillName 'rust-worker' but that skill path doesn't exist — worker used 'mission-worker-base' and 'rust' skills instead."
+}
