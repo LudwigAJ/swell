@@ -219,21 +219,33 @@ mod plugin_state_transition_tests {
         starting_transitions.sort_by_key(|s| format!("{:?}", s));
         assert_eq!(
             starting_transitions,
-            vec![PluginState::Degraded, PluginState::Failed, PluginState::Healthy]
+            vec![
+                PluginState::Degraded,
+                PluginState::Failed,
+                PluginState::Healthy
+            ]
         );
 
         let mut healthy_transitions = PluginState::Healthy.valid_transitions();
         healthy_transitions.sort_by_key(|s| format!("{:?}", s));
         assert_eq!(
             healthy_transitions,
-            vec![PluginState::Degraded, PluginState::Failed, PluginState::ShuttingDown]
+            vec![
+                PluginState::Degraded,
+                PluginState::Failed,
+                PluginState::ShuttingDown
+            ]
         );
 
         let mut degraded_transitions = PluginState::Degraded.valid_transitions();
         degraded_transitions.sort_by_key(|s| format!("{:?}", s));
         assert_eq!(
             degraded_transitions,
-            vec![PluginState::Failed, PluginState::Healthy, PluginState::ShuttingDown]
+            vec![
+                PluginState::Failed,
+                PluginState::Healthy,
+                PluginState::ShuttingDown
+            ]
         );
 
         assert_eq!(
@@ -253,9 +265,7 @@ mod plugin_state_transition_tests {
 #[cfg(test)]
 mod plugin_state_machine_tests {
 
-    use swell_tools::mcp::{
-        PluginState, PluginStateMachine, PluginStateTransitionError,
-    };
+    use swell_tools::mcp::{PluginState, PluginStateMachine, PluginStateTransitionError};
 
     /// Test that new PluginStateMachine starts in Unconfigured state
     #[test]
@@ -334,10 +344,8 @@ mod plugin_state_machine_tests {
     /// Test error display implementation
     #[test]
     fn test_transition_error_display() {
-        let error = PluginStateTransitionError::new(
-            PluginState::Unconfigured,
-            PluginState::Healthy,
-        );
+        let error =
+            PluginStateTransitionError::new(PluginState::Unconfigured, PluginState::Healthy);
 
         let display = format!("{}", error);
         assert!(display.contains("Invalid state transition"));
@@ -532,10 +540,13 @@ mod plugin_state_machine_tests {
     /// Test serde round-trip for PluginStateTransitionError
     #[test]
     fn test_plugin_state_transition_error_serde() {
-        let error =
-            swell_tools::mcp::PluginStateTransitionError::new(PluginState::Unconfigured, PluginState::Healthy);
+        let error = swell_tools::mcp::PluginStateTransitionError::new(
+            PluginState::Unconfigured,
+            PluginState::Healthy,
+        );
         let json = serde_json::to_string(&error).unwrap();
-        let parsed: swell_tools::mcp::PluginStateTransitionError = serde_json::from_str(&json).unwrap();
+        let parsed: swell_tools::mcp::PluginStateTransitionError =
+            serde_json::from_str(&json).unwrap();
         assert_eq!(error.from, parsed.from);
         assert_eq!(error.to, parsed.to);
         assert_eq!(error.message, parsed.message);

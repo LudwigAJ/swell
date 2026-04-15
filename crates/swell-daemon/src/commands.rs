@@ -64,7 +64,11 @@ pub async fn handle_command(
                             warn!(task_id = %task_id, error = %e, "Failed to approve task");
                             let correlation_id = EventEmitter::new_correlation_id();
                             event_emitter
-                                .emit_error(format!("Failed to approve task: {}", e), None, correlation_id)
+                                .emit_error(
+                                    format!("Failed to approve task: {}", e),
+                                    None,
+                                    correlation_id,
+                                )
                                 .await
                         }
                     }
@@ -89,14 +93,22 @@ pub async fn handle_command(
                         Ok(()) => {
                             let correlation_id = EventEmitter::new_correlation_id();
                             event_emitter
-                                .emit_task_state_changed(task_id, TaskState::Rejected, correlation_id)
+                                .emit_task_state_changed(
+                                    task_id,
+                                    TaskState::Rejected,
+                                    correlation_id,
+                                )
                                 .await
                         }
                         Err(e) => {
                             warn!(task_id = %task_id, error = %e, "Failed to reject task");
                             let correlation_id = EventEmitter::new_correlation_id();
                             event_emitter
-                                .emit_error(format!("Failed to reject task: {}", e), None, correlation_id)
+                                .emit_error(
+                                    format!("Failed to reject task: {}", e),
+                                    None,
+                                    correlation_id,
+                                )
                                 .await
                         }
                     }
@@ -196,7 +208,11 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Failed to resume task");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Failed to resume task: {}", e), None, correlation_id)
+                        .emit_error(
+                            format!("Failed to resume task: {}", e),
+                            None,
+                            correlation_id,
+                        )
                         .await
                 }
             }
@@ -249,7 +265,11 @@ pub async fn handle_command(
                     warn!(task_id = %task_id, error = %e, "Failed to modify scope");
                     let correlation_id = EventEmitter::new_correlation_id();
                     event_emitter
-                        .emit_error(format!("Failed to modify scope: {}", e), None, correlation_id)
+                        .emit_error(
+                            format!("Failed to modify scope: {}", e),
+                            None,
+                            correlation_id,
+                        )
                         .await
                 }
             }

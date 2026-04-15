@@ -43,11 +43,17 @@ mod mcp_degraded_startup_tests {
         // Valid server should be healthy (or degraded if echo has issues)
         // At minimum, we should get a result for it
         let valid_health = results.get("valid-server");
-        assert!(valid_health.is_some(), "Valid server should have a health status");
+        assert!(
+            valid_health.is_some(),
+            "Valid server should have a health status"
+        );
 
         // Failing server should be degraded or failed
         let failing_health = results.get("failing-server");
-        assert!(failing_health.is_some(), "Failing server should have a health status");
+        assert!(
+            failing_health.is_some(),
+            "Failing server should have a health status"
+        );
 
         let health = *failing_health.unwrap();
         assert!(

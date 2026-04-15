@@ -823,7 +823,9 @@ impl ValidationGate for TestGate {
             .config
             .clone()
             .unwrap_or_else(|| ValidationConfig::load(&workspace_path));
-        let test_cfg = cfg.test.unwrap_or_else(|| ValidationConfig::rust_defaults().test.unwrap());
+        let test_cfg = cfg
+            .test
+            .unwrap_or_else(|| ValidationConfig::rust_defaults().test.unwrap());
         let serial = test_cfg.concurrency == "serial";
 
         // When concurrency is "serial", acquire a global semaphore so multiple

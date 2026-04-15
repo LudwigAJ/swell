@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::time::Duration;
-use swell_cli::CliError;
 use swell_cli::repl;
+use swell_cli::CliError;
 use swell_core::{CliCommand, DaemonEvent, Task};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -492,7 +492,10 @@ fn handle_event(event: &DaemonEvent) {
             correlation_id: _,
             ..
         } => {
-            println!("[{}] Turn {}: Invoking tool '{}'", id, turn_number, tool_name);
+            println!(
+                "[{}] Turn {}: Invoking tool '{}'",
+                id, turn_number, tool_name
+            );
         }
         DaemonEvent::ToolInvocationCompleted {
             id,

@@ -201,10 +201,7 @@ pub struct McpConnectionError {
 
 impl McpConnectionError {
     /// Create a new connection error with failure classification
-    pub fn new(
-        lifecycle_error: McpLifecycleError,
-        failure_class: McpFailureClass,
-    ) -> Self {
+    pub fn new(lifecycle_error: McpLifecycleError, failure_class: McpFailureClass) -> Self {
         Self {
             lifecycle_error,
             failure_class,
@@ -241,10 +238,7 @@ impl McpConnectionError {
     /// or non-recoverable.
     ///
     /// Reference: VAL-MCP-003
-    pub fn classify_error(
-        phase: McpLifecyclePhase,
-        error_message: &str,
-    ) -> McpFailureClass {
+    pub fn classify_error(phase: McpLifecyclePhase, error_message: &str) -> McpFailureClass {
         let error_lower = error_message.to_lowercase();
 
         // Non-recoverable errors by phase and pattern
@@ -299,10 +293,8 @@ impl McpConnectionError {
 
     /// Create a connection error from a lifecycle error by classifying it
     pub fn from_lifecycle_error(lifecycle_error: McpLifecycleError) -> Self {
-        let failure_class = Self::classify_error(
-            lifecycle_error.failed_phase,
-            &lifecycle_error.error_message,
-        );
+        let failure_class =
+            Self::classify_error(lifecycle_error.failed_phase, &lifecycle_error.error_message);
 
         Self {
             lifecycle_error,
@@ -413,7 +405,10 @@ impl McpLifecycleState {
         // Be lenient - if phase matches current or phase is valid for the completed list,
         // allow it to complete
         let is_valid = self.current_phase.is_none_or(|current| current == phase)
-            || self.completed_phases.last().is_some_and(|last| last.next() == Some(phase));
+            || self
+                .completed_phases
+                .last()
+                .is_some_and(|last| last.next() == Some(phase));
 
         if !is_valid {
             // Phase completion out of order - just push if not already completed
@@ -626,7 +621,9 @@ impl PluginStateMachine {
     ///
     /// This is useful for restoring state from persistence or testing.
     pub fn with_state(state: PluginState) -> Self {
-        Self { current_state: state }
+        Self {
+            current_state: state,
+        }
     }
 
     /// Returns the current state.
@@ -1053,9 +1050,7 @@ impl McpClient {
                     state.start_phase(McpLifecyclePhase::SpawnConnect);
                 }
 
-                let spawn_result = self
-                    .spawn_process(&program, &args)
-                    .await;
+                let spawn_result = self.spawn_process(&program, &args).await;
 
                 match spawn_result {
                     Ok(()) => {
@@ -1130,9 +1125,7 @@ impl McpClient {
     /// non-recoverable (should fail immediately).
     ///
     /// Reference: VAL-MCP-003
-    pub async fn connect_with_classification(
-        &self,
-    ) -> Result<(), McpConnectionError> {
+    pub async fn connect_with_classification(&self) -> Result<(), McpConnectionError> {
         match self.connect_with_lifecycle().await {
             Ok(()) => Ok(()),
             Err(lifecycle_error) => {
@@ -1149,11 +1142,7 @@ impl McpClient {
     }
 
     /// Spawn the server process (part of SpawnConnect phase)
-    async fn spawn_process(
-        &self,
-        program: &str,
-        args: &[String],
-    ) -> Result<(), SwellError> {
+    async fn spawn_process(&self, program: &str, args: &[String]) -> Result<(), SwellError> {
         info!(cmd = %self.server_url, "Starting MCP server process");
 
         let mut child = tokio::process::Command::new(program)
@@ -1427,9 +1416,9 @@ impl McpClient {
                             .to_string();
 
                         // Parse annotations (readOnlyHint, destructiveHint, idempotentHint)
-                        let annotations = t
-                            .get("annotations")
-                            .and_then(|a| serde_json::from_value::<McpToolAnnotations>(a.clone()).ok());
+                        let annotations = t.get("annotations").and_then(|a| {
+                            serde_json::from_value::<McpToolAnnotations>(a.clone()).ok()
+                        });
 
                         // Parse outputSchema (November 2025 MCP spec)
                         let output_schema = t.get("outputSchema").cloned();

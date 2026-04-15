@@ -9,8 +9,10 @@
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use swell_core::treesitter::{
+    parse_source, ChunkType, DependencyType, ParseResult, SourceLanguage,
+};
 use swell_core::{KgEdge, KgNode, KgNodeType, KgRelation, KnowledgeGraph};
-use swell_core::treesitter::{parse_source, ChunkType, DependencyType, ParseResult, SourceLanguage};
 
 use crate::knowledge_graph::SqliteKnowledgeGraph;
 
@@ -64,7 +66,11 @@ impl ExtractionResult {
 }
 
 /// Extract nodes and edges from Rust source code
-pub fn extract_from_source(source: &[u8], file_path: &str, repository: &str) -> Result<ExtractionResult, String> {
+pub fn extract_from_source(
+    source: &[u8],
+    file_path: &str,
+    repository: &str,
+) -> Result<ExtractionResult, String> {
     let parse_result = parse_source(source, SourceLanguage::Rust)
         .map_err(|e| format!("Failed to parse source: {}", e))?;
 
@@ -72,7 +78,11 @@ pub fn extract_from_source(source: &[u8], file_path: &str, repository: &str) -> 
 }
 
 /// Extract nodes and edges from a ParseResult
-pub fn extract_from_parse_result(parse_result: &ParseResult, file_path: &str, repository: &str) -> Result<ExtractionResult, String> {
+pub fn extract_from_parse_result(
+    parse_result: &ParseResult,
+    file_path: &str,
+    repository: &str,
+) -> Result<ExtractionResult, String> {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
     let mut chunk_to_node: HashMap<Uuid, Uuid> = HashMap::new();
@@ -155,7 +165,13 @@ pub fn extract_from_parse_result(parse_result: &ParseResult, file_path: &str, re
                         // Try to find target function in nodes
                         let target_node_id = nodes
                             .iter()
-                            .find(|n| n.name == dep.target && matches!(n.node_type, KgNodeType::Function | KgNodeType::Method))
+                            .find(|n| {
+                                n.name == dep.target
+                                    && matches!(
+                                        n.node_type,
+                                        KgNodeType::Function | KgNodeType::Method
+                                    )
+                            })
                             .map(|n| n.id);
 
                         if let Some(target_id) = target_node_id {
@@ -172,7 +188,10 @@ pub fn extract_from_parse_result(parse_result: &ParseResult, file_path: &str, re
                     // For calls without source chunk, try to find target function and create edge from file
                     let target_node_id = nodes
                         .iter()
-                        .find(|n| n.name == dep.target && matches!(n.node_type, KgNodeType::Function | KgNodeType::Method))
+                        .find(|n| {
+                            n.name == dep.target
+                                && matches!(n.node_type, KgNodeType::Function | KgNodeType::Method)
+                        })
                         .map(|n| n.id);
 
                     if let Some(target_id) = target_node_id {
@@ -188,10 +207,7 @@ pub fn extract_from_parse_result(parse_result: &ParseResult, file_path: &str, re
             }
             DependencyType::Reference | DependencyType::Inheritance => {
                 // For reference/inheritance, create DependsOn edge
-                let target_node_id = nodes
-                    .iter()
-                    .find(|n| n.name == dep.target)
-                    .map(|n| n.id);
+                let target_node_id = nodes.iter().find(|n| n.name == dep.target).map(|n| n.id);
 
                 if let Some(target_id) = target_node_id {
                     let depends_edge = KgEdge {
@@ -234,14 +250,16 @@ pub async fn insert_into_graph(
 ) -> Result<(), String> {
     // Insert all nodes
     for node in &result.nodes {
-        graph.add_node(node.clone())
+        graph
+            .add_node(node.clone())
             .await
             .map_err(|e| format!("Failed to insert node: {}", e))?;
     }
 
     // Insert all edges
     for edge in &result.edges {
-        graph.add_edge(edge.clone())
+        graph
+            .add_edge(edge.clone())
             .await
             .map_err(|e| format!("Failed to insert edge: {}", e))?;
     }
@@ -268,12 +286,24 @@ fn internal_function() {
         let result = extract_from_source(source, "test.rs", "test-repo").unwrap();
 
         // Should have file node
-        let file_nodes: Vec<_> = result.nodes.iter().filter(|n| n.node_type == KgNodeType::File).collect();
+        let file_nodes: Vec<_> = result
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == KgNodeType::File)
+            .collect();
         assert_eq!(file_nodes.len(), 1);
 
         // Should have function nodes
-        let func_nodes: Vec<_> = result.nodes.iter().filter(|n| n.node_type == KgNodeType::Function).collect();
-        assert!(func_nodes.len() >= 2, "Expected at least 2 functions, got {}", func_nodes.len());
+        let func_nodes: Vec<_> = result
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == KgNodeType::Function)
+            .collect();
+        assert!(
+            func_nodes.len() >= 2,
+            "Expected at least 2 functions, got {}",
+            func_nodes.len()
+        );
 
         // Verify function names
         let func_names: Vec<_> = func_nodes.iter().map(|n| n.name.clone()).collect();
@@ -299,8 +329,16 @@ pub struct Color {
         let result = extract_from_source(source, "shapes.rs", "test-repo").unwrap();
 
         // Should have struct nodes (mapped to Type)
-        let type_nodes: Vec<_> = result.nodes.iter().filter(|n| n.node_type == KgNodeType::Type).collect();
-        assert!(type_nodes.len() >= 2, "Expected at least 2 types (structs), got {}", type_nodes.len());
+        let type_nodes: Vec<_> = result
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == KgNodeType::Type)
+            .collect();
+        assert!(
+            type_nodes.len() >= 2,
+            "Expected at least 2 types (structs), got {}",
+            type_nodes.len()
+        );
 
         // Verify struct names
         let type_names: Vec<_> = type_nodes.iter().map(|n| n.name.clone()).collect();
@@ -320,8 +358,16 @@ fn main() {}
         let result = extract_from_source(source, "main.rs", "test-repo").unwrap();
 
         // Should have import nodes
-        let import_nodes: Vec<_> = result.nodes.iter().filter(|n| n.node_type == KgNodeType::Import).collect();
-        assert!(import_nodes.len() >= 2, "Expected at least 2 imports, got {}", import_nodes.len());
+        let import_nodes: Vec<_> = result
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == KgNodeType::Import)
+            .collect();
+        assert!(
+            import_nodes.len() >= 2,
+            "Expected at least 2 imports, got {}",
+            import_nodes.len()
+        );
 
         // Verify import targets
         let import_names: Vec<_> = import_nodes.iter().map(|n| n.name.clone()).collect();
@@ -342,13 +388,24 @@ fn inner_helper() {}
         let result = extract_from_source(source, "mod.rs", "test-repo").unwrap();
 
         // File should contain the functions via Contains edges
-        let contains_edges: Vec<_> = result.edges.iter().filter(|e| e.relation == KgRelation::Contains).collect();
-        assert!(contains_edges.len() >= 2, "Expected at least 2 Contains edges, got {}", contains_edges.len());
+        let contains_edges: Vec<_> = result
+            .edges
+            .iter()
+            .filter(|e| e.relation == KgRelation::Contains)
+            .collect();
+        assert!(
+            contains_edges.len() >= 2,
+            "Expected at least 2 Contains edges, got {}",
+            contains_edges.len()
+        );
 
         // Each Contains edge should have the file node as source
         let file_node_id = result.get_file_node_id().unwrap();
         for edge in &contains_edges {
-            assert_eq!(edge.source, file_node_id, "Contains edge should originate from file node");
+            assert_eq!(
+                edge.source, file_node_id,
+                "Contains edge should originate from file node"
+            );
         }
     }
 
@@ -373,18 +430,42 @@ fn callee() {
         }
         eprintln!("\n=== Edges ===");
         for edge in &result.edges {
-            eprintln!("  {:?} - {} -> {}", edge.relation,
-                result.nodes.iter().find(|n| n.id == edge.source).map(|n| n.name.clone()).unwrap_or_default(),
-                result.nodes.iter().find(|n| n.id == edge.target).map(|n| n.name.clone()).unwrap_or_default()
+            eprintln!(
+                "  {:?} - {} -> {}",
+                edge.relation,
+                result
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == edge.source)
+                    .map(|n| n.name.clone())
+                    .unwrap_or_default(),
+                result
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == edge.target)
+                    .map(|n| n.name.clone())
+                    .unwrap_or_default()
             );
         }
 
         // Should have Calls edges (at minimum, file calling callee since source_chunk isn't tracked)
-        let calls_edges: Vec<_> = result.edges.iter().filter(|e| e.relation == KgRelation::Calls).collect();
-        assert!(!calls_edges.is_empty(), "Expected at least one Calls edge, got edges: {:?}", result.edges.iter().map(|e| e.relation).collect::<Vec<_>>());
+        let calls_edges: Vec<_> = result
+            .edges
+            .iter()
+            .filter(|e| e.relation == KgRelation::Calls)
+            .collect();
+        assert!(
+            !calls_edges.is_empty(),
+            "Expected at least one Calls edge, got edges: {:?}",
+            result.edges.iter().map(|e| e.relation).collect::<Vec<_>>()
+        );
 
         // Verify callee is called - the callee function should be the target of some Calls edge
-        let callee_id = result.nodes.iter().find(|n| n.name == "callee").map(|n| n.id);
+        let callee_id = result
+            .nodes
+            .iter()
+            .find(|n| n.name == "callee")
+            .map(|n| n.id);
         assert!(callee_id.is_some(), "Callee function should exist in nodes");
 
         let callee_is_called = calls_edges.iter().any(|e| e.target == callee_id.unwrap());
@@ -402,22 +483,38 @@ fn helper() {}
         let result = extract_from_source(source, "imports.rs", "test-repo").unwrap();
 
         // Should have Imports edges from file to imports
-        let imports_edges: Vec<_> = result.edges.iter().filter(|e| e.relation == KgRelation::Imports).collect();
-        assert!(!imports_edges.is_empty(), "Expected at least one Imports edge");
+        let imports_edges: Vec<_> = result
+            .edges
+            .iter()
+            .filter(|e| e.relation == KgRelation::Imports)
+            .collect();
+        assert!(
+            !imports_edges.is_empty(),
+            "Expected at least one Imports edge"
+        );
 
         // Verify imports edge connects file to import node
         let file_node_id = result.get_file_node_id().unwrap();
         for edge in &imports_edges {
-            assert_eq!(edge.source, file_node_id, "Imports edge should originate from file node");
+            assert_eq!(
+                edge.source, file_node_id,
+                "Imports edge should originate from file node"
+            );
         }
     }
 
     #[test]
     fn test_chunk_type_to_node_type_mapping() {
         // Function
-        assert_eq!(chunk_type_to_node_type(ChunkType::Function), KgNodeType::Function);
+        assert_eq!(
+            chunk_type_to_node_type(ChunkType::Function),
+            KgNodeType::Function
+        );
         // Method
-        assert_eq!(chunk_type_to_node_type(ChunkType::Method), KgNodeType::Method);
+        assert_eq!(
+            chunk_type_to_node_type(ChunkType::Method),
+            KgNodeType::Method
+        );
         // Class
         assert_eq!(chunk_type_to_node_type(ChunkType::Class), KgNodeType::Class);
         // Struct -> Type
@@ -425,7 +522,10 @@ fn helper() {}
         // Enum -> Type
         assert_eq!(chunk_type_to_node_type(ChunkType::Enum), KgNodeType::Type);
         // Module
-        assert_eq!(chunk_type_to_node_type(ChunkType::Module), KgNodeType::Module);
+        assert_eq!(
+            chunk_type_to_node_type(ChunkType::Module),
+            KgNodeType::Module
+        );
     }
 
     #[test]
@@ -460,10 +560,26 @@ impl InternalState {
         let result = extract_from_source(source, "processor.rs", "integration-test-repo").unwrap();
 
         // Verify node counts
-        let file_count = result.nodes.iter().filter(|n| n.node_type == KgNodeType::File).count();
-        let func_count = result.nodes.iter().filter(|n| n.node_type == KgNodeType::Function).count();
-        let type_count = result.nodes.iter().filter(|n| n.node_type == KgNodeType::Type).count();
-        let import_count = result.nodes.iter().filter(|n| n.node_type == KgNodeType::Import).count();
+        let file_count = result
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == KgNodeType::File)
+            .count();
+        let func_count = result
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == KgNodeType::Function)
+            .count();
+        let type_count = result
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == KgNodeType::Type)
+            .count();
+        let import_count = result
+            .nodes
+            .iter()
+            .filter(|n| n.node_type == KgNodeType::Import)
+            .count();
 
         assert_eq!(file_count, 1, "Should have exactly 1 file node");
         assert!(func_count >= 1, "Should have at least 1 function");
@@ -471,10 +587,24 @@ impl InternalState {
         assert!(import_count >= 1, "Should have at least 1 import");
 
         // Verify edges
-        let contains_count = result.edges.iter().filter(|e| e.relation == KgRelation::Contains).count();
-        let imports_edge_count = result.edges.iter().filter(|e| e.relation == KgRelation::Imports).count();
+        let contains_count = result
+            .edges
+            .iter()
+            .filter(|e| e.relation == KgRelation::Contains)
+            .count();
+        let imports_edge_count = result
+            .edges
+            .iter()
+            .filter(|e| e.relation == KgRelation::Imports)
+            .count();
 
-        assert!(contains_count >= 3, "Should have Contains edges for file -> function/struct/method");
-        assert!(imports_edge_count >= 1, "Should have at least 1 Imports edge");
+        assert!(
+            contains_count >= 3,
+            "Should have Contains edges for file -> function/struct/method"
+        );
+        assert!(
+            imports_edge_count >= 1,
+            "Should have at least 1 Imports edge"
+        );
     }
 }

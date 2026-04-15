@@ -38,8 +38,8 @@ mod trust_resolution_tests {
 
     #[test]
     fn test_trust_policy_allow_many_adds_multiple_tools() {
-        let policy = swell_tools::TrustPolicy::new()
-            .allow_many(["file_read", "git_status", "shell"]);
+        let policy =
+            swell_tools::TrustPolicy::new().allow_many(["file_read", "git_status", "shell"]);
         assert!(policy.is_trusted("file_read"));
         assert!(policy.is_trusted("git_status"));
         assert!(policy.is_trusted("shell"));
@@ -74,8 +74,14 @@ mod trust_resolution_tests {
             .allow("file_read")
             .allow("git_status");
         let resolver = swell_tools::TrustResolver::new(policy);
-        assert_eq!(resolver.check("file_read"), swell_tools::TrustStatus::Trusted);
-        assert_eq!(resolver.check("git_status"), swell_tools::TrustStatus::Trusted);
+        assert_eq!(
+            resolver.check("file_read"),
+            swell_tools::TrustStatus::Trusted
+        );
+        assert_eq!(
+            resolver.check("git_status"),
+            swell_tools::TrustStatus::Trusted
+        );
     }
 
     #[test]
@@ -158,9 +164,7 @@ mod trust_resolution_tests {
         let msg = err.to_string();
         // The error message must explain WHY access was denied
         assert!(
-            msg.contains("not trusted")
-                || msg.contains("denied")
-                || msg.contains("allow-list"),
+            msg.contains("not trusted") || msg.contains("denied") || msg.contains("allow-list"),
             "Error message should explain why access was denied, got: {msg}"
         );
     }
@@ -218,9 +222,7 @@ mod trust_resolution_tests {
         assert!(msg.contains("rm_rf_tool"));
         // Must explain the denial reason
         assert!(
-            msg.contains("not trusted")
-                || msg.contains("denied")
-                || msg.contains("allow-list"),
+            msg.contains("not trusted") || msg.contains("denied") || msg.contains("allow-list"),
             "Error message must explain why access was denied, got: {msg}"
         );
     }

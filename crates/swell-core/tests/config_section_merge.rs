@@ -11,9 +11,9 @@
 //! via dirs::home_dir(), so they cannot be controlled via project_path.
 //! These tests only use layers 3-4 (project shared and project modern).
 
-use swell_core::config::{ConfigLoader, LoadedConfig};
 use serde_json::Value;
 use std::path::PathBuf;
+use swell_core::config::{ConfigLoader, LoadedConfig};
 use tempfile::TempDir;
 
 /// Create config file in project .swell directory (layers 3-4 use project_path)
@@ -109,7 +109,10 @@ fn test_deep_merge_three_levels() {
     let execution = config.get("execution").unwrap().as_object().unwrap();
     assert_eq!(execution.get("max_retries").unwrap().as_i64().unwrap(), 5); // overridden
     assert_eq!(execution.get("timeout").unwrap().as_i64().unwrap(), 60); // preserved
-    assert_eq!(execution.get("log_level").unwrap().as_str().unwrap(), "debug"); // added
+    assert_eq!(
+        execution.get("log_level").unwrap().as_str().unwrap(),
+        "debug"
+    ); // added
 }
 
 #[test]
@@ -135,7 +138,10 @@ fn test_unique_extension_arrays() {
     let config = loader.load().unwrap();
 
     let allowed = config.get("allowed_paths").unwrap().as_array().unwrap();
-    let items: Vec<&str> = allowed.iter().map(|v: &Value| v.as_str().unwrap()).collect();
+    let items: Vec<&str> = allowed
+        .iter()
+        .map(|v: &Value| v.as_str().unwrap())
+        .collect();
 
     // Should have x, y, z (y is unique, not duplicated)
     assert!(items.contains(&"x"));
@@ -167,7 +173,10 @@ fn test_unique_extension_preserves_order() {
     let config = loader.load().unwrap();
 
     let plugins = config.get("plugins").unwrap().as_array().unwrap();
-    let items: Vec<&str> = plugins.iter().map(|v: &Value| v.as_str().unwrap()).collect();
+    let items: Vec<&str> = plugins
+        .iter()
+        .map(|v: &Value| v.as_str().unwrap())
+        .collect();
 
     // Order: alpha, beta (from layer 3), gamma (from layer 4, beta already exists)
     assert_eq!(items, vec!["alpha", "beta", "gamma"]);
@@ -225,7 +234,10 @@ fn test_full_replacement_prompts_section() {
     let prompts = config.get("prompts").unwrap().as_object().unwrap();
     // Full replacement: only new_system exists, old keys are gone
     assert_eq!(prompts.len(), 1);
-    assert_eq!(prompts.get("system").unwrap().as_str().unwrap(), "new_system");
+    assert_eq!(
+        prompts.get("system").unwrap().as_str().unwrap(),
+        "new_system"
+    );
 }
 
 #[test]
@@ -261,7 +273,10 @@ fn test_mixed_merge_strategies() {
 
     // allowed_paths: unique-extension → ["x", "y"]
     let allowed = config.get("allowed_paths").unwrap().as_array().unwrap();
-    let items: Vec<&str> = allowed.iter().map(|v: &Value| v.as_str().unwrap()).collect();
+    let items: Vec<&str> = allowed
+        .iter()
+        .map(|v: &Value| v.as_str().unwrap())
+        .collect();
     assert!(items.contains(&"x"));
     assert!(items.contains(&"y"));
     assert_eq!(items.len(), 2);
@@ -325,8 +340,15 @@ fn test_deep_merge_does_not_concatenate_strings() {
     let loader = ConfigLoader::new().with_project_path(temp.path());
     let config = loader.load().unwrap();
 
-    let url = config.get("connection").unwrap().as_object().unwrap()
-        .get("url").unwrap().as_str().unwrap();
+    let url = config
+        .get("connection")
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .get("url")
+        .unwrap()
+        .as_str()
+        .unwrap();
     assert_eq!(url, "http://new"); // Override, not merge
 }
 

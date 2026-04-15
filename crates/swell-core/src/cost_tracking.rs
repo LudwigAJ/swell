@@ -631,7 +631,11 @@ impl CostTracker {
     /// Returns both the cost data and the final task outcome
     pub fn get_task_summary_with_outcome(&self, task_id: Uuid) -> Option<TaskCostSummary> {
         let summary = self.task_summaries.get(&task_id)?;
-        let outcome = self.task_outcomes.get(&task_id).copied().unwrap_or_default();
+        let outcome = self
+            .task_outcomes
+            .get(&task_id)
+            .copied()
+            .unwrap_or_default();
         Some(TaskCostSummary {
             total_cost_usd: summary.total_cost_usd,
             total_input_tokens: summary.total_input_tokens,

@@ -164,7 +164,9 @@ pub fn run_repl_with_io<I: BufRead, O: Write>(
     loop {
         // Print prompt
         writeln!(output, "\nswell> ").map_err(|e| CliError::ServerError(e.to_string()))?;
-        output.flush().map_err(|e| CliError::ServerError(e.to_string()))?;
+        output
+            .flush()
+            .map_err(|e| CliError::ServerError(e.to_string()))?;
 
         // Read line
         let mut line = String::new();
@@ -189,8 +191,7 @@ pub fn run_repl_with_io<I: BufRead, O: Write>(
 
             if let Some(cmd) = registry.get(cmd_name) {
                 let result = cmd.execute();
-                writeln!(output, "{}", result)
-                    .map_err(|e| CliError::ServerError(e.to_string()))?;
+                writeln!(output, "{}", result).map_err(|e| CliError::ServerError(e.to_string()))?;
 
                 // Check if /exit was run
                 if cmd.name == "exit" {
@@ -249,11 +250,9 @@ mod tests {
         let mut registry = SlashCommandRegistry::new();
         assert!(registry.get("greet").is_none());
 
-        registry.register(SlashCommandSpec::new(
-            "greet",
-            "Say hello",
-            || "Hello!".to_string(),
-        ));
+        registry.register(SlashCommandSpec::new("greet", "Say hello", || {
+            "Hello!".to_string()
+        }));
 
         let cmd = registry.get("greet").expect("Command should exist");
         assert_eq!(cmd.name, "greet");
@@ -264,7 +263,9 @@ mod tests {
     #[test]
     fn test_slash_command_registry_case_insensitive() {
         let mut registry = SlashCommandRegistry::new();
-        registry.register(SlashCommandSpec::new("Greet", "Say hello", || "Hello!".to_string()));
+        registry.register(SlashCommandSpec::new("Greet", "Say hello", || {
+            "Hello!".to_string()
+        }));
 
         // Should be normalized to lowercase
         assert!(registry.get("greet").is_some());
@@ -285,11 +286,9 @@ mod tests {
     #[test]
     fn test_repl_help_command() {
         let mut registry = built_in_registry();
-        registry.register(SlashCommandSpec::new(
-            "greet",
-            "Say hello",
-            || "Hello!".to_string(),
-        ));
+        registry.register(SlashCommandSpec::new("greet", "Say hello", || {
+            "Hello!".to_string()
+        }));
 
         let input = "/help\n/exit\n";
         let mut input = Cursor::new(input.as_bytes());
@@ -336,11 +335,9 @@ mod tests {
     #[test]
     fn test_repl_custom_command() {
         let mut registry = built_in_registry();
-        registry.register(SlashCommandSpec::new(
-            "greet",
-            "Say hello",
-            || "Hello, user!".to_string(),
-        ));
+        registry.register(SlashCommandSpec::new("greet", "Say hello", || {
+            "Hello, user!".to_string()
+        }));
 
         let input = "/greet\n/exit\n";
         let mut input = Cursor::new(input.as_bytes());
@@ -366,11 +363,9 @@ mod tests {
     #[test]
     fn test_command_names() {
         let mut registry = built_in_registry();
-        registry.register(SlashCommandSpec::new(
-            "custom",
-            "A custom command",
-            || "custom".to_string(),
-        ));
+        registry.register(SlashCommandSpec::new("custom", "A custom command", || {
+            "custom".to_string()
+        }));
 
         let names = registry.command_names();
         assert!(names.contains(&"help"));

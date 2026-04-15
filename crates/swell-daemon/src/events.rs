@@ -231,9 +231,6 @@ impl EventEmitter {
             correlation_id,
         };
 
-        let mut log = self.log.write().await;
-        log.record(correlation_id, Some(task_id), event.clone());
-
         tracing::info!(
             task_id = %task_id,
             state = %state,
@@ -241,8 +238,13 @@ impl EventEmitter {
             "Event: TaskStateChanged"
         );
 
-        drop(log);
+        // Broadcast first to unblock any waiting watchers
         self.broadcast(&event).await;
+
+        // Record to log after broadcast to reduce lock contention
+        let mut log = self.log.write().await;
+        log.record(correlation_id, Some(task_id), event.clone());
+
         event
     }
 
@@ -766,7 +768,9 @@ mod tests {
         let correlation_id = EventEmitter::new_correlation_id();
         let message = "Something went wrong".to_string();
 
-        let event = emitter.emit_error(message.clone(), None, correlation_id).await;
+        let event = emitter
+            .emit_error(message.clone(), None, correlation_id)
+            .await;
 
         match event {
             DaemonEvent::Error {
@@ -835,7 +839,11 @@ mod tests {
         let task = Task::new("Test".to_string());
         emitter.emit_task_created(&task).await;
         emitter
-            .emit_error("Test error".to_string(), None, EventEmitter::new_correlation_id())
+            .emit_error(
+                "Test error".to_string(),
+                None,
+                EventEmitter::new_correlation_id(),
+            )
             .await;
 
         let all = emitter.get_all_events().await;
@@ -906,17 +914,29 @@ mod tests {
         assert_eq!(emitter.event_count().await, 0);
 
         emitter
-            .emit_error("Error 1".to_string(), None, EventEmitter::new_correlation_id())
+            .emit_error(
+                "Error 1".to_string(),
+                None,
+                EventEmitter::new_correlation_id(),
+            )
             .await;
         assert_eq!(emitter.event_count().await, 1);
 
         emitter
-            .emit_error("Error 2".to_string(), None, EventEmitter::new_correlation_id())
+            .emit_error(
+                "Error 2".to_string(),
+                None,
+                EventEmitter::new_correlation_id(),
+            )
             .await;
         assert_eq!(emitter.event_count().await, 2);
 
         emitter
-            .emit_error("Error 3".to_string(), None, EventEmitter::new_correlation_id())
+            .emit_error(
+                "Error 3".to_string(),
+                None,
+                EventEmitter::new_correlation_id(),
+            )
             .await;
         assert_eq!(emitter.event_count().await, 3);
     }

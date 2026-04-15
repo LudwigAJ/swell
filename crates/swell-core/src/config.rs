@@ -225,7 +225,13 @@ impl ConfigLoader {
             Err(_) => return, // Silently skip invalid JSON
         };
 
-        self.merge_value(parsed, layer, path.to_string_lossy().to_string(), values, entries);
+        self.merge_value(
+            parsed,
+            layer,
+            path.to_string_lossy().to_string(),
+            values,
+            entries,
+        );
     }
 
     /// Load environment variable overrides.
@@ -233,6 +239,16 @@ impl ConfigLoader {
     /// Environment variables are the highest-priority layer (layer 5). Each
     /// SWELL_* env var is upserted into the audit trail so that `loaded_entries()`
     /// always reflects the winner, even when the env var overrides a file-sourced key.
+    ///
+    /// # Naming Convention
+    ///
+    /// Environment variables use underscores as section separators. For example:
+    /// - `SWELL_EXECUTION_TIMEOUT` → `execution.timeout` (section.key format)
+    /// - `SWELL_EXECUTION_MAX_ITERATIONS` → `execution.max_iterations`
+    ///
+    /// The first underscore after the prefix separates the section (e.g., `execution`)
+    /// from the remaining path. Subsequent underscores within the path are preserved
+    /// to support keys that contain underscores (e.g., `max_iterations`).
     fn load_env_overrides(
         &self,
         values: &mut serde_json::Map<String, serde_json::Value>,
@@ -241,15 +257,23 @@ impl ConfigLoader {
         // Look for SWELL_* environment variables
         for (key, value) in env::vars() {
             if key.starts_with(&self.env_prefix) {
-                // Convert SWELL_EXECUTION_MAX_TIMEOUT to execution.max_timeout
-                let config_key = key
+                // Strip the prefix and lowercase
+                let suffix = key
                     .strip_prefix(&self.env_prefix)
                     .unwrap_or(&key)
-                    .to_lowercase()
-                    .replace('_', ".");
+                    .to_lowercase();
 
-                let json_value: serde_json::Value = serde_json::from_str(&value)
-                    .unwrap_or(serde_json::Value::String(value));
+                // Replace only the FIRST underscore with a dot (section separator)
+                // Subsequent underscores in the path are preserved
+                let config_key = if let Some(pos) = suffix.find('_') {
+                    let (section, rest) = suffix.split_at(pos);
+                    format!("{}.{}", section, &rest[1..]) // Skip the underscore we split at
+                } else {
+                    suffix
+                };
+
+                let json_value: serde_json::Value =
+                    serde_json::from_str(&value).unwrap_or(serde_json::Value::String(value));
 
                 // Upsert: update the existing entry if one already exists for this key
                 // (env vars are layer 5 — highest priority, they always win).
@@ -272,9 +296,12 @@ impl ConfigLoader {
 
     /// Merge a value into the config, tracking entries.
     ///
-    /// The audit trail (`entries`) records only the **winning** entry per key: if a
-    /// higher-priority layer provides the same key, the existing entry is updated in
-    /// place so that `loaded_entries()` always shows the source that ultimately won.
+    /// The audit trail (`entries`) records all config keys with their source:
+    /// - For nested objects, each leaf key is recorded with its full path
+    ///   (e.g., `execution.max_iterations` for `{"execution": {"max_iterations": 5}}`)
+    /// - If a higher-priority layer provides the same key, the existing entry is
+    ///   updated in place so that `loaded_entries()` always shows the source that
+    ///   ultimately won.
     fn merge_value(
         &self,
         value: serde_json::Value,
@@ -287,18 +314,8 @@ impl ConfigLoader {
             for (key, val) in obj {
                 let key_path = key.clone();
 
-                // Upsert the audit-trail entry: update if already present
-                // (later layers have higher priority and become the new winner).
-                if let Some(existing_entry) = entries.iter_mut().find(|e| e.key_path == key_path) {
-                    existing_entry.value = val.clone();
-                    existing_entry.source_file = Some(source.clone());
-                } else {
-                    entries.push(ConfigEntry {
-                        key_path: key_path.clone(),
-                        value: val.clone(),
-                        source_file: Some(source.clone()),
-                    });
-                }
+                // Record the entry in the audit trail (including nested keys)
+                self.record_entries_recursive(&key_path, &val, source.clone(), entries);
 
                 // Apply section-aware merge strategy
                 if let Some(existing) = values.get_mut(&key) {
@@ -306,6 +323,40 @@ impl ConfigLoader {
                 } else {
                     values.insert(key, val);
                 }
+            }
+        }
+    }
+
+    /// Recursively record all entries in the audit trail.
+    ///
+    /// For nested objects, this records each leaf key with its full dot-separated path.
+    /// For example, `{"execution": {"max_iterations": 5}}` records:
+    /// - `execution` → `{"max_iterations": 5}` (the object itself)
+    /// - `execution.max_iterations` → `5` (the leaf value)
+    fn record_entries_recursive(
+        &self,
+        key_path: &str,
+        value: &serde_json::Value,
+        source: String,
+        entries: &mut Vec<ConfigEntry>,
+    ) {
+        // Record/update the entry at this path
+        if let Some(existing_entry) = entries.iter_mut().find(|e| e.key_path == key_path) {
+            existing_entry.value = value.clone();
+            existing_entry.source_file = Some(source.clone());
+        } else {
+            entries.push(ConfigEntry {
+                key_path: key_path.to_string(),
+                value: value.clone(),
+                source_file: Some(source.clone()),
+            });
+        }
+
+        // For objects, recursively record nested entries
+        if let serde_json::Value::Object(obj) = value {
+            for (nested_key, nested_val) in obj {
+                let nested_path = format!("{}.{}", key_path, nested_key);
+                self.record_entries_recursive(&nested_path, nested_val, source.clone(), entries);
             }
         }
     }
@@ -371,9 +422,10 @@ impl ConfigLoader {
             if let Some(existing_value) = result.get_mut(&key) {
                 // Recursively merge nested objects
                 let merged = match (existing_value.clone(), new_value) {
-                    (serde_json::Value::Object(existing_obj), serde_json::Value::Object(new_obj)) => {
-                        Self::deep_merge(existing_obj, new_obj)
-                    }
+                    (
+                        serde_json::Value::Object(existing_obj),
+                        serde_json::Value::Object(new_obj),
+                    ) => Self::deep_merge(existing_obj, new_obj),
                     // Override for non-objects (scalars, arrays)
                     (_, new_val) => new_val,
                 };
@@ -405,7 +457,11 @@ impl ConfigLoader {
 }
 
 /// Set a nested value in a JSON object using dot notation
-fn set_nested_value(map: &mut serde_json::Map<String, serde_json::Value>, key_path: &str, value: serde_json::Value) {
+fn set_nested_value(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    key_path: &str,
+    value: serde_json::Value,
+) {
     let parts: Vec<&str> = key_path.split('.').collect();
     if parts.is_empty() {
         return;
@@ -424,7 +480,10 @@ fn set_nested_value(map: &mut serde_json::Map<String, serde_json::Value>, key_pa
     for part in parts.iter().take(parts.len() - 1) {
         let part_str = part.to_string();
         if !current.contains_key(&part_str) {
-            current.insert(part_str.clone(), serde_json::Value::Object(serde_json::Map::new()));
+            current.insert(
+                part_str.clone(),
+                serde_json::Value::Object(serde_json::Map::new()),
+            );
         }
         if let Some(serde_json::Value::Object(ref mut obj)) = current.get_mut(&part_str) {
             current = obj;
@@ -455,23 +514,34 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Layer 1: user global
-        create_temp_config(&temp.path().join(".config/swell"), "settings.json",
-            r#"{"timeout": 10}}"#);
+        create_temp_config(
+            &temp.path().join(".config/swell"),
+            "settings.json",
+            r#"{"timeout": 10}}"#,
+        );
 
         // Layer 2: user modern
-        create_temp_config(&temp.path().join(".swell"), "settings.json",
-            r#"{"timeout": 20}}"#);
+        create_temp_config(
+            &temp.path().join(".swell"),
+            "settings.json",
+            r#"{"timeout": 20}}"#,
+        );
 
         // Layer 3: project shared
-        create_temp_config(&temp.path().join(".swell"), "settings.json",
-            r#"{"timeout": 30}}"#);
+        create_temp_config(
+            &temp.path().join(".swell"),
+            "settings.json",
+            r#"{"timeout": 30}}"#,
+        );
 
         // Layer 4: project modern
-        create_temp_config(&temp.path().join(".swell"), "settings.local.json",
-            r#"{"timeout": 40}}"#);
+        create_temp_config(
+            &temp.path().join(".swell"),
+            "settings.local.json",
+            r#"{"timeout": 40}}"#,
+        );
 
-        let loader = ConfigLoader::new()
-            .with_project_path(temp.path());
+        let loader = ConfigLoader::new().with_project_path(temp.path());
 
         // With env override
         std::env::set_var("SWELL_TIMEOUT", "50");
@@ -496,14 +566,16 @@ mod tests {
         std::fs::write(
             temp.path().join(".config/swell/settings.json"),
             r#"{"timeout": 10, "debug": false}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         // User modern overrides timeout to 20
         std::fs::create_dir_all(temp.path().join(".swell")).unwrap();
         std::fs::write(
             temp.path().join(".swell/settings.json"),
             r#"{"timeout": 20, "debug": true}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let loader = ConfigLoader::new().with_project_path(temp.path());
         let config = loader.load().unwrap();
@@ -526,7 +598,8 @@ mod tests {
         std::fs::write(
             temp.path().join(".swell/settings.json"),
             r#"{"timeout": 30}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let loader = ConfigLoader::new().with_project_path(temp.path());
         let config = loader.load().unwrap();
@@ -545,7 +618,8 @@ mod tests {
         std::fs::write(
             temp.path().join(".swell/settings.json"),
             r#"{"timeout": 30}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         std::env::set_var("SWELL_TIMEOUT", "100");
 
@@ -567,13 +641,15 @@ mod tests {
         std::fs::write(
             temp.path().join(".config/swell/settings.json"),
             r#"{"timeout": 10}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         std::fs::create_dir_all(temp.path().join(".swell")).unwrap();
         std::fs::write(
             temp.path().join(".swell/settings.json"),
             r#"{"timeout": 20, "debug": true}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let loader = ConfigLoader::new().with_project_path(temp.path());
         let config = loader.load().unwrap();
@@ -590,8 +666,7 @@ mod tests {
 
     #[test]
     fn test_nonexistent_project_path() {
-        let loader = ConfigLoader::new()
-            .with_project_path("/nonexistent/path/that/does/not/exist");
+        let loader = ConfigLoader::new().with_project_path("/nonexistent/path/that/does/not/exist");
 
         // Should not panic, just skip the layer
         let config = loader.load().unwrap();
@@ -607,12 +682,44 @@ mod tests {
         std::fs::write(
             temp.path().join(".swell/settings.json"),
             "not valid json {{{",
-        ).unwrap();
+        )
+        .unwrap();
 
         let loader = ConfigLoader::new().with_project_path(temp.path());
         let config = loader.load().unwrap();
 
         // Should not panic, just skip invalid file
         assert!(config.values.is_object());
+    }
+
+    #[test]
+    fn test_nested_env_var_override() {
+        // Clean up any leftover env vars
+        std::env::remove_var("SWELL_EXECUTION_MAX_ITERATIONS");
+
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join(".swell")).unwrap();
+        std::fs::write(
+            temp.path().join(".swell/settings.json"),
+            r#"{"execution": {"max_iterations": 50}}"#,
+        )
+        .unwrap();
+
+        // Set nested env var: SWELL_EXECUTION_MAX_ITERATIONS -> execution.max_iterations
+        std::env::set_var("SWELL_EXECUTION_MAX_ITERATIONS", "100");
+
+        let loader = ConfigLoader::new().with_project_path(temp.path());
+        let config = loader.load().unwrap();
+
+        // Env var should override the file value
+        let max_iter = config
+            .get("execution.max_iterations")
+            .expect("execution.max_iterations should be present")
+            .as_u64()
+            .expect("should be a number");
+
+        assert_eq!(max_iter, 100, "Env var should override file value");
+
+        std::env::remove_var("SWELL_EXECUTION_MAX_ITERATIONS");
     }
 }

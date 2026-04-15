@@ -90,8 +90,8 @@ impl SessionMetadata {
         workspace_path: impl AsRef<std::path::Path>,
         alias: Option<String>,
     ) -> Result<Self, SessionError> {
-        let fingerprint = workspace_fingerprint(workspace_path)
-            .map_err(SessionError::FingerprintError)?;
+        let fingerprint =
+            workspace_fingerprint(workspace_path).map_err(SessionError::FingerprintError)?;
 
         let now = Utc::now().timestamp_millis();
 
@@ -123,8 +123,8 @@ impl SessionMetadata {
         &self,
         workspace_path: impl AsRef<std::path::Path>,
     ) -> Result<(), SessionError> {
-        let current_fingerprint = workspace_fingerprint(workspace_path)
-            .map_err(SessionError::FingerprintError)?;
+        let current_fingerprint =
+            workspace_fingerprint(workspace_path).map_err(SessionError::FingerprintError)?;
 
         if self.workspace_fingerprint != current_fingerprint {
             return Err(SessionError::WorkspaceMismatch {
@@ -277,8 +277,8 @@ impl SessionStore for InMemorySessionStore {
         &self,
         workspace_path: impl AsRef<std::path::Path> + Send,
     ) -> Result<Option<SessionMetadata>, SessionError> {
-        let workspace_fingerprint = workspace_fingerprint(&workspace_path)
-            .map_err(SessionError::FingerprintError)?;
+        let workspace_fingerprint =
+            workspace_fingerprint(&workspace_path).map_err(SessionError::FingerprintError)?;
 
         let sessions = self.sessions.read().await;
 
@@ -413,7 +413,8 @@ mod tests {
         let dir_b = TempDir::new().unwrap();
 
         let session_id = Uuid::new_v4();
-        let metadata = SessionMetadata::new(session_id, dir_a.path(), Some("my-session".to_string())).unwrap();
+        let metadata =
+            SessionMetadata::new(session_id, dir_a.path(), Some("my-session".to_string())).unwrap();
         store.save_session(metadata.clone()).await.unwrap();
 
         // Load by alias works in dir_a
@@ -425,9 +426,14 @@ mod tests {
         assert_eq!(loaded.id, session_id);
 
         // Load by alias fails in dir_b
-        let result = store.load_session_by_alias("my-session", dir_b.path()).await;
+        let result = store
+            .load_session_by_alias("my-session", dir_b.path())
+            .await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SessionError::WorkspaceMismatch { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            SessionError::WorkspaceMismatch { .. }
+        ));
     }
 
     #[tokio::test]
@@ -440,7 +446,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.is_none(), "Loading nonexistent session should return None");
+        assert!(
+            result.is_none(),
+            "Loading nonexistent session should return None"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -491,7 +500,10 @@ mod tests {
         // Touch to update timestamp
         metadata.touch();
         let new_timestamp = metadata.updated_at_ms;
-        assert!(new_timestamp > 100, "Touched timestamp should be greater than 100");
+        assert!(
+            new_timestamp > 100,
+            "Touched timestamp should be greater than 100"
+        );
 
         // Save updated session
         store.save_session(metadata.clone()).await.unwrap();
@@ -529,12 +541,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         let session_id = Uuid::new_v4();
-        let metadata = SessionMetadata::new(
-            session_id,
-            temp_dir.path(),
-            Some("my-feature".to_string()),
-        )
-        .unwrap();
+        let metadata =
+            SessionMetadata::new(session_id, temp_dir.path(), Some("my-feature".to_string()))
+                .unwrap();
         store.save_session(metadata.clone()).await.unwrap();
 
         // Resume by alias works
@@ -614,7 +623,9 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         let session_id = Uuid::new_v4();
-        let metadata = SessionMetadata::new(session_id, temp_dir.path(), Some("to-delete".to_string())).unwrap();
+        let metadata =
+            SessionMetadata::new(session_id, temp_dir.path(), Some("to-delete".to_string()))
+                .unwrap();
         store.save_session(metadata.clone()).await.unwrap();
 
         // Verify session exists
@@ -645,7 +656,10 @@ mod tests {
         );
 
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), SessionError::FingerprintError(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            SessionError::FingerprintError(_)
+        ));
     }
 
     #[test]

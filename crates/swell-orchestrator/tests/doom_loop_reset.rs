@@ -78,7 +78,12 @@ async fn test_loop_breaker_clears_repetitive_context() {
         let mut tracker = tracker.write().await;
         for _ in 0..5 {
             tracker
-                .record_execution(task_id, "shell", false, serde_json::json!({"command": "ls -la"}))
+                .record_execution(
+                    task_id,
+                    "shell",
+                    false,
+                    serde_json::json!({"command": "ls -la"}),
+                )
                 .await;
         }
     }

@@ -202,7 +202,8 @@ impl TaskTraceData {
     /// Start a new turn span
     fn start_turn_span(&mut self, turn_number: u32, agent_name: &str) -> &SpanData {
         let name = format!("Turn {} [{}]", turn_number, agent_name);
-        self.spans.push(SpanData::new(name, turn_number, agent_name));
+        self.spans
+            .push(SpanData::new(name, turn_number, agent_name));
         let span = self.spans.last_mut().unwrap();
         self.active_span_id = Some(span.id.clone());
         self.turn_start_time = Some(Instant::now());
@@ -407,9 +408,9 @@ impl LangfuseExporter {
     /// Panics if no active trace exists for the given task_id.
     pub fn start_turn_span(&self, task_id: Uuid, turn_number: u32, agent_name: &str) {
         let mut traces = self.traces.write().unwrap();
-        let trace = traces.get_mut(&task_id).expect(
-            "No active trace found for task_id. Call start_task_trace() first.",
-        );
+        let trace = traces
+            .get_mut(&task_id)
+            .expect("No active trace found for task_id. Call start_task_trace() first.");
         trace.start_turn_span(turn_number, agent_name);
     }
 
@@ -896,8 +897,8 @@ mod tests {
 
     #[test]
     fn test_concurrent_trace_creation() {
-        use std::thread;
         use std::sync::Arc;
+        use std::thread;
 
         let exporter = Arc::new(create_test_exporter());
         let task_ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();

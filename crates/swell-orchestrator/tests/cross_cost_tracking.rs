@@ -53,7 +53,10 @@ async fn test_cost_tracker_accumulates_llm_costs() {
 
     // Create a task with FullAuto to bypass approval
     let task = orchestrator
-        .create_task_with_autonomy("Test task for cost tracking".to_string(), AutonomyLevel::FullAuto)
+        .create_task_with_autonomy(
+            "Test task for cost tracking".to_string(),
+            AutonomyLevel::FullAuto,
+        )
         .await;
     let task_id = task.id;
 
@@ -84,7 +87,12 @@ async fn test_cost_tracker_accumulates_llm_costs() {
     // For this test, we simulate the cost tracking integration
     let mock_total_tokens: u64 = mock_llm.total_steps() as u64 * 100; // rough estimate per call
     cost_tracker
-        .record_task_cost(task_id, mock_total_tokens, mock_total_tokens / 2, "claude-sonnet")
+        .record_task_cost(
+            task_id,
+            mock_total_tokens,
+            mock_total_tokens / 2,
+            "claude-sonnet",
+        )
         .unwrap();
 
     // Verify costs were accumulated
@@ -179,7 +187,10 @@ async fn test_execution_halts_when_budget_exceeded() {
 
     // Create a task with FullAuto to bypass approval
     let task = orchestrator
-        .create_task_with_autonomy("Task that should exceed budget".to_string(), AutonomyLevel::FullAuto)
+        .create_task_with_autonomy(
+            "Task that should exceed budget".to_string(),
+            AutonomyLevel::FullAuto,
+        )
         .await;
     let task_id = task.id;
 
@@ -301,8 +312,7 @@ async fn test_cost_tracker_records_task_outcome() {
 
     println!(
         "Task outcome: {:?}, cost: ${:.4}",
-        summary.outcome,
-        summary.total_cost_usd
+        summary.outcome, summary.total_cost_usd
     );
 }
 
@@ -377,13 +387,14 @@ async fn test_cost_tracker_task_isolation() {
     // Run summary should aggregate both
     let run_summary = tracker.get_summary();
     assert_eq!(run_summary.call_count, 2);
-    assert_eq!(run_summary.total_tokens, summary1.total_tokens + summary2.total_tokens);
+    assert_eq!(
+        run_summary.total_tokens,
+        summary1.total_tokens + summary2.total_tokens
+    );
 
     println!(
         "Task isolation verified: task1={} tokens, task2={} tokens, run total={} tokens",
-        summary1.total_tokens,
-        summary2.total_tokens,
-        run_summary.total_tokens
+        summary1.total_tokens, summary2.total_tokens, run_summary.total_tokens
     );
 }
 
@@ -418,8 +429,6 @@ async fn test_cost_tracker_model_breakdown() {
 
     println!(
         "Model breakdown: {} total tokens, ${:.4} total cost across {} calls",
-        summary.total_tokens,
-        summary.total_cost_usd,
-        summary.call_count
+        summary.total_tokens, summary.total_cost_usd, summary.call_count
     );
 }

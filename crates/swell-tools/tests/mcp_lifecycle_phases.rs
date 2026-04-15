@@ -77,10 +77,7 @@ mod mcp_lifecycle_phase_tests {
             McpLifecyclePhase::InitializeHandshake.name(),
             "InitializeHandshake"
         );
-        assert_eq!(
-            McpLifecyclePhase::ToolDiscovery.name(),
-            "ToolDiscovery"
-        );
+        assert_eq!(McpLifecyclePhase::ToolDiscovery.name(), "ToolDiscovery");
     }
 }
 
@@ -119,25 +116,23 @@ mod mcp_lifecycle_error_tests {
     /// Test creating a lifecycle error
     #[test]
     fn test_lifecycle_error_creation() {
-        let error = McpLifecycleError::new(
-            McpLifecyclePhase::SpawnConnect,
-            "Failed to spawn process",
-        );
+        let error =
+            McpLifecycleError::new(McpLifecyclePhase::SpawnConnect, "Failed to spawn process");
 
         assert_eq!(error.failed_phase, McpLifecyclePhase::SpawnConnect);
         assert!(error.error_message.contains("Failed to spawn process"));
         // With all 5 phases: ConfigLoad → ServerRegistration → SpawnConnect → InitializeHandshake → ToolDiscovery
         // SpawnConnect's last_completed is ServerRegistration
-        assert_eq!(error.last_completed_phase, Some(McpLifecyclePhase::ServerRegistration));
+        assert_eq!(
+            error.last_completed_phase,
+            Some(McpLifecyclePhase::ServerRegistration)
+        );
     }
 
     /// Test that ConfigLoad failure has no last completed phase
     #[test]
     fn test_lifecycle_error_config_load_failure() {
-        let error = McpLifecycleError::new(
-            McpLifecyclePhase::ConfigLoad,
-            "Invalid command",
-        );
+        let error = McpLifecycleError::new(McpLifecyclePhase::ConfigLoad, "Invalid command");
 
         assert_eq!(error.failed_phase, McpLifecyclePhase::ConfigLoad);
         assert_eq!(error.last_completed_phase, None);
@@ -178,20 +173,24 @@ mod mcp_lifecycle_integration_tests {
         })
         .to_string();
 
-        let manager = McpConfigManager::new_from_str(&json)
-            .expect("Failed to create manager");
+        let manager = McpConfigManager::new_from_str(&json).expect("Failed to create manager");
 
         // Start server with degraded mode (to handle echo behavior)
         let results = manager.start_all_servers_degraded().await;
 
         // Get health for echo-server
         let health = results.get("echo-server").copied();
-        assert!(health.is_some(), "Should have health status for echo-server");
+        assert!(
+            health.is_some(),
+            "Should have health status for echo-server"
+        );
 
         // If server started successfully, verify lifecycle tracking
         if health == Some(swell_tools::mcp_config::McpServerHealth::Healthy) {
             // Server is healthy, so lifecycle should be complete or at least past SpawnConnect
-            let client = manager.get_or_start_server("echo-server").await
+            let client = manager
+                .get_or_start_server("echo-server")
+                .await
                 .expect("Should be able to get client");
 
             let lifecycle_state = client.lifecycle_state().await;
@@ -224,8 +223,7 @@ mod mcp_lifecycle_integration_tests {
         })
         .to_string();
 
-        let manager = McpConfigManager::new_from_str(&json)
-            .expect("Failed to create manager");
+        let manager = McpConfigManager::new_from_str(&json).expect("Failed to create manager");
 
         // Try to start the server - it should fail
         let result = manager.start_server("nonexistent-server").await;
@@ -236,7 +234,8 @@ mod mcp_lifecycle_integration_tests {
         // The error should mention the lifecycle phase that failed
         let error_msg = result.unwrap_err().to_string();
         assert!(
-            error_msg.contains("spawn") || error_msg.contains("SpawnConnect")
+            error_msg.contains("spawn")
+                || error_msg.contains("SpawnConnect")
                 || error_msg.contains("MCP"),
             "Error should mention spawn failure or MCP error, got: {}",
             error_msg
@@ -308,8 +307,7 @@ mod mcp_lifecycle_integration_tests {
         })
         .to_string();
 
-        let manager = McpConfigManager::new_from_str(&json)
-            .expect("Failed to create manager");
+        let manager = McpConfigManager::new_from_str(&json).expect("Failed to create manager");
 
         // Try to start server
         let _start_result = manager.start_server("test-server").await;

@@ -204,11 +204,13 @@ impl VoyageEmbeddingClientBuilder {
 
     /// Build the VoyageEmbeddingClient.
     pub fn build(self) -> Result<VoyageEmbeddingClient, SwellError> {
-        let api_key = self
-            .api_key
-            .unwrap_or_else(|| std::env::var("VOYAGE_API_KEY").expect("VOYAGE_API_KEY must be set"));
+        let api_key = self.api_key.unwrap_or_else(|| {
+            std::env::var("VOYAGE_API_KEY").expect("VOYAGE_API_KEY must be set")
+        });
 
-        let base_url = self.base_url.unwrap_or_else(|| "https://api.voyageai.com".to_string());
+        let base_url = self
+            .base_url
+            .unwrap_or_else(|| "https://api.voyageai.com".to_string());
 
         let timeout_secs = self.timeout_secs.unwrap_or(60);
 
@@ -333,13 +335,12 @@ mod tests {
     #[tokio::test]
     async fn test_embedding_client_trait_object() {
         // Test that we can use trait objects
-        let client: VoyageEmbeddingClient =
-            VoyageEmbeddingClient::builder()
-                .with_api_key("test-key")
-                .with_base_url("http://localhost")
-                .with_timeout(30)
-                .build()
-                .unwrap();
+        let client: VoyageEmbeddingClient = VoyageEmbeddingClient::builder()
+            .with_api_key("test-key")
+            .with_base_url("http://localhost")
+            .with_timeout(30)
+            .build()
+            .unwrap();
 
         // Verify the client was built correctly
         assert_eq!(client.base_url(), "http://localhost");
@@ -352,10 +353,7 @@ mod tests {
 
         // Define the expected request and response
         let request_model = "voyage-code-3";
-        let response_embeddings = vec![
-            vec![0.1, 0.2, 0.3, 0.4],
-            vec![0.5, 0.6, 0.7, 0.8],
-        ];
+        let response_embeddings = vec![vec![0.1, 0.2, 0.3, 0.4], vec![0.5, 0.6, 0.7, 0.8]];
 
         let mock_response = serde_json::json!({
             "data": [

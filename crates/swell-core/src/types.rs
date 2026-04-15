@@ -930,7 +930,11 @@ mod tests {
     #[test]
     fn test_task_spec_rejects_empty_acceptance_test() {
         let result = TaskSpec::new(
-            vec!["test_foo".to_string(), "".to_string(), "test_bar".to_string()],
+            vec![
+                "test_foo".to_string(),
+                "".to_string(),
+                "test_bar".to_string(),
+            ],
             CommitPolicy::AfterValidation,
             EscalationPolicy::Never,
         );
@@ -981,10 +985,7 @@ mod tests {
         let result = TaskSpec::new(
             vec![],
             CommitPolicy::Never,
-            EscalationPolicy::OnErrorPatterns(vec![
-                "error_oom".to_string(),
-                "".to_string(),
-            ]),
+            EscalationPolicy::OnErrorPatterns(vec!["error_oom".to_string(), "".to_string()]),
         );
         assert!(result.is_err());
         assert_eq!(
@@ -1005,8 +1006,7 @@ mod tests {
         .expect("valid spec");
 
         let serialized = serde_json::to_string(&spec).expect("should serialize");
-        let deserialized: TaskSpec =
-            serde_json::from_str(&serialized).expect("should deserialize");
+        let deserialized: TaskSpec = serde_json::from_str(&serialized).expect("should deserialize");
 
         assert_eq!(spec.acceptance_tests, deserialized.acceptance_tests);
         assert_eq!(spec.commit_policy, deserialized.commit_policy);
@@ -1026,8 +1026,7 @@ mod tests {
         .expect("valid spec");
 
         let serialized = serde_json::to_string(&spec).expect("should serialize");
-        let deserialized: TaskSpec =
-            serde_json::from_str(&serialized).expect("should deserialize");
+        let deserialized: TaskSpec = serde_json::from_str(&serialized).expect("should deserialize");
 
         assert_eq!(spec.acceptance_tests, deserialized.acceptance_tests);
         match (&spec.commit_policy, &deserialized.commit_policy) {
@@ -1054,8 +1053,7 @@ mod tests {
         let spec = TaskSpec::default_spec();
 
         let serialized = serde_json::to_string(&spec).expect("should serialize");
-        let deserialized: TaskSpec =
-            serde_json::from_str(&serialized).expect("should deserialize");
+        let deserialized: TaskSpec = serde_json::from_str(&serialized).expect("should deserialize");
 
         assert_eq!(spec.acceptance_tests, deserialized.acceptance_tests);
         assert_eq!(spec.commit_policy, deserialized.commit_policy);
@@ -1083,7 +1081,11 @@ mod tests {
             FailureClass::SandboxError,
             FailureClass::InternalError,
         ];
-        assert_eq!(variants.len(), 12, "FailureClass must have at least 12 variants");
+        assert_eq!(
+            variants.len(),
+            12,
+            "FailureClass must have at least 12 variants"
+        );
     }
 
     #[test]
@@ -1145,7 +1147,11 @@ mod tests {
             let json = serde_json::to_string(&original).expect("should serialize");
             let deserialized: FailureClass =
                 serde_json::from_str(&json).expect("should deserialize");
-            assert_eq!(original, deserialized, "Roundtrip failed for {:?}", original);
+            assert_eq!(
+                original, deserialized,
+                "Roundtrip failed for {:?}",
+                original
+            );
         }
     }
 
@@ -1159,8 +1165,7 @@ mod tests {
     #[test]
     fn test_failure_class_deserialization_from_snake_case() {
         let json = "\"rate_limited\"";
-        let deserialized: FailureClass =
-            serde_json::from_str(json).expect("should deserialize");
+        let deserialized: FailureClass = serde_json::from_str(json).expect("should deserialize");
         assert_eq!(deserialized, FailureClass::RateLimited);
     }
 
@@ -1180,8 +1185,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&event).expect("should serialize");
-        let deserialized: DaemonEvent =
-            serde_json::from_str(&json).expect("should deserialize");
+        let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
         match deserialized {
             DaemonEvent::TaskFailed {
@@ -1211,13 +1215,10 @@ mod tests {
         };
 
         let json = serde_json::to_string(&event).expect("should serialize");
-        let deserialized: DaemonEvent =
-            serde_json::from_str(&json).expect("should deserialize");
+        let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
         match deserialized {
-            DaemonEvent::TaskFailed {
-                failure_class, ..
-            } => {
+            DaemonEvent::TaskFailed { failure_class, .. } => {
                 assert!(failure_class.is_none());
             }
             other => panic!("Expected TaskFailed event, got: {:?}", other),
@@ -1234,8 +1235,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&event).expect("should serialize");
-        let deserialized: DaemonEvent =
-            serde_json::from_str(&json).expect("should deserialize");
+        let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
         match deserialized {
             DaemonEvent::Error {
@@ -1261,13 +1261,10 @@ mod tests {
         };
 
         let json = serde_json::to_string(&event).expect("should serialize");
-        let deserialized: DaemonEvent =
-            serde_json::from_str(&json).expect("should deserialize");
+        let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
         match deserialized {
-            DaemonEvent::Error {
-                failure_class, ..
-            } => {
+            DaemonEvent::Error { failure_class, .. } => {
                 assert!(failure_class.is_none());
             }
             other => panic!("Expected Error event, got: {:?}", other),
@@ -1317,8 +1314,13 @@ mod tests {
             let _deserialized: DaemonEvent =
                 serde_json::from_str(&json).expect("should deserialize");
             // Verify the JSON is valid and contains expected structure
-            let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse as JSON");
-            assert!(parsed.get("type").is_some(), "Missing 'type' field in JSON for {:?}", event);
+            let parsed: serde_json::Value =
+                serde_json::from_str(&json).expect("should parse as JSON");
+            assert!(
+                parsed.get("type").is_some(),
+                "Missing 'type' field in JSON for {:?}",
+                event
+            );
         }
     }
 
@@ -1398,8 +1400,12 @@ mod tests {
         let parsed_2: serde_json::Value = serde_json::from_str(&json_2).expect("should parse");
 
         // The payload should have different correlation IDs
-        let payload_1_cid = parsed_1.get("payload").and_then(|p| p.get("correlation_id"));
-        let payload_2_cid = parsed_2.get("payload").and_then(|p| p.get("correlation_id"));
+        let payload_1_cid = parsed_1
+            .get("payload")
+            .and_then(|p| p.get("correlation_id"));
+        let payload_2_cid = parsed_2
+            .get("payload")
+            .and_then(|p| p.get("correlation_id"));
 
         assert_ne!(payload_1_cid, payload_2_cid);
     }

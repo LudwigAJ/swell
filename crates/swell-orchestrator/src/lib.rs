@@ -117,6 +117,7 @@ pub use idempotent_actions::{
     ActionExecution, ActionKey, ActionStatus, DuplicateAction, IdempotentAction, IdempotentClosure,
     IdempotentResult, SharedDeduplicator, TrackedAction, MAX_ACTION_RETRIES,
 };
+pub use langfuse_exporter::{LangfuseExporter, LangfuseExporterError};
 pub use merge_queue::{
     GitHubMergeMethod, GitHubMergeProvider, GitHubMergeQueueConfig, MergeProvider, MergeQueue,
     MergeQueueConfig, MergeQueueEntry, MergeQueueError, MergeQueueStats, MergeResult, MergeStatus,
@@ -157,7 +158,6 @@ pub use sprint_contracts::{
     ContractNegotiator, ContractStatus, EvaluatorContext, GeneratorContext, SprintContract,
     ValidationGate,
 };
-pub use langfuse_exporter::{LangfuseExporter, LangfuseExporterError};
 pub use stacked_prs::{
     FileChangeRisk, Pr, PrFileChange, PrStack, PrStackManager, StackedPrConfig, StackedPrError,
     DEFAULT_MAX_PR_LINES, MIN_PR_LINES,
@@ -1212,10 +1212,7 @@ mod tests {
 
         // 1. Create task with FullAuto to bypass approval gate
         let task = orchestrator
-            .create_task_with_autonomy(
-                "Implement feature X".to_string(),
-                AutonomyLevel::FullAuto,
-            )
+            .create_task_with_autonomy("Implement feature X".to_string(), AutonomyLevel::FullAuto)
             .await;
         assert_eq!(task.state, TaskState::Created);
 

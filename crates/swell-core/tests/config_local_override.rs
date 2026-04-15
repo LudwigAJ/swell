@@ -92,7 +92,10 @@ fn test_local_override_deep_merges_nested_objects() {
     // max_retries overridden to 5
     assert_eq!(execution.get("max_retries").unwrap().as_i64().unwrap(), 5);
     // log_level preserved from settings.json
-    assert_eq!(execution.get("log_level").unwrap().as_str().unwrap(), "info");
+    assert_eq!(
+        execution.get("log_level").unwrap().as_str().unwrap(),
+        "info"
+    );
 }
 
 /// Local override works with array sections using unique-extension
@@ -146,11 +149,17 @@ fn test_gitignore_template_is_well_formed() {
     let template = ConfigLoader::gitignore_template();
 
     // Template should be non-empty
-    assert!(!template.is_empty(), "gitignore template should not be empty");
+    assert!(
+        !template.is_empty(),
+        "gitignore template should not be empty"
+    );
 
     // Template should have at least one line
     let lines: Vec<&str> = template.lines().collect();
-    assert!(!lines.is_empty(), "gitignore template should have at least one line");
+    assert!(
+        !lines.is_empty(),
+        "gitignore template should have at least one line"
+    );
 
     // All lines should be valid gitignore entries (start with # or are non-empty)
     for line in lines {
@@ -194,7 +203,8 @@ fn test_missing_local_override_handled_gracefully() {
     std::fs::write(
         temp.path().join(".swell").join("settings.json"),
         r#"{"debug": true, "timeout": 30}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let loader = ConfigLoader::new().with_project_path(temp.path());
 
@@ -216,7 +226,8 @@ fn test_audit_trail_correct_when_local_override_absent() {
     std::fs::write(
         temp.path().join(".swell").join("settings.json"),
         r#"{"only_in_settings": "from_settings_json"}"#,
-    ).unwrap();
+    )
+    .unwrap();
 
     let loader = ConfigLoader::new().with_project_path(temp.path());
     let config = loader.load().unwrap();
@@ -225,10 +236,7 @@ fn test_audit_trail_correct_when_local_override_absent() {
 
     // The key should appear in audit trail with source pointing to settings.json
     let entry = entries.iter().find(|e| e.key_path == "only_in_settings");
-    assert!(
-        entry.is_some(),
-        "key should appear in audit trail"
-    );
+    assert!(entry.is_some(), "key should appear in audit trail");
 
     let entry = entry.unwrap();
     assert_eq!(
@@ -241,7 +249,11 @@ fn test_audit_trail_correct_when_local_override_absent() {
         "source_file should be set for file-sourced entries"
     );
     assert!(
-        entry.source_file.as_ref().unwrap().contains("settings.json"),
+        entry
+            .source_file
+            .as_ref()
+            .unwrap()
+            .contains("settings.json"),
         "source should point to settings.json"
     );
 }
@@ -258,11 +270,7 @@ fn test_empty_local_override_file_handled() {
     );
 
     // Create an empty settings.local.json
-    write_project_config(
-        &temp.path().to_path_buf(),
-        "settings.local.json",
-        "",
-    );
+    write_project_config(&temp.path().to_path_buf(), "settings.local.json", "");
 
     let loader = ConfigLoader::new().with_project_path(temp.path());
     let config = loader.load().unwrap();
@@ -327,7 +335,10 @@ fn test_local_override_wins_in_full_cascade() {
 
     // Both values should come from settings.local.json (layer 4 wins)
     assert_eq!(config.get("level").unwrap().as_i64().unwrap(), 4);
-    assert_eq!(config.get("source").unwrap().as_str().unwrap(), "settings_local_json");
+    assert_eq!(
+        config.get("source").unwrap().as_str().unwrap(),
+        "settings_local_json"
+    );
 }
 
 /// Environment variables still win over settings.local.json (layer 5)

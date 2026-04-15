@@ -314,7 +314,10 @@ impl From<DaemonEvent> for DashboardEvent {
                 ..
             } => DashboardEvent::TaskProgress {
                 id,
-                message: format!("[Turn {}] Agent '{}' starting turn", turn_number, agent_role),
+                message: format!(
+                    "[Turn {}] Agent '{}' starting turn",
+                    turn_number, agent_role
+                ),
                 correlation_id,
             },
             DaemonEvent::AgentTurnCompleted {

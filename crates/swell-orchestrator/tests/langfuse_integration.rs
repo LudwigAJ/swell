@@ -259,8 +259,8 @@ async fn test_finalize_without_trace_returns_error() {
 /// Verify that multiple threads can create traces concurrently without issues.
 #[test]
 fn test_concurrent_trace_creation() {
-    use std::thread;
     use std::sync::Arc;
+    use std::thread;
 
     let exporter = Arc::new(create_test_exporter());
     let task_ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
@@ -299,10 +299,10 @@ fn test_generation_token_tracking() {
         task_id,
         "claude-3-5-sonnet",
         Some("anthropic"),
-        1000,  // input_tokens
-        500,   // output_tokens
-        Some(2000),  // cache_creation_tokens
-        Some(500),   // cache_read_tokens
+        1000,       // input_tokens
+        500,        // output_tokens
+        Some(2000), // cache_creation_tokens
+        Some(500),  // cache_read_tokens
         "Input text for token counting",
         "Output text for token counting",
     );

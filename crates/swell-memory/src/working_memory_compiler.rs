@@ -16,11 +16,11 @@
 // 3. Packs entries into budget, highest priority first
 // 4. Trims lower-priority entries to stay within token budget
 
+use crate::procedural::ProceduralStore;
 use crate::{
     skill_extraction::Skill, MemoryEntry, MemoryStore, SemanticEntityQuery, SemanticStore,
     SwellError,
 };
-use crate::procedural::ProceduralStore;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -107,7 +107,11 @@ pub struct ScoredEntry {
 
 impl ScoredEntry {
     pub fn new(entry: MemoryEntry, score: f32, layer: MemoryLayer) -> Self {
-        Self { entry, score, layer }
+        Self {
+            entry,
+            score,
+            layer,
+        }
     }
 }
 
@@ -653,8 +657,7 @@ impl WorkingMemoryCompiler {
 
     /// Trim entry content to fit within token budget
     fn trim_entry_to_tokens(&self, entry: &MemoryEntry, max_tokens: usize) -> String {
-        let max_words =
-            (max_tokens as f32 / self.config.budget.tokens_per_word) as usize;
+        let max_words = (max_tokens as f32 / self.config.budget.tokens_per_word) as usize;
         let words: Vec<&str> = entry.content.split_whitespace().collect();
 
         if words.len() <= max_words {
@@ -687,9 +690,7 @@ mod tests {
         assert!(
             MemoryLayer::Episodic.priority_score() >= MemoryLayer::KnowledgeGraph.priority_score()
         );
-        assert!(
-            MemoryLayer::Procedural.priority_score() >= MemoryLayer::Skills.priority_score()
-        );
+        assert!(MemoryLayer::Procedural.priority_score() >= MemoryLayer::Skills.priority_score());
     }
 
     #[test]
@@ -797,14 +798,7 @@ mod tests {
         let compiler = WorkingMemoryCompiler::with_default_config();
 
         let result = compiler
-            .compile(
-                Arc::new(store),
-                None,
-                None,
-                None,
-                "test-repo",
-                None,
-            )
+            .compile(Arc::new(store), None, None, None, "test-repo", None)
             .await
             .unwrap();
 
@@ -826,8 +820,9 @@ mod tests {
             id: Uuid::new_v4(),
             block_type: MemoryBlockType::Project,
             label: "project".to_string(),
-            content: "Project architecture details with important information about the system design."
-                .to_string(),
+            content:
+                "Project architecture details with important information about the system design."
+                    .to_string(),
             embedding: None,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
@@ -867,14 +862,7 @@ mod tests {
         let compiler = WorkingMemoryCompiler::with_default_config();
 
         let result = compiler
-            .compile(
-                Arc::new(store),
-                None,
-                None,
-                None,
-                "test-repo",
-                None,
-            )
+            .compile(Arc::new(store), None, None, None, "test-repo", None)
             .await
             .unwrap();
 
@@ -925,14 +913,7 @@ mod tests {
         let compiler = WorkingMemoryCompiler::new(config);
 
         let result = compiler
-            .compile(
-                Arc::new(store),
-                None,
-                None,
-                None,
-                "test-repo",
-                None,
-            )
+            .compile(Arc::new(store), None, None, None, "test-repo", None)
             .await
             .unwrap();
 

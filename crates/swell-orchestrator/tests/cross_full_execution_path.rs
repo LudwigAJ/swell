@@ -7,9 +7,7 @@
 //! This validates VAL-CROSS-001: Full execution path end-to-end.
 
 use std::sync::Arc;
-use swell_core::{
-    AutonomyLevel, LlmBackend, Plan, PlanStep, RiskLevel, StepStatus,
-};
+use swell_core::{AutonomyLevel, LlmBackend, Plan, PlanStep, RiskLevel, StepStatus};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::{ExecutionController, Orchestrator};
 use swell_tools::ToolRegistry;
@@ -92,11 +90,8 @@ async fn test_execution_controller_full_pipeline_with_scenario_mock_llm() {
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create ExecutionController with the mock LLM
-    let controller = ExecutionController::new(
-        orchestrator.clone(),
-        mock_llm.clone(),
-        tool_registry,
-    );
+    let controller =
+        ExecutionController::new(orchestrator.clone(), mock_llm.clone(), tool_registry);
 
     // Create a task with FullAuto autonomy to bypass approval gate
     // (PlannerAgent will still run since task doesn't have a plan)
@@ -151,11 +146,8 @@ async fn test_execution_controller_skips_planner_when_plan_exists() {
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create ExecutionController
-    let controller = ExecutionController::new(
-        orchestrator.clone(),
-        mock_llm.clone(),
-        tool_registry,
-    );
+    let controller =
+        ExecutionController::new(orchestrator.clone(), mock_llm.clone(), tool_registry);
 
     // Create a task with FullAuto autonomy and a pre-existing plan
     let task = orchestrator
@@ -200,18 +192,18 @@ async fn test_execution_controller_returns_validation_result() {
 
     let orchestrator = Arc::new(Orchestrator::new());
     let tool_registry = Arc::new(ToolRegistry::new());
-    let controller = ExecutionController::new(
-        orchestrator.clone(),
-        mock_llm,
-        tool_registry,
-    );
+    let controller = ExecutionController::new(orchestrator.clone(), mock_llm, tool_registry);
 
     let task = orchestrator
         .create_task_with_autonomy("Create a file".to_string(), AutonomyLevel::FullAuto)
         .await;
     let result = controller.execute_task(task.id).await;
 
-    assert!(result.is_ok(), "execute_task should complete: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "execute_task should complete: {:?}",
+        result.err()
+    );
     let validation_result = result.unwrap();
 
     // The ValidationResult should be returned (even if in stub mode)
@@ -283,18 +275,19 @@ async fn test_execution_controller_sequential_tasks_maintain_isolation() {
     let orchestrator = Arc::new(Orchestrator::new());
     let tool_registry = Arc::new(ToolRegistry::new());
 
-    let controller = ExecutionController::new(
-        orchestrator.clone(),
-        mock_llm.clone(),
-        tool_registry,
-    );
+    let controller =
+        ExecutionController::new(orchestrator.clone(), mock_llm.clone(), tool_registry);
 
     // Create and execute first task with FullAuto
     let task1 = orchestrator
         .create_task_with_autonomy("Task 1".to_string(), AutonomyLevel::FullAuto)
         .await;
     let result1 = controller.execute_task(task1.id).await;
-    assert!(result1.is_ok(), "Task 1 should complete: {:?}", result1.err());
+    assert!(
+        result1.is_ok(),
+        "Task 1 should complete: {:?}",
+        result1.err()
+    );
 
     let steps_after_task1 = mock_llm.current_index();
     println!("Steps consumed after task 1: {}", steps_after_task1);
@@ -307,7 +300,11 @@ async fn test_execution_controller_sequential_tasks_maintain_isolation() {
         .create_task_with_autonomy("Task 2".to_string(), AutonomyLevel::FullAuto)
         .await;
     let result2 = controller.execute_task(task2.id).await;
-    assert!(result2.is_ok(), "Task 2 should complete: {:?}", result2.err());
+    assert!(
+        result2.is_ok(),
+        "Task 2 should complete: {:?}",
+        result2.err()
+    );
 
     let steps_after_task2 = mock_llm.current_index();
     println!("Steps consumed after task 2: {}", steps_after_task2);

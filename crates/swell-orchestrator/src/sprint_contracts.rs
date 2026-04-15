@@ -324,10 +324,7 @@ impl ContractNegotiator {
             "generator_tools".to_string(),
             generator.tools_available.join(", "),
         );
-        metadata.insert(
-            "gate_count".to_string(),
-            validation_gates.len().to_string(),
-        );
+        metadata.insert("gate_count".to_string(), validation_gates.len().to_string());
 
         SprintContract {
             success_criteria,
@@ -399,8 +396,14 @@ mod tests {
             .success_criteria
             .iter()
             .any(|c| c.contains("Step B"));
-        assert!(found_a, "Plan step 'Step A' should appear in success_criteria");
-        assert!(found_b, "Plan step 'Step B' should appear in success_criteria");
+        assert!(
+            found_a,
+            "Plan step 'Step A' should appear in success_criteria"
+        );
+        assert!(
+            found_b,
+            "Plan step 'Step B' should appear in success_criteria"
+        );
     }
 
     #[test]

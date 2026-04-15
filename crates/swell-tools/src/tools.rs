@@ -624,11 +624,7 @@ impl GitTool {
         let diff_output = self.run_git(&diff_args, Some(cwd)).await?;
 
         // Parse the diff output into structured format
-        let diff_info = self.parse_structured_diff(
-            &stat_output,
-            &numstat_output,
-            &diff_output,
-        );
+        let diff_info = self.parse_structured_diff(&stat_output, &numstat_output, &diff_output);
 
         Ok(ToolOutput {
             is_error: diff_info.is_err(),
@@ -704,10 +700,7 @@ impl GitTool {
                             "lines": current_hunk_lines.clone()
                         });
                         if let Some(file_obj) = files.get_mut(idx) {
-                            file_obj["hunks"]
-                                .as_array_mut()
-                                .unwrap()
-                                .push(hunk_obj);
+                            file_obj["hunks"].as_array_mut().unwrap().push(hunk_obj);
                         }
                     }
                 }
@@ -731,10 +724,7 @@ impl GitTool {
                             "lines": current_hunk_lines.clone()
                         });
                         if let Some(file_obj) = files.get_mut(idx) {
-                            file_obj["hunks"]
-                                .as_array_mut()
-                                .unwrap()
-                                .push(hunk_obj);
+                            file_obj["hunks"].as_array_mut().unwrap().push(hunk_obj);
                         }
                     }
                 }
@@ -769,10 +759,7 @@ impl GitTool {
                     "lines": current_hunk_lines
                 });
                 if let Some(file_obj) = files.get_mut(idx) {
-                    file_obj["hunks"]
-                        .as_array_mut()
-                        .unwrap()
-                        .push(hunk_obj);
+                    file_obj["hunks"].as_array_mut().unwrap().push(hunk_obj);
                 }
             }
         }
@@ -1680,7 +1667,9 @@ mod tests {
             .unwrap();
 
         // Create and commit initial file
-        tokio::fs::write(&file_path, "line1\nline2\nline3\n").await.unwrap();
+        tokio::fs::write(&file_path, "line1\nline2\nline3\n")
+            .await
+            .unwrap();
         tokio::process::Command::new("git")
             .args(["add", "."])
             .current_dir(&dir)
@@ -1695,7 +1684,9 @@ mod tests {
             .unwrap();
 
         // Modify file to create diff
-        tokio::fs::write(&file_path, "line1\nMODIFIED\nline3\n").await.unwrap();
+        tokio::fs::write(&file_path, "line1\nMODIFIED\nline3\n")
+            .await
+            .unwrap();
 
         let tool = GitTool::new();
         let result = tool
@@ -1770,7 +1761,9 @@ mod tests {
 
         // Create and commit initial file
         let file_path = dir.path().join("test_file.txt");
-        tokio::fs::write(&file_path, "line1\nline2\nline3\n").await.unwrap();
+        tokio::fs::write(&file_path, "line1\nline2\nline3\n")
+            .await
+            .unwrap();
         tokio::process::Command::new("git")
             .args(["add", "."])
             .current_dir(&dir)

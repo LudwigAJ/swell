@@ -1,6 +1,6 @@
-pub mod config;
 pub mod audit;
 pub mod circuit_breaker;
+pub mod config;
 pub mod cost_tracking;
 pub mod dependency_graph;
 pub mod error;

@@ -9,11 +9,7 @@ use swell_memory::SqliteMemoryStore;
 use uuid::Uuid;
 
 /// Helper to create a test memory entry with a specific repository scope
-fn create_test_entry(
-    label: &str,
-    content: &str,
-    repository: &str,
-) -> MemoryEntry {
+fn create_test_entry(label: &str, content: &str, repository: &str) -> MemoryEntry {
     MemoryEntry {
         id: Uuid::new_v4(),
         block_type: MemoryBlockType::Project,
@@ -40,16 +36,8 @@ async fn test_memory_entries_tagged_with_repo_context() {
     let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
     // Store entries for two different repositories
-    let entry_repo_a = create_test_entry(
-        "project-a-config",
-        "Configuration for repo A",
-        "repo-a",
-    );
-    let entry_repo_b = create_test_entry(
-        "project-b-config",
-        "Configuration for repo B",
-        "repo-b",
-    );
+    let entry_repo_a = create_test_entry("project-a-config", "Configuration for repo A", "repo-a");
+    let entry_repo_b = create_test_entry("project-b-config", "Configuration for repo B", "repo-b");
 
     store.store(entry_repo_a.clone()).await.unwrap();
     store.store(entry_repo_b.clone()).await.unwrap();
@@ -146,7 +134,11 @@ async fn test_cross_repo_query_returns_empty() {
         .await
         .unwrap();
 
-    assert_eq!(results.len(), 0, "repo-a memory should not leak to repo-b query");
+    assert_eq!(
+        results.len(),
+        0,
+        "repo-a memory should not leak to repo-b query"
+    );
 }
 
 /// Test full cross-repo isolation scenario
@@ -187,7 +179,13 @@ async fn test_full_cross_repo_isolation() {
 
         // Each repo should have exactly 2 entries (except repo-c which has 1)
         let expected_count = if *repo == "repo-c" { 1 } else { 2 };
-        assert_eq!(results.len(), expected_count, "Repo {} should have {} entries", repo, expected_count);
+        assert_eq!(
+            results.len(),
+            expected_count,
+            "Repo {} should have {} entries",
+            repo,
+            expected_count
+        );
 
         // All results should be from the correct repo
         for result in &results {

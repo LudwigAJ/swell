@@ -28,8 +28,7 @@ fn test_tool_invocation_started_serde() {
     let json = serde_json::to_string(&event).expect("should serialize");
 
     // Deserialize
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
         DaemonEvent::ToolInvocationStarted {
@@ -70,8 +69,7 @@ fn test_tool_invocation_completed_serde() {
     let json = serde_json::to_string(&event).expect("should serialize");
 
     // Deserialize
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
         DaemonEvent::ToolInvocationCompleted {
@@ -110,13 +108,10 @@ fn test_tool_invocation_completed_failure() {
     };
 
     let json = serde_json::to_string(&event).expect("should serialize");
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
-        DaemonEvent::ToolInvocationCompleted {
-            success, ..
-        } => {
+        DaemonEvent::ToolInvocationCompleted { success, .. } => {
             assert!(!success);
         }
         other => panic!("Expected ToolInvocationCompleted, got: {:?}", other),
@@ -142,8 +137,7 @@ fn test_agent_turn_started_serde() {
     let json = serde_json::to_string(&event).expect("should serialize");
 
     // Deserialize
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
         DaemonEvent::AgentTurnStarted {
@@ -183,8 +177,7 @@ fn test_agent_turn_completed_serde() {
     let json = serde_json::to_string(&event).expect("should serialize");
 
     // Deserialize
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
         DaemonEvent::AgentTurnCompleted {
@@ -228,14 +221,10 @@ fn test_agent_turn_completed_no_tools() {
     };
 
     let json = serde_json::to_string(&event).expect("should serialize");
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
-        DaemonEvent::AgentTurnCompleted {
-            tools_invoked,
-            ..
-        } => {
+        DaemonEvent::AgentTurnCompleted { tools_invoked, .. } => {
             assert!(tools_invoked.is_empty());
         }
         other => panic!("Expected AgentTurnCompleted, got: {:?}", other),
@@ -260,8 +249,7 @@ fn test_validation_step_started_serde() {
     let json = serde_json::to_string(&event).expect("should serialize");
 
     // Deserialize
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
         DaemonEvent::ValidationStepStarted {
@@ -297,8 +285,7 @@ fn test_validation_step_completed_passed() {
     let json = serde_json::to_string(&event).expect("should serialize");
 
     // Deserialize
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
         DaemonEvent::ValidationStepCompleted {
@@ -337,8 +324,7 @@ fn test_validation_step_completed_failed() {
     let json = serde_json::to_string(&event).expect("should serialize");
 
     // Deserialize
-    let deserialized: DaemonEvent =
-        serde_json::from_str(&json).expect("should deserialize");
+    let deserialized: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
 
     match deserialized {
         DaemonEvent::ValidationStepCompleted {
@@ -571,21 +557,21 @@ fn test_correlation_id_links_per_turn_events() {
 
     // Verify correlation IDs are correctly stored
     match &events[0] {
-        DaemonEvent::AgentTurnStarted {
-            correlation_id, ..
-        } => assert_eq!(*correlation_id, correlation_id_1),
+        DaemonEvent::AgentTurnStarted { correlation_id, .. } => {
+            assert_eq!(*correlation_id, correlation_id_1)
+        }
         _ => panic!("Expected AgentTurnStarted"),
     }
     match &events[1] {
-        DaemonEvent::ToolInvocationStarted {
-            correlation_id, ..
-        } => assert_eq!(*correlation_id, correlation_id_1),
+        DaemonEvent::ToolInvocationStarted { correlation_id, .. } => {
+            assert_eq!(*correlation_id, correlation_id_1)
+        }
         _ => panic!("Expected ToolInvocationStarted"),
     }
     match &events[2] {
-        DaemonEvent::TaskStateChanged {
-            correlation_id, ..
-        } => assert_eq!(*correlation_id, correlation_id_2),
+        DaemonEvent::TaskStateChanged { correlation_id, .. } => {
+            assert_eq!(*correlation_id, correlation_id_2)
+        }
         _ => panic!("Expected TaskStateChanged"),
     }
 
@@ -789,8 +775,7 @@ fn test_all_event_variants_have_unique_type_tags() {
 
     for event in &events {
         let json = serde_json::to_string(event).expect("should serialize");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&json).expect("should parse as JSON");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse as JSON");
         let type_tag = parsed
             .get("type")
             .expect("should have type field")

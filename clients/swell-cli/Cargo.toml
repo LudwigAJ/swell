@@ -22,3 +22,12 @@ tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 reqwest.workspace = true
+
+[dev-dependencies]
+swell-daemon = { path = "../../crates/swell-daemon" }
+swell-orchestrator = { path = "../../crates/swell-orchestrator" }
+swell-llm = { path = "../../crates/swell-llm" }
+swell-tools = { path = "../../crates/swell-tools" }
+swell-validation = { path = "../../crates/swell-validation" }
+swell-state = { path = "../../crates/swell-state" }
+tempfile.workspace = true

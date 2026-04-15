@@ -1055,7 +1055,10 @@ mod tests {
 
         // Transition to AwaitingApproval
         sm.awaiting_approval_task(task_id).unwrap();
-        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::AwaitingApproval);
+        assert_eq!(
+            sm.get_task(task_id).unwrap().state,
+            TaskState::AwaitingApproval
+        );
     }
 
     #[test]
@@ -1066,7 +1069,10 @@ mod tests {
         // Setup: Enriched -> AwaitingApproval
         sm.enrich_task(task_id).unwrap();
         sm.awaiting_approval_task(task_id).unwrap();
-        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::AwaitingApproval);
+        assert_eq!(
+            sm.get_task(task_id).unwrap().state,
+            TaskState::AwaitingApproval
+        );
 
         // Approve: AwaitingApproval -> Ready
         sm.approve_task(task_id).unwrap();
@@ -1081,7 +1087,10 @@ mod tests {
         // Setup: Enriched -> AwaitingApproval
         sm.enrich_task(task_id).unwrap();
         sm.awaiting_approval_task(task_id).unwrap();
-        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::AwaitingApproval);
+        assert_eq!(
+            sm.get_task(task_id).unwrap().state,
+            TaskState::AwaitingApproval
+        );
 
         // Reject: AwaitingApproval -> Rejected
         sm.reject_task(task_id).unwrap();
@@ -1138,7 +1147,10 @@ mod tests {
 
         // Enriched -> AwaitingApproval
         sm.awaiting_approval_task(task_id).unwrap();
-        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::AwaitingApproval);
+        assert_eq!(
+            sm.get_task(task_id).unwrap().state,
+            TaskState::AwaitingApproval
+        );
 
         // AwaitingApproval -> Ready (via approve)
         sm.approve_task(task_id).unwrap();

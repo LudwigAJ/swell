@@ -273,7 +273,11 @@ mod mcp_registry_naming_tests {
 
         // They should be distinct
         assert_ne!(
-            registry.get("mcp__tree_sitter__parse").await.unwrap().name(),
+            registry
+                .get("mcp__tree_sitter__parse")
+                .await
+                .unwrap()
+                .name(),
             registry.get("mcp__eslint__lint").await.unwrap().name()
         );
     }

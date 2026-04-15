@@ -230,10 +230,8 @@ mod mcp_failure_classification_tests {
         use swell_tools::McpLifecycleError;
 
         // Create a recoverable error
-        let lifecycle_error = McpLifecycleError::new(
-            McpLifecyclePhase::SpawnConnect,
-            "Connection refused",
-        );
+        let lifecycle_error =
+            McpLifecycleError::new(McpLifecyclePhase::SpawnConnect, "Connection refused");
         let connection_error = McpConnectionError::from_lifecycle_error(lifecycle_error);
         assert!(
             connection_error.is_recoverable(),
@@ -241,10 +239,8 @@ mod mcp_failure_classification_tests {
         );
 
         // Create a non-recoverable error
-        let lifecycle_error = McpLifecycleError::new(
-            McpLifecyclePhase::SpawnConnect,
-            "No such file or directory",
-        );
+        let lifecycle_error =
+            McpLifecycleError::new(McpLifecyclePhase::SpawnConnect, "No such file or directory");
         let connection_error = McpConnectionError::from_lifecycle_error(lifecycle_error);
         assert!(
             connection_error.is_non_recoverable(),
@@ -274,10 +270,8 @@ mod mcp_failure_classification_tests {
     fn test_mcp_connection_error_display() {
         use swell_tools::McpLifecycleError;
 
-        let lifecycle_error = McpLifecycleError::new(
-            McpLifecyclePhase::SpawnConnect,
-            "Connection refused",
-        );
+        let lifecycle_error =
+            McpLifecycleError::new(McpLifecyclePhase::SpawnConnect, "Connection refused");
         let connection_error = McpConnectionError::from_lifecycle_error(lifecycle_error);
 
         let display = format!("{}", connection_error);
@@ -286,10 +280,8 @@ mod mcp_failure_classification_tests {
             "Display should include 'recoverable' classification"
         );
 
-        let lifecycle_error = McpLifecycleError::new(
-            McpLifecyclePhase::SpawnConnect,
-            "Binary not found",
-        );
+        let lifecycle_error =
+            McpLifecycleError::new(McpLifecyclePhase::SpawnConnect, "Binary not found");
         let connection_error = McpConnectionError::from_lifecycle_error(lifecycle_error);
 
         let display = format!("{}", connection_error);
@@ -352,7 +344,7 @@ mod mcp_failure_classification_integration_tests {
 
         let reconnect_config = McpReconnectConfig {
             max_reconnect_attempts: 3,
-            reconnect_delay_ms: 1000,  // Would be used for retries if error was recoverable
+            reconnect_delay_ms: 1000, // Would be used for retries if error was recoverable
             health_check_interval_ms: 1000,
             auto_reconnect: true,
         };

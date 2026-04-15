@@ -27,7 +27,10 @@ pub use session::{
     InMemorySessionStore, SessionError, SessionMetadata, SessionState, SessionStore,
 };
 pub use sqlite::SqliteCheckpointStore;
-pub use task_state_file::{read_task_state, read_task_state_sync, write_task_state, write_task_state_sync, TaskStateFile, TaskStateFileError};
+pub use task_state_file::{
+    read_task_state, read_task_state_sync, write_task_state, write_task_state_sync, TaskStateFile,
+    TaskStateFileError,
+};
 pub use traits::*;
 pub use workspace_fingerprint::workspace_fingerprint;
 

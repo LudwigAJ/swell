@@ -189,7 +189,9 @@ mod tests {
         let state = TaskState::Executing;
 
         // Write state
-        write_task_state(swell_dir, task_id, state, 1).await.unwrap();
+        write_task_state(swell_dir, task_id, state, 1)
+            .await
+            .unwrap();
 
         // Read the file content
         let path = swell_dir.join("task-state.json");

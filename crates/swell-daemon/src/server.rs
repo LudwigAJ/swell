@@ -341,8 +341,11 @@ async fn handle_watch_connection(
         TaskState::Escalated,
     ];
 
-    // Get initial sequence number to track new events
-    let initial_sequence = event_emitter.current_sequence().await;
+    // Get initial sequence number AFTER sending initial state to ensure we capture
+    // all events that happened before or during the initial state send.
+    // Subtract 1 because current_sequence() returns the next sequence to be assigned,
+    // and we want to capture events at that sequence number (not just after it).
+    let initial_sequence = event_emitter.current_sequence().await.saturating_sub(1);
 
     // Poll for new events
     let mut poll_interval = interval(Duration::from_millis(WATCH_POLL_INTERVAL_MS));

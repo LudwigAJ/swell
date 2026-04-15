@@ -11,15 +11,13 @@
 //!
 //! This test validates VAL-CROSS-002: Agent continues after permission denial.
 
+use async_trait::async_trait;
 use std::sync::Arc;
-use swell_core::{
-    PermissionTier, SwellError, ToolOutput, ToolResultContent,
-};
+use swell_core::traits::Tool;
+use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::{ExecutionController, Orchestrator};
 use swell_tools::ToolRegistry;
-use async_trait::async_trait;
-use swell_core::traits::Tool;
 
 /// A test tool that requires a specific permission tier
 struct TieredTestTool {
@@ -43,7 +41,10 @@ impl Tool for TieredTestTool {
     }
 
     fn description(&self) -> String {
-        format!("A test tool requiring {:?} permission", self.permission_tier)
+        format!(
+            "A test tool requiring {:?} permission",
+            self.permission_tier
+        )
     }
 
     fn risk_level(&self) -> swell_core::ToolRiskLevel {
@@ -70,10 +71,7 @@ impl Tool for TieredTestTool {
         })
     }
 
-    async fn execute(
-        &self,
-        _arguments: serde_json::Value,
-    ) -> Result<ToolOutput, SwellError> {
+    async fn execute(&self, _arguments: serde_json::Value) -> Result<ToolOutput, SwellError> {
         Ok(ToolOutput {
             is_error: false,
             content: vec![ToolResultContent::Text("Tool executed".to_string())],
@@ -294,7 +292,9 @@ async fn test_multiple_denied_tools_do_not_crash() {
             "Permission denied: tool 'another_deny_tool' requires Deny permission",
             false,
         ),
-        ScenarioStep::text("I've tried the tools but they were denied. I'll summarize what I can do."),
+        ScenarioStep::text(
+            "I've tried the tools but they were denied. I'll summarize what I can do.",
+        ),
     ];
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));

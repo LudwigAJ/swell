@@ -200,7 +200,10 @@ impl LspRegistry {
 
         self.servers.insert(
             language,
-            LspServerConfig { server_name, command },
+            LspServerConfig {
+                server_name,
+                command,
+            },
         );
         Ok(())
     }

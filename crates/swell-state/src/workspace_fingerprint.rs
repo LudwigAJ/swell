@@ -156,10 +156,7 @@ mod tests {
         let fp1 = workspace_fingerprint(path).unwrap();
         let fp2 = workspace_fingerprint(path).unwrap();
 
-        assert_eq!(
-            fp1, fp2,
-            "Same path should always produce same fingerprint"
-        );
+        assert_eq!(fp1, fp2, "Same path should always produce same fingerprint");
     }
 
     #[test]

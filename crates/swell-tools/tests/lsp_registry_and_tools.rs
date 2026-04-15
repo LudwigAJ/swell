@@ -204,7 +204,10 @@ async fn test_lsp_definition_disconnected_returns_error() {
     // Should return Ok with is_error: true, not Err
     assert!(result.is_ok());
     let output = result.unwrap();
-    assert!(output.is_error, "Disconnected LSP should return is_error: true");
+    assert!(
+        output.is_error,
+        "Disconnected LSP should return is_error: true"
+    );
 
     // Error message should mention disconnected/unavailable
     let content_str = match output.content.first() {
@@ -239,7 +242,10 @@ async fn test_lsp_references_disconnected_returns_error() {
 
     assert!(result.is_ok());
     let output = result.unwrap();
-    assert!(output.is_error, "Disconnected LSP should return is_error: true");
+    assert!(
+        output.is_error,
+        "Disconnected LSP should return is_error: true"
+    );
 }
 
 #[tokio::test]
@@ -260,7 +266,10 @@ async fn test_lsp_hover_disconnected_returns_error() {
 
     assert!(result.is_ok());
     let output = result.unwrap();
-    assert!(output.is_error, "Disconnected LSP should return is_error: true");
+    assert!(
+        output.is_error,
+        "Disconnected LSP should return is_error: true"
+    );
 }
 
 #[tokio::test]
@@ -279,7 +288,10 @@ async fn test_lsp_diagnostics_disconnected_returns_error() {
 
     assert!(result.is_ok());
     let output = result.unwrap();
-    assert!(output.is_error, "Disconnected LSP should return is_error: true");
+    assert!(
+        output.is_error,
+        "Disconnected LSP should return is_error: true"
+    );
 }
 
 /// Test that all four required LSP tools exist and work
@@ -287,7 +299,9 @@ async fn test_lsp_diagnostics_disconnected_returns_error() {
 #[tokio::test]
 async fn test_all_four_lsp_tools_required() {
     use swell_tools::mcp::McpClient;
-    use swell_tools::mcp_lsp::{LspDefinitionTool, LspDiagnosticsTool, LspHoverTool, LspReferencesTool};
+    use swell_tools::mcp_lsp::{
+        LspDefinitionTool, LspDiagnosticsTool, LspHoverTool, LspReferencesTool,
+    };
 
     let client = McpClient::new("echo test");
 
@@ -307,7 +321,9 @@ async fn test_all_four_lsp_tools_required() {
 #[test]
 fn test_all_lsp_tools_prefixed() {
     use swell_tools::mcp::McpClient;
-    use swell_tools::mcp_lsp::{LspDefinitionTool, LspDiagnosticsTool, LspHoverTool, LspReferencesTool};
+    use swell_tools::mcp_lsp::{
+        LspDefinitionTool, LspDiagnosticsTool, LspHoverTool, LspReferencesTool,
+    };
 
     let client = McpClient::new("echo");
     let definition = LspDefinitionTool::new(client.clone());

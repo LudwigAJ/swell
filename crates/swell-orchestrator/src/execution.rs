@@ -391,12 +391,9 @@ impl ExecutionController {
             if planner_result.success {
                 // Parse the plan from the planner result output
                 // The planner returns JSON with structure: {"plan": {...}, "handoff": {...}}
-                let output: serde_json::Value =
-                    serde_json::from_str(&planner_result.output).map_err(|e| {
-                        SwellError::LlmError(format!(
-                            "Failed to parse planner output: {}",
-                            e
-                        ))
+                let output: serde_json::Value = serde_json::from_str(&planner_result.output)
+                    .map_err(|e| {
+                        SwellError::LlmError(format!("Failed to parse planner output: {}", e))
                     })?;
 
                 let plan_value = output.get("plan").ok_or_else(|| {

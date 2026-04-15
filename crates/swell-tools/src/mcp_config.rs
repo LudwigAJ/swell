@@ -340,9 +340,7 @@ impl McpConfigManager {
         client.mark_server_registered().await;
 
         // Attempt connection with retry logic for recoverable errors
-        let result = self
-            .connect_with_retry(&client, name)
-            .await;
+        let result = self.connect_with_retry(&client, name).await;
 
         match result {
             Ok(()) => {
@@ -447,8 +445,7 @@ impl McpConfigManager {
                     }
 
                     // Wait with exponential backoff before retry
-                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms))
-                        .await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
                 }
             }
         }
