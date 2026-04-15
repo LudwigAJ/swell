@@ -55,6 +55,14 @@ pub use cross_encoder_rerank::{
     RerankCandidate, RerankResult, RerankableCandidates, RerankerModelType, SimpleReranker,
 };
 
+// Embedding client module - Voyage AI embedding generation with EmbeddingModel enum and EmbeddingClient trait
+pub mod embedding;
+
+pub use embedding::{
+    EmbeddingClient, EmbeddingModel, VoyageEmbeddingClient, VoyageEmbeddingClientBuilder,
+    VoyageEmbeddingConfig,
+};
+
 // Skill extraction module - Extracts reusable procedures from successful task trajectories
 pub mod skill_extraction;
 

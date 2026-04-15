@@ -3320,6 +3320,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "mockito",
+ "reqwest",
  "serde",
  "serde_json",
  "sqlx",
