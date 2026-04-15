@@ -211,7 +211,11 @@ impl ConfigLoader {
         self.merge_value(parsed, layer, path.to_string_lossy().to_string(), values, entries);
     }
 
-    /// Load environment variable overrides
+    /// Load environment variable overrides.
+    ///
+    /// Environment variables are the highest-priority layer (layer 5). Each
+    /// SWELL_* env var is upserted into the audit trail so that `loaded_entries()`
+    /// always reflects the winner, even when the env var overrides a file-sourced key.
     fn load_env_overrides(
         &self,
         values: &mut serde_json::Map<String, serde_json::Value>,
@@ -230,11 +234,18 @@ impl ConfigLoader {
                 let json_value: serde_json::Value = serde_json::from_str(&value)
                     .unwrap_or(serde_json::Value::String(value));
 
-                entries.push(ConfigEntry {
-                    key_path: config_key.clone(),
-                    value: json_value.clone(),
-                    source_file: None,
-                });
+                // Upsert: update the existing entry if one already exists for this key
+                // (env vars are layer 5 — highest priority, they always win).
+                if let Some(existing) = entries.iter_mut().find(|e| e.key_path == config_key) {
+                    existing.value = json_value.clone();
+                    existing.source_file = None; // env-var sourced → no file path
+                } else {
+                    entries.push(ConfigEntry {
+                        key_path: config_key.clone(),
+                        value: json_value.clone(),
+                        source_file: None,
+                    });
+                }
 
                 // Set the value (deep merge or override)
                 set_nested_value(values, &config_key, json_value);
@@ -242,7 +253,11 @@ impl ConfigLoader {
         }
     }
 
-    /// Merge a value into the config, tracking entries
+    /// Merge a value into the config, tracking entries.
+    ///
+    /// The audit trail (`entries`) records only the **winning** entry per key: if a
+    /// higher-priority layer provides the same key, the existing entry is updated in
+    /// place so that `loaded_entries()` always shows the source that ultimately won.
     fn merge_value(
         &self,
         value: serde_json::Value,
@@ -254,11 +269,19 @@ impl ConfigLoader {
         if let serde_json::Value::Object(obj) = value {
             for (key, val) in obj {
                 let key_path = key.clone();
-                entries.push(ConfigEntry {
-                    key_path: key_path.clone(),
-                    value: val.clone(),
-                    source_file: Some(source.clone()),
-                });
+
+                // Upsert the audit-trail entry: update if already present
+                // (later layers have higher priority and become the new winner).
+                if let Some(existing_entry) = entries.iter_mut().find(|e| e.key_path == key_path) {
+                    existing_entry.value = val.clone();
+                    existing_entry.source_file = Some(source.clone());
+                } else {
+                    entries.push(ConfigEntry {
+                        key_path: key_path.clone(),
+                        value: val.clone(),
+                        source_file: Some(source.clone()),
+                    });
+                }
 
                 // Apply section-aware merge strategy
                 if let Some(existing) = values.get_mut(&key) {
