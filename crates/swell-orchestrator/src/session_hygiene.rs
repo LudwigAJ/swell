@@ -48,6 +48,17 @@ pub struct SessionHygieneConfig {
     pub progress_evaluation_enabled: bool,
     /// Progress evaluation threshold (0.0 to 1.0) - below this is considered slow
     pub progress_threshold: f64,
+    /// Minimum attempts before evaluating acceptance ratio
+    pub min_attempts_before_evaluation: usize,
+    /// Acceptance ratio threshold (0.0 to 1.0) - below this triggers alert
+    pub acceptance_ratio_threshold: f64,
+    /// Number of evaluation attempts before escalating (0 = no escalation)
+    pub max_evaluation_cycles_before_escalation: usize,
+    /// Enable acceptance ratio tracking and evaluation
+    pub acceptance_tracking_enabled: bool,
+    /// Checkpoint count threshold for acceptance ratio evaluation
+    /// When checkpoint count reaches this value, evaluate acceptance ratio
+    pub acceptance_evaluation_checkpoint_count: usize,
 }
 
 impl Default for SessionHygieneConfig {
@@ -59,6 +70,11 @@ impl Default for SessionHygieneConfig {
             auto_checkpoint_enabled: true,
             progress_evaluation_enabled: true,
             progress_threshold: 0.25, // 25% progress expected at 60 min mark
+            min_attempts_before_evaluation: 3,
+            acceptance_ratio_threshold: 0.5, // 50% acceptance rate minimum
+            max_evaluation_cycles_before_escalation: 2,
+            acceptance_tracking_enabled: true,
+            acceptance_evaluation_checkpoint_count: 2, // Evaluate after 2 checkpoints
         }
     }
 }
@@ -73,6 +89,11 @@ impl SessionHygieneConfig {
             auto_checkpoint_enabled: true,
             progress_evaluation_enabled: true,
             progress_threshold: 0.20, // 20% at 15 min mark
+            min_attempts_before_evaluation: 3,
+            acceptance_ratio_threshold: 0.5,
+            max_evaluation_cycles_before_escalation: 2,
+            acceptance_tracking_enabled: true,
+            acceptance_evaluation_checkpoint_count: 2,
         }
     }
 
@@ -85,6 +106,11 @@ impl SessionHygieneConfig {
             auto_checkpoint_enabled: true,
             progress_evaluation_enabled: true,
             progress_threshold: 0.15, // 15% at 2 hour mark
+            min_attempts_before_evaluation: 5,
+            acceptance_ratio_threshold: 0.4,
+            max_evaluation_cycles_before_escalation: 3,
+            acceptance_tracking_enabled: true,
+            acceptance_evaluation_checkpoint_count: 3,
         }
     }
 
@@ -97,6 +123,11 @@ impl SessionHygieneConfig {
             auto_checkpoint_enabled: true,
             progress_evaluation_enabled: true,
             progress_threshold: 0.10, // 10% progress expected
+            min_attempts_before_evaluation: 2,
+            acceptance_ratio_threshold: 0.5,
+            max_evaluation_cycles_before_escalation: 1,
+            acceptance_tracking_enabled: true,
+            acceptance_evaluation_checkpoint_count: 1,
         }
     }
 }
@@ -284,6 +315,76 @@ impl SessionCheckpoint {
     }
 }
 
+// ============================================================================
+// Acceptance Ratio Types
+// ============================================================================
+
+/// Result of acceptance ratio evaluation
+#[derive(Debug, Clone, PartialEq)]
+pub struct AcceptanceRatioEvaluation {
+    /// Session/Task ID
+    pub session_id: Uuid,
+    /// Evaluation timestamp
+    pub evaluated_at: DateTime<Utc>,
+    /// Number of attempts
+    pub attempts: usize,
+    /// Number of acceptances
+    pub acceptances: usize,
+    /// Current acceptance ratio
+    pub acceptance_ratio: f64,
+    /// Threshold that was used
+    pub threshold: f64,
+    /// Whether the ratio is below threshold (needs intervention)
+    pub needs_intervention: bool,
+    /// Severity level (based on how far below threshold)
+    pub severity: AcceptanceRatioSeverity,
+    /// Recommended action
+    pub recommended_action: String,
+    /// Checkpoint count at time of evaluation
+    pub checkpoint_count: usize,
+    /// Evaluation cycle number
+    pub evaluation_cycle: usize,
+    /// Whether escalation threshold was reached
+    pub should_escalate: bool,
+}
+
+/// Severity level for acceptance ratio alerts
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AcceptanceRatioSeverity {
+    /// Ratio is healthy (above threshold)
+    Healthy,
+    /// Ratio is slightly below threshold
+    Warning,
+    /// Ratio is significantly below threshold
+    Alert,
+    /// Ratio is critically low (near zero)
+    Critical,
+}
+
+impl std::fmt::Display for AcceptanceRatioSeverity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AcceptanceRatioSeverity::Healthy => write!(f, "Healthy"),
+            AcceptanceRatioSeverity::Warning => write!(f, "Warning"),
+            AcceptanceRatioSeverity::Alert => write!(f, "Alert"),
+            AcceptanceRatioSeverity::Critical => write!(f, "Critical"),
+        }
+    }
+}
+
+/// Summary of acceptance tracking for a session
+#[derive(Debug, Clone)]
+pub struct AcceptanceSummary {
+    /// Number of attempts
+    pub attempts: usize,
+    /// Number of acceptances
+    pub acceptances: usize,
+    /// Acceptance ratio
+    pub acceptance_ratio: f64,
+    /// Number of evaluation cycles with intervention needed
+    pub evaluation_cycles: usize,
+}
+
 /// Session hygiene manager for long-running session checkpointing
 #[derive(Debug, Clone)]
 pub struct SessionHygiene {
@@ -296,6 +397,12 @@ pub struct SessionHygiene {
     checkpoint_counts: HashMap<Uuid, usize>,
     /// Completed checkpoints per session
     checkpoints: HashMap<Uuid, Vec<SessionCheckpoint>>,
+    /// Attempt counts per session (for acceptance ratio tracking)
+    attempt_counts: HashMap<Uuid, usize>,
+    /// Acceptance counts per session
+    acceptance_counts: HashMap<Uuid, usize>,
+    /// Evaluation cycle counts per session (for escalation tracking)
+    evaluation_cycles: HashMap<Uuid, usize>,
 }
 
 impl SessionHygiene {
@@ -307,6 +414,9 @@ impl SessionHygiene {
             last_checkpoint_times: HashMap::new(),
             checkpoint_counts: HashMap::new(),
             checkpoints: HashMap::new(),
+            attempt_counts: HashMap::new(),
+            acceptance_counts: HashMap::new(),
+            evaluation_cycles: HashMap::new(),
         }
     }
 
@@ -331,6 +441,9 @@ impl SessionHygiene {
         self.last_checkpoint_times.insert(session_id, now);
         self.checkpoint_counts.insert(session_id, 0);
         self.checkpoints.insert(session_id, Vec::new());
+        self.attempt_counts.insert(session_id, 0);
+        self.acceptance_counts.insert(session_id, 0);
+        self.evaluation_cycles.insert(session_id, 0);
         info!(session_id = %session_id, "Session hygiene: started tracking session");
     }
 
@@ -339,6 +452,9 @@ impl SessionHygiene {
         self.session_start_times.remove(&session_id);
         self.last_checkpoint_times.remove(&session_id);
         self.checkpoint_counts.remove(&session_id);
+        self.attempt_counts.remove(&session_id);
+        self.acceptance_counts.remove(&session_id);
+        self.evaluation_cycles.remove(&session_id);
         // Keep checkpoints for history
         info!(session_id = %session_id, "Session hygiene: ended session tracking");
     }
@@ -557,6 +673,190 @@ impl SessionHygiene {
     }
 
     // ========================================================================
+    // Acceptance Ratio Tracking
+    // ========================================================================
+
+    /// Record an attempt (e.g., a code generation attempt)
+    /// Returns the new attempt count
+    pub fn record_attempt(&mut self, session_id: Uuid) -> usize {
+        let count = self.attempt_counts.entry(session_id).or_insert(0);
+        *count += 1;
+        debug!(session_id = %session_id, attempts = *count, "Session hygiene: attempt recorded");
+        *count
+    }
+
+    /// Record a successful acceptance (e.g., a code generation that passed validation)
+    /// Returns the new acceptance count
+    pub fn record_acceptance(&mut self, session_id: Uuid) -> usize {
+        let count = self.acceptance_counts.entry(session_id).or_insert(0);
+        *count += 1;
+        debug!(session_id = %session_id, acceptances = *count, "Session hygiene: acceptance recorded");
+        *count
+    }
+
+    /// Record both an attempt and its acceptance outcome in one call
+    /// This is more efficient than calling record_attempt and record_acceptance separately
+    pub fn record_attempt_with_acceptance(&mut self, session_id: Uuid, accepted: bool) {
+        self.record_attempt(session_id);
+        if accepted {
+            self.record_acceptance(session_id);
+        }
+    }
+
+    /// Get the attempt count for a session
+    pub fn get_attempt_count(&self, session_id: Uuid) -> usize {
+        self.attempt_counts.get(&session_id).copied().unwrap_or(0)
+    }
+
+    /// Get the acceptance count for a session
+    pub fn get_acceptance_count(&self, session_id: Uuid) -> usize {
+        self.acceptance_counts.get(&session_id).copied().unwrap_or(0)
+    }
+
+    /// Get the current acceptance ratio for a session
+    /// Returns None if no attempts have been recorded
+    pub fn get_acceptance_ratio(&self, session_id: Uuid) -> Option<f64> {
+        let attempts = self.get_attempt_count(session_id);
+        if attempts == 0 {
+            return None;
+        }
+        let acceptances = self.get_acceptance_count(session_id);
+        Some(acceptances as f64 / attempts as f64)
+    }
+
+    /// Evaluate the acceptance ratio and determine if intervention is needed
+    /// Returns Some(AcceptanceRatioEvaluation) if evaluation should be performed,
+    /// None if not enough attempts have been made or tracking is disabled
+    pub fn evaluate_acceptance_ratio(&mut self, session_id: Uuid) -> Option<AcceptanceRatioEvaluation> {
+        if !self.config.acceptance_tracking_enabled {
+            return None;
+        }
+
+        let attempts = self.get_attempt_count(session_id);
+        if attempts < self.config.min_attempts_before_evaluation {
+            return None;
+        }
+
+        let acceptances = self.get_acceptance_count(session_id);
+        let acceptance_ratio = acceptances as f64 / attempts as f64;
+        let threshold = self.config.acceptance_ratio_threshold;
+
+        // Determine severity and action
+        let (needs_intervention, severity, recommended_action) =
+            self.determine_intervention(acceptance_ratio, threshold, attempts);
+
+        // Update evaluation cycle
+        let cycle = self.evaluation_cycles.entry(session_id).or_insert(0);
+        if needs_intervention {
+            *cycle += 1;
+        }
+        let current_cycle = *cycle;
+
+        // Check if escalation threshold reached
+        let should_escalate = current_cycle >= self.config.max_evaluation_cycles_before_escalation
+            && self.config.max_evaluation_cycles_before_escalation > 0;
+
+        let checkpoint_count = self.get_checkpoint_count(session_id);
+
+        Some(AcceptanceRatioEvaluation {
+            session_id,
+            evaluated_at: Utc::now(),
+            attempts,
+            acceptances,
+            acceptance_ratio,
+            threshold,
+            needs_intervention,
+            severity,
+            recommended_action,
+            checkpoint_count,
+            evaluation_cycle: current_cycle,
+            should_escalate,
+        })
+    }
+
+    /// Determine intervention needed based on acceptance ratio
+    fn determine_intervention(
+        &self,
+        ratio: f64,
+        threshold: f64,
+        attempts: usize,
+    ) -> (bool, AcceptanceRatioSeverity, String) {
+        if ratio >= threshold {
+            return (
+                false,
+                AcceptanceRatioSeverity::Healthy,
+                "Continue current approach".to_string(),
+            );
+        }
+
+        // Calculate how far below threshold
+        let deficit = threshold - ratio;
+        let severity = if ratio == 0.0 {
+            AcceptanceRatioSeverity::Critical
+        } else if deficit > threshold * 0.5 {
+            AcceptanceRatioSeverity::Alert
+        } else {
+            // deficit <= threshold * 0.25
+            AcceptanceRatioSeverity::Warning
+        };
+
+        // Generate recommendation based on severity and attempt count
+        let action = if ratio == 0.0 && attempts >= 3 {
+            "Critical: Zero acceptance rate. Consider switching strategy, breaking down the task, or escalating for manual review.".to_string()
+        } else if attempts >= 10 {
+            "High attempt count with low acceptance. Review validation criteria, consider simplifying requirements.".to_string()
+        } else {
+            format!(
+                "Acceptance ratio ({:.1}%) below threshold ({:.1}%). Consider reviewing task approach.",
+                ratio * 100.0,
+                threshold * 100.0
+            )
+        };
+
+        (true, severity, action)
+    }
+
+    /// Check if acceptance ratio should be evaluated at this checkpoint
+    /// Returns true if checkpoint count has reached the evaluation threshold
+    pub fn should_evaluate_acceptance_ratio(&self, session_id: Uuid) -> bool {
+        if !self.config.acceptance_tracking_enabled {
+            return false;
+        }
+        let checkpoint_count = self.get_checkpoint_count(session_id);
+        checkpoint_count >= self.config.acceptance_evaluation_checkpoint_count
+    }
+
+    /// Get the evaluation cycle count for a session
+    pub fn get_evaluation_cycle(&self, session_id: Uuid) -> usize {
+        self.evaluation_cycles.get(&session_id).copied().unwrap_or(0)
+    }
+
+    /// Reset the evaluation cycle (e.g., after successful progress)
+    pub fn reset_evaluation_cycle(&mut self, session_id: Uuid) {
+        self.evaluation_cycles.insert(session_id, 0);
+        debug!(session_id = %session_id, "Session hygiene: evaluation cycle reset");
+    }
+
+    /// Get a summary of acceptance tracking for a session
+    pub fn get_acceptance_summary(&self, session_id: Uuid) -> Option<AcceptanceSummary> {
+        let attempts = self.get_attempt_count(session_id);
+        let acceptances = self.get_acceptance_count(session_id);
+        let ratio = self.get_acceptance_ratio(session_id);
+        let cycles = self.get_evaluation_cycle(session_id);
+
+        if attempts == 0 {
+            return None;
+        }
+
+        Some(AcceptanceSummary {
+            attempts,
+            acceptances,
+            acceptance_ratio: ratio.unwrap_or(0.0),
+            evaluation_cycles: cycles,
+        })
+    }
+
+    // ========================================================================
     // Utility Methods
     // ========================================================================
 
@@ -571,6 +871,9 @@ impl SessionHygiene {
         self.last_checkpoint_times.clear();
         self.checkpoint_counts.clear();
         self.checkpoints.clear();
+        self.attempt_counts.clear();
+        self.acceptance_counts.clear();
+        self.evaluation_cycles.clear();
         info!("Session hygiene: all session tracking cleared");
     }
 
@@ -1010,5 +1313,407 @@ mod tests {
         let eval = evaluation.unwrap();
         assert_eq!(eval.progress_ratio, 0.0);
         assert!(!eval.recommendations.is_empty()); // Should have recommendations for zero progress
+    }
+
+    // --- Acceptance Ratio Tracking Tests ---
+
+    #[test]
+    fn test_config_default_acceptance_ratio() {
+        let config = SessionHygieneConfig::default();
+        assert_eq!(config.min_attempts_before_evaluation, 3);
+        assert_eq!(config.acceptance_ratio_threshold, 0.5);
+        assert_eq!(config.max_evaluation_cycles_before_escalation, 2);
+        assert!(config.acceptance_tracking_enabled);
+        assert_eq!(config.acceptance_evaluation_checkpoint_count, 2);
+    }
+
+    #[test]
+    fn test_record_attempt() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        assert_eq!(hygiene.get_attempt_count(session_id), 0);
+
+        hygiene.record_attempt(session_id);
+        assert_eq!(hygiene.get_attempt_count(session_id), 1);
+
+        hygiene.record_attempt(session_id);
+        assert_eq!(hygiene.get_attempt_count(session_id), 2);
+    }
+
+    #[test]
+    fn test_record_acceptance() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        assert_eq!(hygiene.get_acceptance_count(session_id), 0);
+
+        hygiene.record_acceptance(session_id);
+        assert_eq!(hygiene.get_acceptance_count(session_id), 1);
+
+        hygiene.record_acceptance(session_id);
+        assert_eq!(hygiene.get_acceptance_count(session_id), 2);
+    }
+
+    #[test]
+    fn test_record_attempt_with_acceptance_accepted() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        hygiene.record_attempt_with_acceptance(session_id, true);
+
+        assert_eq!(hygiene.get_attempt_count(session_id), 1);
+        assert_eq!(hygiene.get_acceptance_count(session_id), 1);
+    }
+
+    #[test]
+    fn test_record_attempt_with_acceptance_rejected() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        hygiene.record_attempt_with_acceptance(session_id, false);
+
+        assert_eq!(hygiene.get_attempt_count(session_id), 1);
+        assert_eq!(hygiene.get_acceptance_count(session_id), 0);
+    }
+
+    #[test]
+    fn test_get_acceptance_ratio() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // No attempts yet
+        assert!(hygiene.get_acceptance_ratio(session_id).is_none());
+
+        // 2 acceptances out of 4 attempts = 0.5 ratio
+        hygiene.record_attempt_with_acceptance(session_id, false); // 1 attempt, 0 accept
+        hygiene.record_attempt_with_acceptance(session_id, true);  // 2 attempts, 1 accept
+        hygiene.record_attempt_with_acceptance(session_id, false); // 3 attempts, 1 accept
+        hygiene.record_attempt_with_acceptance(session_id, true);  // 4 attempts, 2 accepts
+
+        let ratio = hygiene.get_acceptance_ratio(session_id);
+        assert!(ratio.is_some());
+        assert!((ratio.unwrap() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_get_acceptance_ratio_perfect() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // All accepted
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, true);
+
+        let ratio = hygiene.get_acceptance_ratio(session_id);
+        assert!(ratio.is_some());
+        assert!((ratio.unwrap() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_get_acceptance_ratio_zero() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // All rejected
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+
+        let ratio = hygiene.get_acceptance_ratio(session_id);
+        assert!(ratio.is_some());
+        assert!((ratio.unwrap() - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_evaluate_acceptance_ratio_healthy() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // threshold = 0.5, min_attempts = 2
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // 2 acceptances out of 3 attempts = 0.667 > 0.5 (healthy)
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+
+        let evaluation = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(evaluation.is_some());
+
+        let eval = evaluation.unwrap();
+        assert!(!eval.needs_intervention);
+        assert_eq!(eval.severity, AcceptanceRatioSeverity::Healthy);
+        assert!((eval.acceptance_ratio - 0.667).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_evaluate_acceptance_ratio_warning() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // threshold = 0.5
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // 1 acceptance out of 3 attempts = 0.333 < 0.5 (warning)
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+
+        let evaluation = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(evaluation.is_some());
+
+        let eval = evaluation.unwrap();
+        assert!(eval.needs_intervention);
+        assert!(eval.severity != AcceptanceRatioSeverity::Healthy);
+        assert!(eval.recommended_action.contains("below threshold"));
+    }
+
+    #[test]
+    fn test_evaluate_acceptance_ratio_critical() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // threshold = 0.5
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // 0 acceptances out of 3 attempts = 0.0 (critical)
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+
+        let evaluation = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(evaluation.is_some());
+
+        let eval = evaluation.unwrap();
+        assert!(eval.needs_intervention);
+        assert_eq!(eval.severity, AcceptanceRatioSeverity::Critical);
+        assert!(eval.recommended_action.contains("Critical"));
+    }
+
+    #[test]
+    fn test_evaluate_acceptance_ratio_not_enough_attempts() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // min_attempts = 2
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // Only 1 attempt (less than min_attempts = 2)
+        hygiene.record_attempt_with_acceptance(session_id, false);
+
+        let evaluation = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(evaluation.is_none());
+    }
+
+    #[test]
+    fn test_evaluate_acceptance_ratio_disabled() {
+        let mut config = SessionHygieneConfig::testing();
+        config.acceptance_tracking_enabled = false;
+        let mut hygiene = SessionHygiene::new(config);
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, true);
+
+        let evaluation = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(evaluation.is_none());
+    }
+
+    #[test]
+    fn test_should_evaluate_acceptance_ratio() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // checkpoint count threshold = 1
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // No checkpoints yet
+        assert!(!hygiene.should_evaluate_acceptance_ratio(session_id));
+
+        // 1 checkpoint (reaches threshold of 1)
+        hygiene.record_checkpoint(session_id);
+        assert!(hygiene.should_evaluate_acceptance_ratio(session_id));
+    }
+
+    #[test]
+    fn test_evaluation_cycle_increment() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // threshold = 0.5, max_cycles = 1
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        assert_eq!(hygiene.get_evaluation_cycle(session_id), 0);
+
+        // First evaluation with low ratio
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.evaluate_acceptance_ratio(session_id);
+        assert_eq!(hygiene.get_evaluation_cycle(session_id), 1);
+
+        // Second evaluation with low ratio
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.evaluate_acceptance_ratio(session_id);
+        assert_eq!(hygiene.get_evaluation_cycle(session_id), 2);
+    }
+
+    #[test]
+    fn test_reset_evaluation_cycle() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // Increment cycle
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.evaluate_acceptance_ratio(session_id);
+        assert_eq!(hygiene.get_evaluation_cycle(session_id), 1);
+
+        // Reset
+        hygiene.reset_evaluation_cycle(session_id);
+        assert_eq!(hygiene.get_evaluation_cycle(session_id), 0);
+    }
+
+    #[test]
+    fn test_escalation_threshold() {
+        let mut config = SessionHygieneConfig::testing();
+        config.max_evaluation_cycles_before_escalation = 2;
+        let mut hygiene = SessionHygiene::new(config);
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // First evaluation - below threshold, cycle = 1
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        let eval1 = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(eval1.is_some());
+        assert!(!eval1.unwrap().should_escalate);
+        assert_eq!(hygiene.get_evaluation_cycle(session_id), 1);
+
+        // Second evaluation - below threshold, cycle = 2 (reaches escalation)
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        let eval2 = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(eval2.is_some());
+        assert!(eval2.unwrap().should_escalate);
+        assert_eq!(hygiene.get_evaluation_cycle(session_id), 2);
+    }
+
+    #[test]
+    fn test_get_acceptance_summary() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // No attempts - should return None
+        assert!(hygiene.get_acceptance_summary(session_id).is_none());
+
+        // Add attempts
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+
+        let summary = hygiene.get_acceptance_summary(session_id);
+        assert!(summary.is_some());
+
+        let sum = summary.unwrap();
+        assert_eq!(sum.attempts, 3);
+        assert_eq!(sum.acceptances, 2);
+        assert!((sum.acceptance_ratio - 0.667).abs() < 0.01);
+        assert_eq!(sum.evaluation_cycles, 0);
+    }
+
+    #[test]
+    fn test_acceptance_ratio_integration() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        // Start with healthy ratio
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        let healthy = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(healthy.is_some());
+        assert!(!healthy.unwrap().needs_intervention);
+
+        // Degrade ratio
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+        let degraded = hygiene.evaluate_acceptance_ratio(session_id);
+        assert!(degraded.is_some());
+        assert!(degraded.unwrap().needs_intervention);
+
+        // Verify summary reflects degradation
+        let summary = hygiene.get_acceptance_summary(session_id);
+        assert!(summary.is_some());
+        let sum = summary.unwrap();
+        assert_eq!(sum.attempts, 5);
+        assert_eq!(sum.acceptances, 2);
+        assert!(sum.acceptance_ratio < 0.5);
+    }
+
+    #[test]
+    fn test_clear_acceptance_tracking() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_checkpoint(session_id);
+
+        assert_eq!(hygiene.get_attempt_count(session_id), 2);
+        assert_eq!(hygiene.get_acceptance_count(session_id), 2);
+        assert_eq!(hygiene.get_checkpoint_count(session_id), 1);
+
+        hygiene.clear();
+
+        // After clear, session should be empty
+        assert_eq!(hygiene.active_session_count(), 0);
+    }
+
+    #[test]
+    fn test_end_session_clears_tracking() {
+        let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
+
+        let session_id = Uuid::new_v4();
+        hygiene.start_session(session_id);
+
+        hygiene.record_attempt_with_acceptance(session_id, true);
+        hygiene.record_attempt_with_acceptance(session_id, false);
+
+        assert_eq!(hygiene.get_attempt_count(session_id), 2);
+        assert_eq!(hygiene.get_acceptance_count(session_id), 1);
+
+        hygiene.end_session(session_id);
+
+        // After end_session, tracking data should be cleared for this session
+        assert!(!hygiene.is_tracking(session_id));
+        // Note: attempt_counts and acceptance_counts are session-specific and cleared in end_session
+    }
+
+    #[test]
+    fn test_acceptance_ratio_severity_display() {
+        assert_eq!(format!("{}", AcceptanceRatioSeverity::Healthy), "Healthy");
+        assert_eq!(format!("{}", AcceptanceRatioSeverity::Warning), "Warning");
+        assert_eq!(format!("{}", AcceptanceRatioSeverity::Alert), "Alert");
+        assert_eq!(format!("{}", AcceptanceRatioSeverity::Critical), "Critical");
     }
 }

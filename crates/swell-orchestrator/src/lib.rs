@@ -152,7 +152,8 @@ pub use search_router::{
     RewrittenQuery, RoutingDecision, SearchDepth, SearchDomains, SearchRouter, SubQuery,
 };
 pub use session_hygiene::{
-    ProgressEvaluation, ProgressHealth, SessionCheckpoint, SessionHygiene, SessionHygieneConfig,
+    AcceptanceRatioEvaluation, AcceptanceRatioSeverity, AcceptanceSummary, ProgressEvaluation,
+    ProgressHealth, SessionCheckpoint, SessionHygiene, SessionHygieneConfig,
 };
 pub use soft_limits::{
     create_soft_limits, create_soft_limits_with_config, ProgressTracker, SharedSoftLimits,
@@ -251,6 +252,23 @@ pub enum OrchestratorEvent {
         planned_file_count: usize,
         /// Total number of files actually modified
         actual_file_count: usize,
+    },
+    /// Session hygiene alert emitted when acceptance ratio drops below threshold.
+    /// This indicates the task may be stuck in a failure loop and needs intervention.
+    SessionHygieneAlert {
+        task_id: Uuid,
+        /// Number of attempts made
+        attempts: usize,
+        /// Number of successful acceptances
+        acceptances: usize,
+        /// Current acceptance ratio (acceptances / attempts)
+        acceptance_ratio: f64,
+        /// Threshold that triggered the alert
+        threshold: f64,
+        /// Severity level of the alert
+        severity: AlertSeverity,
+        /// Recommended action to take
+        recommended_action: String,
     },
 }
 
