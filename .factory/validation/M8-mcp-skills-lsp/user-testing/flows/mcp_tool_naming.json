@@ -1,0 +1,23 @@
+{
+  "groupId": "mcp_tool_naming",
+  "assertions": ["VAL-MCP-004"],
+  "status": "pass",
+  "testsRun": 10,
+  "testsPassed": 10,
+  "testsFailed": 0,
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo test -p swell-tools --test mcp_tool_naming"],
+  "evidence": [
+    "test_mcp_tool_info_server_name: passed",
+    "test_mcp_tool_wrapper_name_format: passed",
+    "test_mcp_tool_registry_has_normalized_name: passed",
+    "test_mcp_tool_discoverable_by_normalized_name: passed",
+    "test_multiple_mcp_tools_from_different_servers: passed",
+    "test_mcp_tool_wrapper_name_lowercase: passed",
+    "test_mcp_tool_wrapper_name_mixed_case: passed",
+    "test_mcp_tool_wrapper_name_preserves_underscores: passed",
+    "test_mcp_tool_wrapper_name_single_word: passed",
+    "test_mcp_tool_wrapper_name_with_empty_server: passed"
+  ]
+}

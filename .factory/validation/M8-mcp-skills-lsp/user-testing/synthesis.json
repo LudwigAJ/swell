@@ -1,0 +1,73 @@
+{
+  "milestone": "M8-mcp-skills-lsp",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-MCP-001",
+    "VAL-MCP-002",
+    "VAL-MCP-003",
+    "VAL-MCP-004",
+    "VAL-MCP-005",
+    "VAL-MCP-006",
+    "VAL-MCP-007",
+    "VAL-MCP-008"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "featuresValidated": [
+    {
+      "id": "mcp-degraded-startup",
+      "fulfills": ["VAL-MCP-001"],
+      "testFile": "mcp_degraded_startup.rs",
+      "testsPassed": 7,
+      "testsFailed": 0
+    },
+    {
+      "id": "mcp-lifecycle-phases",
+      "fulfills": ["VAL-MCP-002"],
+      "testFile": "mcp_lifecycle_phases.rs",
+      "testsPassed": 14,
+      "testsFailed": 0
+    },
+    {
+      "id": "mcp-failure-classification",
+      "fulfills": ["VAL-MCP-003"],
+      "testFile": "mcp_failure_classification.rs",
+      "testsPassed": 23,
+      "testsFailed": 0
+    },
+    {
+      "id": "mcp-tool-naming",
+      "fulfills": ["VAL-MCP-004"],
+      "testFile": "mcp_tool_naming.rs",
+      "testsPassed": 10,
+      "testsFailed": 0
+    },
+    {
+      "id": "mcp-plugin-state-machine",
+      "fulfills": ["VAL-MCP-005"],
+      "testFile": "mcp_plugin_state_machine.rs",
+      "testsPassed": 29,
+      "testsFailed": 0
+    },
+    {
+      "id": "lsp-registry-and-tools",
+      "fulfills": ["VAL-MCP-006", "VAL-MCP-007", "VAL-MCP-008"],
+      "testFile": "lsp_registry_and_tools.rs",
+      "testsPassed": 15,
+      "testsFailed": 0
+    }
+  ],
+  "totalTestsRun": 98,
+  "toolsUsed": ["cargo test"],
+  "isolationSurface": "cargo test -p swell-tools",
+  "notes": "All VAL-MCP-* assertions for M8-mcp-skills-lsp milestone verified via cargo tests. No external services required."
+}

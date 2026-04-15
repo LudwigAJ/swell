@@ -1,0 +1,28 @@
+{
+  "groupId": "lsp_registry_and_tools",
+  "assertions": ["VAL-MCP-006", "VAL-MCP-007", "VAL-MCP-008"],
+  "status": "pass",
+  "testsRun": 15,
+  "testsPassed": 15,
+  "testsFailed": 0,
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo test -p swell-tools --test lsp_registry_and_tools"],
+  "evidence": [
+    "test_all_lsp_tools_prefixed: passed",
+    "test_lsp_definition_requires_symbol_name: passed",
+    "test_all_four_lsp_tools_required: passed",
+    "test_lsp_definition_disconnected_returns_error: passed",
+    "test_lsp_definition_tool_info: passed",
+    "test_lsp_diagnostics_tool_info: passed",
+    "test_lsp_diagnostics_disconnected_returns_error: passed",
+    "test_lsp_hover_disconnected_returns_error: passed",
+    "test_lsp_hover_tool_info: passed",
+    "test_lsp_references_disconnected_returns_error: passed",
+    "test_lsp_references_tool_info: passed",
+    "test_lsp_registry_cpp_mapping: passed",
+    "test_lsp_registry_multiple_languages: passed",
+    "test_lsp_registry_rust_mapping: passed",
+    "test_lsp_registry_unknown_language_returns_none: passed"
+  ]
+}

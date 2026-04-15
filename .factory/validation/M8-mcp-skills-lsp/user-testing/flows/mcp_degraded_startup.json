@@ -1,0 +1,20 @@
+{
+  "groupId": "mcp_degraded_startup",
+  "assertions": ["VAL-MCP-001"],
+  "status": "pass",
+  "testsRun": 7,
+  "testsPassed": 7,
+  "testsFailed": 0,
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo test -p swell-tools --test mcp_degraded_startup"],
+  "evidence": [
+    "test_degraded_health_variant_exists: passed",
+    "test_degraded_startup_daemon_continues_with_failed_servers: passed",
+    "test_get_all_health_after_degraded_startup: passed",
+    "test_healthy_servers_remain_functional: passed",
+    "test_mixed_health_statuses: passed",
+    "test_multiple_failing_servers_all_reported: passed",
+    "test_original_start_all_servers_still_fails_on_bad_server: passed"
+  ]
+}

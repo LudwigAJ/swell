@@ -1,0 +1,27 @@
+{
+  "groupId": "mcp_lifecycle_phases",
+  "assertions": ["VAL-MCP-002"],
+  "status": "pass",
+  "testsRun": 14,
+  "testsPassed": 14,
+  "testsFailed": 0,
+  "frictions": [],
+  "blockers": [],
+  "toolsUsed": ["cargo test -p swell-tools --test mcp_lifecycle_phases"],
+  "evidence": [
+    "test_lifecycle_error_config_load_failure: passed",
+    "test_lifecycle_error_creation: passed",
+    "test_lifecycle_error_display: passed",
+    "test_lifecycle_cannot_skip_phases: passed",
+    "test_lifecycle_phase_failure_reports_correct_phase: passed",
+    "test_lifecycle_phase_name: passed",
+    "test_lifecycle_phase_next: passed",
+    "test_lifecycle_phases_are_ord: passed",
+    "test_lifecycle_phases_are_ordered: passed",
+    "test_lifecycle_state_new_is_empty: passed",
+    "test_lifecycle_state_uncompleted_phase: passed",
+    "test_lifecycle_tracked_for_connection: passed",
+    "test_lifecycle_phases_execute_in_order: passed",
+    "test_full_lifecycle_completion_tracking: passed"
+  ]
+}
