@@ -2,8 +2,8 @@
 #![allow(clippy::should_implement_trait)]
 
 use crate::{
-    frozen_spec::FrozenSpecRef, EvaluatorAgent, FeatureLead, FeatureLeadSpawner, GeneratorAgent,
-    Orchestrator, PlannerAgent, MAX_CONCURRENT_AGENTS,
+    frozen_spec::FrozenSpecRef, killswitch::OrchestratorKillSwitch, EvaluatorAgent, FeatureLead,
+    FeatureLeadSpawner, GeneratorAgent, Orchestrator, PlannerAgent, MAX_CONCURRENT_AGENTS,
 };
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,8 @@ pub enum TurnOutcome {
     Error,
     /// Turn ended due to empty response
     EmptyResponse,
+    /// Turn ended due to kill switch being triggered
+    KillSwitchTriggered,
 }
 
 /// A tool call that was made during a turn
@@ -177,6 +179,8 @@ pub struct ExecutionController {
     llm: Arc<dyn LlmBackend>,
     tool_registry: Arc<ToolRegistry>,
     validation_pipeline: ValidationPipeline,
+    /// Kill switch for emergency stops and pause/resume
+    kill_switch: OrchestratorKillSwitch,
     max_concurrent: usize,
     /// Maximum iterations for the turn loop (hard cap)
     /// This is separate from validation retry count
@@ -209,6 +213,7 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_pipeline: ValidationPipeline::new(),
+            kill_switch: OrchestratorKillSwitch::new(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
@@ -230,6 +235,7 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_pipeline,
+            kill_switch: OrchestratorKillSwitch::new(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
@@ -257,6 +263,7 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_pipeline: ValidationPipeline::new(),
+            kill_switch: OrchestratorKillSwitch::new(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
@@ -279,6 +286,7 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_pipeline,
+            kill_switch: OrchestratorKillSwitch::new(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
@@ -312,6 +320,7 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_pipeline,
+            kill_switch: OrchestratorKillSwitch::new(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations,
             context_compaction_threshold,
@@ -324,6 +333,11 @@ impl ExecutionController {
     /// Get the max iterations setting
     pub fn max_iterations(&self) -> u32 {
         self.max_iterations
+    }
+
+    /// Get a reference to the orchestrator kill switch for emergency stops.
+    pub fn kill_switch(&self) -> &OrchestratorKillSwitch {
+        &self.kill_switch
     }
 
     /// Get the frozen spec for a task, if it exists
@@ -582,6 +596,21 @@ impl ExecutionController {
         loop {
             turn_number += 1;
             debug!(turn = turn_number, "Starting turn");
+
+            // Check kill switch BEFORE starting a new turn - FullStop halts immediately
+            if let Err(e) = self.kill_switch.check_fullstop().await {
+                warn!(
+                    turn = turn_number,
+                    error = %e,
+                    "Kill switch FullStop triggered, terminating turn loop"
+                );
+                // Record the outcome for this turn
+                let mut summary = TurnSummary::new(turn_number);
+                summary.outcome = TurnOutcome::KillSwitchTriggered;
+                summary.final_text = final_text.clone();
+                all_summaries.push(summary);
+                return Err(SwellError::KillSwitchTriggered);
+            }
 
             // Check max iterations hard cap BEFORE starting a new turn
             if turn_number > self.max_iterations {
@@ -891,6 +920,38 @@ impl ExecutionController {
         name: &str,
         arguments: serde_json::Value,
     ) -> Result<swell_core::traits::ToolOutput, SwellError> {
+        // Check kill switch BEFORE executing the tool - FullStop blocks all execution
+        if let Err(e) = self.kill_switch.check_fullstop().await {
+            warn!(
+                tool = %name,
+                error = %e,
+                "Kill switch FullStop triggered, denying tool execution"
+            );
+            return Ok(ToolOutput {
+                is_error: true,
+                content: vec![ToolResultContent::Error(format!(
+                    "Tool execution blocked: kill switch FullStop triggered ({})",
+                    e
+                ))],
+            });
+        }
+
+        // Perform tool-specific restriction checks
+        if let Err(e) = self.kill_switch.check_tool_dispatch(name, &arguments).await {
+            warn!(
+                tool = %name,
+                error = %e,
+                "Kill switch restriction blocked tool execution"
+            );
+            return Ok(ToolOutput {
+                is_error: true,
+                content: vec![ToolResultContent::Error(format!(
+                    "Tool execution blocked: kill switch restriction ({})",
+                    e
+                ))],
+            });
+        }
+
         // Find the tool in the registry
         let tool =
             self.tool_registry.get(name).await.ok_or_else(|| {
@@ -948,6 +1009,7 @@ impl Clone for ExecutionController {
             llm: self.llm.clone(),
             tool_registry: self.tool_registry.clone(),
             validation_pipeline: self.validation_pipeline.clone(),
+            kill_switch: self.kill_switch.clone(),
             max_concurrent: self.max_concurrent,
             max_iterations: self.max_iterations,
             context_compaction_threshold: self.context_compaction_threshold,
@@ -1728,5 +1790,167 @@ mod tests {
             "Tool with Auto permission should not be denied: {:?}",
             result
         );
+    }
+
+    // ========================================================================
+    // Kill Switch Tests (VAL-SAFE-001, VAL-SAFE-002)
+    // ========================================================================
+
+    /// Test VAL-SAFE-001: FullStop halts turn loop execution immediately.
+    ///
+    /// When FullStop is triggered, the execute_turn_loop should:
+    /// 1. Stop before making the next LLM call
+    /// 2. Return Err(SwellError::KillSwitchTriggered)
+    /// 3. Record TurnOutcome::KillSwitchTriggered in the summary
+    #[tokio::test]
+    async fn test_killswitch_fullstop_halts_turn_loop() {
+        use swell_core::kill_switch::KillLevel;
+
+        let orchestrator = Orchestrator::new();
+        let mock_llm = Arc::new(MockLlm::with_response("claude-sonnet", "Hello world"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+
+        // Trigger FullStop before calling execute_turn_loop
+        controller.kill_switch().trigger(KillLevel::FullStop, "Test FullStop", "test").await;
+
+        let messages = vec![swell_llm::LlmMessage {
+            role: swell_llm::LlmRole::User,
+            content: "Hello".to_string(),
+            tool_call_id: None,
+        }];
+
+        let result = controller.execute_turn_loop(messages, None).await;
+
+        // Should fail with KillSwitchTriggered error
+        assert!(
+            result.is_err(),
+            "execute_turn_loop should fail when FullStop is triggered"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, SwellError::KillSwitchTriggered),
+            "Error should be KillSwitchTriggered, got: {:?}",
+            err
+        );
+
+        // Reset kill switch
+        controller.kill_switch().reset().await;
+    }
+
+    /// Test VAL-SAFE-001: FullStop blocks tool execution.
+    ///
+    /// When FullStop is triggered, execute_tool should return an error
+    /// without attempting to find or execute the tool.
+    #[tokio::test]
+    async fn test_killswitch_fullstop_blocks_tool_execution() {
+        use swell_core::kill_switch::KillLevel;
+
+        let orchestrator = Orchestrator::new();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+
+        // Trigger FullStop
+        controller.kill_switch().trigger(KillLevel::FullStop, "Test FullStop", "test").await;
+
+        let result = controller
+            .execute_tool("some_tool", serde_json::json!({}))
+            .await;
+
+        // Should return Ok with error content, not fail
+        assert!(
+            result.is_ok(),
+            "execute_tool should return Ok even when blocked: {:?}",
+            result
+        );
+        let output = result.unwrap();
+        assert!(
+            output.is_error,
+            "ToolOutput should have is_error=true when kill switch blocks execution"
+        );
+        assert!(
+            output.content.iter().any(|c| match c {
+                ToolResultContent::Error(msg) => msg.contains("kill switch"),
+                _ => false,
+            }),
+            "Error message should mention kill switch: {:?}",
+            output.content
+        );
+
+        // Reset kill switch
+        controller.kill_switch().reset().await;
+    }
+
+    /// Test VAL-SAFE-002: Kill levels are enforced in correct order.
+    ///
+    /// Level 4 (FullStop) blocks everything, including operations
+    /// blocked by lower levels (Throttle, ScopeBlock, NetworkKill).
+    #[tokio::test]
+    async fn test_killswitch_level_ordering_fullstop_overrides_all() {
+        use swell_core::kill_switch::KillLevel;
+
+        let orchestrator = Orchestrator::new();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+
+        // Even though we set a low level (Throttle), FullStop should take precedence
+        controller.kill_switch().trigger(KillLevel::Throttle, "Throttle", "test").await;
+        controller.kill_switch().trigger(KillLevel::FullStop, "FullStop overrides", "test").await;
+
+        let messages = vec![swell_llm::LlmMessage {
+            role: swell_llm::LlmRole::User,
+            content: "Hello".to_string(),
+            tool_call_id: None,
+        }];
+
+        let result = controller.execute_turn_loop(messages, None).await;
+
+        // FullStop should still halt even though Throttle was set first
+        assert!(
+            result.is_err(),
+            "FullStop should halt even with Throttle also set"
+        );
+
+        // Reset kill switch
+        controller.kill_switch().reset().await;
+    }
+
+    /// Test VAL-SAFE-002: NetworkKill allows non-network tools but blocks network tools.
+    #[tokio::test]
+    async fn test_killswitch_networkkill_ordering() {
+        use swell_core::kill_switch::KillLevel;
+
+        let orchestrator = Orchestrator::new();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+
+        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+
+        // Trigger NetworkKill
+        controller.kill_switch().trigger(KillLevel::NetworkKill, "Network blocked", "test").await;
+
+        // Execute turn loop should still work (it's not a network operation)
+        let messages = vec![swell_llm::LlmMessage {
+            role: swell_llm::LlmRole::User,
+            content: "Hello".to_string(),
+            tool_call_id: None,
+        }];
+
+        let result = controller.execute_turn_loop(messages, None).await;
+
+        // Should succeed - turn loop itself is not a network operation
+        assert!(
+            result.is_ok(),
+            "NetworkKill should not block turn loop: {:?}",
+            result
+        );
+
+        // Reset kill switch
+        controller.kill_switch().reset().await;
     }
 }

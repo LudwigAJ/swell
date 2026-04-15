@@ -28,6 +28,7 @@ pub mod followup_generator;
 pub mod frozen_spec;
 pub mod gap_analyzer;
 pub mod hard_limits;
+pub mod killswitch;
 pub mod idempotent_actions;
 pub mod langfuse_exporter;
 pub mod merge_queue;
@@ -108,6 +109,7 @@ pub use gap_analyzer::{
     CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
     RequirementCategory, RequirementPriority, SpecRequirement,
 };
+pub use killswitch::OrchestratorKillSwitch;
 pub use hard_limits::{
     create_hard_limits, create_hard_limits_with_config, HardLimitError, HardLimitWarning,
     HardLimits, HardLimitsCheck, HardLimitsConfig, SharedHardLimits,
