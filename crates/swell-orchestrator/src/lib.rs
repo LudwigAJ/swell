@@ -198,6 +198,7 @@ use std::sync::Arc;
 use swell_core::{
     AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult,
 };
+use swell_tools::mcp_config::{McpConfigManager, McpServerHealth};
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
@@ -242,6 +243,8 @@ pub struct Orchestrator {
     event_sender: broadcast::Sender<OrchestratorEvent>,
     /// Manager for active FeatureLead sub-orchestrators
     feature_lead_manager: Arc<RwLock<FeatureLeadManager>>,
+    /// MCP server configuration manager for health monitoring
+    mcp_manager: Arc<McpConfigManager>,
 }
 
 impl Orchestrator {
@@ -250,6 +253,7 @@ impl Orchestrator {
         let (tx, _rx) = broadcast::channel(100);
         let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
         let checkpoint_manager = Arc::new(CheckpointManager::new(checkpoint_store));
+        let mcp_manager = Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap());
 
         Self {
             state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
@@ -257,12 +261,14 @@ impl Orchestrator {
             checkpoint_manager,
             event_sender: tx,
             feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
+            mcp_manager,
         }
     }
 
     /// Create a new orchestrator with a custom checkpoint manager
     pub fn with_checkpoint_manager(checkpoint_manager: Arc<CheckpointManager>) -> Self {
         let (tx, _rx) = broadcast::channel(100);
+        let mcp_manager = Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap());
 
         Self {
             state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
@@ -270,6 +276,7 @@ impl Orchestrator {
             checkpoint_manager,
             event_sender: tx,
             feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
+            mcp_manager,
         }
     }
 
@@ -546,6 +553,28 @@ impl Orchestrator {
     /// Get the checkpoint manager for direct access (use sparingly)
     pub fn checkpoint_manager(&self) -> Arc<CheckpointManager> {
         self.checkpoint_manager.clone()
+    }
+
+    /// Get MCP server health status for all configured servers.
+    ///
+    /// Returns a HashMap mapping server name to health status string.
+    /// This is used by the daemon to report MCP health in status responses.
+    pub async fn get_mcp_health(&self) -> std::collections::HashMap<String, String> {
+        let health_map = self.mcp_manager.get_all_health().await;
+        health_map
+            .into_iter()
+            .map(|(name, health)| {
+                let status = match health {
+                    McpServerHealth::Healthy => "healthy",
+                    McpServerHealth::Starting => "starting",
+                    McpServerHealth::Disconnected => "disconnected",
+                    McpServerHealth::Reconnecting => "reconnecting",
+                    McpServerHealth::Degraded => "degraded",
+                    McpServerHealth::Failed => "failed",
+                };
+                (name, status.to_string())
+            })
+            .collect()
     }
 
     /// Restore a task from its latest checkpoint
