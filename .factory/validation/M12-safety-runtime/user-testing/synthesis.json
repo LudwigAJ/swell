@@ -1,0 +1,30 @@
+{
+  "milestone": "M12-safety-runtime",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-SAFE-001",
+    "VAL-SAFE-002",
+    "VAL-SAFE-003",
+    "VAL-SAFE-004",
+    "VAL-SAFE-005",
+    "VAL-SAFE-006",
+    "VAL-SAFE-007",
+    "VAL-SAFE-008",
+    "VAL-SAFE-009",
+    "VAL-SAFE-010",
+    "VAL-SAFE-011",
+    "VAL-SAFE-012"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null,
+  "note": "All M12-safety-runtime assertions were validated by user-testing-validator round 1 (commit 9ff4168). This synthesis confirms completion of the milestone validation."
+}
