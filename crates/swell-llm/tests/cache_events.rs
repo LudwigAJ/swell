@@ -4,9 +4,9 @@
 //! emitted as first-class structured observability events through the
 //! StreamEvent::Usage type.
 
-use swell_llm::{AnthropicBackend, LlmConfig, LlmMessage, LlmRole};
-use swell_core::StreamEvent;
 use futures::StreamExt;
+use swell_core::StreamEvent;
+use swell_llm::{AnthropicBackend, LlmConfig, LlmMessage, LlmRole};
 use tokio::test;
 
 /// Test that cache_creation_tokens and cache_read_tokens are emitted as structured events
@@ -37,11 +37,8 @@ data: {"type":"message_stop"}
         .with_body(mock_response)
         .create();
 
-    let backend = AnthropicBackend::with_base_url(
-        "claude-sonnet-4-20250514",
-        "test-api-key",
-        server.url(),
-    );
+    let backend =
+        AnthropicBackend::with_base_url("claude-sonnet-4-20250514", "test-api-key", server.url());
 
     let messages = vec![LlmMessage {
         role: LlmRole::User,
@@ -126,11 +123,8 @@ data: {"type":"message_stop"}
         .with_body(mock_response)
         .create();
 
-    let backend = AnthropicBackend::with_base_url(
-        "claude-sonnet-4-20250514",
-        "test-api-key",
-        server.url(),
-    );
+    let backend =
+        AnthropicBackend::with_base_url("claude-sonnet-4-20250514", "test-api-key", server.url());
 
     let messages = vec![LlmMessage {
         role: LlmRole::User,
@@ -181,8 +175,7 @@ data: {"type":"message_stop"}
                 assert_eq!(*input_tokens, 50, "input_tokens should be 50");
                 assert_eq!(*output_tokens, 0, "output_tokens should be 0");
                 assert_eq!(
-                    *cache_creation_input_tokens,
-                    None,
+                    *cache_creation_input_tokens, None,
                     "cache_creation_input_tokens should be None"
                 );
                 assert_eq!(
@@ -210,9 +203,18 @@ async fn test_usage_event_is_json_serializable() {
     let json = serde_json::to_string(&event).expect("Usage event should be serializable");
 
     // Verify it contains the expected fields (serde tag format)
-    assert!(json.contains("\"type\":\"Usage\""), "JSON should have type: Usage");
-    assert!(json.contains("\"input_tokens\":100"), "JSON should have input_tokens: 100");
-    assert!(json.contains("\"output_tokens\":50"), "JSON should have output_tokens: 50");
+    assert!(
+        json.contains("\"type\":\"Usage\""),
+        "JSON should have type: Usage"
+    );
+    assert!(
+        json.contains("\"input_tokens\":100"),
+        "JSON should have input_tokens: 100"
+    );
+    assert!(
+        json.contains("\"output_tokens\":50"),
+        "JSON should have output_tokens: 50"
+    );
     assert!(
         json.contains("\"cache_creation_input_tokens\":200"),
         "JSON should have cache_creation_input_tokens: 200"
@@ -268,11 +270,8 @@ data: {"type":"message_stop"}
         .with_body(mock_response)
         .create();
 
-    let backend = AnthropicBackend::with_base_url(
-        "claude-sonnet-4-20250514",
-        "test-api-key",
-        server.url(),
-    );
+    let backend =
+        AnthropicBackend::with_base_url("claude-sonnet-4-20250514", "test-api-key", server.url());
 
     let messages = vec![LlmMessage {
         role: LlmRole::User,
@@ -322,8 +321,7 @@ data: {"type":"message_stop"}
                     "cache_creation_input_tokens should be Some(500)"
                 );
                 assert_eq!(
-                    *cache_read_input_tokens,
-                    None,
+                    *cache_read_input_tokens, None,
                     "cache_read_input_tokens should be None"
                 );
             }
