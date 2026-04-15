@@ -349,7 +349,180 @@ pub async fn handle_command(
                 correlation_id,
             }
         }
+        CliCommand::ConfigGet { key } => {
+            info!(key = %key, "ConfigGet requested");
+            use swell_core::config::ConfigLoader;
+
+            // Load config to find the key's value and source
+            let loader = ConfigLoader::new();
+            match loader.load() {
+                Ok(config) => {
+                    if let Some(value) = config.get(&key) {
+                        // Find the source file for this key from the audit trail
+                        let source_file = config
+                            .loaded_entries()
+                            .iter()
+                            .find(|e| e.key_path == key)
+                            .and_then(|e| e.source_file.clone());
+
+                        let correlation_id = EventEmitter::new_correlation_id();
+                        DaemonEvent::ConfigValue {
+                            key,
+                            value: value.clone(),
+                            source_file,
+                            correlation_id,
+                        }
+                    } else {
+                        // Key not found in config
+                        let correlation_id = EventEmitter::new_correlation_id();
+                        event_emitter
+                            .emit_error(
+                                format!("Configuration key '{}' not found", key),
+                                Some(swell_core::FailureClass::ConfigError),
+                                correlation_id,
+                            )
+                            .await
+                    }
+                }
+                Err(e) => {
+                    warn!(error = %e, "Failed to load configuration");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_error(
+                            format!("Failed to load configuration: {}", e),
+                            Some(swell_core::FailureClass::ConfigError),
+                            correlation_id,
+                        )
+                        .await
+                }
+            }
+        }
+        CliCommand::ConfigSet { key, value } => {
+            info!(key = %key, "ConfigSet requested");
+            use std::path::PathBuf;
+
+            // Determine the settings.local.json path
+            // We look in the current working directory's .swell directory
+            let swell_dir: PathBuf = std::env::current_dir()
+                .map(|p| p.join(".swell"))
+                .unwrap_or_else(|_| PathBuf::from(".swell"));
+            let local_settings_path = swell_dir.join("settings.local.json");
+
+            // Ensure the .swell directory exists
+            if let Err(e) = std::fs::create_dir_all(&swell_dir) {
+                let correlation_id = EventEmitter::new_correlation_id();
+                return event_emitter
+                    .emit_error(
+                        format!("Failed to create .swell directory: {}", e),
+                        Some(swell_core::FailureClass::ConfigError),
+                        correlation_id,
+                    )
+                    .await;
+            }
+
+            // Read existing local settings or create new
+            let mut local_settings: serde_json::Map<String, serde_json::Value> =
+                if local_settings_path.exists() {
+                    match std::fs::read_to_string(&local_settings_path) {
+                        Ok(content) => serde_json::from_str(&content)
+                            .unwrap_or_else(|_| serde_json::Map::new()),
+                        Err(_) => serde_json::Map::new(),
+                    }
+                } else {
+                    serde_json::Map::new()
+                };
+
+            // Set the key (supporting dot notation for nested keys)
+            set_nested_json_value(&mut local_settings, &key, value.clone());
+
+            // Write atomically: write to temp file, then rename
+            let temp_path = local_settings_path.with_extension("tmp");
+            match serde_json::to_string_pretty(&local_settings) {
+                Ok(json_str) => {
+                    if let Err(e) = std::fs::write(&temp_path, &json_str) {
+                        let correlation_id = EventEmitter::new_correlation_id();
+                        return event_emitter
+                            .emit_error(
+                                format!("Failed to write config: {}", e),
+                                Some(swell_core::FailureClass::ConfigError),
+                                correlation_id,
+                            )
+                            .await;
+                    }
+                    if let Err(e) = std::fs::rename(&temp_path, &local_settings_path) {
+                        // Clean up temp file on failure
+                        let _ = std::fs::remove_file(&temp_path);
+                        let correlation_id = EventEmitter::new_correlation_id();
+                        return event_emitter
+                            .emit_error(
+                                format!("Failed to save config: {}", e),
+                                Some(swell_core::FailureClass::ConfigError),
+                                correlation_id,
+                            )
+                            .await;
+                    }
+                }
+                Err(e) => {
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    return event_emitter
+                        .emit_error(
+                            format!("Failed to serialize config: {}", e),
+                            Some(swell_core::FailureClass::ConfigError),
+                            correlation_id,
+                        )
+                        .await;
+                }
+            }
+
+            // Return success with the updated value and source
+            let correlation_id = EventEmitter::new_correlation_id();
+            DaemonEvent::ConfigValue {
+                key,
+                value,
+                source_file: Some(local_settings_path.to_string_lossy().to_string()),
+                correlation_id,
+            }
+        }
     }
+}
+
+/// Set a nested value in a JSON object using dot notation.
+/// For example, "execution.max_iterations" sets a nested key.
+fn set_nested_json_value(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    key_path: &str,
+    value: serde_json::Value,
+) {
+    let parts: Vec<&str> = key_path.split('.').collect();
+    if parts.is_empty() {
+        return;
+    }
+
+    if parts.len() == 1 {
+        map.insert(parts[0].to_string(), value);
+        return;
+    }
+
+    // Navigate/create the nested structure
+    let final_key = parts[parts.len() - 1].to_string();
+    let mut current = map;
+
+    for part in parts.iter().take(parts.len() - 1) {
+        let part_str = part.to_string();
+        if !current.contains_key(&part_str) {
+            current.insert(
+                part_str.clone(),
+                serde_json::Value::Object(serde_json::Map::new()),
+            );
+        }
+        if let Some(serde_json::Value::Object(ref mut obj)) = current.get_mut(&part_str) {
+            current = obj;
+        } else {
+            // Path leads through a non-object, can't set nested value
+            return;
+        }
+    }
+    current.insert(final_key, value);
 }
 
 /// Parse a JSON string into a CliCommand.
@@ -370,6 +543,7 @@ pub fn event_to_json(event: &DaemonEvent) -> Result<String, String> {
 mod tests {
     use super::*;
     use crate::events::EventEmitter;
+    use serial_test::serial;
     use std::sync::Arc;
     use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
     use tokio::sync::Mutex;
@@ -420,7 +594,14 @@ mod tests {
             description: "Test task description".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskCreated { id, correlation_id } => {
@@ -441,7 +622,14 @@ mod tests {
             description: "".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskCreated { id, correlation_id } => {
@@ -462,7 +650,14 @@ mod tests {
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskApprove { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -488,7 +683,14 @@ mod tests {
         orch.lock().await.start_task(task.id).await.unwrap();
 
         let command = CliCommand::TaskApprove { task_id: task.id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -517,7 +719,14 @@ mod tests {
             reason: "Test rejection".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -546,7 +755,14 @@ mod tests {
             reason: "Test rejection reason".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -567,7 +783,14 @@ mod tests {
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskCancel { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -587,7 +810,14 @@ mod tests {
         let task = orch.lock().await.create_task("Test task".to_string()).await;
         let command = CliCommand::TaskCancel { task_id: task.id };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -607,7 +837,14 @@ mod tests {
         let active_connections = create_test_active_connections();
         let command = CliCommand::TaskList;
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskCompleted { id, pr_url, .. } => {
@@ -635,7 +872,14 @@ mod tests {
         orch.lock().await.create_task("Task 3".to_string()).await;
 
         let command = CliCommand::TaskList;
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskCompleted { id, pr_url, .. } => {
@@ -661,7 +905,14 @@ mod tests {
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskWatch { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -681,7 +932,14 @@ mod tests {
         let task = orch.lock().await.create_task("Test task".to_string()).await;
         let command = CliCommand::TaskWatch { task_id: task.id };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -711,7 +969,14 @@ mod tests {
         }
 
         let command = CliCommand::TaskWatch { task_id: task.id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -802,7 +1067,14 @@ mod tests {
         let command = CliCommand::TaskCreate {
             description: "Test".to_string(),
         };
-        handle_command(command, orch, Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        handle_command(
+            command,
+            orch,
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         // Event should be recorded
         assert_eq!(emitter.event_count().await, 1);
@@ -819,7 +1091,14 @@ mod tests {
             let command = CliCommand::TaskCreate {
                 description: "Test".to_string(),
             };
-            let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+            let event = handle_command(
+                command,
+                Arc::clone(&orch),
+                Arc::clone(&emitter),
+                Arc::clone(&active_connections),
+                create_test_start_time(),
+            )
+            .await;
             match event {
                 DaemonEvent::TaskCreated { id, correlation_id } => {
                     // Use the correlation_id for subsequent events
@@ -832,7 +1111,14 @@ mod tests {
         // Now do an approve operation - this is a NEW operation with its own correlation_id
         // but we can still verify that the task creation has its own correlation_id
         let command = CliCommand::TaskApprove { task_id: task.0 };
-        let _ = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let _ = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         // Task creation event should be linkable by its correlation_id
         let events = emitter.get_events_by_correlation_id(task.1).await;
@@ -852,7 +1138,14 @@ mod tests {
 
         // Try to approve a non-existent task - should return an error with a correlation_id
         let command = CliCommand::TaskApprove { task_id: fake_id };
-        let event = handle_command(command, orch, Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error {
@@ -991,7 +1284,14 @@ mod tests {
             reason: "Operator requested".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1013,7 +1313,14 @@ mod tests {
             task_id,
             reason: "Operator requested pause".to_string(),
         };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -1036,7 +1343,14 @@ mod tests {
             task_id,
             reason: "Operator requested pause during validation".to_string(),
         };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -1059,7 +1373,14 @@ mod tests {
             reason: "Operator requested".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1079,7 +1400,14 @@ mod tests {
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskResume { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1103,12 +1431,26 @@ mod tests {
                 task_id,
                 reason: "Operator requested".to_string(),
             };
-            handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+            handle_command(
+                command,
+                Arc::clone(&orch),
+                Arc::clone(&emitter),
+                Arc::clone(&active_connections),
+                create_test_start_time(),
+            )
+            .await;
         }
 
         // Now resume
         let command = CliCommand::TaskResume { task_id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -1129,7 +1471,14 @@ mod tests {
 
         // Try to resume without pausing first
         let command = CliCommand::TaskResume { task_id };
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1152,7 +1501,14 @@ mod tests {
             instruction: "Check the logs".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1174,7 +1530,14 @@ mod tests {
             task_id,
             instruction: "Remember to check the logs first".to_string(),
         };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskProgress { id, message, .. } => {
@@ -1209,7 +1572,14 @@ mod tests {
                 task_id,
                 instruction: format!("Instruction {}", i),
             };
-            handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+            handle_command(
+                command,
+                Arc::clone(&orch),
+                Arc::clone(&emitter),
+                Arc::clone(&active_connections),
+                create_test_start_time(),
+            )
+            .await;
         }
 
         let instructions = orch
@@ -1239,7 +1609,14 @@ mod tests {
             scope,
         };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1266,7 +1643,14 @@ mod tests {
             task_id,
             scope: scope.clone(),
         };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskProgress { id, message, .. } => {
@@ -1299,7 +1683,14 @@ mod tests {
             task_id,
             scope: new_scope,
         };
-        handle_command(command, Arc::clone(&orch), emitter, active_connections, create_test_start_time()).await;
+        handle_command(
+            command,
+            Arc::clone(&orch),
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         // Verify original scope was saved
         let task = orch.lock().await.get_task(task_id).await.unwrap();
@@ -1416,7 +1807,14 @@ mod tests {
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskGet { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1433,11 +1831,22 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create a task
-        let task = orch.lock().await.create_task("Test task description".to_string()).await;
+        let task = orch
+            .lock()
+            .await
+            .create_task("Test task description".to_string())
+            .await;
         let task_id = task.id;
 
         let command = CliCommand::TaskGet { task_id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskDetails {
@@ -1477,12 +1886,23 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create a task with a plan
-        let task = orch.lock().await.create_task("Test task with plan".to_string()).await;
+        let task = orch
+            .lock()
+            .await
+            .create_task("Test task with plan".to_string())
+            .await;
         let plan = create_test_plan(task.id);
         orch.lock().await.set_plan(task.id, plan).await.unwrap();
 
         let command = CliCommand::TaskGet { task_id: task.id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            Arc::clone(&emitter),
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::TaskDetails {
@@ -1509,7 +1929,8 @@ mod tests {
         let correlation_id = Uuid::new_v4();
         let event = DaemonEvent::TaskDetails {
             id: task_id,
-            task_json: r#"{"id":"00000000-0000-0000-0000-000000000000","description":"test"}"#.to_string(),
+            task_json: r#"{"id":"00000000-0000-0000-0000-000000000000","description":"test"}"#
+                .to_string(),
             correlation_id,
         };
         let json = event_to_json(&event).unwrap();
@@ -1531,7 +1952,14 @@ mod tests {
         orch.lock().await.create_task("Task 2".to_string()).await;
 
         let command = CliCommand::DaemonStatus;
-        let event = handle_command(command, Arc::clone(&orch), emitter, Arc::clone(&active_connections), create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            emitter,
+            Arc::clone(&active_connections),
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::DaemonHealth {
@@ -1555,7 +1983,7 @@ mod tests {
                 // Cost tracking should be initialized (tokens is u64 so always >= 0)
                 let _ = total_tokens;
                 assert!(!last_model.is_empty() || last_model.is_empty()); // Model may or may not be set
-                // MCP health is empty map (no MCP manager in test)
+                                                                          // MCP health is empty map (no MCP manager in test)
                 assert!(mcp_health.is_empty());
                 // Verify uptime, version, and budget fields
                 assert!(!version.is_empty());
@@ -1574,7 +2002,14 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         let command = CliCommand::DaemonStatus;
-        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
             DaemonEvent::DaemonHealth {
@@ -1607,13 +2042,17 @@ mod tests {
         }
 
         let command = CliCommand::DaemonStatus;
-        let event = handle_command(command, Arc::clone(&orch), emitter, active_connections, create_test_start_time()).await;
+        let event = handle_command(
+            command,
+            Arc::clone(&orch),
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
 
         match event {
-            DaemonEvent::DaemonHealth {
-                tasks_by_state,
-                ..
-            } => {
+            DaemonEvent::DaemonHealth { tasks_by_state, .. } => {
                 assert_eq!(tasks_by_state.get("Created"), Some(&1));
                 assert_eq!(tasks_by_state.get("Enriched"), Some(&1));
             }
@@ -1659,4 +2098,383 @@ mod tests {
         assert!(json.contains("1.0.0")); // version
         assert!(json.contains("500000")); // remaining_budget
     }
+
+    // =====================================================================
+    // ConfigGet and ConfigSet Tests
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_parse_config_get_command() {
+        let json = r#"{"type":"ConfigGet","payload":{"key":"execution.max_task_timeout_seconds"}}"#;
+        let command = parse_command(json).unwrap();
+
+        match command {
+            CliCommand::ConfigGet { key } => {
+                assert_eq!(key, "execution.max_task_timeout_seconds");
+            }
+            other => panic!("Expected ConfigGet command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_config_set_command() {
+        let json = r#"{"type":"ConfigSet","payload":{"key":"execution.max_task_timeout_seconds","value":300}}"#;
+        let command = parse_command(json).unwrap();
+
+        match command {
+            CliCommand::ConfigSet { key, value } => {
+                assert_eq!(key, "execution.max_task_timeout_seconds");
+                assert_eq!(value, serde_json::json!(300));
+            }
+            other => panic!("Expected ConfigSet command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_config_set_with_nested_value() {
+        let json = r#"{"type":"ConfigSet","payload":{"key":"test_key","value":{"nested":{"inner":"value"}}}}"#;
+        let command = parse_command(json).unwrap();
+
+        match command {
+            CliCommand::ConfigSet { key, value } => {
+                assert_eq!(key, "test_key");
+                assert_eq!(value, serde_json::json!({"nested":{"inner":"value"}}));
+            }
+            other => panic!("Expected ConfigSet command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_config_set_writes_only_to_settings_local_json() {
+        // Use a temp directory for testing
+        let temp_dir = tempfile::tempdir().unwrap();
+        let swell_dir = temp_dir.path().join(".swell");
+        std::fs::create_dir_all(&swell_dir).unwrap();
+
+        // Create a settings.json with a known checksum
+        let settings_json_path = swell_dir.join("settings.json");
+        std::fs::write(
+            &settings_json_path,
+            r#"{"version": "1.0.0", "existing_key": "original"}"#,
+        )
+        .unwrap();
+        let settings_json_checksum_before = calculate_file_checksum(&settings_json_path);
+
+        // Create settings.local.json with some content
+        let local_json_path = swell_dir.join("settings.local.json");
+        std::fs::write(&local_json_path, r#"{"local_only": "value"}"#).unwrap();
+
+        // Change to temp directory and run ConfigSet
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        // Create orchestrator and event emitter for the command
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+
+        let command = CliCommand::ConfigSet {
+            key: "new_key".to_string(),
+            value: serde_json::json!("new_value"),
+        };
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
+
+        // Verify we got a ConfigValue response
+        match event {
+            DaemonEvent::ConfigValue {
+                key,
+                value,
+                source_file,
+                ..
+            } => {
+                assert_eq!(key, "new_key");
+                assert_eq!(value, serde_json::json!("new_value"));
+                assert!(source_file.is_some());
+                assert!(source_file.unwrap().contains("settings.local.json"));
+            }
+            other => panic!("Expected ConfigValue event, got: {:?}", other),
+        }
+
+        // Verify settings.json was NOT modified
+        let settings_json_checksum_after = calculate_file_checksum(&settings_json_path);
+        assert_eq!(
+            settings_json_checksum_before, settings_json_checksum_after,
+            "settings.json should not be modified by ConfigSet"
+        );
+
+        // Verify settings.local.json was modified (contains the new key)
+        let local_content = std::fs::read_to_string(&local_json_path).unwrap();
+        assert!(
+            local_content.contains("new_key"),
+            "settings.local.json should contain the new key"
+        );
+        assert!(
+            local_content.contains("new_value"),
+            "settings.local.json should contain the new value"
+        );
+        assert!(
+            local_content.contains("local_only"),
+            "settings.local.json should preserve existing keys"
+        );
+
+        // Restore original cwd
+        std::env::set_current_dir(original_cwd).unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_config_set_creates_settings_local_json_if_missing() {
+        // Use a temp directory for testing
+        let temp_dir = tempfile::tempdir().unwrap();
+        let swell_dir = temp_dir.path().join(".swell");
+        std::fs::create_dir_all(&swell_dir).unwrap();
+
+        // Don't create settings.local.json - it should be created by ConfigSet
+        let local_json_path = swell_dir.join("settings.local.json");
+        assert!(
+            !local_json_path.exists(),
+            "settings.local.json should not exist initially"
+        );
+
+        // Change to temp directory and run ConfigSet
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+
+        let command = CliCommand::ConfigSet {
+            key: "first_key".to_string(),
+            value: serde_json::json!("first_value"),
+        };
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
+
+        match event {
+            DaemonEvent::ConfigValue { .. } => {
+                // Success
+            }
+            other => panic!("Expected ConfigValue event, got: {:?}", other),
+        }
+
+        // Verify settings.local.json was created
+        assert!(
+            local_json_path.exists(),
+            "settings.local.json should be created by ConfigSet"
+        );
+
+        let local_content = std::fs::read_to_string(&local_json_path).unwrap();
+        assert!(
+            local_content.contains("first_key"),
+            "settings.local.json should contain the new key"
+        );
+
+        // Restore original cwd
+        std::env::set_current_dir(original_cwd).unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_config_get_returns_value_and_source() {
+        // Use a temp directory for testing
+        let temp_dir = tempfile::tempdir().unwrap();
+        let swell_dir = temp_dir.path().join(".swell");
+        std::fs::create_dir_all(&swell_dir).unwrap();
+
+        // Create settings.json with test configuration
+        let settings_json_path = swell_dir.join("settings.json");
+        std::fs::write(
+            &settings_json_path,
+            r#"{"test_key": "test_value", "nested": {"inner": "deep_value"}}"#,
+        )
+        .unwrap();
+
+        // Change to temp directory and run ConfigGet
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+
+        let command = CliCommand::ConfigGet {
+            key: "test_key".to_string(),
+        };
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
+
+        match event {
+            DaemonEvent::ConfigValue {
+                key,
+                value,
+                source_file,
+                ..
+            } => {
+                assert_eq!(key, "test_key");
+                assert_eq!(value, serde_json::json!("test_value"));
+                assert!(source_file.is_some(), "source_file should be present");
+                assert!(source_file.unwrap().contains("settings.json"));
+            }
+            DaemonEvent::Error { message, .. } => {
+                panic!("ConfigGet should not return error: {}", message);
+            }
+            other => panic!("Expected ConfigValue event, got: {:?}", other),
+        }
+
+        // Restore original cwd
+        std::env::set_current_dir(original_cwd).unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_config_get_nonexistent_key_returns_error() {
+        // Use a temp directory for testing
+        let temp_dir = tempfile::tempdir().unwrap();
+        let swell_dir = temp_dir.path().join(".swell");
+        std::fs::create_dir_all(&swell_dir).unwrap();
+
+        // Create an empty settings.json
+        let settings_json_path = swell_dir.join("settings.json");
+        std::fs::write(&settings_json_path, r#"{}"#).unwrap();
+
+        // Change to temp directory and run ConfigGet
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+
+        let command = CliCommand::ConfigGet {
+            key: "nonexistent_key".to_string(),
+        };
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
+
+        match event {
+            DaemonEvent::Error {
+                message,
+                failure_class,
+                ..
+            } => {
+                assert!(message.contains("not found") || message.contains("nonexistent_key"));
+                assert_eq!(failure_class, Some(swell_core::FailureClass::ConfigError));
+            }
+            other => panic!("Expected Error event, got: {:?}", other),
+        }
+
+        // Restore original cwd
+        std::env::set_current_dir(original_cwd).unwrap();
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_config_set_overwrites_existing_key() {
+        // Use a temp directory for testing
+        let temp_dir = tempfile::tempdir().unwrap();
+        let swell_dir = temp_dir.path().join(".swell");
+        std::fs::create_dir_all(&swell_dir).unwrap();
+
+        // Create settings.local.json with existing key
+        let local_json_path = swell_dir.join("settings.local.json");
+        std::fs::write(&local_json_path, r#"{"existing_key": "old_value"}"#).unwrap();
+
+        // Change to temp directory and run ConfigSet to update existing key
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+
+        let command = CliCommand::ConfigSet {
+            key: "existing_key".to_string(),
+            value: serde_json::json!("new_value"),
+        };
+        let event = handle_command(
+            command,
+            orch,
+            emitter,
+            active_connections,
+            create_test_start_time(),
+        )
+        .await;
+
+        match event {
+            DaemonEvent::ConfigValue { key, value, .. } => {
+                assert_eq!(key, "existing_key");
+                assert_eq!(value, serde_json::json!("new_value"));
+            }
+            other => panic!("Expected ConfigValue event, got: {:?}", other),
+        }
+
+        // Verify settings.local.json contains the updated value
+        let local_content = std::fs::read_to_string(&local_json_path).unwrap();
+        assert!(
+            local_content.contains("new_value"),
+            "settings.local.json should contain updated value"
+        );
+        assert!(
+            !local_content.contains("old_value"),
+            "settings.local.json should not contain old_value"
+        );
+
+        // Restore original cwd
+        std::env::set_current_dir(original_cwd).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_config_value_event_serialization() {
+        let correlation_id = Uuid::new_v4();
+        let event = DaemonEvent::ConfigValue {
+            key: "test.key".to_string(),
+            value: serde_json::json!("test_value"),
+            source_file: Some("/path/to/settings.json".to_string()),
+            correlation_id,
+        };
+        let json = event_to_json(&event).unwrap();
+        assert!(json.contains("ConfigValue"));
+        assert!(json.contains("test.key"));
+        assert!(json.contains("test_value"));
+        assert!(json.contains("settings.json"));
+    }
+}
+
+#[cfg(test)]
+/// Calculate a simple checksum for file content verification.
+/// Uses std::collections::hash_map::DefaultHasher for simplicity in testing.
+fn calculate_file_checksum(path: &std::path::Path) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let content = std::fs::read(path).unwrap_or_default();
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
 }

@@ -597,6 +597,15 @@ pub enum CliCommand {
     },
     /// Get daemon health status including active connections, task counts, cost, and MCP health
     DaemonStatus,
+    /// Get a configuration value by key
+    ConfigGet {
+        key: String,
+    },
+    /// Set a configuration value (writes to settings.local.json)
+    ConfigSet {
+        key: String,
+        value: serde_json::Value,
+    },
 }
 
 /// A correlation ID used to track related events across the system.
@@ -751,6 +760,13 @@ pub enum DaemonEvent {
         total_spent: u64,
         /// Remaining budget (tokens)
         remaining_budget: u64,
+        correlation_id: CorrelationId,
+    },
+    /// Configuration value response
+    ConfigValue {
+        key: String,
+        value: serde_json::Value,
+        source_file: Option<String>,
         correlation_id: CorrelationId,
     },
 }
@@ -1403,6 +1419,7 @@ mod tests {
                 DaemonEvent::ValidationStepCompleted { correlation_id, .. } => *correlation_id,
                 DaemonEvent::TaskDetails { correlation_id, .. } => *correlation_id,
                 DaemonEvent::DaemonHealth { correlation_id, .. } => *correlation_id,
+                DaemonEvent::ConfigValue { correlation_id, .. } => *correlation_id,
             }
         };
 

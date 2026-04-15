@@ -378,6 +378,32 @@ impl From<DaemonEvent> for DashboardEvent {
                 message: format!("Task details retrieved ({} bytes)", task_json.len()),
                 correlation_id,
             },
+            // DaemonHealth - emit as system progress with uptime info
+            DaemonEvent::DaemonHealth {
+                uptime_seconds,
+                total_tasks,
+                ..
+            } => DashboardEvent::TaskProgress {
+                id: Uuid::nil(),
+                message: format!("Daemon health: {} tasks, {}s uptime", total_tasks, uptime_seconds),
+                correlation_id: Uuid::nil(),
+            },
+            // ConfigValue - emit as progress with config key and value
+            DaemonEvent::ConfigValue {
+                key,
+                value,
+                source_file,
+                correlation_id,
+            } => DashboardEvent::TaskProgress {
+                id: Uuid::nil(),
+                message: format!(
+                    "Config '{}' = {} (from: {:?})",
+                    key,
+                    value,
+                    source_file.as_deref().unwrap_or("unknown")
+                ),
+                correlation_id,
+            },
         }
     }
 }
