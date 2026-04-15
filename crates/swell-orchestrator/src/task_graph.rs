@@ -464,6 +464,80 @@ impl TaskGraph {
 
         false
     }
+
+    /// Extract connected subgraphs from the task graph.
+    ///
+    /// A connected subgraph is a set of tasks where each task is reachable
+    /// from every other task in the set via dependency edges.
+    ///
+    /// This is useful for determining if a task cluster should be managed
+    /// by a FeatureLead sub-orchestrator.
+    ///
+    /// # Returns
+    /// A vector of subgraphs, where each subgraph is a vector of task IDs.
+    /// Each subgraph is a maximal set of mutually connected tasks.
+    pub fn get_connected_subgraphs(&self) -> Vec<Vec<Uuid>> {
+        if self.dependencies.is_empty() {
+            return vec![];
+        }
+
+        let all_tasks: Vec<Uuid> = self.dependencies.keys().cloned().collect();
+        let mut visited: HashSet<Uuid> = HashSet::new();
+        let mut subgraphs: Vec<Vec<Uuid>> = Vec::new();
+
+        for task_id in all_tasks {
+            if visited.contains(&task_id) {
+                continue;
+            }
+
+            // BFS to find all tasks connected to this one
+            let mut subgraph: Vec<Uuid> = Vec::new();
+            let mut queue: Vec<Uuid> = vec![task_id];
+
+            while let Some(current) = queue.pop() {
+                if visited.contains(&current) {
+                    continue;
+                }
+                visited.insert(current);
+                subgraph.push(current);
+
+                // Get all tasks that depend on current (current is a dependency of these)
+                if let Some(dependents) = self.dependents.get(&current) {
+                    for dep in dependents {
+                        if !visited.contains(dep) {
+                            queue.push(*dep);
+                        }
+                    }
+                }
+
+                // Get all tasks that current depends on
+                if let Some(deps) = self.dependencies.get(&current) {
+                    for dep in deps {
+                        if !visited.contains(dep) {
+                            queue.push(*dep);
+                        }
+                    }
+                }
+            }
+
+            if !subgraph.is_empty() {
+                subgraphs.push(subgraph);
+            }
+        }
+
+        subgraphs
+    }
+
+    /// Get the size of the largest connected subgraph.
+    ///
+    /// This is useful for determining if a FeatureLead should be spawned.
+    pub fn largest_subgraph_size(&self) -> usize {
+        self.get_connected_subgraphs()
+            .iter()
+            .map(|g| g.len())
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 impl Default for TaskGraph {
@@ -941,5 +1015,120 @@ mod tests {
         let d_idx = sorted.iter().position(|&id| id == d).unwrap();
 
         assert!(a_idx < d_idx);
+    }
+
+    // --- Connected Subgraphs Tests ---
+
+    #[test]
+    fn test_get_connected_subgraphs_single_component() {
+        let mut graph = TaskGraph::new();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let c = Uuid::new_v4();
+
+        // All tasks in one connected component: A -> B -> C
+        graph.add_task(a, vec![]).unwrap();
+        graph.add_task(b, vec![a]).unwrap();
+        graph.add_task(c, vec![b]).unwrap();
+
+        let subgraphs = graph.get_connected_subgraphs();
+        assert_eq!(subgraphs.len(), 1);
+        assert_eq!(subgraphs[0].len(), 3);
+    }
+
+    #[test]
+    fn test_get_connected_subgraphs_multiple_components() {
+        let mut graph = TaskGraph::new();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let c = Uuid::new_v4();
+        let d = Uuid::new_v4();
+
+        // Two disconnected components: A -> B and C -> D
+        graph.add_task(a, vec![]).unwrap();
+        graph.add_task(b, vec![a]).unwrap();
+        graph.add_task(c, vec![]).unwrap();
+        graph.add_task(d, vec![c]).unwrap();
+
+        let subgraphs = graph.get_connected_subgraphs();
+        assert_eq!(subgraphs.len(), 2);
+
+        // Each subgraph should have 2 tasks
+        for subgraph in &subgraphs {
+            assert_eq!(subgraph.len(), 2);
+        }
+    }
+
+    #[test]
+    fn test_get_connected_subgraphs_empty_graph() {
+        let graph = TaskGraph::new();
+        let subgraphs = graph.get_connected_subgraphs();
+        assert!(subgraphs.is_empty());
+    }
+
+    #[test]
+    fn test_largest_subgraph_size() {
+        let mut graph = TaskGraph::new();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let c = Uuid::new_v4();
+        let d = Uuid::new_v4();
+        let e = Uuid::new_v4();
+
+        // Component 1: A -> B -> C (size 3)
+        // Component 2: D -> E (size 2)
+        graph.add_task(a, vec![]).unwrap();
+        graph.add_task(b, vec![a]).unwrap();
+        graph.add_task(c, vec![b]).unwrap();
+        graph.add_task(d, vec![]).unwrap();
+        graph.add_task(e, vec![d]).unwrap();
+
+        assert_eq!(graph.largest_subgraph_size(), 3);
+    }
+
+    #[test]
+    fn test_largest_subgraph_size_empty_graph() {
+        let graph = TaskGraph::new();
+        assert_eq!(graph.largest_subgraph_size(), 0);
+    }
+
+    #[test]
+    fn test_get_connected_subgraphs_independent_tasks() {
+        let mut graph = TaskGraph::new();
+        // Three independent tasks with no dependencies
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let c = Uuid::new_v4();
+
+        graph.add_task(a, vec![]).unwrap();
+        graph.add_task(b, vec![]).unwrap();
+        graph.add_task(c, vec![]).unwrap();
+
+        // Each should be its own subgraph
+        let subgraphs = graph.get_connected_subgraphs();
+        assert_eq!(subgraphs.len(), 3);
+        for subgraph in &subgraphs {
+            assert_eq!(subgraph.len(), 1);
+        }
+    }
+
+    #[test]
+    fn test_get_connected_subgraphs_complex_diamond() {
+        let mut graph = TaskGraph::new();
+        let a = Uuid::new_v4();
+        let b = Uuid::new_v4();
+        let c = Uuid::new_v4();
+        let d = Uuid::new_v4();
+
+        // Diamond: A -> B, A -> C, B -> D, C -> D
+        // All connected in one component
+        graph.add_task(a, vec![]).unwrap();
+        graph.add_task(b, vec![a]).unwrap();
+        graph.add_task(c, vec![a]).unwrap();
+        graph.add_task(d, vec![b, c]).unwrap();
+
+        let subgraphs = graph.get_connected_subgraphs();
+        assert_eq!(subgraphs.len(), 1);
+        assert_eq!(subgraphs[0].len(), 4);
     }
 }

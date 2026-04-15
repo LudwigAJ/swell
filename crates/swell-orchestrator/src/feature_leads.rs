@@ -700,4 +700,181 @@ mod tests {
         assert!(active.contains(&task1));
         assert!(active.contains(&task2));
     }
+
+    // --- VAL-ORCH-002: Feature Lead spawning for sub-graphs >15 tasks ---
+
+    /// Helper to create a test plan with specified number of steps
+    fn create_large_plan(step_count: usize) -> Plan {
+        let steps: Vec<PlanStep> = (0..step_count)
+            .map(|i| PlanStep {
+                id: Uuid::new_v4(),
+                description: format!("Step {}", i + 1),
+                affected_files: vec![format!("file_{}.rs", i + 1)],
+                expected_tests: vec![],
+                risk_level: RiskLevel::Low,
+                dependencies: vec![],
+                status: StepStatus::Pending,
+            })
+            .collect();
+
+        Plan {
+            id: Uuid::new_v4(),
+            task_id: Uuid::new_v4(),
+            steps,
+            total_estimated_tokens: step_count as u64 * 1000,
+            risk_assessment: "Low risk".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_feature_lead_threshold_boundary_at_15() {
+        // At exactly 15 steps, should NOT spawn (threshold is >15)
+        let plan = create_large_plan(FEATURE_LEAD_STEP_THRESHOLD);
+        assert!(!FeatureLead::should_spawn(&plan));
+    }
+
+    #[test]
+    fn test_feature_lead_threshold_boundary_above_15() {
+        // Above 15 steps, should spawn
+        let plan = create_large_plan(FEATURE_LEAD_STEP_THRESHOLD + 1);
+        assert!(FeatureLead::should_spawn(&plan));
+    }
+
+    #[test]
+    fn test_feature_lead_threshold_boundary_at_16() {
+        // At exactly 16 steps, should spawn
+        let plan = create_large_plan(16);
+        assert!(FeatureLead::should_spawn(&plan));
+    }
+
+    #[test]
+    fn test_feature_lead_threshold_boundary_at_14() {
+        // At exactly 14 steps, should NOT spawn
+        let plan = create_large_plan(14);
+        assert!(!FeatureLead::should_spawn(&plan));
+    }
+
+    /// Test that segment_plan correctly distributes tasks for spawning
+    #[test]
+    fn test_segment_plan_for_large_subgraph() {
+        // Simulate a 20-task sub-graph
+        let plan = create_large_plan(20);
+        let segments = FeatureLead::segment_plan(&plan, 2);
+
+        // Should create 2 segments
+        assert_eq!(segments.len(), 2);
+
+        // Combined steps should equal 20
+        let total_steps: usize = segments.iter().map(|(_, ids)| ids.len()).sum();
+        assert_eq!(total_steps, 20);
+
+        // Both segments should have ~10 steps each
+        let first_count = segments[0].1.len();
+        let second_count = segments[1].1.len();
+        assert!(first_count >= 9 && first_count <= 11);
+        assert!(second_count >= 9 && second_count <= 11);
+    }
+
+    /// Test that segment_plan for small subgraph (≤15) doesn't trigger spawning
+    #[test]
+    fn test_segment_plan_for_small_subgraph() {
+        // Simulate a 10-task sub-graph
+        let plan = create_large_plan(10);
+        let segments = FeatureLead::segment_plan(&plan, 2);
+
+        // With 10 tasks and 2 leads, segments would distribute as 5 and 5
+        assert_eq!(segments.len(), 2);
+
+        let total_steps: usize = segments.iter().map(|(_, ids)| ids.len()).sum();
+        assert_eq!(total_steps, 10);
+    }
+
+    /// Test that FeatureLead correctly identifies which steps it's managing
+    #[tokio::test]
+    async fn test_feature_lead_assigned_steps_tracking() {
+        let orchestrator = Orchestrator::new();
+        let parent_task = orchestrator.create_task("Test".to_string()).await;
+
+        let plan = create_large_plan(20);
+        let step_ids: Vec<Uuid> = plan.steps.iter().take(10).map(|s| s.id).collect();
+        orchestrator.set_plan(parent_task.id, plan).await.unwrap();
+
+        let parent_orch = Arc::new(orchestrator);
+        let lead = FeatureLead::new(
+            parent_task.id,
+            "Test Feature".to_string(),
+            step_ids.clone(),
+            parent_orch,
+        );
+
+        // The lead should have exactly 10 assigned steps
+        assert_eq!(lead.assigned_steps.len(), 10);
+        assert_eq!(lead.completion_percentage(), 0.0); // No steps completed yet
+    }
+
+    /// Test that FeatureLead correctly reports completion
+    #[tokio::test]
+    async fn test_feature_lead_completion_tracking() {
+        let orchestrator = Orchestrator::new();
+        let parent_task = orchestrator.create_task("Test".to_string()).await;
+
+        let plan = create_large_plan(5);
+        let step_ids: Vec<Uuid> = plan.steps.iter().map(|s| s.id).collect();
+        orchestrator.set_plan(parent_task.id, plan).await.unwrap();
+
+        let parent_orch = Arc::new(orchestrator);
+        let mut lead = FeatureLead::new(
+            parent_task.id,
+            "Test Feature".to_string(),
+            step_ids,
+            parent_orch,
+        );
+
+        // Execute - all 5 steps should succeed (mocked)
+        lead.execute().await.unwrap();
+
+        // Completion should be 100%
+        assert_eq!(lead.completion_percentage(), 100.0);
+        assert!(lead.is_completed());
+        assert!(lead.failed_steps().is_empty());
+    }
+
+    /// Test that subgraphs are correctly identified by size
+    #[test]
+    fn test_subgraph_size_threshold_concept() {
+        use crate::task_graph::TaskGraph;
+        use swell_core::TaskState;
+
+        let mut graph = TaskGraph::new();
+
+        // Create a 20-task sub-graph
+        let mut task_ids: Vec<Uuid> = Vec::new();
+        for i in 0..20 {
+            let id = Uuid::new_v4();
+            task_ids.push(id);
+            if i > 0 {
+                graph.add_task(id, vec![task_ids[i - 1]]).unwrap();
+            } else {
+                graph.add_task(id, vec![]).unwrap();
+            }
+        }
+
+        // Largest subgraph should be 20
+        assert_eq!(graph.largest_subgraph_size(), 20);
+
+        // Add a 10-task sub-graph (disconnected)
+        let mut small_task_ids: Vec<Uuid> = Vec::new();
+        for i in 0..10 {
+            let id = Uuid::new_v4();
+            small_task_ids.push(id);
+            if i > 0 {
+                graph.add_task(id, vec![small_task_ids[i - 1]]).unwrap();
+            } else {
+                graph.add_task(id, vec![]).unwrap();
+            }
+        }
+
+        // Largest subgraph should still be 20 (the 10-task one is smaller)
+        assert_eq!(graph.largest_subgraph_size(), 20);
+    }
 }
