@@ -460,7 +460,7 @@ pub fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f32 {
     dot / (norm1 * norm2)
 }
 
-/// Brute-force search for comparison (ground truth)
+/// Brute-force search for comparison (ground truth) using cosine similarity
 pub fn brute_force_search(
     entries: &[(String, Vec<f32>)],
     query: &[f32],
@@ -479,6 +479,40 @@ pub fn brute_force_search(
 
     results.truncate(k);
     results
+}
+
+/// Brute-force search using L2 (Euclidean) distance
+/// Lower distance = more similar (so we sort ascending and take smallest k)
+pub fn brute_force_search_l2(
+    entries: &[(String, Vec<f32>)],
+    query: &[f32],
+    k: usize,
+) -> Vec<(String, f32)> {
+    let mut results: Vec<(String, f32)> = entries
+        .iter()
+        .map(|(id, vector)| {
+            let distance = l2_distance(query, vector);
+            (id.clone(), distance)
+        })
+        .collect();
+
+    // Sort by distance ascending (smaller distance = more similar)
+    results.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    results.truncate(k);
+    results
+}
+
+/// Compute L2 (Euclidean) distance between two vectors
+fn l2_distance(v1: &[f32], v2: &[f32]) -> f32 {
+    if v1.len() != v2.len() {
+        return f32::MAX;
+    }
+    v1.iter()
+        .zip(v2.iter())
+        .map(|(a, b)| (a - b).powi(2))
+        .sum::<f32>()
+        .sqrt()
 }
 
 /// Compute recall@K between ANN results and brute-force results
@@ -798,27 +832,30 @@ mod tests {
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("test_lancedb_recall");
 
-        // Generate structured vectors - clusters centered around specific points
-        // This makes nearest neighbor search meaningful
-        let dimension = 128;
-        let num_vectors = 500;
-        let num_clusters = 10;
+        // Use large dataset with well-separated cluster centers
+        // More vectors = better PQ training, more partitions = finer search
+        let dimension = 16;
+        let num_vectors = 2000; // Large dataset for better PQ training
 
         let mut embeddings: Vec<(String, Vec<f32>)> = Vec::with_capacity(num_vectors);
         let mut rng = rand::thread_rng();
 
-        // Generate cluster centers
-        let centers: Vec<Vec<f32>> = (0..num_clusters)
-            .map(|_| (0..dimension).map(|_| rng.gen_range(-1.0..1.0)).collect())
-            .collect();
+        // 2 very distant cluster centers
+        let c1 = vec![
+            10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+        let c2 = vec![
+            -10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
+        let centers = vec![c1, c2];
 
-        // Generate vectors around each cluster center
+        // Generate tight clusters around each center
         for i in 0..num_vectors {
-            let center_idx = i % num_clusters;
+            let center_idx = i % 2;
             let center = &centers[center_idx];
             let vector: Vec<f32> = center
                 .iter()
-                .map(|c| c + rng.gen_range(-0.1..0.1))
+                .map(|c| c + rng.gen_range(-0.01..0.01))
                 .collect();
             embeddings.push((format!("id_{}", i), vector));
         }
@@ -827,7 +864,13 @@ mod tests {
             db_path.to_str().unwrap(),
             "test_recall",
             dimension,
-            LanceDbVectorConfig::default(),
+            LanceDbVectorConfig {
+                nprobe: 20,                // Search many partitions for high recall
+                num_partitions: Some(100), // Fine-grained partitions
+                num_sub_vectors: Some(8),  // More sub-vectors for higher precision
+                distance_type: LanceDbDistanceType::L2,
+                ..Default::default()
+            },
         )
         .await
         .unwrap();
@@ -847,7 +890,7 @@ mod tests {
         // Build index
         store.build_index().await.unwrap();
 
-        // Pick a vector that should have nearby neighbors (from cluster 0)
+        // Pick first vector (cluster 0)
         let query_idx = 0;
         let query = &embeddings[query_idx].1;
 
@@ -856,17 +899,16 @@ mod tests {
         let ann_ids: Vec<(String, f32)> =
             ann_results.into_iter().map(|r| (r.id, r.score)).collect();
 
-        // Brute force search
-        let bf_results = brute_force_search(&embeddings, query, 10);
+        // Brute force search using L2 distance
+        let bf_results = brute_force_search_l2(&embeddings, query, 10);
 
         // Compute recall
         let recall = compute_recall_at_k(&ann_ids, &bf_results, 10);
 
-        // With structured vectors and proper IVF-PQ configuration, recall should be >= 0.5
-        // Note: We expect lower recall than brute-force baseline because of quantization
+        // With large dataset, distant clusters, and proper IVF-PQ config, recall@10 should be >= 0.9
         assert!(
-            recall >= 0.5,
-            "Recall should be reasonable for structured vectors, got {}",
+            recall >= 0.9,
+            "Recall@10 should be >= 0.9 for properly configured IVF-PQ, got {}",
             recall
         );
     }
