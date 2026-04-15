@@ -486,6 +486,9 @@ mod tests {
 
     #[test]
     fn test_higher_layer_overrides_lower_layer() {
+        // Ensure no env var pollution from previous tests
+        std::env::remove_var("SWELL_TIMEOUT");
+
         let temp = TempDir::new().unwrap();
 
         // User global sets timeout to 10

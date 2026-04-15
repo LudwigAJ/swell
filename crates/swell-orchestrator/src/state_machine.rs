@@ -54,18 +54,15 @@ impl TaskStateMachine {
         F: FnOnce(&mut Task) -> Result<R, SwellError>,
     {
         // Get the Arc<RwLock<Task>> for this task
-        let entry = self
-            .tasks
-            .get(&id)
-            .ok_or(SwellError::TaskNotFound(id))?;
+        let entry = self.tasks.get(&id).ok_or(SwellError::TaskNotFound(id))?;
 
         // Clone the Arc so we can release the DashMap read lock before acquiring task write lock
         let task_arc = entry.value().clone();
 
         // Now acquire write lock on the task itself
-        let mut task = task_arc.write().map_err(|_| {
-            SwellError::InvalidStateTransition("Poisoned lock".into())
-        })?;
+        let mut task = task_arc
+            .write()
+            .map_err(|_| SwellError::InvalidStateTransition("Poisoned lock".into()))?;
 
         // Apply the mutation and flatten the result
         f(&mut task)
@@ -73,137 +70,121 @@ impl TaskStateMachine {
 
     /// Transition task to ENRICHED state
     pub fn enrich_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Created => {
-                    task.transition_to(TaskState::Enriched);
-                    Ok(())
-                }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot enrich task in state {}",
-                    task.state
-                ))),
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Created => {
+                task.transition_to(TaskState::Enriched);
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot enrich task in state {}",
+                task.state
+            ))),
         })
     }
 
     /// Transition task to READY state (plan approved)
     pub fn ready_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Enriched => {
-                    if task.plan.is_none() {
-                        return Err(SwellError::InvalidStateTransition(
-                            "Cannot ready task without a plan".to_string(),
-                        ));
-                    }
-                    task.transition_to(TaskState::Ready);
-                    Ok(())
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Enriched => {
+                if task.plan.is_none() {
+                    return Err(SwellError::InvalidStateTransition(
+                        "Cannot ready task without a plan".to_string(),
+                    ));
                 }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot ready task in state {}",
-                    task.state
-                ))),
+                task.transition_to(TaskState::Ready);
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot ready task in state {}",
+                task.state
+            ))),
         })
     }
 
     /// Assign task to an agent
     pub fn assign_task(&self, id: uuid::Uuid, agent_id: uuid::Uuid) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Ready => {
-                    task.assigned_agent = Some(agent_id);
-                    task.transition_to(TaskState::Assigned);
-                    Ok(())
-                }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot assign task in state {}",
-                    task.state
-                ))),
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Ready => {
+                task.assigned_agent = Some(agent_id);
+                task.transition_to(TaskState::Assigned);
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot assign task in state {}",
+                task.state
+            ))),
         })
     }
 
     /// Start executing the task
     pub fn start_execution(&self, id: uuid::Uuid) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Assigned => {
-                    task.transition_to(TaskState::Executing);
-                    Ok(())
-                }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot start executing task in state {}",
-                    task.state
-                ))),
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Assigned => {
+                task.transition_to(TaskState::Executing);
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot start executing task in state {}",
+                task.state
+            ))),
         })
     }
 
     /// Start validation phase
     pub fn start_validation(&self, id: uuid::Uuid) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Executing => {
-                    task.transition_to(TaskState::Validating);
-                    Ok(())
-                }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot validate task in state {}",
-                    task.state
-                ))),
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Executing => {
+                task.transition_to(TaskState::Validating);
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot validate task in state {}",
+                task.state
+            ))),
         })
     }
 
     /// Mark task as accepted (validation passed)
     pub fn accept_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Validating => {
-                    task.transition_to(TaskState::Accepted);
-                    Ok(())
-                }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot accept task in state {}",
-                    task.state
-                ))),
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Validating => {
+                task.transition_to(TaskState::Accepted);
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot accept task in state {}",
+                task.state
+            ))),
         })
     }
 
     /// Mark task as rejected (validation failed)
     pub fn reject_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Validating => {
-                    task.transition_to(TaskState::Rejected);
-                    task.iteration_count += 1;
-                    Ok(())
-                }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot reject task in state {}",
-                    task.state
-                ))),
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Validating => {
+                task.transition_to(TaskState::Rejected);
+                task.iteration_count += 1;
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot reject task in state {}",
+                task.state
+            ))),
         })
     }
 
     /// Transition from Rejected back to Ready for retry (orchestrator manages this)
     pub fn retry_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Rejected => {
-                    task.transition_to(TaskState::Ready);
-                    task.assigned_agent = None;
-                    Ok(())
-                }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot retry task in state {}",
-                    task.state
-                ))),
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Rejected => {
+                task.transition_to(TaskState::Ready);
+                task.assigned_agent = None;
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot retry task in state {}",
+                task.state
+            ))),
         })
     }
 
@@ -217,19 +198,17 @@ impl TaskStateMachine {
 
     /// Pause a task (operator intervention)
     pub fn pause_task(&self, id: uuid::Uuid, reason: String) -> Result<(), SwellError> {
-        self.with_task_mut(id, |task| {
-            match task.state {
-                TaskState::Executing | TaskState::Validating => {
-                    task.paused_reason = Some(reason);
-                    task.paused_from_state = Some(task.state);
-                    task.transition_to(TaskState::Paused);
-                    Ok(())
-                }
-                _ => Err(SwellError::InvalidStateTransition(format!(
-                    "Cannot pause task in state {}",
-                    task.state
-                ))),
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Executing | TaskState::Validating => {
+                task.paused_reason = Some(reason);
+                task.paused_from_state = Some(task.state);
+                task.transition_to(TaskState::Paused);
+                Ok(())
             }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot pause task in state {}",
+                task.state
+            ))),
         })
     }
 
@@ -370,9 +349,9 @@ impl TaskStateMachine {
 
     /// Remove a task from the registry
     pub fn remove_task(&self, id: uuid::Uuid) -> Option<Task> {
-        self.tasks.remove(&id).map(|(_, task_arc)| {
-            task_arc.read().unwrap().clone()
-        })
+        self.tasks
+            .remove(&id)
+            .map(|(_, task_arc)| task_arc.read().unwrap().clone())
     }
 }
 

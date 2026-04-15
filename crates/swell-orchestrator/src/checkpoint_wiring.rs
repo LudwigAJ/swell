@@ -24,9 +24,7 @@
 
 use std::sync::Arc;
 
-use swell_core::{
-    Checkpoint, CheckpointStore, Plan, SwellError, Task, TaskState,
-};
+use swell_core::{Checkpoint, CheckpointStore, Plan, SwellError, Task, TaskState};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -83,7 +81,11 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Save a checkpoint for a task after a state transition.
-    async fn save_checkpoint(&self, task: &Task, transition_name: &str) -> Result<Uuid, SwellError> {
+    async fn save_checkpoint(
+        &self,
+        task: &Task,
+        transition_name: &str,
+    ) -> Result<Uuid, SwellError> {
         let task_id = task.id;
         let new_state = task.state;
 
@@ -248,7 +250,11 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Modify task scope boundaries.
-    pub fn modify_scope(&self, id: Uuid, new_scope: swell_core::TaskScope) -> Result<(), SwellError> {
+    pub fn modify_scope(
+        &self,
+        id: Uuid,
+        new_scope: swell_core::TaskScope,
+    ) -> Result<(), SwellError> {
         self.inner.modify_scope(id, new_scope)
     }
 
@@ -550,11 +556,13 @@ mod tests {
         let checkpoints = sm.list_checkpoints(task.id).await.unwrap();
 
         // Check that metadata contains transition information
-        let create_meta: TransitionMetadata = serde_json::from_value(checkpoints[0].metadata.clone()).unwrap();
+        let create_meta: TransitionMetadata =
+            serde_json::from_value(checkpoints[0].metadata.clone()).unwrap();
         assert_eq!(create_meta.transition_name, "create");
         assert_eq!(create_meta.checkpoint_index, 0);
 
-        let enrich_meta: TransitionMetadata = serde_json::from_value(checkpoints[1].metadata.clone()).unwrap();
+        let enrich_meta: TransitionMetadata =
+            serde_json::from_value(checkpoints[1].metadata.clone()).unwrap();
         assert_eq!(enrich_meta.transition_name, "enrich");
         assert_eq!(enrich_meta.checkpoint_index, 1);
     }
@@ -582,7 +590,8 @@ mod tests {
         assert_eq!(snapshot.state, TaskState::Enriched);
 
         // Verify metadata is valid JSON
-        let metadata: TransitionMetadata = serde_json::from_value(checkpoint.metadata.clone()).unwrap();
+        let metadata: TransitionMetadata =
+            serde_json::from_value(checkpoint.metadata.clone()).unwrap();
         assert_eq!(metadata.new_state, TaskState::Enriched);
     }
 

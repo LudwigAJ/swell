@@ -41,7 +41,10 @@ pub enum WorkerBootError {
     PromptRejectedWhileNotReady { state: WorkerBootState },
 
     #[error("Invalid state transition from {from} to {to}")]
-    InvalidTransition { from: WorkerBootState, to: WorkerBootState },
+    InvalidTransition {
+        from: WorkerBootState,
+        to: WorkerBootState,
+    },
 
     #[error("Worker already finished")]
     AlreadyFinished,
@@ -154,20 +157,20 @@ impl WorkerBoot {
                 // Transition to Running when prompt is submitted
                 self.start_running()
             }
-            WorkerBootState::Spawning => Err(WorkerBootError::PromptRejectedWhileNotReady {
-                state: self.state,
-            }),
-            WorkerBootState::TrustRequired => Err(WorkerBootError::PromptRejectedWhileNotReady {
-                state: self.state,
-            }),
+            WorkerBootState::Spawning => {
+                Err(WorkerBootError::PromptRejectedWhileNotReady { state: self.state })
+            }
+            WorkerBootState::TrustRequired => {
+                Err(WorkerBootError::PromptRejectedWhileNotReady { state: self.state })
+            }
             WorkerBootState::Running => {
                 // Already running - could queue or reject depending on design
                 // For now, we allow this (worker is already processing)
                 Ok(())
             }
-            WorkerBootState::Finished => Err(WorkerBootError::PromptRejectedWhileNotReady {
-                state: self.state,
-            }),
+            WorkerBootState::Finished => {
+                Err(WorkerBootError::PromptRejectedWhileNotReady { state: self.state })
+            }
         }
     }
 
@@ -457,8 +460,14 @@ mod tests {
     #[test]
     fn test_worker_boot_state_display() {
         assert_eq!(format!("{}", WorkerBootState::Spawning), "Spawning");
-        assert_eq!(format!("{}", WorkerBootState::TrustRequired), "TrustRequired");
-        assert_eq!(format!("{}", WorkerBootState::ReadyForPrompt), "ReadyForPrompt");
+        assert_eq!(
+            format!("{}", WorkerBootState::TrustRequired),
+            "TrustRequired"
+        );
+        assert_eq!(
+            format!("{}", WorkerBootState::ReadyForPrompt),
+            "ReadyForPrompt"
+        );
         assert_eq!(format!("{}", WorkerBootState::Running), "Running");
         assert_eq!(format!("{}", WorkerBootState::Finished), "Finished");
     }

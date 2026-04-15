@@ -241,7 +241,11 @@ impl RecoveryStep {
     }
 
     /// Create a retry step with custom base delay
-    pub fn retry_with_delay(max_attempts: u32, backoff: BackoffStrategy, base_delay_ms: u64) -> Self {
+    pub fn retry_with_delay(
+        max_attempts: u32,
+        backoff: BackoffStrategy,
+        base_delay_ms: u64,
+    ) -> Self {
         Self::Retry {
             max_attempts,
             backoff,
@@ -258,7 +262,9 @@ impl RecoveryStep {
 
     /// Create a rollback step
     pub fn rollback() -> Self {
-        Self::Rollback { checkpoint_id: None }
+        Self::Rollback {
+            checkpoint_id: None,
+        }
     }
 
     /// Create a rollback step with specific checkpoint
@@ -290,12 +296,10 @@ impl fmt::Display for RecoveryStep {
                     max_attempts, backoff, base_delay_ms
                 )
             }
-            RecoveryStep::Rollback { checkpoint_id } => {
-                match checkpoint_id {
-                    Some(id) => write!(f, "Rollback(to={})", id),
-                    None => write!(f, "Rollback"),
-                }
-            }
+            RecoveryStep::Rollback { checkpoint_id } => match checkpoint_id {
+                Some(id) => write!(f, "Rollback(to={})", id),
+                None => write!(f, "Rollback"),
+            },
             RecoveryStep::Escalate { reason } => {
                 write!(f, "Escalate({})", reason)
             }
@@ -482,7 +486,11 @@ impl RecoveryRecipe {
     }
 
     /// Register a recipe for a failure scenario
-    pub fn register(&mut self, scenario: FailureScenario, steps: impl Into<RecoverySteps>) -> &mut Self {
+    pub fn register(
+        &mut self,
+        scenario: FailureScenario,
+        steps: impl Into<RecoverySteps>,
+    ) -> &mut Self {
         let steps = steps.into();
         // Convert to owned type for proper HashMap storage
         let steps_owned = RecoverySteps(steps.0);
@@ -494,9 +502,7 @@ impl RecoveryRecipe {
     ///
     /// Returns the registered steps if found, otherwise the default recipe.
     pub fn get(&self, scenario: &FailureScenario) -> &RecoverySteps {
-        self.recipes
-            .get(scenario)
-            .unwrap_or(&self.default_recipe)
+        self.recipes.get(scenario).unwrap_or(&self.default_recipe)
     }
 
     /// Get the recovery steps with scenario matching
@@ -631,10 +637,14 @@ mod tests {
 
     #[test]
     fn test_failure_scenario_matches_with_pattern() {
-        let scenario = FailureScenario::from_class(FailureClass::LlmError)
-            .with_error_pattern("timeout");
+        let scenario =
+            FailureScenario::from_class(FailureClass::LlmError).with_error_pattern("timeout");
 
-        assert!(scenario.matches(FailureClass::LlmError, Some("Request timeout after 30s"), None));
+        assert!(scenario.matches(
+            FailureClass::LlmError,
+            Some("Request timeout after 30s"),
+            None
+        ));
         assert!(scenario.matches(FailureClass::LlmError, Some("Connection timeout"), None));
         assert!(!scenario.matches(FailureClass::LlmError, Some("rate limit exceeded"), None));
         assert!(!scenario.matches(FailureClass::ToolError, Some("timeout"), None));
@@ -642,8 +652,8 @@ mod tests {
 
     #[test]
     fn test_failure_scenario_matches_with_tool() {
-        let scenario = FailureScenario::from_class(FailureClass::ToolError)
-            .with_tool_name("file_read");
+        let scenario =
+            FailureScenario::from_class(FailureClass::ToolError).with_tool_name("file_read");
 
         assert!(scenario.matches(FailureClass::ToolError, None, Some("file_read")));
         assert!(!scenario.matches(FailureClass::ToolError, None, Some("shell")));
@@ -671,7 +681,8 @@ mod tests {
             .with_tool_name("llm_call");
 
         let json = serde_json::to_string(&scenario).expect("should serialize");
-        let deserialized: FailureScenario = serde_json::from_str(&json).expect("should deserialize");
+        let deserialized: FailureScenario =
+            serde_json::from_str(&json).expect("should deserialize");
 
         assert_eq!(scenario, deserialized);
     }
@@ -688,7 +699,10 @@ mod tests {
         assert_eq!(format!("{}", BackoffStrategy::Fixed), "Fixed");
         assert_eq!(format!("{}", BackoffStrategy::Linear), "Linear");
         assert_eq!(format!("{}", BackoffStrategy::Exponential), "Exponential");
-        assert_eq!(format!("{}", BackoffStrategy::ExponentialWithJitter), "ExponentialWithJitter");
+        assert_eq!(
+            format!("{}", BackoffStrategy::ExponentialWithJitter),
+            "ExponentialWithJitter"
+        );
     }
 
     #[test]
@@ -702,7 +716,8 @@ mod tests {
 
         for strategy in &strategies {
             let json = serde_json::to_string(strategy).expect("should serialize");
-            let deserialized: BackoffStrategy = serde_json::from_str(&json).expect("should deserialize");
+            let deserialized: BackoffStrategy =
+                serde_json::from_str(&json).expect("should deserialize");
             assert_eq!(*strategy, deserialized);
         }
     }
@@ -747,7 +762,12 @@ mod tests {
     #[test]
     fn test_recovery_step_rollback() {
         let step = RecoveryStep::rollback();
-        assert!(matches!(step, RecoveryStep::Rollback { checkpoint_id: None }));
+        assert!(matches!(
+            step,
+            RecoveryStep::Rollback {
+                checkpoint_id: None
+            }
+        ));
 
         let step = RecoveryStep::rollback_to("checkpoint-123");
         assert!(matches!(
@@ -777,10 +797,7 @@ mod tests {
             "Escalate(test)"
         );
 
-        assert_eq!(
-            format!("{}", RecoveryStep::rollback()),
-            "Rollback"
-        );
+        assert_eq!(format!("{}", RecoveryStep::rollback()), "Rollback");
 
         assert_eq!(
             format!("{}", RecoveryStep::skip("test")),
@@ -799,7 +816,8 @@ mod tests {
 
         for step in &steps {
             let json = serde_json::to_string(step).expect("should serialize");
-            let deserialized: RecoveryStep = serde_json::from_str(&json).expect("should deserialize");
+            let deserialized: RecoveryStep =
+                serde_json::from_str(&json).expect("should deserialize");
             assert_eq!(*step, deserialized);
         }
     }
@@ -945,14 +963,20 @@ mod tests {
         let mut recipe = RecoveryRecipe::new();
 
         let steps = vec![RecoveryStep::retry(5, BackoffStrategy::Exponential)];
-        recipe.register(FailureScenario::from_class(FailureClass::RateLimited), steps);
+        recipe.register(
+            FailureScenario::from_class(FailureClass::RateLimited),
+            steps,
+        );
 
         let retrieved = recipe.get(&FailureScenario::from_class(FailureClass::RateLimited));
 
         assert_eq!(retrieved.len(), 1);
         assert!(matches!(
             retrieved.first(),
-            Some(RecoveryStep::Retry { max_attempts: 5, .. })
+            Some(RecoveryStep::Retry {
+                max_attempts: 5,
+                ..
+            })
         ));
     }
 
@@ -1011,7 +1035,10 @@ mod tests {
         assert_eq!(retrieved.len(), 1);
         assert!(matches!(
             retrieved.first(),
-            Some(RecoveryStep::Retry { max_attempts: 3, .. })
+            Some(RecoveryStep::Retry {
+                max_attempts: 3,
+                ..
+            })
         ));
     }
 
@@ -1020,8 +1047,7 @@ mod tests {
         let mut recipe = RecoveryRecipe::new();
 
         recipe.register(
-            FailureScenario::from_class(FailureClass::LlmError)
-                .with_error_pattern("timeout"),
+            FailureScenario::from_class(FailureClass::LlmError).with_error_pattern("timeout"),
             vec![RecoveryStep::retry(5, BackoffStrategy::Exponential)],
         );
 
@@ -1030,11 +1056,16 @@ mod tests {
         assert_eq!(retrieved.len(), 1);
 
         // Should match timeout in longer message
-        let retrieved = recipe.get_matching(FailureClass::LlmError, Some("Request timeout after 30s"), None);
+        let retrieved = recipe.get_matching(
+            FailureClass::LlmError,
+            Some("Request timeout after 30s"),
+            None,
+        );
         assert_eq!(retrieved.len(), 1);
 
         // Non-matching message should return default
-        let retrieved = recipe.get_matching(FailureClass::LlmError, Some("rate limit exceeded"), None);
+        let retrieved =
+            recipe.get_matching(FailureClass::LlmError, Some("rate limit exceeded"), None);
         assert!(retrieved.is_empty()); // Returns default which is empty
     }
 
@@ -1043,8 +1074,7 @@ mod tests {
         let mut recipe = RecoveryRecipe::new();
 
         recipe.register(
-            FailureScenario::from_class(FailureClass::ToolError)
-                .with_tool_name("file_read"),
+            FailureScenario::from_class(FailureClass::ToolError).with_tool_name("file_read"),
             vec![RecoveryStep::rollback()],
         );
 
@@ -1100,10 +1130,7 @@ mod tests {
         let recipe = RecoveryRecipe::with_default(default);
 
         let steps = recipe.get(&FailureScenario::from_class(FailureClass::InternalError));
-        assert!(matches!(
-            steps.first(),
-            Some(RecoveryStep::Escalate { .. })
-        ));
+        assert!(matches!(steps.first(), Some(RecoveryStep::Escalate { .. })));
     }
 
     // --- Delay Calculation Tests ---
@@ -1179,9 +1206,8 @@ mod tests {
         // Test looks up an unregistered scenario and asserts a default recipe is returned
         // (e.g., Escalate)
 
-        let default_steps = RecoverySteps::from_vec(vec![
-            RecoveryStep::escalate("Escalated to human reviewer"),
-        ]);
+        let default_steps =
+            RecoverySteps::from_vec(vec![RecoveryStep::escalate("Escalated to human reviewer")]);
         let recipe = RecoveryRecipe::with_default(default_steps);
 
         let steps = recipe.get(&FailureScenario::from_class(FailureClass::InternalError));
@@ -1206,7 +1232,11 @@ mod tests {
         // Retry with linear
         recipe.register(
             FailureScenario::from_class(FailureClass::Timeout),
-            vec![RecoveryStep::retry_with_delay(2, BackoffStrategy::Linear, 500)],
+            vec![RecoveryStep::retry_with_delay(
+                2,
+                BackoffStrategy::Linear,
+                500,
+            )],
         );
 
         // Rollback
@@ -1229,19 +1259,40 @@ mod tests {
 
         // Verify each type
         let retry_exp = recipe.get(&FailureScenario::from_class(FailureClass::RateLimited));
-        assert!(matches!(retry_exp.first(), Some(RecoveryStep::Retry { backoff: BackoffStrategy::Exponential, .. })));
+        assert!(matches!(
+            retry_exp.first(),
+            Some(RecoveryStep::Retry {
+                backoff: BackoffStrategy::Exponential,
+                ..
+            })
+        ));
 
         let retry_lin = recipe.get(&FailureScenario::from_class(FailureClass::Timeout));
-        assert!(matches!(retry_lin.first(), Some(RecoveryStep::Retry { backoff: BackoffStrategy::Linear, .. })));
+        assert!(matches!(
+            retry_lin.first(),
+            Some(RecoveryStep::Retry {
+                backoff: BackoffStrategy::Linear,
+                ..
+            })
+        ));
 
         let rollback = recipe.get(&FailureScenario::from_class(FailureClass::SandboxError));
-        assert!(matches!(rollback.first(), Some(RecoveryStep::Rollback { .. })));
+        assert!(matches!(
+            rollback.first(),
+            Some(RecoveryStep::Rollback { .. })
+        ));
 
         let escalate = recipe.get(&FailureScenario::from_class(FailureClass::InternalError));
-        assert!(matches!(escalate.first(), Some(RecoveryStep::Escalate { .. })));
+        assert!(matches!(
+            escalate.first(),
+            Some(RecoveryStep::Escalate { .. })
+        ));
 
         let skip = recipe.get(&FailureScenario::from_class(FailureClass::PermissionDenied));
-        assert!(matches!(skip.first(), Some(RecoveryStep::SkipAndContinue { .. })));
+        assert!(matches!(
+            skip.first(),
+            Some(RecoveryStep::SkipAndContinue { .. })
+        ));
     }
 
     // --- Additional Integration Tests ---
@@ -1252,15 +1303,13 @@ mod tests {
 
         // LLM errors with timeout pattern get more retries
         recipe.register(
-            FailureScenario::from_class(FailureClass::LlmError)
-                .with_error_pattern("timeout"),
+            FailureScenario::from_class(FailureClass::LlmError).with_error_pattern("timeout"),
             vec![RecoveryStep::retry(5, BackoffStrategy::Exponential)],
         );
 
         // LLM errors with rate limit pattern
         recipe.register(
-            FailureScenario::from_class(FailureClass::LlmError)
-                .with_error_pattern("rate limit"),
+            FailureScenario::from_class(FailureClass::LlmError).with_error_pattern("rate limit"),
             vec![RecoveryStep::retry(3, BackoffStrategy::Exponential)],
         );
 
@@ -1275,8 +1324,7 @@ mod tests {
 
         // Tool errors trigger rollback
         recipe.register(
-            FailureScenario::from_class(FailureClass::ToolError)
-                .with_tool_name("git_commit"),
+            FailureScenario::from_class(FailureClass::ToolError).with_tool_name("git_commit"),
             vec![RecoveryStep::rollback()],
         );
 
@@ -1288,7 +1336,10 @@ mod tests {
         );
         assert!(matches!(
             timeout_steps.first(),
-            Some(RecoveryStep::Retry { max_attempts: 5, .. })
+            Some(RecoveryStep::Retry {
+                max_attempts: 5,
+                ..
+            })
         ));
 
         let rate_limit_steps = recipe.get_matching(
@@ -1298,11 +1349,17 @@ mod tests {
         );
         assert!(matches!(
             rate_limit_steps.first(),
-            Some(RecoveryStep::Retry { max_attempts: 3, .. })
+            Some(RecoveryStep::Retry {
+                max_attempts: 3,
+                ..
+            })
         ));
 
         let network_steps = recipe.get_matching(FailureClass::NetworkError, None, None);
-        assert!(matches!(network_steps.first(), Some(RecoveryStep::Retry { .. })));
+        assert!(matches!(
+            network_steps.first(),
+            Some(RecoveryStep::Retry { .. })
+        ));
         assert_eq!(network_steps.len(), 2); // retry + escalate
 
         let git_tool = recipe.get_matching(
@@ -1310,7 +1367,10 @@ mod tests {
             Some("git commit failed"),
             Some("git_commit"),
         );
-        assert!(matches!(git_tool.first(), Some(RecoveryStep::Rollback { .. })));
+        assert!(matches!(
+            git_tool.first(),
+            Some(RecoveryStep::Rollback { .. })
+        ));
     }
 
     #[test]
@@ -1335,7 +1395,10 @@ mod tests {
         let steps = deserialized.get(&FailureScenario::from_class(FailureClass::RateLimited));
         assert!(matches!(
             steps.first(),
-            Some(RecoveryStep::Retry { max_attempts: 5, .. })
+            Some(RecoveryStep::Retry {
+                max_attempts: 5,
+                ..
+            })
         ));
     }
 }

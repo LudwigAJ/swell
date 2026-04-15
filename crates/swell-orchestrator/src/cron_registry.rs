@@ -46,11 +46,9 @@ impl CronEntry {
         description: Option<String>,
     ) -> Result<Self, SwellError> {
         // Validate the cron expression by trying to parse it
-        let _ = Cron::parse(&expression)
-            .map_err(|e| SwellError::InvalidOperation(format!(
-                "Invalid cron expression '{}': {}",
-                expression, e
-            )))?;
+        let _ = Cron::parse(&expression).map_err(|e| {
+            SwellError::InvalidOperation(format!("Invalid cron expression '{}': {}", expression, e))
+        })?;
 
         Ok(Self {
             task_id,
@@ -64,7 +62,10 @@ impl CronEntry {
     /// Calculate the next scheduled time after the given time.
     ///
     /// Returns `None` if the cron expression cannot produce a valid next time.
-    pub fn next_scheduled(&self, after: chrono::DateTime<chrono::Utc>) -> Option<chrono::DateTime<chrono::Utc>> {
+    pub fn next_scheduled(
+        &self,
+        after: chrono::DateTime<chrono::Utc>,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
         let cron = Cron::parse(&self.expression).ok()?;
         // inclusive=true means include the given time if it matches the cron
         cron.find_next_occurrence(&after, true).ok()
@@ -105,14 +106,9 @@ pub struct CronRegistry {
 #[derive(Debug, Clone)]
 pub enum CronEvent {
     /// Emitted when a new cron entry is registered
-    CronEntryRegistered {
-        task_id: Uuid,
-        expression: String,
-    },
+    CronEntryRegistered { task_id: Uuid, expression: String },
     /// Emitted when a cron entry is removed
-    CronEntryRemoved {
-        task_id: Uuid,
-    },
+    CronEntryRemoved { task_id: Uuid },
     /// Emitted when a task's cron expression is updated
     CronEntryUpdated {
         task_id: Uuid,
@@ -120,10 +116,7 @@ pub enum CronEvent {
         new_expression: String,
     },
     /// Emitted when a task becomes due
-    TaskDue {
-        task_id: Uuid,
-        expression: String,
-    },
+    TaskDue { task_id: Uuid, expression: String },
 }
 
 impl CronRegistry {
@@ -138,17 +131,9 @@ impl CronRegistry {
     /// Register a new cron entry for a task.
     ///
     /// Returns an error if the cron expression is invalid.
-    pub fn register(
-        &self,
-        task_id: Uuid,
-        expression: &str,
-    ) -> Result<(), SwellError> {
+    pub fn register(&self, task_id: Uuid, expression: &str) -> Result<(), SwellError> {
         // Validate and create the entry
-        let entry = Arc::new(CronEntry::new(
-            task_id,
-            expression.to_string(),
-            None,
-        )?);
+        let entry = Arc::new(CronEntry::new(task_id, expression.to_string(), None)?);
 
         // Check for duplicate task ID
         if self.entries.contains_key(&task_id) {
@@ -161,7 +146,9 @@ impl CronRegistry {
         self.entries.insert(task_id, entry);
 
         // Update expression index
-        let mut index = self.expression_index.entry(expression.to_string())
+        let mut index = self
+            .expression_index
+            .entry(expression.to_string())
             .or_default();
         index.push(task_id);
 
@@ -191,7 +178,9 @@ impl CronRegistry {
 
         self.entries.insert(task_id, entry.clone());
 
-        let mut index = self.expression_index.entry(expression.to_string())
+        let mut index = self
+            .expression_index
+            .entry(expression.to_string())
             .or_default();
         index.push(task_id);
 
@@ -232,10 +221,9 @@ impl CronRegistry {
         let entry = self
             .entries
             .get(&task_id)
-            .ok_or_else(|| SwellError::InvalidOperation(format!(
-                "No cron entry found for task {}",
-                task_id
-            )))?
+            .ok_or_else(|| {
+                SwellError::InvalidOperation(format!("No cron entry found for task {}", task_id))
+            })?
             .value()
             .clone();
 
@@ -257,7 +245,9 @@ impl CronRegistry {
             }
         }
 
-        let mut index = self.expression_index.entry(new_expression.to_string())
+        let mut index = self
+            .expression_index
+            .entry(new_expression.to_string())
             .or_default();
         index.push(task_id);
 
@@ -447,7 +437,10 @@ mod tests {
         let now = chrono::Utc::now();
         let due = registry.due_entries(now);
 
-        assert!(due.len() == 1, "Every-second cron should be due at current time");
+        assert!(
+            due.len() == 1,
+            "Every-second cron should be due at current time"
+        );
         assert_eq!(due[0].task_id, task_id);
     }
 
@@ -494,7 +487,10 @@ mod tests {
         let registry = new_registry();
         let time = chrono::Utc::now();
         let due = registry.due_entries(time);
-        assert!(due.is_empty(), "Empty registry should return empty due entries");
+        assert!(
+            due.is_empty(),
+            "Empty registry should return empty due entries"
+        );
     }
 
     #[test]
@@ -503,7 +499,7 @@ mod tests {
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
 
-        registry.register(task1, "* * * * * *").unwrap();  // Every second
+        registry.register(task1, "* * * * * *").unwrap(); // Every second
         registry.register(task2, "* * * * * *").unwrap(); // Every second (same pattern)
 
         // At any given second, both every-second tasks should be due
@@ -669,15 +665,15 @@ mod tests {
 
         // Standard patterns that should all be valid for registration
         let patterns = vec![
-            "* * * * * *",        // Every second
-            "0 * * * * *",        // Every minute
-            "0 0 * * * *",        // Every hour
-            "0 0 * * * *",        // Every day at midnight
-            "0 0 * * 1 *",        // Every Monday at midnight (croner uses 1=Monday)
-            "0 0 1 * * *",        // First day of every month
-            "0 */5 * * * *",      // Every 5 minutes
-            "0 */15 * * * *",     // Every 15 minutes
-            "0 */30 * * * *",     // Every 30 minutes
+            "* * * * * *",    // Every second
+            "0 * * * * *",    // Every minute
+            "0 0 * * * *",    // Every hour
+            "0 0 * * * *",    // Every day at midnight
+            "0 0 * * 1 *",    // Every Monday at midnight (croner uses 1=Monday)
+            "0 0 1 * * *",    // First day of every month
+            "0 */5 * * * *",  // Every 5 minutes
+            "0 */15 * * * *", // Every 15 minutes
+            "0 */30 * * * *", // Every 30 minutes
         ];
 
         for (i, pattern) in patterns.iter().enumerate() {
@@ -711,7 +707,10 @@ mod tests {
             .and_utc();
 
         let due_at_jan1 = registry.due_entries(jan_1);
-        assert!(!due_at_jan1.is_empty(), "Jan 1 pattern should be due at Jan 1 midnight");
+        assert!(
+            !due_at_jan1.is_empty(),
+            "Jan 1 pattern should be due at Jan 1 midnight"
+        );
 
         // Same pattern should NOT be due on a different day
         let june_15 = chrono::NaiveDate::from_ymd_opt(2025, 6, 15)
@@ -721,7 +720,10 @@ mod tests {
             .and_utc();
 
         let not_due_june = registry.due_entries(june_15);
-        assert!(not_due_june.is_empty(), "Jan 1 pattern should NOT be due on June 15");
+        assert!(
+            not_due_june.is_empty(),
+            "Jan 1 pattern should NOT be due on June 15"
+        );
     }
 
     // --- Edge Cases ---

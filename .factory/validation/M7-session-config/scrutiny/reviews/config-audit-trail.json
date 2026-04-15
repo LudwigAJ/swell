@@ -1,0 +1,21 @@
+{
+  "featureId": "config-audit-trail",
+  "reviewedAt": "2026-04-15T03:47:00Z",
+  "commitId": "e8717b4",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation correctly fixes loaded_entries() to return exactly one canonical entry per key path using upsert semantics in both merge_value() and load_env_overrides(). All VAL-SESS-007 scenarios are covered by 6 integration tests. Code is clean, well-documented, and follows project conventions.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The upsert pattern for audit trail deduplication (when higher-priority layer overrides a key, update the existing entry rather than push a new one) is an important pattern not documented in AGENTS.md or anywhere in shared state. Future developers working on config features may not discover this pattern without reading the implementation.",
+      "evidence": "crates/swell-core/src/config.rs:254-269 (merge_value upsert) and crates/swell-core/src/config.rs:219-239 (load_env_overrides upsert). Both functions now update existing entries in-place rather than pushing duplicates."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The config-audit-trail feature is correctly implemented. The key fix was changing merge_value() and load_env_overrides() from push-based (always appending ConfigEntry) to upsert-based (updating existing entry when a higher-priority layer provides the same key). This ensures loaded_entries() returns exactly one canonical entry per key path, traceable to the winning source file. 6 integration tests cover all VAL-SESS-007 scenarios. All 209 existing unit tests continue to pass, plus 6 new audit trail tests, 12 config_section_merge tests, and 1 doc-test. Clippy clean. No blocking issues."
+}

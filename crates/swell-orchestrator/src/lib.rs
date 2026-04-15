@@ -43,10 +43,10 @@ pub mod soft_limits;
 pub mod stacked_prs;
 pub mod state_machine;
 pub mod stopping_conditions;
-pub mod team_registry;
 pub mod subagent;
 pub mod task_board;
 pub mod task_graph;
+pub mod team_registry;
 pub mod tiered_merge;
 pub mod value_scorer;
 pub mod worker_boot;
@@ -81,6 +81,7 @@ pub use context_pipeline::{
     ContextAssembler, ContextPipelineConfig, ContextPipelineResult, ContextTier,
     PipelineContextItem, TierBuilder,
 };
+pub use cron_registry::{CronEntry, CronEvent, CronRegistry};
 pub use drift_detector::{DriftDetector, DriftDetectorConfig, DriftReport, StepDrift};
 pub use evidence_pipeline::{
     ChunkProvenance, EvidenceChunk, EvidencePipeline, EvidencePipelineConfig, EvidenceQuery,
@@ -131,11 +132,11 @@ pub use policy::{
     action, PolicyAction, PolicyCondition, PolicyDecision, PolicyEffect, PolicyEngine, PolicyFile,
     PolicyRule,
 };
-pub use retry_policy::{
-    RetryDecision, RetryPolicy, RetryState, MAX_RETRIES_BEFORE_ESCALATION, MODEL_SWITCH_RETRY_COUNT,
-};
 pub use recovery_recipe::{
     BackoffStrategy, FailureScenario, RecoveryRecipe, RecoveryStep, RecoverySteps,
+};
+pub use retry_policy::{
+    RetryDecision, RetryPolicy, RetryState, MAX_RETRIES_BEFORE_ESCALATION, MODEL_SWITCH_RETRY_COUNT,
 };
 pub use scheduler::{
     Scheduler, SchedulerConfig, SchedulerStats, TaskPriority, DEFAULT_MAX_WORKERS, MAX_MAX_WORKERS,
@@ -159,7 +160,6 @@ pub use stopping_conditions::{
     create_stopping_conditions, HardLimitType, HardLimitsError, SharedStoppingConditions,
     StoppingCondition, StoppingConditions,
 };
-pub use team_registry::{Team, TeamEvent, TeamRegistry, TeamTaskFailed};
 pub use subagent::{
     AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
     MAX_SUBAGENT_DEPTH,
@@ -169,6 +169,7 @@ pub use task_board::{
     TaskBoardStats,
 };
 pub use task_graph::TaskGraph;
+pub use team_registry::{Team, TeamEvent, TeamRegistry, TeamTaskFailed};
 pub use tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
 pub use value_scorer::{
     BlockingImpactScore, SpecAlignmentScore, TaskDependency, TaskScore, ValueScorer,
@@ -179,7 +180,6 @@ pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
 };
-pub use cron_registry::{CronEntry, CronEvent, CronRegistry};
 
 // Re-export web search tools from swell-tools for convenience
 pub use swell_tools::web_search::{DomainSearchTool, FetchPageTool, WebSearchTool};
@@ -609,13 +609,25 @@ pub async fn register_web_search_tools(registry: &swell_tools::ToolRegistry) {
     use swell_tools::registry::{ToolCategory, ToolLayer};
 
     registry
-        .register(WebSearchTool::new(), ToolCategory::Search, ToolLayer::Builtin)
+        .register(
+            WebSearchTool::new(),
+            ToolCategory::Search,
+            ToolLayer::Builtin,
+        )
         .await;
     registry
-        .register(DomainSearchTool::new(vec![]), ToolCategory::Search, ToolLayer::Builtin)
+        .register(
+            DomainSearchTool::new(vec![]),
+            ToolCategory::Search,
+            ToolLayer::Builtin,
+        )
         .await;
     registry
-        .register(FetchPageTool::new(), ToolCategory::Search, ToolLayer::Builtin)
+        .register(
+            FetchPageTool::new(),
+            ToolCategory::Search,
+            ToolLayer::Builtin,
+        )
         .await;
 }
 

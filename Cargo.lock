@@ -3223,6 +3223,7 @@ dependencies = [
  "async-trait",
  "base64",
  "chrono",
+ "dirs",
  "futures",
  "opentelemetry 0.26.0",
  "opentelemetry-otlp",

@@ -1590,7 +1590,11 @@ mod tests {
         // Register a tool that requires Deny permission
         let deny_tool = DenyPermissionTool::new(swell_core::PermissionTier::Deny);
         tool_registry
-            .register(deny_tool, swell_tools::registry::ToolCategory::Misc, swell_tools::registry::ToolLayer::Builtin)
+            .register(
+                deny_tool,
+                swell_tools::registry::ToolCategory::Misc,
+                swell_tools::registry::ToolLayer::Builtin,
+            )
             .await;
 
         let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
@@ -1639,7 +1643,11 @@ mod tests {
         // Register a tool that requires Ask permission (should be allowed)
         let ask_tool = DenyPermissionTool::new(swell_core::PermissionTier::Ask);
         tool_registry
-            .register(ask_tool, swell_tools::registry::ToolCategory::Misc, swell_tools::registry::ToolLayer::Builtin)
+            .register(
+                ask_tool,
+                swell_tools::registry::ToolCategory::Misc,
+                swell_tools::registry::ToolLayer::Builtin,
+            )
             .await;
 
         let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
@@ -1684,7 +1692,11 @@ mod tests {
         // Register a tool that requires Auto permission
         let auto_tool = DenyPermissionTool::new(swell_core::PermissionTier::Auto);
         tool_registry
-            .register(auto_tool, swell_tools::registry::ToolCategory::Misc, swell_tools::registry::ToolLayer::Builtin)
+            .register(
+                auto_tool,
+                swell_tools::registry::ToolCategory::Misc,
+                swell_tools::registry::ToolLayer::Builtin,
+            )
             .await;
 
         let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);

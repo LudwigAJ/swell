@@ -52,18 +52,12 @@ impl Team {
 
     /// Add a task to this team
     pub fn add_task(&self, task_id: Uuid) -> bool {
-        self.task_ids
-            .write()
-            .unwrap()
-            .insert(task_id)
+        self.task_ids.write().unwrap().insert(task_id)
     }
 
     /// Remove a task from this team
     pub fn remove_task(&self, task_id: Uuid) -> bool {
-        self.task_ids
-            .write()
-            .unwrap()
-            .remove(&task_id)
+        self.task_ids.write().unwrap().remove(&task_id)
     }
 
     /// Get all task IDs in this team
@@ -117,25 +111,13 @@ pub enum TeamEvent {
     /// Emitted when a team member task fails
     TeamTaskFailed(TeamTaskFailed),
     /// Emitted when a team is created
-    TeamCreated {
-        team_id: Uuid,
-        name: String,
-    },
+    TeamCreated { team_id: Uuid, name: String },
     /// Emitted when a team is disbanded
-    TeamDisbanded {
-        team_id: Uuid,
-        member_count: usize,
-    },
+    TeamDisbanded { team_id: Uuid, member_count: usize },
     /// Emitted when a task joins a team
-    TaskJoinedTeam {
-        task_id: Uuid,
-        team_id: Uuid,
-    },
+    TaskJoinedTeam { task_id: Uuid, team_id: Uuid },
     /// Emitted when a task leaves a team
-    TaskLeftTeam {
-        task_id: Uuid,
-        team_id: Uuid,
-    },
+    TaskLeftTeam { task_id: Uuid, team_id: Uuid },
 }
 
 impl TeamRegistry {
@@ -155,10 +137,9 @@ impl TeamRegistry {
         let team_id = team.id;
         self.teams.insert(team_id, team);
 
-        let _ = self.event_sender.send(TeamEvent::TeamCreated {
-            team_id,
-            name,
-        });
+        let _ = self
+            .event_sender
+            .send(TeamEvent::TeamCreated { team_id, name });
 
         info!(team_id = %team_id, "Team created");
         team_id
@@ -169,14 +150,14 @@ impl TeamRegistry {
     /// All tasks in the team will be notified that the team has disbanded.
     /// Returns the number of tasks that were in the team.
     pub fn disband_team(&self, team_id: Uuid) -> Result<usize, SwellError> {
-        let team = self
-            .teams
-            .remove(&team_id)
-            .map(|(_, t)| t)
-            .ok_or(SwellError::InvalidOperation(format!(
-                "Team {} not found",
-                team_id
-            )))?;
+        let team =
+            self.teams
+                .remove(&team_id)
+                .map(|(_, t)| t)
+                .ok_or(SwellError::InvalidOperation(format!(
+                    "Team {} not found",
+                    team_id
+                )))?;
 
         let member_count = team.task_count();
 
@@ -221,10 +202,9 @@ impl TeamRegistry {
         team.add_task(task_id);
         self.task_to_team.insert(task_id, team_id);
 
-        let _ = self.event_sender.send(TeamEvent::TaskJoinedTeam {
-            task_id,
-            team_id,
-        });
+        let _ = self
+            .event_sender
+            .send(TeamEvent::TaskJoinedTeam { task_id, team_id });
 
         info!(task_id = %task_id, team_id = %team_id, "Task joined team");
         Ok(())
@@ -246,10 +226,9 @@ impl TeamRegistry {
         team.remove_task(task_id);
         self.task_to_team.remove(&task_id);
 
-        let _ = self.event_sender.send(TeamEvent::TaskLeftTeam {
-            task_id,
-            team_id,
-        });
+        let _ = self
+            .event_sender
+            .send(TeamEvent::TaskLeftTeam { task_id, team_id });
 
         info!(task_id = %task_id, team_id = %team_id, "Task left team");
         Ok(())
@@ -325,7 +304,9 @@ impl TeamRegistry {
             error_message,
         };
 
-        let _ = self.event_sender.send(TeamEvent::TeamTaskFailed(notification));
+        let _ = self
+            .event_sender
+            .send(TeamEvent::TeamTaskFailed(notification));
 
         warn!(
             team_id = %team_id,
@@ -478,7 +459,10 @@ mod tests {
 
         let event = rx.try_recv().unwrap();
         match event {
-            TeamEvent::TaskJoinedTeam { task_id: id, team_id: tid } => {
+            TeamEvent::TaskJoinedTeam {
+                task_id: id,
+                team_id: tid,
+            } => {
                 assert_eq!(id, task_id);
                 assert_eq!(tid, team_id);
             }
