@@ -1,6 +1,27 @@
 {
   "features": [
     {
+      "id": "fix-task-concurrent-access-test",
+      "description": "Fix blocking issue: Add concurrent access verification tests for TaskStateMachine. The feature uses DashMap<Uuid, Arc<RwLock<Task>>> for fine-grained concurrent access but lacks the required test. Add tests that spawn multiple threads accessing different tasks simultaneously to verify fine-grained locking works (no contention between independent tasks).",
+      "skillName": "rust",
+      "milestone": "M6-task-lifecycle-fix",
+      "preconditions": [
+        "TaskStateMachine implemented with DashMap<Uuid, Arc<RwLock<Task>>>"
+      ],
+      "expectedBehavior": [
+        "Concurrent reads from multiple threads succeed without blocking",
+        "Concurrent writes to different tasks succeed without blocking",
+        "DashMap provides fine-grained sharding (no global lock)"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-orchestrator -- state_machine --test-threads=1",
+        "Verify tests pass with multiple threads accessing different tasks concurrently"
+      ],
+      "fulfills": [],
+      "status": "pending",
+      "workerSessionIds": []
+    },
+    {
       "id": "fix-evidence-pipeline-tests-hang",
       "description": "Fix the hanging tests in evidence_pipeline.rs in swell-orchestrator: `test_evidence_pipeline_chunking` and `test_evidence_pipeline_process`. They currently take >60s each or hang indefinitely. Investigate concurrency/channel/locking issues causing this and fix them.",
       "skillName": "Rust",
