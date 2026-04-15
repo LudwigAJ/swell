@@ -69,6 +69,11 @@ pub mod treesitter_extraction;
 // Skill extraction module - Extracts reusable procedures from successful task trajectories
 pub mod skill_extraction;
 
+// Post-session learning module - Analyzes task trajectories after completion,
+// extracts repeating tool sequences, and stores them as learned patterns
+// with confidence scores for future reuse
+pub mod post_session_learning;
+
 // Golden sample testing module - Validates learned procedures against test cases
 // before auto-application in future tasks
 pub mod golden_sample_testing;
