@@ -132,10 +132,12 @@ pub use meta_cognitive::{
 
 // Time-based decay module - Different decay rates per memory type:
 // Procedural (slow): 0.99^(days), Environmental (medium): 0.95^(days), Buffer (fast): 0.90^(days)
+// Bayesian confidence decay: c(t) = c₀ × e^(-λt) with λ per type (procedural=0.01, environmental=1.0, buffer=5.0)
 pub mod decay;
 
 pub use decay::{
-    apply_decay, buffer_decay_rate, calculate_decay, days_since, decay_rate_for_block_type,
+    apply_decay, bayesian_confidence_decay, bayesian_confidence_decay_with_time_unit,
+    buffer_decay_rate, calculate_decay, days_since, decay_rate_for_block_type,
     environmental_decay_rate, procedural_decay_rate, DecayRate, DecayedScore,
 };
 

@@ -38,6 +38,16 @@ impl DecayRate {
         }
     }
 
+    /// Get the lambda (λ) parameter for Bayesian exponential decay
+    /// Returns the decay rate constant for the formula: c(t) = c₀ × e^(-λt)
+    pub fn lambda(&self) -> f64 {
+        match self {
+            DecayRate::Procedural => 0.01,
+            DecayRate::Environmental => 1.0,
+            DecayRate::Buffer => 5.0,
+        }
+    }
+
     /// Get the category name for logging/debugging
     pub fn name(&self) -> &'static str {
         match self {
@@ -85,6 +95,69 @@ pub fn calculate_decay(
 /// Calculate days since last reinforcement
 pub fn days_since(last_reinforcement: DateTime<Utc>, now: DateTime<Utc>) -> f64 {
     (now - last_reinforcement).num_days() as f64
+}
+
+/// Calculate Bayesian confidence with exponential decay using lambda parameter.
+///
+/// # Formula
+/// c(t) = c₀ × e^(-λt)
+///
+/// Where:
+/// - c₀ is the initial confidence
+/// - λ (lambda) is the decay rate constant per memory type
+/// - t is time elapsed in days
+///
+/// # Arguments
+/// * `initial_confidence` - The confidence score at last reinforcement (0.0 to 1.0)
+/// * `rate` - The decay rate category (determines λ)
+/// * `last_reinforcement` - The timestamp of last reinforcement/update
+/// * `now` - Current timestamp
+///
+/// # Returns
+/// The decayed confidence score, clamped between 0.0 and initial_confidence
+pub fn bayesian_confidence_decay(
+    initial_confidence: f64,
+    rate: DecayRate,
+    last_reinforcement: DateTime<Utc>,
+    now: DateTime<Utc>,
+) -> f64 {
+    let lambda = rate.lambda();
+    let t = days_since(last_reinforcement, now);
+
+    // Bayesian exponential decay: c(t) = c₀ × e^(-λt)
+    let decayed = initial_confidence * (-lambda * t).exp();
+
+    // Clamp to valid range [0.0, initial_confidence]
+    decayed.clamp(0.0, initial_confidence)
+}
+
+/// Calculate confidence using exponential decay with time unit instead of days.
+/// This allows testing with smaller time scales.
+///
+/// # Arguments
+/// * `initial_confidence` - The confidence score at last reinforcement (0.0 to 1.0)
+/// * `rate` - The decay rate category (determines λ)
+/// * `last_reinforcement` - The timestamp of last reinforcement/update
+/// * `now` - Current timestamp
+/// * `time_unit_hours` - The time unit in hours (e.g., 1.0 for 1 hour = 1 time unit)
+pub fn bayesian_confidence_decay_with_time_unit(
+    initial_confidence: f64,
+    rate: DecayRate,
+    last_reinforcement: DateTime<Utc>,
+    now: DateTime<Utc>,
+    time_unit_hours: f64,
+) -> f64 {
+    let lambda = rate.lambda();
+    // Use num_minutes to get fractional days for accurate time unit calculation
+    let t_minutes = (now - last_reinforcement).num_minutes() as f64;
+    let t_hours = t_minutes / 60.0;
+    let time_units = t_hours / time_unit_hours;
+
+    // Bayesian exponential decay: c(t) = c₀ × e^(-λt)
+    let decayed = initial_confidence * (-lambda * time_units).exp();
+
+    // Clamp to valid range [0.0, initial_confidence]
+    decayed.clamp(0.0, initial_confidence)
 }
 
 /// Apply decay to a retrieval score
@@ -377,5 +450,200 @@ mod tests {
         let buffer = DecayedScore::new(0.8, DecayRate::Buffer, day_ago);
 
         assert!(procedural.final_score > buffer.final_score);
+    }
+
+    // =============================================================================
+    // Bayesian Confidence Decay Tests (mem-confidence-decay feature)
+    // =============================================================================
+
+    #[test]
+    fn test_decay_rate_lambda_values() {
+        // Verify lambda values match the specification
+        // Procedural: λ=0.01, Environmental: λ=1.0, Buffer: λ=5.0
+        assert!((DecayRate::Procedural.lambda() - 0.01).abs() < 0.0001);
+        assert!((DecayRate::Environmental.lambda() - 1.0).abs() < 0.0001);
+        assert!((DecayRate::Buffer.lambda() - 5.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_bayesian_confidence_no_elapsed_time() {
+        let now = Utc::now();
+        let confidence = bayesian_confidence_decay(1.0, DecayRate::Procedural, now, now);
+        // No time elapsed → no decay
+        assert!((confidence - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_bayesian_confidence_decay_formula_procedural() {
+        // c(t) = c₀ × e^(-λt)
+        // For procedural with λ=0.01 and 1 time unit: c(1) = 1.0 × e^(-0.01×1) ≈ 0.99005
+        let now = Utc::now();
+        let one_time_unit_ago = now - Duration::seconds(86400); // 1 day = 1 time unit
+        let confidence = bayesian_confidence_decay(1.0, DecayRate::Procedural, one_time_unit_ago, now);
+        let expected = (-0.01_f64).exp(); // e^(-0.01) ≈ 0.99005
+        assert!(
+            (confidence - expected).abs() < 0.0001,
+            "Expected {:.6}, got {:.6}",
+            expected,
+            confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_decay_formula_buffer() {
+        // c(t) = c₀ × e^(-λt)
+        // For buffer with λ=5.0 and 1 time unit: c(1) = 1.0 × e^(-5.0×1) ≈ 0.00674
+        let now = Utc::now();
+        let one_time_unit_ago = now - Duration::seconds(86400); // 1 day = 1 time unit
+        let confidence = bayesian_confidence_decay(1.0, DecayRate::Buffer, one_time_unit_ago, now);
+        let expected = (-5.0_f64).exp(); // e^(-5.0) ≈ 0.00674
+        assert!(
+            (confidence - expected).abs() < 0.001,
+            "Expected {:.6}, got {:.6}",
+            expected,
+            confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_retains_99_percent_procedural() {
+        // Procedural memories should retain ~99% confidence after 1 time unit
+        // c(1) = 1.0 × e^(-0.01×1) ≈ 0.99005
+        let now = Utc::now();
+        let one_time_unit_ago = now - Duration::seconds(86400);
+        let confidence = bayesian_confidence_decay(1.0, DecayRate::Procedural, one_time_unit_ago, now);
+        assert!(
+            (confidence - 0.99005).abs() < 0.001,
+            "Procedural should retain ~99% after 1 time unit, got {:.4}",
+            confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_retains_07_percent_buffer() {
+        // Buffer memories should retain ~0.7% confidence after 1 time unit
+        // c(1) = 1.0 × e^(-5.0×1) ≈ 0.00674 (0.674%)
+        let now = Utc::now();
+        let one_time_unit_ago = now - Duration::seconds(86400);
+        let confidence = bayesian_confidence_decay(1.0, DecayRate::Buffer, one_time_unit_ago, now);
+        assert!(
+            confidence < 0.01 && confidence > 0.005,
+            "Buffer should retain ~0.7% after 1 time unit, got {:.4}",
+            confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_with_time_unit_procedural() {
+        // Use hour-based time unit for more granular testing
+        // Procedural with 1 hour time unit: c(1 hour) = 1.0 × e^(-0.01×1) ≈ 0.99005
+        let now = Utc::now();
+        let one_hour_ago = now - Duration::seconds(3600);
+        let confidence = bayesian_confidence_decay_with_time_unit(
+            1.0,
+            DecayRate::Procedural,
+            one_hour_ago,
+            now,
+            1.0, // 1 hour = 1 time unit
+        );
+        let expected = (-0.01_f64).exp();
+        assert!(
+            (confidence - expected).abs() < 0.001,
+            "Expected {:.6}, got {:.6}",
+            expected,
+            confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_with_time_unit_buffer() {
+        // Buffer with 1 hour time unit: c(1 hour) = 1.0 × e^(-5.0×1) ≈ 0.00674
+        let now = Utc::now();
+        let one_hour_ago = now - Duration::seconds(3600);
+        let confidence = bayesian_confidence_decay_with_time_unit(
+            1.0,
+            DecayRate::Buffer,
+            one_hour_ago,
+            now,
+            1.0, // 1 hour = 1 time unit
+        );
+        let expected = (-5.0_f64).exp();
+        assert!(
+            (confidence - expected).abs() < 0.001,
+            "Expected {:.6}, got {:.6}",
+            expected,
+            confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_never_exceeds_initial() {
+        // Confidence should never exceed the initial confidence
+        let now = Utc::now();
+        let initial_confidence = 0.75;
+        let past = now - Duration::days(365); // Large time gap
+        let confidence = bayesian_confidence_decay(initial_confidence, DecayRate::Buffer, past, now);
+        assert!(
+            confidence <= initial_confidence,
+            "Confidence {:.6} should not exceed initial {:.6}",
+            confidence,
+            initial_confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_decay_ordering() {
+        // Higher decay rates should result in lower confidence after same time
+        let now = Utc::now();
+        let past = now - Duration::days(1);
+
+        let procedural_confidence = bayesian_confidence_decay(1.0, DecayRate::Procedural, past, now);
+        let environmental_confidence = bayesian_confidence_decay(1.0, DecayRate::Environmental, past, now);
+        let buffer_confidence = bayesian_confidence_decay(1.0, DecayRate::Buffer, past, now);
+
+        assert!(
+            procedural_confidence > environmental_confidence,
+            "Procedural {:.6} should be > Environmental {:.6}",
+            procedural_confidence,
+            environmental_confidence
+        );
+        assert!(
+            environmental_confidence > buffer_confidence,
+            "Environmental {:.6} should be > Buffer {:.6}",
+            environmental_confidence,
+            buffer_confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_with_initial_less_than_one() {
+        // Test with initial confidence less than 1.0
+        let now = Utc::now();
+        let past = now - Duration::days(1);
+        let initial = 0.5;
+
+        let confidence = bayesian_confidence_decay(initial, DecayRate::Procedural, past, now);
+        let expected = 0.5 * (-0.01_f64).exp(); // 0.5 * 0.99005 ≈ 0.495
+        assert!(
+            (confidence - expected).abs() < 0.001,
+            "Expected {:.6}, got {:.6}",
+            expected,
+            confidence
+        );
+    }
+
+    #[test]
+    fn test_bayesian_confidence_environmental_decay() {
+        // Environmental with λ=1.0: c(1) = 1.0 × e^(-1.0×1) ≈ 0.3679
+        let now = Utc::now();
+        let one_time_unit_ago = now - Duration::seconds(86400);
+        let confidence = bayesian_confidence_decay(1.0, DecayRate::Environmental, one_time_unit_ago, now);
+        let expected = (-1.0_f64).exp(); // e^(-1.0) ≈ 0.3679
+        assert!(
+            (confidence - expected).abs() < 0.001,
+            "Expected {:.6}, got {:.6}",
+            expected,
+            confidence
+        );
     }
 }
