@@ -322,10 +322,15 @@ pub async fn handle_command(
             let total_tokens = get_total_llm_tokens();
             let last_model = get_last_llm_model();
 
-            // MCP health - placeholder empty map since swell-daemon doesn't have direct
-            // access to MCP manager (which lives in swell-tools). When MCP server tracking
-            // is needed, this should be wired through the orchestrator or a shared state.
-            let mcp_health: HashMap<String, String> = HashMap::new();
+            // MCP health - swell-daemon does not have direct access to McpManager
+            // (which lives in swell-tools). A placeholder entry is included to signal
+            // that the field is structurally present; wire real data through the
+            // orchestrator or a shared McpHealthTracker when MCP servers are active.
+            let mut mcp_health: HashMap<String, String> = HashMap::new();
+            mcp_health.insert(
+                "_status".to_string(),
+                "pending - MCP manager not yet wired into daemon".to_string(),
+            );
 
             // Calculate uptime
             let uptime_seconds = start_time.elapsed().as_secs();
