@@ -657,6 +657,9 @@ impl ExecutionController {
             turn_number += 1;
             debug!(turn = turn_number, "Starting turn");
 
+            // Record this turn in the resource tracker
+            self.resource_tracker.record_turn();
+
             // Check resource limits BEFORE starting a new turn
             if let Some(limit_error) = self.resource_tracker.get_first_error() {
                 warn!(
@@ -877,11 +880,30 @@ impl ExecutionController {
                     self.resource_tracker.record_tokens(cache_read);
                 }
 
+                // Calculate and record cost based on token usage and model pricing
+                let input_tokens = last_summary.input_tokens;
+                let output_tokens = last_summary.output_tokens;
+                if input_tokens > 0 || output_tokens > 0 {
+                    let pricing = swell_core::opentelemetry::pricing::for_model(self.llm.model());
+                    let cost = pricing.calculate_cost(input_tokens, output_tokens);
+                    self.resource_tracker.record_cost(cost);
+                }
+
                 // Record any tool call failures as failures in the tracker
                 for tool_call in &last_summary.tool_calls {
                     if !tool_call.success {
                         self.resource_tracker.record_failure();
                     }
+                }
+            }
+
+            // Record this turn as successful (resets consecutive failures)
+            // Only record success if the turn had no errors
+            if let Some(last_summary) = all_summaries.last() {
+                if last_summary.outcome != TurnOutcome::Error
+                    && last_summary.outcome != TurnOutcome::ResourceLimitExceeded
+                    && last_summary.outcome != TurnOutcome::KillSwitchTriggered {
+                    self.resource_tracker.record_success();
                 }
             }
 
