@@ -1,78 +1,82 @@
 {
   "milestone": "M12-safety-runtime",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": true,
-      "command": "cargo test -p swell-tools -- --test-threads=4",
-      "exitCode": 0
+      "command": "cargo test --workspace -- --test-threads=4",
+      "exitCode": 0,
+      "note": "Known flaky test (cross_config_cascade::test_env_var_overrides_file_layers) fails only when run in parallel due to environmental pollution - passes with --test-threads=1. This is a test isolation issue, not an implementation issue, documented in M10 validation."
     },
     "typecheck": {
       "passed": true,
-      "command": "cargo check -p swell-tools",
+      "command": "cargo check --workspace",
       "exitCode": 0
     },
     "lint": {
       "passed": true,
-      "command": "cargo clippy -p swell-tools -- -D warnings",
+      "command": "cargo clippy --workspace -- -D warnings",
       "exitCode": 0
     }
   },
   "reviewsSummary": {
-    "total": 10,
-    "passed": 6,
-    "failed": 4,
+    "total": 4,
+    "passed": 1,
+    "failed": 3,
     "failedFeatures": [
       "safety-egress-filtering",
       "safety-secret-scanning",
-      "safety-resource-limits",
-      "safety-file-guardrails"
+      "safety-resource-limits"
     ]
   },
   "blockingIssues": [
     {
       "featureId": "safety-egress-filtering",
       "severity": "blocking",
-      "description": "EgressFilter module exists with passing unit tests, but is NOT wired into any HTTP client path. Four HTTP clients (vault.rs, web_search.rs, opa_policy.rs, hybrid.rs) create reqwest::Client directly without applying EgressFilter middleware. The feature requires 'The filter is applied as a middleware before every outbound HTTP request made by tools or agents' — this integration is entirely missing."
+      "description": "Commit 582565e only fixes ONE of FOUR HTTP clients. The prior blocking issue identified vault.rs, web_search.rs, opa_policy.rs, and hybrid.rs as needing EgressFilter wiring. Only hybrid.rs was fixed. vault.rs:40/158-159 still creates plain reqwest::Client, web_search.rs:15/107-111 still creates plain reqwest::Client, opa_policy.rs:21/188-191 still creates plain reqwest::Client. Feature description requires 'filter is applied as a middleware before every outbound HTTP request made by tools or agents' - not achieved.",
+      "evidence": "Review of commit 582565e diff and code inspection shows only hybrid.rs RemoteExecutor has EgressFilter wired."
     },
     {
       "featureId": "safety-secret-scanning",
       "severity": "blocking",
-      "description": "git_commit function in tools.rs does NOT call SecretScanner::scan_staged() before committing. It directly runs 'git commit -m <message>' without any secret scanning. The feature explicitly requires wiring 'before git commit operations' — this wiring is absent. Commit is blocked only if the pre-commit hook is installed, but the inline scan is not performed."
+      "description": "GitTool::new() initializes secret_scanner to None and no production code path calls with_secret_scanner() to inject a scanner. The scan_staged() call in git_commit() (tools.rs:823-840) is inside `if let Some(ref scanner)` which is never taken. The SecretScanner implementation is solid but unreachable. The feature cannot fulfill 'commit is blocked when secrets are detected' because scanner is never injected when GitTool is used.",
+      "evidence": "Review of commit 7adb982 shows scan_staged() code exists but grep across codebase shows no calls to with_secret_scanner(). GitTool::new() at line 520 sets secret_scanner: None."
     },
     {
       "featureId": "safety-resource-limits",
       "severity": "blocking",
-      "description": "Resource limit tracking is not functional: (1) record_turn() is never called so max_turns limit never triggers, (2) record_cost() is never called so max_cost_usd limit never triggers, (3) record_success() is never called so failure threshold is permanently stuck after N failures. Additionally, the circuit breaker pattern (Closed→Open→HalfOpen state transitions) is not implemented — only failure counting exists."
-    },
-    {
-      "featureId": "safety-file-guardrails",
-      "severity": "blocking",
-      "description": "WriteFileTool has redundant size validation code (tools.rs:323) that runs AFTER the guardrail validate_file_size() with a different default (10 MiB vs 1 MiB). When guardrail_config.enforce_size_limit is false, the guardrail is skipped but the old check still runs with inconsistent behavior. This creates a configuration bypass where file size limits can be silently inconsistent."
+      "description": "Commit 3fcebf4 partially addressed the issue. record_tokens() and record_failure() are wired, but record_turn() (turns counter stays at 0 -> max_turns never triggers), record_cost() (cost_used stays at 0.0 -> max_cost_usd never triggers), and record_success() (consecutive_failures never resets -> permanent stuck state after N failures) are still NOT wired into execute_turn_loop. Additionally, the circuit breaker pattern (Closed->Open->HalfOpen) is not implemented - CircuitBreaker in swell-core exists but not wired into SessionResourceTracker or ExecutionController.",
+      "evidence": "Review of commit 3fcebf4 and execution.rs shows record_turn() missing at line 657, record_cost() missing at line 869, record_success() missing at line 883."
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Add guidance on what 'wired' means for middleware integration. Workers incorrectly declared features complete when only unit tests passed without verifying actual integration. Specifically: (1) EgressFilter needs to be applied to reqwest::Client via a middleware/wrapper pattern, (2) SecretScanner needs to be called inline in git_commit before running git, (3) resource limit tracking methods (record_turn, record_cost, record_success) need to be invoked in the execution loop.",
-      "evidence": "safety-egress-filtering worker declared 'egress.rs is already fully implemented' after unit tests passed; safety-secret-scanning worker did not wire SecretScanner into git_commit; safety-resource-limits worker did not invoke record_turn/record_cost/record_success in the execution loop.",
+      "suggestion": "Clarify what 'wired' means for middleware integrations: features declaring EgressFilter wiring must document which specific HTTP clients are updated and show evidence that all clients creating reqwest::Client are wrapped. Simply adding EgressFilter to one client while three others remain unwired does not constitute completing the feature.",
+      "evidence": "safety-egress-filtering review: commit 582565e only fixed hybrid.rs, leaving vault.rs, web_search.rs, opa_policy.rs unfixed. The blocking issue from round 1 explicitly listed all four clients but only one was addressed.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Document that the rust-worker skill referenced in features.json does not exist at .factory/skills/rust-worker/. Only rust, rust-patterns, rust-code-review, and rust-testing-code-review exist. Workers specified rust-worker skill should fall back to rust skill or report skill not found.",
-      "evidence": "Multiple safety features (safety-loop-detection-wiring, safety-credential-proxy, safety-resource-limits) specified skillName='rust-worker' which does not exist. Workers proceeded without noting the missing skill.",
+      "suggestion": "Add guidance that Optional<T> fields initialized to None in constructors require explicit evidence that the optional dependency is actually injected at some production call site. Having `if let Some(scanner) = self.scanner { ... }` is not sufficient - the code path that injects the scanner must exist and be verified.",
+      "evidence": "safety-secret-scanning review: GitTool::new() sets secret_scanner: None, with_secret_scanner() builder exists but is never called. The pattern 'optional wiring with no injection' was also flagged in safety-credential-proxy review from round 1.",
       "isSystemic": true
     },
     {
-      "target": "swell-tools/AGENTS.md",
-      "suggestion": "Add os_sandbox.rs to the documented modules in swell-sandbox/AGENTS.md. Currently lists gvisor.rs and firecracker.rs but not os_sandbox.rs which now contains SeatbeltSandbox implementation.",
-      "evidence": "swell-sandbox/AGENTS.md shows 'Key modules: lib.rs, gvisor.rs, firecracker.rs' but os_sandbox.rs with SeatbeltSandbox is now a key module.",
+      "target": "AGENTS.md",
+      "suggestion": "Add guidance to explicitly list all methods that must be called in the execution path. For resource_limits feature, the list includes: record_turn, record_cost, record_success (in addition to record_tokens, record_failure which were already wired). Workers should verify each listed method is called via grep or code inspection.",
+      "evidence": "safety-resource-limits review: worker wired record_tokens and record_failure but missed record_turn, record_cost, record_success. The feature description lists these as required behaviors but the worker did not verify all methods were called.",
       "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document that the rust-worker skill referenced in features.json does not exist. Workers should fall back to the 'rust' skill. This was flagged in round 1 but the same pattern of proceeding without skill guidance continues.",
+      "evidence": "safety-secret-scanning review sharedStateObservations notes skill rust-worker does not exist. Multiple M12 features still use this non-existent skill.",
+      "isSystemic": true
     }
   ],
   "rejectedObservations": [],
-  "previousRound": null
+  "previousRound": ".factory/validation/M12-safety-runtime/scrutiny/synthesis.json (round 1)"
 }
