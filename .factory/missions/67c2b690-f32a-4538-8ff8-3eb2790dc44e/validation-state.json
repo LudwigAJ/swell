@@ -129,28 +129,44 @@
       "status": "passed"
     },
     "VAL-SKILLS-001": {
-      "status": "pending"
+      "status": "passed",
+      "validatedAtMilestone": "skills",
+      "notes": "User testing validation: skills discovered from .swell/skills/ directory. 18 tests in swell-skills verify discovery, parsing, and catalog functionality."
     },
     "VAL-SKILLS-002": {
-      "status": "pending"
+      "status": "passed",
+      "validatedAtMilestone": "skills",
+      "notes": "User testing validation: YAML frontmatter parsing extracts name and description correctly from SKILL.md files."
     },
     "VAL-SKILLS-003": {
-      "status": "pending"
+      "status": "passed",
+      "validatedAtMilestone": "skills",
+      "notes": "User testing validation: Skill catalog contains name, description, and location for each discovered skill."
     },
     "VAL-SKILLS-004": {
-      "status": "pending"
+      "status": "passed",
+      "validatedAtMilestone": "skills",
+      "notes": "User testing validation: Progressive disclosure - at startup, only name and description loaded for catalog (~50-100 tokens)."
     },
     "VAL-SKILLS-005": {
-      "status": "pending"
+      "status": "passed",
+      "validatedAtMilestone": "skills",
+      "notes": "User testing validation: Progressive disclosure - on skill activation, full SKILL.md body is loaded."
     },
     "VAL-SKILLS-006": {
-      "status": "pending"
+      "status": "passed",
+      "validatedAtMilestone": "skills",
+      "notes": "User testing validation: On-demand resources - scripts/, references/, assets/ directories loaded only when explicitly requested."
     },
     "VAL-SKILLS-007": {
-      "status": "pending"
+      "status": "passed",
+      "validatedAtMilestone": "skills",
+      "notes": "User testing validation: Model-driven activation - LLM can read catalog and match skills to tasks based on description keywords."
     },
     "VAL-SKILLS-008": {
-      "status": "pending"
+      "status": "passed",
+      "validatedAtMilestone": "skills",
+      "notes": "User testing validation: Lenient validation - skills with missing optional frontmatter fields are accepted."
     },
     "VAL-CROSS-001": {
       "status": "passed",
