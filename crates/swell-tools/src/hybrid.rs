@@ -16,6 +16,8 @@ use std::sync::Arc;
 use swell_core::{PermissionTier, SwellError, ToolOutput, ToolRiskLevel};
 use tracing::{info, warn};
 
+use crate::egress::{Destination, EgressFilter};
+
 /// Risk classification for tool operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RiskClass {
@@ -168,6 +170,7 @@ impl Clone for LocalExecutor {
 pub struct RemoteExecutor {
     sandbox_endpoint: String,
     client: reqwest::Client,
+    egress_filter: Option<Arc<EgressFilter>>,
 }
 
 impl RemoteExecutor {
@@ -176,6 +179,7 @@ impl RemoteExecutor {
         Self {
             sandbox_endpoint: sandbox_endpoint.into(),
             client: reqwest::Client::new(),
+            egress_filter: None,
         }
     }
 
@@ -184,11 +188,67 @@ impl RemoteExecutor {
         Self {
             sandbox_endpoint: "http://localhost:8080".to_string(),
             client: reqwest::Client::new(),
+            egress_filter: None,
         }
+    }
+
+    /// Create a new RemoteExecutor with an egress filter for network filtering
+    pub fn with_egress_filter(sandbox_endpoint: impl Into<String>, egress_filter: Arc<EgressFilter>) -> Self {
+        Self {
+            sandbox_endpoint: sandbox_endpoint.into(),
+            client: reqwest::Client::new(),
+            egress_filter: Some(egress_filter),
+        }
+    }
+
+    /// Check if egress is allowed for the sandbox endpoint
+    fn is_egress_allowed(&self) -> bool {
+        if let Some(ref filter) = self.egress_filter {
+            // Extract host from sandbox endpoint URL
+            let (host, port) = if let Ok(url) = url::Url::parse(&self.sandbox_endpoint) {
+                (url.host_str().unwrap_or("").to_string(), url.port().unwrap_or(8080))
+            } else {
+                // If we can't parse the URL, extract host:port manually
+                let address = &self.sandbox_endpoint;
+                let host = address
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://")
+                    .split(':')
+                    .next()
+                    .unwrap_or("localhost")
+                    .to_string();
+                let port = address
+                    .split(':')
+                    .nth(1)
+                    .and_then(|p| p.parse::<u16>().ok())
+                    .unwrap_or(8080);
+                (host, port)
+            };
+
+            let dest = Destination::new(&host, port);
+            let result = filter.is_allowed_sync(&dest);
+            if !result.is_allowed() {
+                tracing::debug!(
+                    host = %host,
+                    port = port,
+                    reason = %result.reason,
+                    "RemoteExecutor egress denied by filter"
+                );
+                return false;
+            }
+        }
+        true
     }
 
     /// Execute a tool remotely via the sandbox API
     pub async fn execute(&self, input: ExecutorInput) -> Result<ToolOutput, SwellError> {
+        // Check egress filter before making the request
+        if !self.is_egress_allowed() {
+            return Err(SwellError::ToolExecutionFailed(
+                "Egress denied: sandbox endpoint is not allowed".into(),
+            ));
+        }
+
         info!(
             tool = %input.tool_name,
             risk_class = ?input.risk_class,
@@ -263,6 +323,7 @@ impl Clone for RemoteExecutor {
         Self {
             sandbox_endpoint: self.sandbox_endpoint.clone(),
             client: self.client.clone(),
+            egress_filter: self.egress_filter.clone(),
         }
     }
 }
