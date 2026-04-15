@@ -63,6 +63,9 @@ pub use embedding::{
     VoyageEmbeddingConfig,
 };
 
+// Tree-sitter AST extraction module - Parse Rust files and extract nodes/edges for KnowledgeGraph
+pub mod treesitter_extraction;
+
 // Skill extraction module - Extracts reusable procedures from successful task trajectories
 pub mod skill_extraction;
 

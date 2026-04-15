@@ -404,7 +404,7 @@ fn collect_nodes(
                 chunks.push(chunk);
             }
         }
-        "import_declaration" | "import_statement" | "import" => {
+        "use_declaration" | "import_declaration" | "import_statement" | "import" => {
             if let Some(target) = extract_import_target(node, source) {
                 dependencies.push(Dependency {
                     dependency_type: DependencyType::Import,

@@ -17,6 +17,10 @@ sqlx.workspace = true
 async-trait.workspace = true
 reqwest.workspace = true
 
+# Tree-sitter for AST parsing
+tree-sitter = "0.24"
+tree-sitter-rust = "0.23"
+
 [dev-dependencies]
 tempfile.workspace = true
 mockito.workspace = true
