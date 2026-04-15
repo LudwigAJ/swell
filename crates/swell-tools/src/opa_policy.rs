@@ -18,10 +18,12 @@
 //! Note: This module reuses [`ToolOperation`] from [`crate::cedar_policy`] for consistency.
 
 use crate::cedar_policy::ToolOperation;
+use crate::egress::{Destination, EgressFilter};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tracing::debug;
@@ -243,6 +245,8 @@ pub struct OpaPolicyEngine {
     bundle_path: Option<String>,
     /// Decision path in OPA (default: "result")
     decision_path: String,
+    /// Egress filter for network filtering
+    egress_filter: Option<Arc<EgressFilter>>,
 }
 
 impl OpaPolicyEngine {
@@ -256,6 +260,21 @@ impl OpaPolicyEngine {
             server_url: server_url.to_string(),
             bundle_path: None,
             decision_path: "result".to_string(),
+            egress_filter: None,
+        }
+    }
+
+    /// Create a new OPA policy engine with an egress filter for network filtering
+    pub fn with_egress_filter(server_url: &str, egress_filter: Arc<EgressFilter>) -> Self {
+        Self {
+            client: Client::builder()
+                .timeout(Duration::from_secs(10))
+                .build()
+                .expect("OPA client builder should not fail"),
+            server_url: server_url.to_string(),
+            bundle_path: None,
+            decision_path: "result".to_string(),
+            egress_filter: Some(egress_filter),
         }
     }
 
@@ -271,8 +290,48 @@ impl OpaPolicyEngine {
         self
     }
 
+    /// Check if egress is allowed for the OPA server endpoint
+    fn is_egress_allowed(&self) -> bool {
+        if let Some(ref filter) = self.egress_filter {
+            // Extract host and port from OPA server URL
+            let address = &self.server_url;
+            let (host, port) = if let Ok(url) = url::Url::parse(address) {
+                (url.host_str().unwrap_or("").to_string(), url.port().unwrap_or(8181))
+            } else {
+                // Fallback: parse manually
+                let address = address
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://");
+                let parts: Vec<&str> = address.split(':').collect();
+                let host = parts.first().unwrap_or(&"localhost").to_string();
+                let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(8181);
+                (host, port)
+            };
+
+            let dest = Destination::new(&host, port);
+            let result = filter.is_allowed_sync(&dest);
+            if !result.is_allowed() {
+                tracing::debug!(
+                    host = %host,
+                    port = port,
+                    reason = %result.reason,
+                    "OpaPolicyEngine egress denied by filter"
+                );
+                return false;
+            }
+        }
+        true
+    }
+
     /// Evaluate an authorization request against OPA policies
     pub async fn evaluate(&self, input: &OpaInput) -> Result<OpaDecision, OpaError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(OpaError::ConnectionError(
+                "Egress denied: OPA server is not allowed".into(),
+            ));
+        }
+
         // If we have a bundle path, we could use WASM evaluation
         // For now, we use the HTTP API
         if self.bundle_path.is_some() {
@@ -371,6 +430,11 @@ impl OpaPolicyEngine {
 
     /// Get health status of OPA server
     pub async fn healthcheck(&self) -> Result<bool, OpaError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Ok(false);
+        }
+
         let url = format!("{}/health", self.server_url);
 
         let response = self
@@ -396,6 +460,8 @@ pub struct OpaClient {
     client: Client,
     /// Base URL for OPA server
     base_url: String,
+    /// Egress filter for network filtering
+    egress_filter: Option<Arc<EgressFilter>>,
 }
 
 impl OpaClient {
@@ -407,11 +473,64 @@ impl OpaClient {
                 .build()
                 .expect("OPA client builder should not fail"),
             base_url: server_url.to_string(),
+            egress_filter: None,
         }
+    }
+
+    /// Create a new OPA client with an egress filter for network filtering
+    pub fn with_egress_filter(server_url: &str, egress_filter: Arc<EgressFilter>) -> Self {
+        Self {
+            client: Client::builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .expect("OPA client builder should not fail"),
+            base_url: server_url.to_string(),
+            egress_filter: Some(egress_filter),
+        }
+    }
+
+    /// Check if egress is allowed for the OPA server endpoint
+    fn is_egress_allowed(&self) -> bool {
+        if let Some(ref filter) = self.egress_filter {
+            // Extract host and port from OPA server URL
+            let address = &self.base_url;
+            let (host, port) = if let Ok(url) = url::Url::parse(address) {
+                (url.host_str().unwrap_or("").to_string(), url.port().unwrap_or(8181))
+            } else {
+                // Fallback: parse manually
+                let address = address
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://");
+                let parts: Vec<&str> = address.split(':').collect();
+                let host = parts.first().unwrap_or(&"localhost").to_string();
+                let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(8181);
+                (host, port)
+            };
+
+            let dest = Destination::new(&host, port);
+            let result = filter.is_allowed_sync(&dest);
+            if !result.is_allowed() {
+                tracing::debug!(
+                    host = %host,
+                    port = port,
+                    reason = %result.reason,
+                    "OpaClient egress denied by filter"
+                );
+                return false;
+            }
+        }
+        true
     }
 
     /// Load policies from a bundle file
     pub async fn load_bundle(&self, bundle_path: &Path) -> Result<(), OpaError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(OpaError::ConnectionError(
+                "Egress denied: OPA server is not allowed".into(),
+            ));
+        }
+
         if !bundle_path.exists() {
             return Err(OpaError::PolicyNotFound(bundle_path.display().to_string()));
         }
@@ -437,6 +556,11 @@ impl OpaClient {
 
     /// Check if OPA server is reachable
     pub async fn is_reachable(&self) -> bool {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return false;
+        }
+
         let url = format!("{}/health", self.base_url);
         self.client.get(&url).send().await.is_ok()
     }

@@ -48,6 +48,7 @@ use uuid::Uuid;
 use super::credential_proxy::{
     Credential, CredentialProvider, CredentialProxyError, CredentialScope,
 };
+use crate::egress::{Destination, EgressFilter};
 
 /// Configuration for Vault client
 #[derive(Debug, Clone)]
@@ -183,6 +184,7 @@ pub struct VaultClient {
     config: VaultClientConfig,
     http_client: Client,
     token: RwLock<Option<String>>,
+    egress_filter: Option<Arc<EgressFilter>>,
 }
 
 impl VaultClient {
@@ -197,11 +199,65 @@ impl VaultClient {
             config,
             http_client,
             token: RwLock::new(None),
+            egress_filter: None,
         })
+    }
+
+    /// Create a new Vault client with an egress filter for network filtering
+    pub fn with_egress_filter(config: VaultClientConfig, egress_filter: Arc<EgressFilter>) -> Result<Self, VaultError> {
+        let http_client = Client::builder()
+            .timeout(std::time::Duration::from_secs(config.timeout_secs))
+            .build()
+            .map_err(|e| VaultError::ConnectionError(e.to_string()))?;
+
+        Ok(Self {
+            config,
+            http_client,
+            token: RwLock::new(None),
+            egress_filter: Some(egress_filter),
+        })
+    }
+
+    /// Check if egress is allowed for the Vault server endpoint
+    fn is_egress_allowed(&self) -> bool {
+        if let Some(ref filter) = self.egress_filter {
+            // Extract host and port from Vault address
+            let address = &self.config.address;
+            let (host, port) = if let Ok(url) = url::Url::parse(address) {
+                (url.host_str().unwrap_or("").to_string(), url.port().unwrap_or(8200))
+            } else {
+                // Fallback: parse manually
+                let address = address
+                    .trim_start_matches("http://")
+                    .trim_start_matches("https://");
+                let parts: Vec<&str> = address.split(':').collect();
+                let host = parts.first().unwrap_or(&"localhost").to_string();
+                let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(8200);
+                (host, port)
+            };
+
+            let dest = Destination::new(&host, port);
+            let result = filter.is_allowed_sync(&dest);
+            if !result.is_allowed() {
+                tracing::debug!(
+                    host = %host,
+                    port = port,
+                    reason = %result.reason,
+                    "VaultClient egress denied by filter"
+                );
+                return false;
+            }
+        }
+        true
     }
 
     /// Authenticate with token
     pub async fn authenticate_token(&self, token: &str) -> Result<(), VaultError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(VaultError::ConnectionError("Egress denied: Vault server is not allowed".into()));
+        }
+
         let url = format!("{}/v1/auth/token/lookup", self.config.address);
         let response = self
             .http_client
@@ -228,6 +284,11 @@ impl VaultClient {
         role_id: &str,
         secret_id: &str,
     ) -> Result<(), VaultError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(VaultError::ConnectionError("Egress denied: Vault server is not allowed".into()));
+        }
+
         let url = format!("{}/v1/auth/approle/login", self.config.address);
 
         let body = serde_json::json!({
@@ -262,6 +323,11 @@ impl VaultClient {
 
     /// Read a KV secret
     pub async fn read_secret(&self, path: &str) -> Result<Option<KvSecret>, VaultError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(VaultError::ConnectionError("Egress denied: Vault server is not allowed".into()));
+        }
+
         let token = self.token.read().await;
         let token = token
             .as_ref()
@@ -315,6 +381,11 @@ impl VaultClient {
 
     /// List secrets at a path
     pub async fn list_secrets(&self, path: &str) -> Result<Vec<String>, VaultError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(VaultError::ConnectionError("Egress denied: Vault server is not allowed".into()));
+        }
+
         let token = self.token.read().await;
         let token = token
             .as_ref()
@@ -360,6 +431,11 @@ impl VaultClient {
         &self,
         path: &str,
     ) -> Result<DynamicSecretResponse<T>, VaultError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(VaultError::ConnectionError("Egress denied: Vault server is not allowed".into()));
+        }
+
         let token = self.token.read().await;
         let token = token
             .as_ref()
@@ -404,6 +480,11 @@ impl VaultClient {
 
     /// Renew a lease
     pub async fn renew_lease(&self, lease_id: &str, increment: u64) -> Result<(), VaultError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(VaultError::ConnectionError("Egress denied: Vault server is not allowed".into()));
+        }
+
         let token = self.token.read().await;
         let token = token
             .as_ref()
@@ -443,6 +524,11 @@ impl VaultClient {
 
     /// Revoke a lease
     pub async fn revoke_lease(&self, lease_id: &str) -> Result<(), VaultError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(VaultError::ConnectionError("Egress denied: Vault server is not allowed".into()));
+        }
+
         let token = self.token.read().await;
         let token = token
             .as_ref()
@@ -475,6 +561,11 @@ impl VaultClient {
 
     /// Lookup a lease to get its TTL
     pub async fn lookup_lease(&self, lease_id: &str) -> Result<Option<u64>, VaultError> {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return Err(VaultError::ConnectionError("Egress denied: Vault server is not allowed".into()));
+        }
+
         let token = self.token.read().await;
         let token = token
             .as_ref()
@@ -539,6 +630,11 @@ impl VaultClient {
 
     /// Health check
     pub async fn health_check(&self) -> bool {
+        // Check egress filter before making request
+        if !self.is_egress_allowed() {
+            return false;
+        }
+
         let url = format!("{}/v1/sys/health", self.config.address);
         match self.http_client.get(&url).send().await {
             Ok(resp) => resp.status().is_success(),

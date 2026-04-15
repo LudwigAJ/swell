@@ -14,10 +14,13 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
 use swell_core::traits::{Tool, ToolBehavioralHints};
 use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent, ToolRiskLevel};
 use tracing::info;
+
+use crate::egress::{Destination, EgressFilter};
 
 /// Rate limiter for controlling request frequency
 #[derive(Debug, Clone)]
@@ -115,6 +118,7 @@ pub struct CodeBlock {
 pub struct SearchClient {
     client: Client,
     config: WebSearchConfig,
+    egress_filter: Option<Arc<EgressFilter>>,
 }
 
 impl SearchClient {
@@ -125,11 +129,40 @@ impl SearchClient {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client, config }
+        Self { client, config, egress_filter: None }
     }
 
     pub fn with_config(config: WebSearchConfig) -> Self {
         Self::new(config)
+    }
+
+    /// Create a new SearchClient with an egress filter for network filtering
+    pub fn with_egress_filter(config: WebSearchConfig, egress_filter: Arc<EgressFilter>) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(config.timeout_secs))
+            .user_agent("SWELL/1.0 (autonomous-coding-engine)")
+            .build()
+            .expect("Failed to create HTTP client");
+
+        Self { client, config, egress_filter: Some(egress_filter) }
+    }
+
+    /// Check if egress is allowed for a destination host
+    fn is_egress_allowed(&self, host: &str, port: u16) -> bool {
+        if let Some(ref filter) = self.egress_filter {
+            let dest = Destination::new(host, port);
+            let result = filter.is_allowed_sync(&dest);
+            if !result.is_allowed() {
+                tracing::debug!(
+                    host = %host,
+                    port = port,
+                    reason = %result.reason,
+                    "SearchClient egress denied by filter"
+                );
+                return false;
+            }
+        }
+        true
     }
 
     /// Check if a domain is allowed based on allowlist/blocklist
@@ -198,6 +231,13 @@ impl WebSearchTool {
 
     /// Perform the actual web search using DuckDuckGo HTML
     async fn do_search(&self, query: &str) -> Result<Vec<SearchResult>, SwellError> {
+        // Check egress filter - DuckDuckGo uses port 443
+        if !self.client.is_egress_allowed("html.duckduckgo.com", 443) {
+            return Err(SwellError::ToolExecutionFailed(
+                "Egress denied: DuckDuckGo is not allowed".into(),
+            ));
+        }
+
         let url = format!(
             "https://html.duckduckgo.com/html/?q={}",
             urlencoding::encode(query)
@@ -447,6 +487,13 @@ impl DomainSearchTool {
 
     /// Perform domain-restricted search
     async fn do_search(&self, query: &str) -> Result<Vec<SearchResult>, SwellError> {
+        // Check egress filter - DuckDuckGo uses port 443
+        if !self.client.is_egress_allowed("html.duckduckgo.com", 443) {
+            return Err(SwellError::ToolExecutionFailed(
+                "Egress denied: DuckDuckGo is not allowed".into(),
+            ));
+        }
+
         // Add site: restrictions to query
         let site_query = if self.trusted_domains.is_empty() {
             query.to_string()
@@ -707,6 +754,24 @@ impl FetchPageTool {
             return Err(SwellError::ToolExecutionFailed(format!(
                 "Domain not allowed: {}",
                 url
+            )));
+        }
+
+        // Extract host and port for egress check
+        let (host, port) = if let Ok(parsed) = url::Url::parse(url) {
+            (parsed.host_str().unwrap_or("").to_string(), parsed.port().unwrap_or(443))
+        } else {
+            return Err(SwellError::ToolExecutionFailed(format!(
+                "Invalid URL: {}",
+                url
+            )));
+        };
+
+        // Check egress filter
+        if !self.client.is_egress_allowed(&host, port) {
+            return Err(SwellError::ToolExecutionFailed(format!(
+                "Egress denied: {} is not allowed",
+                host
             )));
         }
 
