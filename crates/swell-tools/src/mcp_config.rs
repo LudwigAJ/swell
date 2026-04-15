@@ -108,8 +108,22 @@ pub enum McpServerHealth {
     Disconnected,
     /// Server is attempting to reconnect
     Reconnecting,
+    /// Server is degraded (connected but with limited functionality or warnings)
+    Degraded,
     /// Server has failed after max reconnection attempts
     Failed,
+}
+
+impl McpServerHealth {
+    /// Returns true if this health status indicates the server is healthy
+    pub fn is_healthy(&self) -> bool {
+        matches!(self, McpServerHealth::Healthy)
+    }
+
+    /// Returns true if this health status indicates the server has failed or is degraded
+    pub fn is_failed(&self) -> bool {
+        matches!(self, McpServerHealth::Failed | McpServerHealth::Degraded)
+    }
 }
 
 /// State tracking for a single MCP server
@@ -488,6 +502,7 @@ impl McpConfigManager {
     }
 
     /// Start all servers (non-lazy mode)
+    /// Returns success even if some servers fail to start
     pub async fn start_all_servers(&self) -> Result<(), SwellError> {
         for server_config in &self.config.servers {
             if !self.is_server_connected(&server_config.name).await {
@@ -495,6 +510,38 @@ impl McpConfigManager {
             }
         }
         Ok(())
+    }
+
+    /// Start all servers with degraded mode - daemons continues even if some servers fail.
+    /// Failed servers are marked as Degraded or Failed instead of causing startup to abort.
+    /// This allows the system to start with partial MCP functionality.
+    pub async fn start_all_servers_degraded(&self) -> HashMap<String, McpServerHealth> {
+        let mut results = HashMap::new();
+
+        for server_config in &self.config.servers {
+            if self.is_server_connected(&server_config.name).await {
+                results.insert(server_config.name.clone(), McpServerHealth::Healthy);
+                continue;
+            }
+
+            let health = match self.start_server(&server_config.name).await {
+                Ok(_) => McpServerHealth::Healthy,
+                Err(e) => {
+                    error!(
+                        server = %server_config.name,
+                        error = %e,
+                        "MCP server failed to start, marking as degraded"
+                    );
+                    // Mark as Degraded since this is the first attempt failure
+                    // If reconnect attempts also fail, it will become Failed
+                    McpServerHealth::Degraded
+                }
+            };
+
+            results.insert(server_config.name.clone(), health);
+        }
+
+        results
     }
 
     /// Get all server names
