@@ -489,6 +489,17 @@ pub enum MemoryBlockType {
     Convention,
 }
 
+/// Scope filters for memory queries
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MemoryQueryScope {
+    /// Filter by session ID
+    pub session_id: Option<Uuid>,
+    /// Filter by task ID
+    pub task_id: Option<Uuid>,
+    /// Filter by agent role
+    pub agent_role: Option<String>,
+}
+
 impl MemoryBlock {
     pub fn new(label: String, block_type: MemoryBlockType, content: String) -> Self {
         let now = Utc::now();
@@ -605,6 +616,15 @@ pub enum CliCommand {
     ConfigSet {
         key: String,
         value: serde_json::Value,
+    },
+    /// Query memory with BM25 search and temporal filters
+    MemoryQuery {
+        /// Keywords to search for
+        query: String,
+        /// Scope filters for the query
+        scope: MemoryQueryScope,
+        /// Maximum number of results
+        limit: usize,
     },
 }
 
@@ -767,6 +787,14 @@ pub enum DaemonEvent {
         key: String,
         value: serde_json::Value,
         source_file: Option<String>,
+        correlation_id: CorrelationId,
+    },
+    /// Memory search results
+    MemoryResults {
+        /// JSON serialized recall results
+        results: String,
+        /// Number of results returned
+        count: usize,
         correlation_id: CorrelationId,
     },
 }
@@ -1420,6 +1448,7 @@ mod tests {
                 DaemonEvent::TaskDetails { correlation_id, .. } => *correlation_id,
                 DaemonEvent::DaemonHealth { correlation_id, .. } => *correlation_id,
                 DaemonEvent::ConfigValue { correlation_id, .. } => *correlation_id,
+                DaemonEvent::MemoryResults { correlation_id, .. } => *correlation_id,
             }
         };
 

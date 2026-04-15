@@ -3317,6 +3317,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "swell-core",
+ "swell-memory",
  "swell-orchestrator",
  "tempfile",
  "thiserror 1.0.69",

@@ -1,6 +1,8 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use swell_core::{CliCommand, DaemonEvent, TaskState};
+use swell_memory::recall::RecallService;
+use swell_memory::SqliteMemoryStore;
 use swell_orchestrator::Orchestrator;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -35,6 +37,8 @@ pub struct Daemon {
     shutdown_rx: watch::Receiver<bool>,
     /// Time when the daemon was started
     start_time: std::time::Instant,
+    /// Memory recall service for querying conversation logs (using Mutex for interior mutability)
+    recall_service: Arc<Mutex<Option<RecallService>>>,
 }
 
 impl Daemon {
@@ -49,6 +53,7 @@ impl Daemon {
             shutdown_tx: Arc::new(shutdown_tx),
             shutdown_rx,
             start_time: std::time::Instant::now(),
+            recall_service: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -91,10 +96,36 @@ impl Daemon {
         self.start_time.elapsed()
     }
 
+    /// Get the recall service (if initialized)
+    pub fn recall_service(&self) -> Arc<Mutex<Option<RecallService>>> {
+        Arc::clone(&self.recall_service)
+    }
+
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Remove existing socket file
         if std::path::Path::new(&self.socket_path).exists() {
             std::fs::remove_file(&self.socket_path)?;
+        }
+
+        // Initialize the memory recall service
+        let swell_dir = std::env::current_dir()
+            .map(|p| p.join(".swell"))
+            .unwrap_or_else(|_| std::path::PathBuf::from(".swell"));
+        let memory_db_path = swell_dir.join("memory.db");
+        let database_url = format!("sqlite:{}?mode=rwc", memory_db_path.display());
+
+        match SqliteMemoryStore::create(&database_url).await {
+            Ok(store) => {
+                // The conversation_logs schema is now initialized automatically in create()
+                let recall = RecallService::new(store);
+                // Store the recall service using the Mutex
+                let mut guard = self.recall_service.lock().await;
+                *guard = Some(recall);
+                info!(path = %memory_db_path.display(), "Memory recall service initialized");
+            }
+            Err(e) => {
+                warn!(error = %e, path = %memory_db_path.display(), "Failed to initialize memory store, MemoryQuery will not be available");
+            }
         }
 
         let listener = UnixListener::bind(&self.socket_path)?;
@@ -131,6 +162,7 @@ impl Daemon {
                     let shutdown_rx = self.shutdown_rx.clone();
                     let orchestrator = Arc::clone(&self.orchestrator);
                     let event_emitter = Arc::clone(&self.event_emitter);
+                    let recall_service = Arc::clone(&self.recall_service);
                     let start_time = self.start_time;
 
                     tokio::spawn(async move {
@@ -141,6 +173,7 @@ impl Daemon {
                             shutdown_rx,
                             Arc::clone(&active_connections),
                             start_time,
+                            recall_service,
                         )
                         .await;
                         // Decrement active connections when done
@@ -244,6 +277,7 @@ async fn handle_connection_with_shutdown(
     mut shutdown_rx: watch::Receiver<bool>,
     active_connections: Arc<AtomicUsize>,
     start_time: std::time::Instant,
+    recall_service: Arc<Mutex<Option<RecallService>>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Check if shutdown was already requested before we started
     if *shutdown_rx.borrow() {
@@ -303,6 +337,7 @@ async fn handle_connection_with_shutdown(
         event_emitter,
         active_connections,
         start_time,
+        recall_service,
     )
     .await;
 

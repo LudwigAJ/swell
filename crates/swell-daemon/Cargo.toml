@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 swell-core = { path = "../swell-core" }
 swell-orchestrator = { path = "../swell-orchestrator" }
+swell-memory = { path = "../swell-memory" }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

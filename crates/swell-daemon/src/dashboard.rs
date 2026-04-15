@@ -404,6 +404,16 @@ impl From<DaemonEvent> for DashboardEvent {
                 ),
                 correlation_id,
             },
+            // MemoryResults - emit as progress with count info
+            DaemonEvent::MemoryResults {
+                results,
+                count,
+                correlation_id,
+            } => DashboardEvent::TaskProgress {
+                id: Uuid::nil(),
+                message: format!("Memory query returned {} results ({} bytes)", count, results.len()),
+                correlation_id,
+            },
         }
     }
 }

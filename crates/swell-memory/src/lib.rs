@@ -38,6 +38,7 @@ pub use knowledge_graph::{
 
 // Recall module - BM25 keyword search and temporal queries for conversation logs
 pub mod recall;
+pub use recall::{RecallQuery, RecallService};
 
 // Triple-stream retrieval module - Vector + BM25 + Graph traversal with Reciprocal Rank Fusion
 pub mod triple_stream;
@@ -183,7 +184,8 @@ pub use working_memory_compiler::{
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
-    pool: Arc<SqlitePool>,
+    /// The underlying SQLite connection pool
+    pub pool: Arc<SqlitePool>,
 }
 
 impl SqliteMemoryStore {
@@ -202,6 +204,9 @@ impl SqliteMemoryStore {
 
         // Initialize the schema
         Self::init_schema(&pool).await?;
+
+        // Also initialize the conversation_logs schema for recall functionality
+        Self::init_conversation_logs_schema(&pool).await?;
 
         Ok(Self {
             pool: Arc::new(pool),

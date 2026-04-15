@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use swell_core::{get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, TaskState};
+use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -28,6 +29,7 @@ use uuid::Uuid;
 /// - `TaskModifyScope` - Modifies task scope boundaries (operator intervention)
 /// - `TaskGet` - Returns full task details as JSON (description, plan, state, scope, cost, timestamps)
 /// - `DaemonStatus` - Returns daemon health status including connections, tasks, cost, and MCP health
+/// - `MemoryQuery` - Query memory with BM25 search and temporal filters
 ///
 /// # Error Handling
 /// Returns `DaemonEvent::Error` with a message for:
@@ -40,6 +42,7 @@ pub async fn handle_command(
     event_emitter: Arc<EventEmitter>,
     active_connections: Arc<AtomicUsize>,
     start_time: std::time::Instant,
+    recall_service: Arc<Mutex<Option<RecallService>>>,
 ) -> DaemonEvent {
     match command {
         CliCommand::TaskCreate { description } => {
@@ -483,6 +486,73 @@ pub async fn handle_command(
                 correlation_id,
             }
         }
+        CliCommand::MemoryQuery { query, scope, limit } => {
+            info!(query = %query, limit = limit, "MemoryQuery requested");
+            let correlation_id = EventEmitter::new_correlation_id();
+
+            // Get the recall service
+            let guard = recall_service.lock().await;
+            match guard.as_ref() {
+                Some(recall) => {
+                    // Parse keywords from query string
+                    let keywords: Vec<String> = query
+                        .split_whitespace()
+                        .map(|s| s.to_string())
+                        .collect();
+
+                    // Build recall query
+                    let recall_query = RecallQuery {
+                        keywords,
+                        session_id: scope.session_id,
+                        task_id: scope.task_id,
+                        agent_role: scope.agent_role,
+                        action: None,
+                        start_time: None,
+                        end_time: None,
+                        limit,
+                        offset: 0,
+                        bm25_params: None,
+                    };
+
+                    // Execute the search
+                    match recall.search(recall_query).await {
+                        Ok(results) => {
+                            let count = results.len();
+                            let results_json =
+                                serde_json::to_string(&results)
+                                    .unwrap_or_else(|_| "[]".to_string());
+                            info!(count = count, "MemoryQuery returned {} results", count);
+                            DaemonEvent::MemoryResults {
+                                results: results_json,
+                                count,
+                                correlation_id,
+                            }
+                        }
+                        Err(e) => {
+                            warn!(error = %e, "MemoryQuery search failed");
+                            event_emitter
+                                .emit_error(
+                                    format!("Memory query failed: {}", e),
+                                    None,
+                                    correlation_id,
+                                )
+                                .await
+                        }
+                    }
+                }
+                None => {
+                    // Memory service not available
+                    warn!("Memory recall service not available");
+                    event_emitter
+                        .emit_error(
+                            "Memory recall service not available".to_string(),
+                            None,
+                            correlation_id,
+                        )
+                        .await
+                }
+            }
+        }
     }
 }
 
@@ -589,7 +659,6 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let active_connections = create_test_active_connections();
         let command = CliCommand::TaskCreate {
             description: "Test task description".to_string(),
         };
@@ -600,6 +669,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -617,7 +687,6 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let active_connections = create_test_active_connections();
         let command = CliCommand::TaskCreate {
             description: "".to_string(),
         };
@@ -628,6 +697,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -656,6 +726,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -689,6 +760,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -725,6 +797,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -761,6 +834,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -789,6 +863,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -816,6 +891,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -843,6 +919,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -878,6 +955,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -911,6 +989,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -938,6 +1017,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -975,6 +1055,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1073,6 +1154,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1097,6 +1179,7 @@ mod tests {
                 Arc::clone(&emitter),
                 Arc::clone(&active_connections),
                 create_test_start_time(),
+                Arc::new(Mutex::new(None)),
             )
             .await;
             match event {
@@ -1117,6 +1200,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1144,6 +1228,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1290,6 +1375,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1319,6 +1405,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1349,6 +1436,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1379,6 +1467,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1406,6 +1495,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1437,6 +1527,7 @@ mod tests {
                 Arc::clone(&emitter),
                 Arc::clone(&active_connections),
                 create_test_start_time(),
+                Arc::new(Mutex::new(None)),
             )
             .await;
         }
@@ -1449,6 +1540,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1477,6 +1569,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1507,6 +1600,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1536,6 +1630,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1578,6 +1673,7 @@ mod tests {
                 Arc::clone(&emitter),
                 Arc::clone(&active_connections),
                 create_test_start_time(),
+                Arc::new(Mutex::new(None)),
             )
             .await;
         }
@@ -1615,6 +1711,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1649,6 +1746,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1689,6 +1787,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1813,6 +1912,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1845,6 +1945,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1901,6 +2002,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -1958,6 +2060,7 @@ mod tests {
             emitter,
             Arc::clone(&active_connections),
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -2008,6 +2111,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -2048,6 +2152,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -2184,6 +2289,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -2262,6 +2368,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -2321,6 +2428,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -2375,6 +2483,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
@@ -2424,6 +2533,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
+            Arc::new(Mutex::new(None)),
         )
         .await;
 
