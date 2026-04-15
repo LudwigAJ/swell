@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+/// Main error type for the SWELL system.
 #[derive(Error, Debug)]
 pub enum SwellError {
     #[error("Task {0} not found")]
@@ -34,6 +35,9 @@ pub enum SwellError {
 
     #[error("Safety kill switch triggered")]
     KillSwitchTriggered,
+
+    #[error("Resource limit exceeded: {0}")]
+    ResourceLimitExceeded(String),
 
     #[error("Configuration error: {0}")]
     ConfigError(String),

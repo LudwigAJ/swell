@@ -120,7 +120,7 @@ async fn test_agent_continues_after_permission_denial() {
         .await;
 
     // Create ExecutionController with high max_iterations to allow multiple turns
-    let controller = ExecutionController::with_max_iterations(
+    let mut controller = ExecutionController::with_max_iterations(
         orchestrator.clone(),
         mock_llm.clone(),
         tool_registry.clone(),
@@ -218,7 +218,7 @@ async fn test_turn_loop_handles_permission_denial_gracefully() {
         .await;
 
     // Create ExecutionController with high max_iterations to allow multiple turns
-    let controller = ExecutionController::with_max_iterations(
+    let mut controller = ExecutionController::with_max_iterations(
         orchestrator.clone(),
         mock_llm.clone(),
         tool_registry.clone(),
@@ -320,7 +320,7 @@ async fn test_multiple_denied_tools_do_not_crash() {
         )
         .await;
 
-    let controller = ExecutionController::with_max_iterations(
+    let mut controller = ExecutionController::with_max_iterations(
         orchestrator.clone(),
         mock_llm.clone(),
         tool_registry.clone(),

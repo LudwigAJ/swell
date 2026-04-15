@@ -14,7 +14,10 @@ use swell_core::{
     ToolResultContent, ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
-use swell_tools::ToolRegistry;
+use swell_tools::{
+    resource_limits::{SessionLimits, SessionResourceTracker},
+    ToolRegistry,
+};
 use swell_validation::ValidationPipeline;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -63,6 +66,8 @@ pub enum TurnOutcome {
     EmptyResponse,
     /// Turn ended due to kill switch being triggered
     KillSwitchTriggered,
+    /// Turn ended due to resource limit exceeded
+    ResourceLimitExceeded,
 }
 
 /// A tool call that was made during a turn
@@ -181,6 +186,8 @@ pub struct ExecutionController {
     validation_pipeline: ValidationPipeline,
     /// Kill switch for emergency stops and pause/resume
     kill_switch: OrchestratorKillSwitch,
+    /// Resource tracker for session limits
+    resource_tracker: SessionResourceTracker,
     max_concurrent: usize,
     /// Maximum iterations for the turn loop (hard cap)
     /// This is separate from validation retry count
@@ -214,6 +221,7 @@ impl ExecutionController {
             tool_registry,
             validation_pipeline: ValidationPipeline::new(),
             kill_switch: OrchestratorKillSwitch::new(),
+            resource_tracker: SessionResourceTracker::with_default_limits(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
@@ -236,6 +244,7 @@ impl ExecutionController {
             tool_registry,
             validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
+            resource_tracker: SessionResourceTracker::with_default_limits(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations: DEFAULT_MAX_ITERATIONS,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
@@ -264,6 +273,7 @@ impl ExecutionController {
             tool_registry,
             validation_pipeline: ValidationPipeline::new(),
             kill_switch: OrchestratorKillSwitch::new(),
+            resource_tracker: SessionResourceTracker::with_default_limits(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
@@ -287,6 +297,7 @@ impl ExecutionController {
             tool_registry,
             validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
+            resource_tracker: SessionResourceTracker::with_default_limits(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
@@ -321,6 +332,7 @@ impl ExecutionController {
             tool_registry,
             validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
+            resource_tracker: SessionResourceTracker::with_default_limits(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
             max_iterations,
             context_compaction_threshold,
@@ -328,6 +340,54 @@ impl ExecutionController {
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
         }
+    }
+
+    /// Create a new ExecutionController with all custom settings including resource limits.
+    ///
+    /// # Arguments
+    /// * `orchestrator` - The orchestrator for task coordination
+    /// * `llm` - The LLM backend for agent reasoning
+    /// * `tool_registry` - The tool registry for tool execution
+    /// * `validation_pipeline` - Custom validation pipeline
+    /// * `max_iterations` - Maximum iterations for the turn loop (hard cap)
+    /// * `context_compaction_threshold` - Token threshold for triggering context compaction
+    /// * `tail_message_count` - Number of tail messages to always preserve
+    /// * `session_limits` - Session resource limits (max turns, wall clock timeout, etc.)
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_resource_limits(
+        orchestrator: Arc<Orchestrator>,
+        llm: Arc<dyn LlmBackend>,
+        tool_registry: Arc<ToolRegistry>,
+        validation_pipeline: ValidationPipeline,
+        max_iterations: u32,
+        context_compaction_threshold: usize,
+        tail_message_count: usize,
+        session_limits: SessionLimits,
+    ) -> Self {
+        Self {
+            orchestrator,
+            llm,
+            tool_registry,
+            validation_pipeline,
+            kill_switch: OrchestratorKillSwitch::new(),
+            resource_tracker: SessionResourceTracker::new(session_limits),
+            max_concurrent: MAX_CONCURRENT_AGENTS,
+            max_iterations,
+            context_compaction_threshold,
+            tail_message_count,
+            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
+            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+        }
+    }
+
+    /// Get a reference to the resource tracker
+    pub fn resource_tracker(&self) -> &SessionResourceTracker {
+        &self.resource_tracker
+    }
+
+    /// Get a mutable reference to the resource tracker for recording usage
+    pub fn resource_tracker_mut(&mut self) -> &mut SessionResourceTracker {
+        &mut self.resource_tracker
     }
 
     /// Get the max iterations setting
@@ -585,7 +645,7 @@ impl ExecutionController {
     /// * `Ok((Vec<TurnSummary>, String))` - All turn summaries and the final text response
     /// * `Err(SwellError)` - If the loop terminates due to an error
     pub async fn execute_turn_loop(
-        &self,
+        &mut self,
         mut messages: Vec<LlmMessage>,
         tools: Option<Vec<LlmToolDefinition>>,
     ) -> Result<(Vec<TurnSummary>, String), SwellError> {
@@ -596,6 +656,23 @@ impl ExecutionController {
         loop {
             turn_number += 1;
             debug!(turn = turn_number, "Starting turn");
+
+            // Check resource limits BEFORE starting a new turn
+            if let Some(limit_error) = self.resource_tracker.get_first_error() {
+                warn!(
+                    turn = turn_number,
+                    limit = %limit_error.limit_name(),
+                    error = %limit_error,
+                    "Resource limit exceeded, terminating turn loop"
+                );
+                // Record the outcome for this turn
+                let mut summary = TurnSummary::new(turn_number);
+                summary.outcome = TurnOutcome::ResourceLimitExceeded;
+                summary.error_message = Some(limit_error.to_string());
+                summary.final_text = final_text.clone();
+                all_summaries.push(summary);
+                return Err(SwellError::ResourceLimitExceeded(limit_error.to_string()));
+            }
 
             // Check kill switch BEFORE starting a new turn - FullStop halts immediately
             if let Err(e) = self.kill_switch.check_fullstop().await {
@@ -783,6 +860,30 @@ impl ExecutionController {
             }
 
             all_summaries.push(summary);
+
+            // Record resource usage for this turn
+            // Update tokens and cost in the resource tracker
+            if let Some(last_summary) = all_summaries.last() {
+                let total_tokens = last_summary.total_tokens();
+                if total_tokens > 0 {
+                    self.resource_tracker.record_tokens(total_tokens);
+                }
+
+                // Record cache tokens as well for accurate tracking
+                if let Some(cache_creation) = last_summary.cache_creation_input_tokens {
+                    self.resource_tracker.record_tokens(cache_creation);
+                }
+                if let Some(cache_read) = last_summary.cache_read_input_tokens {
+                    self.resource_tracker.record_tokens(cache_read);
+                }
+
+                // Record any tool call failures as failures in the tracker
+                for tool_call in &last_summary.tool_calls {
+                    if !tool_call.success {
+                        self.resource_tracker.record_failure();
+                    }
+                }
+            }
 
             // Compact context if accumulated tokens exceed threshold
             // This happens after each turn with tool calls to keep the conversation manageable
@@ -1010,6 +1111,7 @@ impl Clone for ExecutionController {
             tool_registry: self.tool_registry.clone(),
             validation_pipeline: self.validation_pipeline.clone(),
             kill_switch: self.kill_switch.clone(),
+            resource_tracker: self.resource_tracker.clone(),
             max_concurrent: self.max_concurrent,
             max_iterations: self.max_iterations,
             context_compaction_threshold: self.context_compaction_threshold,
@@ -1203,7 +1305,7 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::with_response("claude-sonnet", "Hello, world!"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let controller = ExecutionController::with_max_iterations(
+        let mut controller = ExecutionController::with_max_iterations(
             Arc::new(orchestrator),
             mock_llm,
             tool_registry,
@@ -1235,7 +1337,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         // Set max_iterations to 2
-        let controller = ExecutionController::with_max_iterations(
+        let mut controller = ExecutionController::with_max_iterations(
             Arc::new(orchestrator),
             mock_llm,
             tool_registry,
@@ -1263,7 +1365,7 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::failing("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let controller = ExecutionController::with_max_iterations(
+        let mut controller = ExecutionController::with_max_iterations(
             Arc::new(orchestrator),
             mock_llm,
             tool_registry,
@@ -1810,7 +1912,7 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::with_response("claude-sonnet", "Hello world"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let mut controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Trigger FullStop before calling execute_turn_loop
         controller.kill_switch().trigger(KillLevel::FullStop, "Test FullStop", "test").await;
@@ -1851,7 +1953,7 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let mut controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Trigger FullStop
         controller.kill_switch().trigger(KillLevel::FullStop, "Test FullStop", "test").await;
@@ -1896,7 +1998,7 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let mut controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Even though we set a low level (Throttle), FullStop should take precedence
         controller.kill_switch().trigger(KillLevel::Throttle, "Throttle", "test").await;
@@ -1929,7 +2031,7 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let mut controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Trigger NetworkKill
         controller.kill_switch().trigger(KillLevel::NetworkKill, "Network blocked", "test").await;

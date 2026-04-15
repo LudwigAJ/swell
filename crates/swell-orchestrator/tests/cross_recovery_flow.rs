@@ -520,7 +520,7 @@ async fn test_execution_continues_after_tool_failure() {
         .await;
 
     // Create ExecutionController
-    let controller = ExecutionController::with_max_iterations(
+    let mut controller = ExecutionController::with_max_iterations(
         orchestrator.clone(),
         mock_llm.clone(),
         tool_registry.clone(),
@@ -627,7 +627,7 @@ async fn test_multiple_failure_types_recovery() {
         )
         .await;
 
-    let controller = ExecutionController::with_max_iterations(
+    let mut controller = ExecutionController::with_max_iterations(
         orchestrator.clone(),
         mock_llm.clone(),
         tool_registry.clone(),
@@ -749,7 +749,7 @@ async fn test_git_commit_network_failure_recovery() {
         )
         .await;
 
-    let controller = ExecutionController::with_max_iterations(
+    let mut controller = ExecutionController::with_max_iterations(
         orchestrator.clone(),
         mock_llm.clone(),
         tool_registry.clone(),
@@ -957,7 +957,7 @@ async fn test_full_recovery_flow() {
 
     // Step 6: Execute with the tool and verify continuation
     let orchestrator = Arc::new(Orchestrator::new());
-    let controller =
+    let mut controller =
         ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
@@ -1033,7 +1033,7 @@ async fn test_recovery_flow_permission_denied() {
         )
         .await;
 
-    let controller =
+    let mut controller =
         ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
@@ -1119,7 +1119,7 @@ async fn test_recovery_flow_timeout() {
         })
     ));
 
-    let controller =
+    let mut controller =
         ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
