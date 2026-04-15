@@ -156,7 +156,7 @@ mod mcp_lifecycle_error_tests {
 mod mcp_lifecycle_integration_tests {
 
     use swell_tools::mcp_config::McpConfigManager;
-    use swell_tools::{McpClient, McpLifecyclePhase, McpServerHealth};
+    use swell_tools::McpLifecyclePhase;
 
     /// Test lifecycle phases execute in correct order with echo server
     #[tokio::test]

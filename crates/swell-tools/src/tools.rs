@@ -1600,7 +1600,7 @@ mod tests {
 
         assert!(!result.is_error);
         // Should be valid JSON with branch info
-        let content = match result.content.first() {
+        let _content = match result.content.first() {
             Some(ToolResultContent::Json(_)) => {
                 serde_json::to_string(result.content.first().unwrap()).unwrap_or_default()
             }

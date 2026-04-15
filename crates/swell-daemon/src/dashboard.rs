@@ -37,7 +37,7 @@ use uuid::Uuid;
 use crate::events::EventEmitter;
 use crate::server::Daemon;
 use swell_core::{
-    get_last_llm_model, get_total_llm_tokens, AgentRole, DaemonEvent, Task, TaskState,
+    get_last_llm_model, get_total_llm_tokens, AgentRole, DaemonEvent, DataResponse, Task, TaskState,
 };
 
 /// Dashboard API state shared across all request handlers
@@ -445,6 +445,43 @@ impl From<DaemonEvent> for DashboardEvent {
                     id: task_id.unwrap_or(Uuid::nil()),
                     message: summary,
                     correlation_id,
+                }
+            }
+            // DataResponse - handle typed query responses in dashboard
+            DaemonEvent::DataResponse(data) => {
+                match *data {
+                    DataResponse::TaskList { tasks, .. } => DashboardEvent::TaskProgress {
+                        id: Uuid::nil(),
+                        message: format!("Task list: {} tasks", tasks.len()),
+                        correlation_id: Uuid::nil(),
+                    },
+                    DataResponse::TaskDetail { task, .. } => DashboardEvent::TaskProgress {
+                        id: task.id,
+                        message: format!("Task detail: {:?}", task.state),
+                        correlation_id: Uuid::nil(),
+                    },
+                    DataResponse::ConfigValue { key, value, .. } => DashboardEvent::TaskProgress {
+                        id: Uuid::nil(),
+                        message: format!("Config '{}' = {}", key, value),
+                        correlation_id: Uuid::nil(),
+                    },
+                    DataResponse::MemoryResults { count, .. } => DashboardEvent::TaskProgress {
+                        id: Uuid::nil(),
+                        message: format!("Memory results: {} items", count),
+                        correlation_id: Uuid::nil(),
+                    },
+                    DataResponse::CostData { total_cost_usd, .. } => DashboardEvent::TaskProgress {
+                        id: Uuid::nil(),
+                        message: format!("Cost data: ${:.4}", total_cost_usd),
+                        correlation_id: Uuid::nil(),
+                    },
+                    DataResponse::DaemonHealth { uptime_seconds, version, .. } => {
+                        DashboardEvent::TaskProgress {
+                            id: Uuid::nil(),
+                            message: format!("Daemon health: {}s uptime, v{}", uptime_seconds, version),
+                            correlation_id: Uuid::nil(),
+                        }
+                    }
                 }
             }
         }
