@@ -531,6 +531,12 @@ impl GitTool {
         self
     }
 
+    /// Create a GitTool with a SecretScanner for commit validation.
+    /// This should be used in production to ensure secrets are scanned before commits.
+    pub fn create() -> Self {
+        Self::new().with_secret_scanner(Arc::new(SecretScanner::new()))
+    }
+
     async fn run_git(&self, args: &[&str], cwd: Option<&Path>) -> Result<ToolOutput, SwellError> {
         let output = tokio::process::Command::new("git")
             .args(args)
