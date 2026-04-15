@@ -33,6 +33,8 @@ pub struct Daemon {
     shutdown_tx: Arc<watch::Sender<bool>>,
     /// Receiver for shutdown signal - shared across spawned tasks
     shutdown_rx: watch::Receiver<bool>,
+    /// Time when the daemon was started
+    start_time: std::time::Instant,
 }
 
 impl Daemon {
@@ -46,6 +48,7 @@ impl Daemon {
             active_connections: Arc::new(AtomicUsize::new(0)),
             shutdown_tx: Arc::new(shutdown_tx),
             shutdown_rx,
+            start_time: std::time::Instant::now(),
         }
     }
 
@@ -71,6 +74,21 @@ impl Daemon {
     /// Get the orchestrator for the daemon
     pub fn orchestrator(&self) -> Arc<Mutex<Orchestrator>> {
         Arc::clone(&self.orchestrator)
+    }
+
+    /// Get the active connections counter for the daemon
+    pub fn active_connections(&self) -> Arc<AtomicUsize> {
+        Arc::clone(&self.active_connections)
+    }
+
+    /// Get the daemon start time
+    pub fn start_time(&self) -> std::time::Instant {
+        self.start_time
+    }
+
+    /// Get the daemon uptime as a Duration
+    pub fn uptime(&self) -> std::time::Duration {
+        self.start_time.elapsed()
     }
 
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -113,6 +131,7 @@ impl Daemon {
                     let shutdown_rx = self.shutdown_rx.clone();
                     let orchestrator = Arc::clone(&self.orchestrator);
                     let event_emitter = Arc::clone(&self.event_emitter);
+                    let start_time = self.start_time;
 
                     tokio::spawn(async move {
                         let result = handle_connection_with_shutdown(
@@ -120,6 +139,8 @@ impl Daemon {
                             orchestrator,
                             event_emitter,
                             shutdown_rx,
+                            Arc::clone(&active_connections),
+                            start_time,
                         )
                         .await;
                         // Decrement active connections when done
@@ -221,6 +242,8 @@ async fn handle_connection_with_shutdown(
     orchestrator: Arc<Mutex<Orchestrator>>,
     event_emitter: Arc<EventEmitter>,
     mut shutdown_rx: watch::Receiver<bool>,
+    active_connections: Arc<AtomicUsize>,
+    start_time: std::time::Instant,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Check if shutdown was already requested before we started
     if *shutdown_rx.borrow() {
@@ -274,7 +297,14 @@ async fn handle_connection_with_shutdown(
         return Ok(());
     }
 
-    let response = handle_command(command, orchestrator, event_emitter).await;
+    let response = handle_command(
+        command,
+        orchestrator,
+        event_emitter,
+        active_connections,
+        start_time,
+    )
+    .await;
 
     let response_json = serde_json::to_string(&response)?;
     stream.write_all(response_json.as_bytes()).await?;

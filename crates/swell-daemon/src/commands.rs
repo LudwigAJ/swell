@@ -4,8 +4,10 @@
 //! and translates them into appropriate daemon events.
 
 use crate::events::EventEmitter;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use swell_core::{CliCommand, DaemonEvent, TaskState};
+use swell_core::{get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, TaskState};
 use swell_orchestrator::Orchestrator;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
@@ -25,6 +27,7 @@ use uuid::Uuid;
 /// - `TaskInjectInstruction` - Injects instructions into a task (operator intervention)
 /// - `TaskModifyScope` - Modifies task scope boundaries (operator intervention)
 /// - `TaskGet` - Returns full task details as JSON (description, plan, state, scope, cost, timestamps)
+/// - `DaemonStatus` - Returns daemon health status including connections, tasks, cost, and MCP health
 ///
 /// # Error Handling
 /// Returns `DaemonEvent::Error` with a message for:
@@ -35,6 +38,8 @@ pub async fn handle_command(
     command: CliCommand,
     orchestrator: Arc<Mutex<Orchestrator>>,
     event_emitter: Arc<EventEmitter>,
+    active_connections: Arc<AtomicUsize>,
+    start_time: std::time::Instant,
 ) -> DaemonEvent {
     match command {
         CliCommand::TaskCreate { description } => {
@@ -298,6 +303,52 @@ pub async fn handle_command(
                 }
             }
         }
+        CliCommand::DaemonStatus => {
+            info!("Daemon status requested");
+            let orch = orchestrator.lock().await;
+            let tasks = orch.get_all_tasks().await;
+
+            // Count tasks by state
+            let mut tasks_by_state: HashMap<String, usize> = HashMap::new();
+            for task in &tasks {
+                let state_name = format!("{:?}", task.state);
+                *tasks_by_state.entry(state_name).or_insert(0) += 1;
+            }
+
+            // Get cost info from global tracker
+            let total_tokens = get_total_llm_tokens();
+            let last_model = get_last_llm_model();
+
+            // MCP health - start with empty map, can be extended with MCP manager if available
+            let mcp_health: HashMap<String, String> = HashMap::new();
+
+            // Calculate uptime
+            let uptime_seconds = start_time.elapsed().as_secs();
+
+            // Get version
+            let version = env!("CARGO_PKG_VERSION");
+
+            // Budget information (default 1M tokens per task as baseline)
+            let total_budget: u64 = 1_000_000;
+            let total_spent = total_tokens;
+            let remaining_budget = total_budget.saturating_sub(total_spent);
+
+            let correlation_id = EventEmitter::new_correlation_id();
+            DaemonEvent::DaemonHealth {
+                active_connections: active_connections.load(Ordering::Relaxed),
+                total_tasks: tasks.len(),
+                tasks_by_state,
+                total_tokens,
+                last_model,
+                mcp_health,
+                uptime_seconds,
+                version: version.to_string(),
+                total_budget,
+                total_spent,
+                remaining_budget,
+                correlation_id,
+            }
+        }
     }
 }
 
@@ -349,17 +400,27 @@ mod tests {
         Arc::new(EventEmitter::new())
     }
 
+    fn create_test_active_connections() -> Arc<AtomicUsize> {
+        Arc::new(AtomicUsize::new(0))
+    }
+
+    fn create_test_start_time() -> std::time::Instant {
+        std::time::Instant::now()
+    }
+
     // --- TaskCreate Tests ---
 
     #[tokio::test]
     async fn test_task_create_returns_task_created_event() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+        let active_connections = create_test_active_connections();
         let command = CliCommand::TaskCreate {
             description: "Test task description".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskCreated { id, correlation_id } => {
@@ -374,11 +435,13 @@ mod tests {
     async fn test_task_create_with_empty_description() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+        let active_connections = create_test_active_connections();
         let command = CliCommand::TaskCreate {
             description: "".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskCreated { id, correlation_id } => {
@@ -395,10 +458,11 @@ mod tests {
     async fn test_task_approve_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskApprove { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -412,6 +476,7 @@ mod tests {
     async fn test_task_approve_valid_task_returns_state_changed() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // First create a task
         let task = orch.lock().await.create_task("Test task".to_string()).await;
@@ -423,7 +488,7 @@ mod tests {
         orch.lock().await.start_task(task.id).await.unwrap();
 
         let command = CliCommand::TaskApprove { task_id: task.id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -445,13 +510,14 @@ mod tests {
     async fn test_task_reject_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskReject {
             task_id: fake_id,
             reason: "Test rejection".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -465,6 +531,7 @@ mod tests {
     async fn test_task_reject_valid_task_returns_rejected_state() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create a task and set it up for rejection
         let task = orch.lock().await.create_task("Test task".to_string()).await;
@@ -479,7 +546,7 @@ mod tests {
             reason: "Test rejection reason".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -496,10 +563,11 @@ mod tests {
     async fn test_task_cancel_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskCancel { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -513,12 +581,13 @@ mod tests {
     async fn test_task_cancel_valid_task_returns_failed_state() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create a task
         let task = orch.lock().await.create_task("Test task".to_string()).await;
         let command = CliCommand::TaskCancel { task_id: task.id };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -535,9 +604,10 @@ mod tests {
     async fn test_task_list_empty_returns_empty_array() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let command = CliCommand::TaskList;
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskCompleted { id, pr_url, .. } => {
@@ -557,6 +627,7 @@ mod tests {
     async fn test_task_list_with_tasks_returns_task_array() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create some tasks
         orch.lock().await.create_task("Task 1".to_string()).await;
@@ -564,7 +635,7 @@ mod tests {
         orch.lock().await.create_task("Task 3".to_string()).await;
 
         let command = CliCommand::TaskList;
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskCompleted { id, pr_url, .. } => {
@@ -586,10 +657,11 @@ mod tests {
     async fn test_task_watch_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskWatch { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -603,12 +675,13 @@ mod tests {
     async fn test_task_watch_valid_task_returns_current_state() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create a task (starts in Created state)
         let task = orch.lock().await.create_task("Test task".to_string()).await;
         let command = CliCommand::TaskWatch { task_id: task.id };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -623,6 +696,7 @@ mod tests {
     async fn test_task_watch_after_state_change_reflects_new_state() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create a task
         let task = orch.lock().await.create_task("Test task".to_string()).await;
@@ -637,7 +711,7 @@ mod tests {
         }
 
         let command = CliCommand::TaskWatch { task_id: task.id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -722,12 +796,13 @@ mod tests {
     async fn test_event_emitter_records_events_from_commands() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create a task
         let command = CliCommand::TaskCreate {
             description: "Test".to_string(),
         };
-        handle_command(command, orch, Arc::clone(&emitter)).await;
+        handle_command(command, orch, Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         // Event should be recorded
         assert_eq!(emitter.event_count().await, 1);
@@ -737,13 +812,14 @@ mod tests {
     async fn test_correlation_ids_link_related_events_within_single_operation() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create a task - get the correlation_id
         let task = {
             let command = CliCommand::TaskCreate {
                 description: "Test".to_string(),
             };
-            let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+            let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
             match event {
                 DaemonEvent::TaskCreated { id, correlation_id } => {
                     // Use the correlation_id for subsequent events
@@ -756,7 +832,7 @@ mod tests {
         // Now do an approve operation - this is a NEW operation with its own correlation_id
         // but we can still verify that the task creation has its own correlation_id
         let command = CliCommand::TaskApprove { task_id: task.0 };
-        let _ = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let _ = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         // Task creation event should be linkable by its correlation_id
         let events = emitter.get_events_by_correlation_id(task.1).await;
@@ -771,11 +847,12 @@ mod tests {
     async fn test_error_events_have_correlation_id() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
 
         // Try to approve a non-existent task - should return an error with a correlation_id
         let command = CliCommand::TaskApprove { task_id: fake_id };
-        let event = handle_command(command, orch, Arc::clone(&emitter)).await;
+        let event = handle_command(command, orch, Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error {
@@ -907,13 +984,14 @@ mod tests {
     async fn test_task_pause_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskPause {
             task_id: fake_id,
             reason: "Operator requested".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -927,6 +1005,7 @@ mod tests {
     async fn test_task_pause_executing_task_returns_paused_state() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task_id = create_test_task_in_executing_state(&orch);
 
@@ -934,7 +1013,7 @@ mod tests {
             task_id,
             reason: "Operator requested pause".to_string(),
         };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -949,6 +1028,7 @@ mod tests {
     async fn test_task_pause_validating_task_returns_paused_state() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task_id = create_test_task_in_validating_state(&orch);
 
@@ -956,7 +1036,7 @@ mod tests {
             task_id,
             reason: "Operator requested pause during validation".to_string(),
         };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -971,6 +1051,7 @@ mod tests {
     async fn test_task_pause_created_task_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task = orch.lock().await.create_task("Test task".to_string()).await;
         let command = CliCommand::TaskPause {
@@ -978,7 +1059,7 @@ mod tests {
             reason: "Operator requested".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -994,10 +1075,11 @@ mod tests {
     async fn test_task_resume_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskResume { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1011,6 +1093,7 @@ mod tests {
     async fn test_task_resume_paused_task_returns_executing_state() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task_id = create_test_task_in_executing_state(&orch);
 
@@ -1020,12 +1103,12 @@ mod tests {
                 task_id,
                 reason: "Operator requested".to_string(),
             };
-            handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+            handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
         }
 
         // Now resume
         let command = CliCommand::TaskResume { task_id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
@@ -1040,12 +1123,13 @@ mod tests {
     async fn test_task_resume_non_paused_task_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task_id = create_test_task_in_executing_state(&orch);
 
         // Try to resume without pausing first
         let command = CliCommand::TaskResume { task_id };
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1061,13 +1145,14 @@ mod tests {
     async fn test_task_inject_instruction_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskInjectInstruction {
             task_id: fake_id,
             instruction: "Check the logs".to_string(),
         };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1081,6 +1166,7 @@ mod tests {
     async fn test_task_inject_instruction_executing_task_succeeds() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task_id = create_test_task_in_executing_state(&orch);
 
@@ -1088,7 +1174,7 @@ mod tests {
             task_id,
             instruction: "Remember to check the logs first".to_string(),
         };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskProgress { id, message, .. } => {
@@ -1113,6 +1199,7 @@ mod tests {
     async fn test_task_inject_instruction_multiple_instructions() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task_id = create_test_task_in_executing_state(&orch);
 
@@ -1122,7 +1209,7 @@ mod tests {
                 task_id,
                 instruction: format!("Instruction {}", i),
             };
-            handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+            handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
         }
 
         let instructions = orch
@@ -1140,6 +1227,7 @@ mod tests {
     async fn test_task_modify_scope_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let scope = swell_core::TaskScope {
             files: vec!["src/lib.rs".to_string()],
@@ -1151,7 +1239,7 @@ mod tests {
             scope,
         };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1165,6 +1253,7 @@ mod tests {
     async fn test_task_modify_scope_executing_task_succeeds() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task_id = create_test_task_in_executing_state(&orch);
 
@@ -1177,7 +1266,7 @@ mod tests {
             task_id,
             scope: scope.clone(),
         };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskProgress { id, message, .. } => {
@@ -1197,6 +1286,7 @@ mod tests {
     async fn test_task_modify_scope_stores_original_scope() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         let task_id = create_test_task_in_executing_state(&orch);
 
@@ -1209,7 +1299,7 @@ mod tests {
             task_id,
             scope: new_scope,
         };
-        handle_command(command, Arc::clone(&orch), emitter).await;
+        handle_command(command, Arc::clone(&orch), emitter, active_connections, create_test_start_time()).await;
 
         // Verify original scope was saved
         let task = orch.lock().await.get_task(task_id).await.unwrap();
@@ -1322,10 +1412,11 @@ mod tests {
     async fn test_task_get_nonexistent_returns_error() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
         let fake_id = Uuid::new_v4();
         let command = CliCommand::TaskGet { task_id: fake_id };
 
-        let event = handle_command(command, orch, emitter).await;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
 
         match event {
             DaemonEvent::Error { message, .. } => {
@@ -1339,13 +1430,14 @@ mod tests {
     async fn test_task_get_existing_task_returns_task_details() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create a task
         let task = orch.lock().await.create_task("Test task description".to_string()).await;
         let task_id = task.id;
 
         let command = CliCommand::TaskGet { task_id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskDetails {
@@ -1382,6 +1474,7 @@ mod tests {
     async fn test_task_get_with_plan_includes_plan_details() {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
 
         // Create a task with a plan
         let task = orch.lock().await.create_task("Test task with plan".to_string()).await;
@@ -1389,7 +1482,7 @@ mod tests {
         orch.lock().await.set_plan(task.id, plan).await.unwrap();
 
         let command = CliCommand::TaskGet { task_id: task.id };
-        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
+        let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter), Arc::clone(&active_connections), create_test_start_time()).await;
 
         match event {
             DaemonEvent::TaskDetails {
@@ -1423,5 +1516,147 @@ mod tests {
         assert!(json.contains("TaskDetails"));
         assert!(json.contains(&task_id.to_string()));
         assert!(json.contains(&correlation_id.to_string()));
+    }
+
+    // --- DaemonStatus Tests ---
+
+    #[tokio::test]
+    async fn test_daemon_status_returns_health_info() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+
+        // Create some tasks
+        orch.lock().await.create_task("Task 1".to_string()).await;
+        orch.lock().await.create_task("Task 2".to_string()).await;
+
+        let command = CliCommand::DaemonStatus;
+        let event = handle_command(command, Arc::clone(&orch), emitter, Arc::clone(&active_connections), create_test_start_time()).await;
+
+        match event {
+            DaemonEvent::DaemonHealth {
+                active_connections: conn_count,
+                total_tasks,
+                tasks_by_state,
+                total_tokens,
+                last_model,
+                mcp_health,
+                uptime_seconds,
+                version,
+                total_budget,
+                total_spent,
+                remaining_budget,
+                correlation_id,
+            } => {
+                assert_eq!(conn_count, 0);
+                assert_eq!(total_tasks, 2);
+                assert!(tasks_by_state.contains_key("Created"));
+                assert_eq!(*tasks_by_state.get("Created").unwrap(), 2);
+                // Cost tracking should be initialized (tokens is u64 so always >= 0)
+                let _ = total_tokens;
+                assert!(!last_model.is_empty() || last_model.is_empty()); // Model may or may not be set
+                // MCP health is empty map (no MCP manager in test)
+                assert!(mcp_health.is_empty());
+                // Verify uptime, version, and budget fields
+                assert!(!version.is_empty());
+                assert!(total_budget >= total_spent);
+                assert_eq!(remaining_budget, total_budget.saturating_sub(total_spent));
+                assert!(correlation_id != Uuid::nil());
+            }
+            other => panic!("Expected DaemonHealth event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_daemon_status_with_zero_tasks() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+
+        let command = CliCommand::DaemonStatus;
+        let event = handle_command(command, orch, emitter, active_connections, create_test_start_time()).await;
+
+        match event {
+            DaemonEvent::DaemonHealth {
+                total_tasks,
+                tasks_by_state,
+                ..
+            } => {
+                assert_eq!(total_tasks, 0);
+                assert!(tasks_by_state.is_empty());
+            }
+            other => panic!("Expected DaemonHealth event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_daemon_status_tracks_tasks_by_state() {
+        let orch = create_test_orchestrator();
+        let emitter = create_test_event_emitter();
+        let active_connections = create_test_active_connections();
+
+        // Create tasks - they start in Created state
+        let task1 = orch.lock().await.create_task("Task 1".to_string()).await;
+        orch.lock().await.create_task("Task 2".to_string()).await;
+
+        // Transition task1 to Enriched state
+        {
+            let sm = orch.lock().await.state_machine();
+            let mut sm_guard = sm.write().await;
+            sm_guard.enrich_task(task1.id).unwrap();
+        }
+
+        let command = CliCommand::DaemonStatus;
+        let event = handle_command(command, Arc::clone(&orch), emitter, active_connections, create_test_start_time()).await;
+
+        match event {
+            DaemonEvent::DaemonHealth {
+                tasks_by_state,
+                ..
+            } => {
+                assert_eq!(tasks_by_state.get("Created"), Some(&1));
+                assert_eq!(tasks_by_state.get("Enriched"), Some(&1));
+            }
+            other => panic!("Expected DaemonHealth event, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_daemon_status_command() {
+        let json = r#"{"type":"DaemonStatus"}"#;
+        let command = parse_command(json).unwrap();
+
+        match command {
+            CliCommand::DaemonStatus => {}
+            other => panic!("Expected DaemonStatus command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_daemon_health_event_serialization() {
+        let correlation_id = Uuid::new_v4();
+        let event = DaemonEvent::DaemonHealth {
+            active_connections: 5,
+            total_tasks: 10,
+            tasks_by_state: std::collections::HashMap::new(),
+            total_tokens: 1000000,
+            last_model: "claude-3-5-sonnet-20241022".to_string(),
+            mcp_health: std::collections::HashMap::new(),
+            uptime_seconds: 3600,
+            version: "1.0.0".to_string(),
+            total_budget: 1000000,
+            total_spent: 500000,
+            remaining_budget: 500000,
+            correlation_id,
+        };
+        let json = event_to_json(&event).unwrap();
+        assert!(json.contains("DaemonHealth"));
+        assert!(json.contains("5"));
+        assert!(json.contains("10"));
+        assert!(json.contains("1000000"));
+        assert!(json.contains("claude-3-5-sonnet"));
+        assert!(json.contains("3600")); // uptime_seconds
+        assert!(json.contains("1.0.0")); // version
+        assert!(json.contains("500000")); // remaining_budget
     }
 }

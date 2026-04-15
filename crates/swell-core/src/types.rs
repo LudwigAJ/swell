@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 /// Task lifecycle states as defined in the orchestrator spec
@@ -594,6 +595,8 @@ pub enum CliCommand {
     TaskGet {
         task_id: Uuid,
     },
+    /// Get daemon health status including active connections, task counts, cost, and MCP health
+    DaemonStatus,
 }
 
 /// A correlation ID used to track related events across the system.
@@ -722,6 +725,32 @@ pub enum DaemonEvent {
         id: Uuid,
         /// JSON serialized Task object containing all task fields
         task_json: String,
+        correlation_id: CorrelationId,
+    },
+    /// Daemon health status response
+    DaemonHealth {
+        /// Number of active CLI connections
+        active_connections: usize,
+        /// Total number of tasks in the system
+        total_tasks: usize,
+        /// Number of tasks in each state
+        tasks_by_state: HashMap<String, usize>,
+        /// Total LLM tokens used in this session
+        total_tokens: u64,
+        /// Last LLM model used
+        last_model: String,
+        /// MCP server health status (server name -> health)
+        mcp_health: HashMap<String, String>,
+        /// Daemon uptime in seconds
+        uptime_seconds: u64,
+        /// Daemon version string
+        version: String,
+        /// Total budget (tokens) configured for the session
+        total_budget: u64,
+        /// Total tokens spent so far
+        total_spent: u64,
+        /// Remaining budget (tokens)
+        remaining_budget: u64,
         correlation_id: CorrelationId,
     },
 }
@@ -1372,6 +1401,8 @@ mod tests {
                 DaemonEvent::AgentTurnCompleted { correlation_id, .. } => *correlation_id,
                 DaemonEvent::ValidationStepStarted { correlation_id, .. } => *correlation_id,
                 DaemonEvent::ValidationStepCompleted { correlation_id, .. } => *correlation_id,
+                DaemonEvent::TaskDetails { correlation_id, .. } => *correlation_id,
+                DaemonEvent::DaemonHealth { correlation_id, .. } => *correlation_id,
             }
         };
 
