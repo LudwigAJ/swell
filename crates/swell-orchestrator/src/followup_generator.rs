@@ -71,9 +71,11 @@ pub struct FollowUpProposal {
     pub parent_task_id: Uuid,
     /// Description of the proposed task
     pub description: String,
+    /// Rationale explaining why this follow-up is needed
+    pub rationale: String,
     /// Source opportunity type
     pub opportunity_type: FollowUpOpportunityType,
-    /// Affected files/modules
+    /// Affected files/modules (estimated files for the follow-up task)
     pub affected_items: Vec<String>,
     /// Initial plan steps (if derivable)
     pub initial_steps: Vec<String>,
@@ -437,7 +439,72 @@ impl FollowUpGenerator {
             }
         }
 
+        // Check for public API changes that imply documentation needs updating
+        if let Some(ref plan) = task.plan {
+            let api_changes = self.detect_public_api_changes(plan);
+            opportunities.extend(api_changes);
+        }
+
         opportunities
+    }
+
+    /// Detect public API changes from a plan that imply documentation updates
+    fn detect_public_api_changes(&self, plan: &Plan) -> Vec<FollowUpOpportunity> {
+        let mut opportunities = Vec::new();
+
+        for step in &plan.steps {
+            for file in &step.affected_files {
+                // Check if this file is a public API file
+                if self.is_public_api_file(file) {
+                    opportunities.push(FollowUpOpportunity {
+                        opportunity_type: FollowUpOpportunityType::DocumentationGap,
+                        description: format!(
+                            "Update documentation for public API change in {}",
+                            file
+                        ),
+                        affected_items: vec![file.clone()],
+                        risk_level: RiskLevel::Low,
+                        priority: 50,
+                    });
+                    break; // Only one documentation opportunity per task
+                }
+            }
+        }
+
+        opportunities
+    }
+
+    /// Check if a file is a public API file (lib.rs, main.rs, etc.)
+    fn is_public_api_file(&self, file: &str) -> bool {
+        let file_lower = file.to_lowercase();
+
+        // Main public API files
+        if file_lower == "lib.rs" || file_lower == "main.rs" {
+            return true;
+        }
+
+        // src/lib.rs or src/main.rs
+        if file_lower.ends_with("/lib.rs") || file_lower.ends_with("/main.rs") {
+            return true;
+        }
+
+        // Check for api, public, or interface in the path
+        if file_lower.contains("api")
+            || file_lower.contains("public")
+            || file_lower.contains("interface")
+            || file_lower.contains("trait")
+        {
+            return true;
+        }
+
+        // Check for module roots (src/ with a single module name)
+        if file_lower.starts_with("src/")
+            && (file_lower.matches('/').count() == 1 || file_lower == "src")
+        {
+            return true;
+        }
+
+        false
     }
 
     /// Analyze failure for recovery opportunities
@@ -495,16 +562,51 @@ impl FollowUpGenerator {
     /// Convert opportunity to proposal
     fn opportunity_to_proposal(&self, opp: FollowUpOpportunity) -> FollowUpProposal {
         let initial_steps = self.generate_initial_steps(&opp);
+        let rationale = self.generate_rationale(&opp);
 
         FollowUpProposal {
             id: Uuid::new_v4(),
             parent_task_id: Uuid::nil(), // Will be set by caller
             description: opp.description.clone(),
+            rationale,
             opportunity_type: opp.opportunity_type,
             affected_items: opp.affected_items,
             initial_steps,
             risk_level: opp.risk_level,
             priority: opp.priority,
+        }
+    }
+
+    /// Generate rationale explaining why this follow-up is needed
+    fn generate_rationale(&self, opp: &FollowUpOpportunity) -> String {
+        match opp.opportunity_type {
+            FollowUpOpportunityType::ValidationError => {
+                "Validation errors indicate the code does not meet acceptance criteria and must be addressed before the task can be considered complete.".to_string()
+            }
+            FollowUpOpportunityType::ValidationWarning => {
+                "Validation warnings should be addressed to improve code quality and prevent potential issues in production.".to_string()
+            }
+            FollowUpOpportunityType::UnmetAcceptanceCriteria => {
+                "The original task acceptance criteria were not fully met. Addressing these gaps ensures the deliverable meets requirements.".to_string()
+            }
+            FollowUpOpportunityType::TestGap => {
+                "Additional test coverage would improve confidence in the implementation and help prevent regressions.".to_string()
+            }
+            FollowUpOpportunityType::DocumentationGap => {
+                "Public API changes require corresponding documentation updates to maintain clarity for consumers of this code.".to_string()
+            }
+            FollowUpOpportunityType::CodeSmell => {
+                "Code quality issues detected that should be addressed to improve maintainability.".to_string()
+            }
+            FollowUpOpportunityType::SecurityImprovement => {
+                "Security issues should be addressed to prevent vulnerabilities in production.".to_string()
+            }
+            FollowUpOpportunityType::PerformanceOptimization => {
+                "Performance optimization opportunities were identified that could improve efficiency.".to_string()
+            }
+            FollowUpOpportunityType::RelatedTask => {
+                "Related work was identified that should be addressed to maintain consistency or prevent conflicts.".to_string()
+            }
         }
     }
 
@@ -753,6 +855,7 @@ mod tests {
             id: Uuid::new_v4(),
             parent_task_id: Uuid::new_v4(),
             description: "Fix the bug".to_string(),
+            rationale: "Validation errors must be fixed for task acceptance.".to_string(),
             opportunity_type: FollowUpOpportunityType::ValidationError,
             affected_items: vec!["src/lib.rs".to_string()],
             initial_steps: vec!["Identify bug".to_string(), "Fix bug".to_string()],
@@ -774,6 +877,7 @@ mod tests {
             id: Uuid::new_v4(),
             parent_task_id: Uuid::new_v4(),
             description: "Test proposal".to_string(),
+            rationale: "Additional test coverage improves confidence.".to_string(),
             opportunity_type: FollowUpOpportunityType::TestGap,
             affected_items: vec!["src/lib.rs".to_string()],
             initial_steps: vec!["Write tests".to_string(), "Run tests".to_string()],
@@ -892,5 +996,121 @@ mod tests {
         assert!(!proposals.is_empty());
         // Verify batch returns multiple proposals (at least one per task)
         assert!(proposals.len() >= 2);
+    }
+
+    /// VAL-ORCH-004: Follow-up generator produces documentation update proposals
+    /// for tasks that modify public APIs.
+    #[test]
+    fn test_followup_generator_doc_proposal_for_public_api_change() {
+        let generator = FollowUpGenerator::new();
+
+        // Create a task that modified a public API (lib.rs)
+        let mut task = Task::new("Add new public function".to_string());
+        task.state = TaskState::Accepted;
+        task.validation_result = Some(ValidationResult {
+            passed: true,
+            lint_passed: true,
+            tests_passed: true,
+            security_passed: true,
+            ai_review_passed: true,
+            errors: vec![],
+            warnings: vec![],
+        });
+
+        // Create a plan with lib.rs in affected files (indicating public API change)
+        let plan = Plan {
+            id: Uuid::new_v4(),
+            task_id: task.id,
+            steps: vec![
+                PlanStep {
+                    id: Uuid::new_v4(),
+                    description: "Add public function to API".to_string(),
+                    affected_files: vec!["src/lib.rs".to_string()],
+                    expected_tests: vec![],
+                    risk_level: RiskLevel::Low,
+                    dependencies: vec![],
+                    status: StepStatus::Completed,
+                },
+            ],
+            total_estimated_tokens: 1000,
+            risk_assessment: "Low risk".to_string(),
+        };
+        task.plan = Some(plan);
+
+        // Generate follow-up proposals
+        let proposals = generator.generate_follow_ups(&task);
+
+        // Assert at least one proposal for documentation update
+        let doc_proposals: Vec<_> = proposals
+            .iter()
+            .filter(|p| p.opportunity_type == FollowUpOpportunityType::DocumentationGap)
+            .collect();
+        assert!(
+            !doc_proposals.is_empty(),
+            "Expected at least one documentation proposal for public API change"
+        );
+
+        // Assert each proposal has non-empty description, rationale, and affected_items
+        for proposal in &proposals {
+            assert!(
+                !proposal.description.is_empty(),
+                "Proposal should have non-empty description"
+            );
+            assert!(
+                !proposal.rationale.is_empty(),
+                "Proposal should have non-empty rationale"
+            );
+            assert!(
+                !proposal.affected_items.is_empty(),
+                "Proposal should have non-empty affected_items (estimated_files)"
+            );
+        }
+    }
+
+    /// VAL-ORCH-004: Verify rationale is generated for all proposal types
+    #[test]
+    fn test_followup_proposal_rationale_is_generated() {
+        let generator = FollowUpGenerator::new();
+
+        // Test with a rejected task that has validation errors
+        let task = create_test_task_with_validation(
+            TaskState::Rejected,
+            ValidationResult {
+                passed: false,
+                lint_passed: false,
+                tests_passed: false,
+                security_passed: true,
+                ai_review_passed: true,
+                errors: vec!["Clippy error: unnecessary clone".to_string()],
+                warnings: vec![],
+            },
+        );
+
+        let proposals = generator.generate_follow_ups(&task);
+
+        // All proposals should have rationale
+        for proposal in &proposals {
+            assert!(
+                !proposal.rationale.is_empty(),
+                "Proposal of type {:?} should have non-empty rationale",
+                proposal.opportunity_type
+            );
+            // Verify rationale is specific to the opportunity type
+            match proposal.opportunity_type {
+                FollowUpOpportunityType::ValidationError => {
+                    assert!(
+                        proposal.rationale.to_lowercase().contains("validation"),
+                        "ValidationError rationale should mention validation"
+                    );
+                }
+                FollowUpOpportunityType::TestGap => {
+                    assert!(
+                        proposal.rationale.to_lowercase().contains("test"),
+                        "TestGap rationale should mention test"
+                    );
+                }
+                _ => {}
+            }
+        }
     }
 }
