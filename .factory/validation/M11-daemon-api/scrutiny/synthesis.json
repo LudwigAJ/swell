@@ -1,0 +1,77 @@
+{
+  "milestone": "M11-daemon-api",
+  "round": 2,
+  "scrutinyType": "feature-review",
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace -- --test-threads=1",
+      "exitCode": 0,
+      "notes": "One pre-existing environmental test pollution failure in cross_config_cascade (test_env_var_overrides_file_layers) when run with multiple threads. Single-threaded execution passes all tests."
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo check --workspace",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "failedFeatures": ["daemon-status"],
+    "reviewerCommitId": "5b2de0f512bd7f4a7aa72fdc91da7b30ea48c88c"
+  },
+  "blockingIssues": [
+    {
+      "featureId": "daemon-status",
+      "severity": "blocking",
+      "count": 1,
+      "issues": [
+        {
+          "id": "BLOCK-1-REMAINING",
+          "file": "crates/swell-daemon/src/commands.rs",
+          "line": 329,
+          "severity": "blocking",
+          "description": "MCP health remains hardcoded as empty HashMap. The fix commit improved the comment to document that swell-daemon doesn't have direct access to MCP manager (which lives in swell-tools), but the implementation is unchanged. VAL-API-002 requires 'per-server MCP health statuses reflect actual server health'. This is a known architectural gap.",
+          "requiredFix": "Either: (1) Add MCP health monitoring infrastructure to swell-daemon that can track MCP server status, or (2) Adjust VAL-API-002 contract to clarify that MCP health is informational placeholder when MCP manager is unavailable, or (3) Have swell-daemon hold a reference to MCP manager to query live status."
+        }
+      ]
+    }
+  ],
+  "nonBlockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify cross-crate architectural boundaries: swell-daemon intentionally does not access MCP manager (in swell-tools). If a feature requires MCP health monitoring, the architectural decision should be whether to: (a) grant daemon access to MCP status, (b) create a separate MCP health tracking mechanism accessible to daemon, or (c) adjust the API contract to reflect this limitation.",
+      "evidence": "BLOCK-1: MCP health hardcoded in commands.rs:329 with comment explaining swell-daemon lacks MCP manager access",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": {
+    "path": "/Users/ludwigjonsson/Projects/swell/.factory/validation/M11-daemon-api/scrutiny/synthesis.json",
+    "commitId": "403ba185393f2067e157df3eb77a72876b9e0f27",
+    "round": 1,
+    "summary": "Round 1 found daemon-status with 3 blocking issues (BLOCK-1, BLOCK-2, BLOCK-3). Fix commit 5b2de0f addressed BLOCK-2 and BLOCK-3 but not BLOCK-1."
+  },
+  "fixCommitAnalysis": {
+    "commit": "5b2de0f",
+    "message": "fix(daemon-status): display all health fields and add swell status command",
+    "changes": [
+      "Updated DaemonHealth handler in CLI to display all fields (active_connections, total_tasks, tasks_by_state, total_tokens, last_model, mcp_health, uptime_seconds, version, total_budget, total_spent, remaining_budget)",
+      "Updated DataResponse::DaemonHealth handler to show same comprehensive info",
+      "Added 'swell status' CLI command",
+      "Improved MCP health comment to document placeholder status"
+    ],
+    "fixedIssues": ["BLOCK-2", "BLOCK-3"],
+    "remainingIssues": ["BLOCK-1"]
+  }
+}
