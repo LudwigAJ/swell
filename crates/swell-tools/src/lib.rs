@@ -90,8 +90,9 @@ pub use mcp_config::{
 };
 pub use mcp_lsp::{
     LspBridgeManager, LspDefinitionTool, LspDiagnostic, LspDiagnosticsTool, LspHover, LspHoverTool,
-    LspLanguage, LspLocation, LspPosition, LspRange, LspReferencesTool, LspRenameResult,
-    LspRenameTool, LspSymbol, LspTextEdit, LspWorkspaceDiagnostics,
+    LspLanguage, LspLocation, LspPosition, LspRange, LspReferencesTool, LspRegistry,
+    LspRenameResult, LspRenameTool, LspServerConfig, LspSymbol, LspTextEdit,
+    LspWorkspaceDiagnostics,
 };
 pub use os_sandbox::{
     detect_available_sandbox, detect_available_sandbox_sync, BubblewrapSandbox,
