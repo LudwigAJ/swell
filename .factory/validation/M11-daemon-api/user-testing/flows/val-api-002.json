@@ -1,0 +1,41 @@
+{
+  "assertionId": "VAL-API-002",
+  "status": "pass",
+  "testsRun": [
+    "commands::tests::test_parse_daemon_status_command",
+    "commands::tests::test_daemon_status_with_zero_tasks",
+    "commands::tests::test_daemon_status_returns_health_info",
+    "commands::tests::test_daemon_status_tracks_tasks_by_state"
+  ],
+  "testsPassed": 4,
+  "testsFailed": 0,
+  "summary": "All 4 daemon_status tests passed. VAL-API-002 assertion confirmed: DaemonStatus command returns structured response with uptime, active_connections, version, MCP health statuses, and cost tracking summary. MCP health shows _status: pending placeholder. Cost fields are coherent (remaining_budget = total_budget.saturating_sub(total_spent)).",
+  "blockers": [],
+  "frictions": [],
+  "toolsUsed": ["cargo test"],
+  "evidence": {
+    "testCommand": "cargo test -p swell-daemon -- daemon_status -- --test-threads=4",
+    "testsValidating": [
+      {
+        "test": "test_parse_daemon_status_command",
+        "validates": "DaemonStatus command parses correctly"
+      },
+      {
+        "test": "test_daemon_status_with_zero_tasks",
+        "validates": "DaemonStatus returns coherent values with zero tasks"
+      },
+      {
+        "test": "test_daemon_status_returns_health_info",
+        "validates": "DaemonStatus returns version, MCP health placeholder, and coherent cost fields"
+      },
+      {
+        "test": "test_daemon_status_tracks_tasks_by_state",
+        "validates": "DaemonStatus correctly tracks tasks by state"
+      }
+    ],
+    "warnings": [
+      "unused mut in commands.rs:1109, 1389, 1411, 2209",
+      "unused variable uptime_seconds in commands.rs:2137"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "assertionId": "VAL-API-007",
+  "status": "pass",
+  "testsRun": [
+    "types::tests::test_data_response_in_daemon_event_serde",
+    "types::tests::test_data_response_serde_roundtrip"
+  ],
+  "testsPassed": 2,
+  "testsFailed": 0,
+  "summary": "All 2 data_response tests passed. VAL-API-007 assertion confirmed: DataResponse enum variant exists in DaemonEvent with all required subtypes (TaskList, TaskDetail, ConfigValue, MemoryResults, CostData, DaemonHealth). JSON serialization round-trips preserve variant tag and inner data.",
+  "blockers": [],
+  "frictions": [
+    "Note: The assertion specified 'cargo test -p swell-daemon -- data_response' but the tests actually reside in swell-core (test_data_response_in_daemon_event_serde, test_data_response_serde_roundtrip)"
+  ],
+  "toolsUsed": ["cargo test"],
+  "evidence": {
+    "testCommand": "cargo test -p swell-core -- data_response -- --test-threads=4",
+    "testsValidating": [
+      {
+        "test": "test_data_response_in_daemon_event_serde",
+        "validates": "DataResponse variant exists in DaemonEvent enum and serializes correctly"
+      },
+      {
+        "test": "test_data_response_serde_roundtrip",
+        "validates": "Serialization round-trips preserve variant tag and inner data"
+      }
+    ]
+  }
+}

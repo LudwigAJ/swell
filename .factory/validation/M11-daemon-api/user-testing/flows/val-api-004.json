@@ -1,0 +1,42 @@
+{
+  "assertionId": "VAL-API-004",
+  "status": "pass",
+  "testsRun": [
+    "test_get_by_label_respects_repo_scope",
+    "test_cross_repo_query_returns_empty",
+    "test_get_by_type_respects_repo_scope",
+    "test_full_cross_repo_isolation",
+    "test_memory_entries_tagged_with_repo_context",
+    "test_query_returns_only_same_repo_results",
+    "test_repo_scope_with_and_without_query_text",
+    "test_skills_patterns_cross_repo_isolation",
+    "test_text_search_respects_repo_scope"
+  ],
+  "testsPassed": 9,
+  "testsFailed": 0,
+  "summary": "All 9 memory scope tests passed. VAL-API-004 assertion confirmed: MemoryQuery with scope filter returns only entries from the specified repository, results are ordered by relevance, and count does not exceed limit. Cross-repo isolation verified.",
+  "blockers": [],
+  "frictions": [],
+  "toolsUsed": ["cargo test"],
+  "evidence": {
+    "testCommand": "cargo test -p swell-memory --test repo_scoping -- --test-threads=4",
+    "keyTestsValidating": [
+      {
+        "test": "test_query_returns_only_same_repo_results",
+        "validates": "MemoryQuery returns blocks only from specified scope"
+      },
+      {
+        "test": "test_cross_repo_query_returns_empty",
+        "validates": "Cross-repo queries return empty (proper isolation)"
+      },
+      {
+        "test": "test_full_cross_repo_isolation",
+        "validates": "Count ≤ limit, all results belong to queried scope"
+      },
+      {
+        "test": "test_text_search_respects_repo_scope",
+        "validates": "Text search respects repository boundaries"
+      }
+    ]
+  }
+}

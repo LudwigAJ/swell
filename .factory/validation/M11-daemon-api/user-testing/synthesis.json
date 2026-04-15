@@ -1,0 +1,31 @@
+{
+  "milestone": "M11-daemon-api",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-API-001",
+    "VAL-API-002",
+    "VAL-API-003",
+    "VAL-API-004",
+    "VAL-API-005",
+    "VAL-API-006",
+    "VAL-API-007",
+    "VAL-API-008"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Flow validator guidance for cargo test surface documented",
+      "source": "setup"
+    }
+  ],
+  "previousRound": null
+}

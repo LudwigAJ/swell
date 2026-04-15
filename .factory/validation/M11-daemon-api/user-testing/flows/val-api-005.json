@@ -1,0 +1,38 @@
+{
+  "assertionId": "VAL-API-005",
+  "status": "pass",
+  "testsRun": [
+    "commands::tests::test_parse_cost_query_with_task_id",
+    "commands::tests::test_parse_cost_query_no_task_id",
+    "commands::tests::test_cost_query_result_event_serialization"
+  ],
+  "testsPassed": 3,
+  "testsFailed": 0,
+  "summary": "All 3 cost_query tests passed. VAL-API-005 assertion confirmed: CostQuery command properly parses task_id and None cases, and CostQueryResult event serialization works correctly. Per-model cost breakdown and token counts are properly serialized.",
+  "blockers": [],
+  "frictions": [
+    "Note: The assertion specified 'cargo test -p swell-orchestrator -- cost_query' but the tests actually reside in swell-daemon (test_parse_cost_query_with_task_id, test_parse_cost_query_no_task_id, test_cost_query_result_event_serialization)"
+  ],
+  "toolsUsed": ["cargo test"],
+  "evidence": {
+    "testCommand": "cargo test -p swell-daemon -- cost_query -- --test-threads=4",
+    "testsValidating": [
+      {
+        "test": "test_parse_cost_query_with_task_id",
+        "validates": "CostQuery with task_id parses correctly"
+      },
+      {
+        "test": "test_parse_cost_query_no_task_id",
+        "validates": "CostQuery with no task_id (aggregate) parses correctly"
+      },
+      {
+        "test": "test_cost_query_result_event_serialization",
+        "validates": "CostQueryResult event serializes correctly"
+      }
+    ],
+    "warnings": [
+      "unused mut in commands.rs:1109, 1389, 1411, 2209",
+      "unused variable uptime_seconds in commands.rs:2137"
+    ]
+  }
+}

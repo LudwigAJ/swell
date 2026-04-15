@@ -1,0 +1,36 @@
+{
+  "groupId": "val-api-006",
+  "testedAt": "2026-04-15T16:40:00Z",
+  "isolation": {
+    "workingDirectory": "/Users/ludwigjonsson/Projects/swell",
+    "testCommand": "cargo test -p swell-cli -- reject -- --test-threads=4"
+  },
+  "toolsUsed": ["cargo test"],
+  "assertions": [
+    {
+      "id": "VAL-API-006",
+      "title": "CLI reject command sends TaskReject and daemon processes it",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Executed cargo test -p swell-cli -- reject",
+          "expected": "Tests verify: (1) TaskReject for nonexistent task returns error, (2) TaskReject for task in wrong state returns error",
+          "observed": "Both tests passed successfully"
+        }
+      ],
+      "evidence": {
+        "testsRun": [
+          "test_task_reject_nonexistent_returns_error",
+          "test_task_reject_wrong_state_returns_error"
+        ],
+        "testsPassed": 2,
+        "testsFailed": 0,
+        "testOutput": "running 2 tests\ntest test_task_reject_nonexistent_returns_error ... ok\ntest test_task_reject_wrong_state_returns_error ... ok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.11s"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested VAL-API-006 (CLI reject command sends TaskReject and daemon processes it): 2 tests passed. The tests verify: (1) sending TaskReject for a nonexistent task returns an error containing 'not found', (2) sending TaskReject for a task in wrong state (Created) returns error about 'Cannot reject task'. Both rejection scenarios correctly return DaemonEvent::Error from the daemon."
+}

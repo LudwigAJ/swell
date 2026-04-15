@@ -1,0 +1,27 @@
+{
+  "assertionId": "VAL-API-001",
+  "status": "pass",
+  "testsRun": [
+    "commands::tests::test_task_get_event_serialization",
+    "commands::tests::test_task_get_nonexistent_returns_error",
+    "commands::tests::test_parse_task_get_command",
+    "commands::tests::test_task_get_existing_task_returns_task_details",
+    "commands::tests::test_task_get_with_plan_includes_plan_details"
+  ],
+  "testsPassed": 5,
+  "testsFailed": 0,
+  "summary": "All 5 task_get tests passed. VAL-API-001 assertion confirmed: TaskGet command returns complete task details including description, plan, state, history, scope, cost, created_at, and updated_at fields.",
+  "blockers": [],
+  "frictions": [],
+  "toolsUsed": ["cargo test"],
+  "evidence": {
+    "testOutput": "M11-daemon-api/val-api-001/test-output.txt",
+    "testCommand": "cargo test -p swell-daemon -- task_get -- --test-threads=4",
+    "compilationTimeSeconds": 11.27,
+    "testExecutionTimeSeconds": 0.01,
+    "warnings": [
+      "unused mut in commands.rs:1109, 1389, 1411, 2209",
+      "unused variable uptime_seconds in commands.rs:2137"
+    ]
+  }
+}

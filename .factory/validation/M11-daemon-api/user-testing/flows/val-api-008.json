@@ -1,0 +1,100 @@
+{
+  "assertionId": "VAL-API-008",
+  "status": "pass",
+  "testsRun": [
+    {
+      "test": "File existence check",
+      "result": "pass",
+      "details": "docs/daemon-api.md exists (21888 bytes)"
+    },
+    {
+      "test": "CliCommand variant enumeration",
+      "result": "pass",
+      "details": "Found 16 CliCommand variants in source code (crates/swell-core/src/types.rs)"
+    },
+    {
+      "test": "Documentation coverage",
+      "result": "pass",
+      "details": "All 16 commands documented with command name, request schema, response schema, and examples"
+    },
+    {
+      "test": "JSON example validation",
+      "result": "pass",
+      "details": "Validated 6 JSON examples with jq - all valid"
+    },
+    {
+      "test": "Streaming protocol documentation",
+      "result": "pass",
+      "details": "Dedicated section documents newline-delimited JSON streaming"
+    },
+    {
+      "test": "Error handling documentation",
+      "result": "pass",
+      "details": "Error responses documented with failure_class and message fields"
+    }
+  ],
+  "testsPassed": 6,
+  "testsFailed": 0,
+  "summary": "VAL-API-008 PASS - docs/daemon-api.md exists and documents all 16 CliCommand variants with complete request/response schemas, examples, and error handling. Streaming protocol is documented. All JSON examples are valid.",
+  "blockers": [],
+  "frictions": [],
+  "toolsUsed": ["file inspection", "grep", "jq"],
+  "evidence": {
+    "filePath": "docs/daemon-api.md",
+    "fileSize": "21888 bytes",
+    "sourceEnumLocation": "crates/swell-core/src/types.rs",
+    "documentedCommands": [
+      "TaskCreate",
+      "TaskApprove",
+      "TaskReject",
+      "TaskCancel",
+      "TaskList",
+      "TaskWatch",
+      "TaskPause",
+      "TaskResume",
+      "TaskInjectInstruction",
+      "TaskModifyScope",
+      "TaskGet",
+      "DaemonStatus",
+      "ConfigGet",
+      "ConfigSet",
+      "MemoryQuery",
+      "CostQuery"
+    ],
+    "sourceCommands": [
+      "TaskCreate",
+      "TaskApprove",
+      "TaskReject",
+      "TaskCancel",
+      "TaskList",
+      "TaskWatch",
+      "TaskPause",
+      "TaskResume",
+      "TaskInjectInstruction",
+      "TaskModifyScope",
+      "TaskGet",
+      "DaemonStatus",
+      "ConfigGet",
+      "ConfigSet",
+      "MemoryQuery",
+      "CostQuery"
+    ],
+    "commandMatch": "100% (16/16)",
+    "jsonExamplesValidated": [
+      "TaskCreate request",
+      "TaskCreate response",
+      "TaskWatch streaming response",
+      "MemoryQuery request",
+      "CostQuery request",
+      "Error response format"
+    ],
+    "sectionsPresent": {
+      "commandName": true,
+      "requestSchema": true,
+      "responseSchema": true,
+      "examples": true,
+      "errorCodes": true,
+      "streamingProtocol": true
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "assertionId": "VAL-API-003",
+  "status": "pass",
+  "testsRun": [
+    "test_config_value_event_serialization",
+    "test_parse_config_get_command",
+    "test_parse_config_set_command",
+    "test_parse_config_set_with_nested_value",
+    "test_config_set_writes_only_to_settings_local_json",
+    "test_config_set_creates_settings_local_json_if_missing",
+    "test_config_set_overwrites_existing_key",
+    "test_config_get_returns_value_and_source",
+    "test_config_get_nonexistent_key_returns_error"
+  ],
+  "testsPassed": 9,
+  "testsFailed": 0,
+  "summary": "VAL-API-003 assertion confirmed. ConfigGet returns value and source file (settings.json or settings.local.json). ConfigSet persists only to settings.local.json, never modifying settings.json (verified via checksum comparison before/after). All 9 config-related tests passed.",
+  "blockers": [],
+  "frictions": [],
+  "toolsUsed": ["cargo test"],
+  "evidence": {
+    "testOutput": "cargo test -p swell-daemon -- config_ -- --test-threads=4",
+    "testResults": {
+      "test_config_value_event_serialization": "ok",
+      "test_parse_config_get_command": "ok",
+      "test_parse_config_set_command": "ok",
+      "test_parse_config_set_with_nested_value": "ok",
+      "test_config_set_writes_only_to_settings_local_json": "ok",
+      "test_config_set_creates_settings_local_json_if_missing": "ok",
+      "test_config_set_overwrites_existing_key": "ok",
+      "test_config_get_returns_value_and_source": "ok",
+      "test_config_get_nonexistent_key_returns_error": "ok"
+    },
+    "keyTestsValidated": [
+      {
+        "testName": "test_config_get_returns_value_and_source",
+        "validates": "ConfigGet { key } returns the current config value and the source file it was loaded from",
+        "verification": "Test asserts that source_file is Some and contains 'settings.json'"
+      },
+      {
+        "testName": "test_config_set_writes_only_to_settings_local_json",
+        "validates": "ConfigSet persists only to settings.local.json, never modifying settings.json",
+        "verification": "Test calculates checksum of settings.json before ConfigSet, then verifies checksum is unchanged after, and that settings.local.json contains the new key/value"
+      }
+    ],
+    "evidenceFiles": [
+      "/Users/ludwigjonsson/.factory/missions/2f12aed8-06f1-4fd8-8452-f96b2ef57a43/evidence/M11-daemon-api/val-api-003/"
+    ]
+  }
+}
