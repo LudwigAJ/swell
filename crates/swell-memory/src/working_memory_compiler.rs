@@ -676,6 +676,7 @@ pub fn create_compiler(config: WorkingMemoryCompilerConfig) -> WorkingMemoryComp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::skill_extraction::SkillStep;
     use crate::SqliteMemoryStore;
 
     #[test]
@@ -880,14 +881,15 @@ mod tests {
 
         let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
 
-        // Add many entries to test budget enforcement
+        // Add entries from multiple memory layers to verify multi-layer content
+        // Layer 1: Episodic (Project blocks) - substantial content to reach min budget
         for i in 0..10 {
             let entry = MemoryEntry {
                 id: Uuid::new_v4(),
                 block_type: MemoryBlockType::Project,
                 label: format!("project-{}", i),
                 content: format!(
-                    "Project {} with content that should be included in the working memory. This is a substantial piece of text to test the token budget enforcement.",
+                    "Project {} contains detailed architectural decisions and implementation notes for the working memory system. This includes information about token budgeting, context assembly, and prioritization strategies. The system must efficiently pack relevant context within the 2000-5000 token budget constraint while ensuring maximum utility of the included information. Key considerations include recency scoring, block type priority, and relevance ranking to ensure the most important memories are included first. The working memory compiler interfaces with multiple memory layers including episodic storage for project and task blocks, semantic storage for entity recognition, procedural storage for learned patterns, and skill extraction for reusable agent behaviors. Each layer contributes different types of context that inform the autonomous coding engine during task execution. The compilation process prioritizes entries based on recency and relevance scores calculated from temporal decay functions and block type weights. Content that exceeds available budget is intelligently trimmed while preserving the most critical information for agent decision-making.",
                     i
                 ),
                 embedding: None,
@@ -906,6 +908,113 @@ mod tests {
             store.store(entry).await.unwrap();
         }
 
+        // Layer 2: Episodic (User blocks) - different block type but still Episodic layer
+        for i in 0..10 {
+            let entry = MemoryEntry {
+                id: Uuid::new_v4(),
+                block_type: MemoryBlockType::User,
+                label: format!("user-pref-{}", i),
+                content: format!(
+                    "User preference {} defines coding standards and tool usage patterns for this repository. These preferences guide the autonomous coding engine in making consistent decisions about code style, naming conventions, and tool selection. The preferences are learned over time through reinforcement and operator feedback, forming an important part of the contextual memory that informs agent behavior. User blocks store individual settings like preferred linters, formatting rules, test frameworks, and deployment practices. The system tracks preference usage frequency and effectiveness through the meta-cognitive layer, allowing it to suggest optimizations and adapt to changing development workflows. When compiling working memory, user preferences receive high priority due to their direct impact on code quality and consistency. Preference conflicts are resolved through conflict resolution algorithms that consider recency, usage count, and explicit operator overrides.",
+                    i
+                ),
+                embedding: None,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                metadata: serde_json::json!({}),
+                repository: "test-repo".to_string(),
+                language: None,
+                task_type: None,
+                last_reinforcement: Some(chrono::Utc::now()),
+                is_stale: false,
+                source_episode_id: None,
+                evidence: None,
+                provenance_context: None,
+            };
+            store.store(entry).await.unwrap();
+        }
+
+        // Layer 3: Add a Task block - also Episodic but distinct
+        for i in 0..5 {
+            let entry = MemoryEntry {
+                id: Uuid::new_v4(),
+                block_type: MemoryBlockType::Task,
+                label: format!("task-{}", i),
+                content: format!(
+                    "Task {} represents a specific coding objective with detailed requirements and acceptance criteria. The task context includes implementation hints, related files, and success metrics that guide the agent toward completing the objective effectively. Task memories form a critical part of episodic recall and help maintain continuity across interrupted or multi-session work. Each task block tracks progress through reinforcement signals, allowing the system to learn which approaches lead to successful completion. Failed attempts are analyzed through contrastive learning to identify failure patterns and recovery strategies. Task metadata includes skill usage patterns, tool invocation sequences, and validation gate results that inform future similar tasks.",
+                    i
+                ),
+                embedding: None,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                metadata: serde_json::json!({}),
+                repository: "test-repo".to_string(),
+                language: None,
+                task_type: None,
+                last_reinforcement: Some(chrono::Utc::now()),
+                is_stale: false,
+                source_episode_id: None,
+                evidence: None,
+                provenance_context: None,
+            };
+            store.store(entry).await.unwrap();
+        }
+
+        // Layer 2: Skills - provides a different memory layer than Episodic
+        let skills = vec![
+            Skill {
+                id: Uuid::new_v4(),
+                name: "Rust Error Handling Pattern".to_string(),
+                description: "Standard pattern for implementing error handling in Rust using thiserror and anyhow crates. This includes proper error type definition, context addition, and error propagation patterns.".to_string(),
+                version: "1.0.0".to_string(),
+                task_pattern: "Implementing error types and handling in Rust".to_string(),
+                steps: vec![
+                    SkillStep {
+                        order: 0,
+                        description: "Define error enum with thiserror derive macro for domain errors".to_string(),
+                        affected_file_patterns: vec!["**/error.rs".to_string()],
+                        tool_sequence: vec!["file::read".to_string(), "file::edit".to_string()],
+                        validation_check: Some("cargo check passes".to_string()),
+                    },
+                    SkillStep {
+                        order: 1,
+                        description: "Use anyhow::Context for operations that need rich error messages".to_string(),
+                        affected_file_patterns: vec!["**/*.rs".to_string()],
+                        tool_sequence: vec!["file::edit".to_string()],
+                        validation_check: Some("cargo build succeeds".to_string()),
+                    },
+                ],
+                tools_used: vec!["file::read".to_string(), "file::edit".to_string(), "shell".to_string()],
+                conventions: vec!["Use thiserror for domain errors".to_string(), "Use anyhow for context-rich errors".to_string()],
+                confidence: 0.85,
+                source_task_id: Uuid::new_v4(),
+                created_at: chrono::Utc::now(),
+                metadata: serde_json::json!({}),
+            },
+            Skill {
+                id: Uuid::new_v4(),
+                name: "Async Test Writing".to_string(),
+                description: "Pattern for writing async tests in Rust using tokio::test. Covers async function testing, shared state management, and proper test isolation patterns for concurrent test execution.".to_string(),
+                version: "1.0.0".to_string(),
+                task_pattern: "Writing async unit tests with Tokio".to_string(),
+                steps: vec![
+                    SkillStep {
+                        order: 0,
+                        description: "Use #[tokio::test] for async test functions".to_string(),
+                        affected_file_patterns: vec!["**/*_test.rs".to_string()],
+                        tool_sequence: vec!["file::write".to_string()],
+                        validation_check: Some("cargo test passes".to_string()),
+                    },
+                ],
+                tools_used: vec!["file::write".to_string(), "shell".to_string()],
+                conventions: vec!["Always use #[tokio::test] for async tests".to_string()],
+                confidence: 0.9,
+                source_task_id: Uuid::new_v4(),
+                created_at: chrono::Utc::now(),
+                metadata: serde_json::json!({}),
+            },
+        ];
+
         let config = WorkingMemoryCompilerConfig {
             budget: WorkingMemoryBudget::new(2000, 5000),
             ..Default::default()
@@ -913,17 +1022,27 @@ mod tests {
         let compiler = WorkingMemoryCompiler::new(config);
 
         let result = compiler
-            .compile(Arc::new(store), None, None, None, "test-repo", None)
+            .compile(Arc::new(store), None, None, Some(skills), "test-repo", None)
             .await
             .unwrap();
 
-        // Token count should be within budget
-        assert!(result.token_count <= 5000);
+        // Token count should be within budget (2000-5000 as per VAL-MEM-005)
+        assert!(
+            result.token_count >= 2000,
+            "Token count {} should be >= 2000 (minimum token budget)",
+            result.token_count
+        );
+        assert!(
+            result.token_count <= 5000,
+            "Token count {} should be <= 5000 (maximum token budget)",
+            result.token_count
+        );
 
-        // Working memory should be within budget
-        let budget = WorkingMemoryBudget::default();
-        // Note: result might be below min if not enough content, which is acceptable
-        // The key is it shouldn't EXCEED max
-        assert!(result.token_count <= budget.max_tokens);
+        // Verify content comes from >= 2 different memory layers
+        assert!(
+            result.layers_used.len() >= 2,
+            "Content should come from >= 2 different memory layers, but got {:?}",
+            result.layers_used
+        );
     }
 }
