@@ -69,6 +69,9 @@ async fn main() {
             let json_output = args.contains(&"--json".to_string());
             list_tasks(&socket_path, json_output).await
         }
+        "status" => {
+            status(&socket_path).await
+        }
         "watch" => {
             if args.len() < 3 {
                 Err(CliError::MissingArgument("task-id".to_string()))
@@ -570,23 +573,41 @@ fn handle_event(event: &DaemonEvent) {
             println!("[{}] Task details:\n{}", id, task_json);
         }
         DaemonEvent::DaemonHealth {
-            active_connections: _,
-            total_tasks: _,
-            tasks_by_state: _,
-            total_tokens: _,
-            last_model: _,
-            mcp_health: _,
+            active_connections,
+            total_tasks,
+            tasks_by_state,
+            total_tokens,
+            last_model,
+            mcp_health,
             uptime_seconds,
             version,
-            total_budget: _,
-            total_spent: _,
-            remaining_budget: _,
+            total_budget,
+            total_spent,
+            remaining_budget,
             correlation_id: _,
         } => {
-            println!(
-                "Daemon status: uptime={}s, version={}",
-                uptime_seconds, version
-            );
+            println!("=== Daemon Status ===");
+            println!("Version: {}", version);
+            println!("Uptime: {}s", uptime_seconds);
+            println!("Active connections: {}", active_connections);
+            println!("Total tasks: {}", total_tasks);
+            println!("Tasks by state:");
+            for (state, count) in tasks_by_state.iter() {
+                println!("  {}: {}", state, count);
+            }
+            println!("LLM tokens used: {}", total_tokens);
+            println!("Last model: {}", last_model);
+            println!("MCP health:");
+            if mcp_health.is_empty() {
+                println!("  (no MCP servers configured)");
+            } else {
+                for (server, status) in mcp_health.iter() {
+                    println!("  {}: {}", server, status);
+                }
+            }
+            println!("Total budget: {} tokens", total_budget);
+            println!("Total spent: {} tokens", total_spent);
+            println!("Remaining budget: {} tokens", remaining_budget);
         }
         DaemonEvent::ConfigValue {
             key,
@@ -628,6 +649,63 @@ fn handle_event(event: &DaemonEvent) {
                     info.total_output_tokens,
                     info.total_cost_usd
                 );
+            }
+        }
+        DaemonEvent::DataResponse(ref data) => {
+            match &**data {
+                DataResponse::TaskList { tasks, .. } => {
+                    println!("Task list: {} tasks", tasks.len());
+                }
+                DataResponse::TaskDetail { task, .. } => {
+                    println!("Task detail: {} - {:?}", task.id, task.state);
+                }
+                DataResponse::ConfigValue { key, value, .. } => {
+                    println!("Config {} = {}", key, value);
+                }
+                DataResponse::MemoryResults { count, results, .. } => {
+                    println!("Memory results: {} items", count);
+                    println!("{}", results);
+                }
+                DataResponse::CostData { total_cost_usd, .. } => {
+                    println!("Total cost: ${:.4}", total_cost_usd);
+                }
+                DataResponse::DaemonHealth {
+                    active_connections,
+                    total_tasks,
+                    tasks_by_state,
+                    total_tokens,
+                    last_model,
+                    mcp_health,
+                    uptime_seconds,
+                    version,
+                    total_budget,
+                    total_spent,
+                    remaining_budget,
+                    correlation_id: _,
+                } => {
+                    println!("=== Daemon Status ===");
+                    println!("Version: {}", version);
+                    println!("Uptime: {}s", uptime_seconds);
+                    println!("Active connections: {}", active_connections);
+                    println!("Total tasks: {}", total_tasks);
+                    println!("Tasks by state:");
+                    for (state, count) in tasks_by_state.iter() {
+                        println!("  {}: {}", state, count);
+                    }
+                    println!("LLM tokens used: {}", total_tokens);
+                    println!("Last model: {}", last_model);
+                    println!("MCP health:");
+                    if mcp_health.is_empty() {
+                        println!("  (no MCP servers configured)");
+                    } else {
+                        for (server, status) in mcp_health.iter() {
+                            println!("  {}: {}", server, status);
+                        }
+                    }
+                    println!("Total budget: {} tokens", total_budget);
+                    println!("Total spent: {} tokens", total_spent);
+                    println!("Remaining budget: {} tokens", remaining_budget);
+                }
             }
         }
     }
@@ -693,16 +771,78 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
             .map_err(|e| CliError::JsonParseError(format!("Response: {}", e)))?;
 
         match response {
-            DaemonEvent::DataResponse(DataResponse::TaskList { tasks, .. }) => {
-                if json_output {
-                    // Raw JSON output
-                    let json = serde_json::to_string(&tasks).map_err(|e| {
-                        CliError::JsonParseError(format!("Task list: {}", e))
-                    })?;
-                    println!("{}", json);
-                } else {
-                    // Formatted table output
-                    print_task_table(&tasks);
+            DaemonEvent::DataResponse(ref data) => {
+                match &**data {
+                    DataResponse::TaskList { tasks, .. } => {
+                        if json_output {
+                            // Raw JSON output
+                            let json = serde_json::to_string(&tasks).map_err(|e| {
+                                CliError::JsonParseError(format!("Task list: {}", e))
+                            })?;
+                            println!("{}", json);
+                        } else {
+                            // Formatted table output
+                            print_task_table(tasks);
+                        }
+                    }
+                    DataResponse::TaskDetail { task, .. } => {
+                        if json_output {
+                            let json = serde_json::to_string(&task).map_err(|e| {
+                                CliError::JsonParseError(format!("Task detail: {}", e))
+                            })?;
+                            println!("{}", json);
+                        } else {
+                            println!("Task: {} - {:?}", task.id, task.state);
+                            println!("{}", task.description);
+                        }
+                    }
+                    DataResponse::ConfigValue { key, value, .. } => {
+                        println!("{} = {}", key, value);
+                    }
+                    DataResponse::MemoryResults { results, count, .. } => {
+                        println!("{} memory items:", count);
+                        println!("{}", results);
+                    }
+                    DataResponse::CostData { total_cost_usd, .. } => {
+                        println!("Total cost: ${:.4}", total_cost_usd);
+                    }
+                    DataResponse::DaemonHealth {
+                        active_connections,
+                        total_tasks,
+                        tasks_by_state,
+                        total_tokens,
+                        last_model,
+                        mcp_health,
+                        uptime_seconds,
+                        version,
+                        total_budget,
+                        total_spent,
+                        remaining_budget,
+                        correlation_id: _,
+                    } => {
+                        println!("=== Daemon Status ===");
+                        println!("Version: {}", version);
+                        println!("Uptime: {}s", uptime_seconds);
+                        println!("Active connections: {}", active_connections);
+                        println!("Total tasks: {}", total_tasks);
+                        println!("Tasks by state:");
+                        for (state, count) in tasks_by_state.iter() {
+                            println!("  {}: {}", state, count);
+                        }
+                        println!("LLM tokens used: {}", total_tokens);
+                        println!("Last model: {}", last_model);
+                        println!("MCP health:");
+                        if mcp_health.is_empty() {
+                            println!("  (no MCP servers configured)");
+                        } else {
+                            for (server, status) in mcp_health.iter() {
+                                println!("  {}: {}", server, status);
+                            }
+                        }
+                        println!("Total budget: {} tokens", total_budget);
+                        println!("Total spent: {} tokens", total_spent);
+                        println!("Remaining budget: {} tokens", remaining_budget);
+                    }
                 }
             }
             DaemonEvent::Error { message, .. } => {
@@ -712,6 +852,71 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
                 eprintln!("Unexpected response: {:?}", other);
             }
         }
+    }
+
+    Ok(())
+}
+
+async fn status(socket_path: &str) -> Result<(), CliError> {
+    // Check if socket file exists before trying to connect
+    if !std::path::Path::new(socket_path).exists() {
+        return Err(CliError::SocketNotFound(socket_path.to_string()));
+    }
+
+    // Connect with timeout
+    let connect_result = timeout(DEFAULT_CONNECT_TIMEOUT, UnixStream::connect(socket_path)).await;
+
+    let mut stream = match connect_result {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(e)) => {
+            return Err(CliError::ConnectionFailed(format!(
+                "Failed to connect to {}: {}",
+                socket_path, e
+            )));
+        }
+        Err(_) => {
+            return Err(CliError::ConnectionTimeout(DEFAULT_CONNECT_TIMEOUT));
+        }
+    };
+
+    let cmd = CliCommand::DaemonStatus;
+    let cmd_json =
+        serde_json::to_string(&cmd).map_err(|e| CliError::JsonParseError(e.to_string()))?;
+
+    // Write with timeout
+    let write_result = timeout(DEFAULT_REQUEST_TIMEOUT, async {
+        stream.write_all(cmd_json.as_bytes()).await?;
+        stream.flush().await
+    })
+    .await;
+
+    if write_result.is_err() {
+        return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
+    }
+
+    // Read response with timeout
+    let mut response_buf = Vec::with_capacity(65536);
+    let read_result = timeout(DEFAULT_REQUEST_TIMEOUT, stream.read_buf(&mut response_buf)).await;
+
+    let n = match read_result {
+        Ok(Ok(n)) => n,
+        Ok(Err(e)) => {
+            return Err(CliError::ConnectionFailed(format!(
+                "Failed to read response: {}",
+                e
+            )));
+        }
+        Err(_) => {
+            return Err(CliError::RequestTimeout(DEFAULT_REQUEST_TIMEOUT));
+        }
+    };
+
+    if n > 0 {
+        let response_str = String::from_utf8_lossy(&response_buf[..n]);
+        let response: DaemonEvent = serde_json::from_str(&response_str)
+            .map_err(|e| CliError::JsonParseError(format!("Response: {}", e)))?;
+
+        handle_event(&response);
     }
 
     Ok(())
@@ -749,6 +954,7 @@ fn usage() {
 Usage:
     swell task <description>      Create a new task
     swell list [--json]           List all tasks (--json for raw JSON)
+    swell status                 Show daemon status
     swell watch <task-id>        Watch task status
     swell approve <task-id>      Approve task plan
     swell reject <task-id> [--reason <reason>]   Reject task plan

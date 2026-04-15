@@ -12,6 +12,7 @@ use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
+#[allow(unused_imports)]
 use uuid::Uuid;
 
 /// Handle a parsed CLI command and return an appropriate daemon event.
@@ -321,7 +322,9 @@ pub async fn handle_command(
             let total_tokens = get_total_llm_tokens();
             let last_model = get_last_llm_model();
 
-            // MCP health - start with empty map, can be extended with MCP manager if available
+            // MCP health - placeholder empty map since swell-daemon doesn't have direct
+            // access to MCP manager (which lives in swell-tools). When MCP server tracking
+            // is needed, this should be wired through the orchestrator or a shared state.
             let mcp_health: HashMap<String, String> = HashMap::new();
 
             // Calculate uptime
@@ -974,11 +977,19 @@ mod tests {
         .await;
 
         match event {
-            DaemonEvent::DataResponse(DataResponse::TaskList { tasks, .. }) => {
-                assert!(tasks.is_empty());
+            DaemonEvent::DataResponse(data) => {
+                match *data {
+                    DataResponse::TaskList { tasks, .. } => {
+                        assert!(tasks.is_empty());
+                    }
+                    other => panic!(
+                        "Expected DataResponse::TaskList event, got: {:?}",
+                        other
+                    ),
+                }
             }
             other => panic!(
-                "Expected DataResponse::TaskList event, got: {:?}",
+                "Expected DataResponse event, got: {:?}",
                 other
             ),
         }
@@ -1007,10 +1018,15 @@ mod tests {
         .await;
 
         match event {
-            DaemonEvent::DataResponse(DataResponse::TaskList { tasks, .. }) => {
-                assert_eq!(tasks.len(), 3);
+            DaemonEvent::DataResponse(data) => {
+                match *data {
+                    DataResponse::TaskList { tasks, .. } => {
+                        assert_eq!(tasks.len(), 3);
+                    }
+                    other => panic!("Expected DataResponse::TaskList event, got: {:?}", other),
+                }
             }
-            other => panic!("Expected DataResponse::TaskList event, got: {:?}", other),
+            other => panic!("Expected DataResponse event, got: {:?}", other),
         }
     }
 
