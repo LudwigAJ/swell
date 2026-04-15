@@ -1,0 +1,56 @@
+{
+  "featureId": "task-concurrent-registry",
+  "reviewedAt": "2026-04-15T00:15:00.000Z",
+  "commitId": "df0a1a0",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation partially fulfills the feature. DashMap with Arc<RwLock<Task>> is correctly implemented enabling fine-grained concurrent access. However, the verification contract explicitly required 'cargo test -p swell-orchestrator --test concurrent_registry' which does not exist. No concurrent access tests were added to verify the expected behavior of concurrent reads/writes.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/state_machine.rs",
+        "line": 1,
+        "severity": "blocking",
+        "description": "Missing concurrent access verification tests. The feature's verificationSteps explicitly required 'cargo test -p swell-orchestrator --test concurrent_registry' to test concurrent reads from multiple threads and concurrent writes to different tasks. No such test exists in the codebase."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 390,
+        "severity": "non_blocking",
+        "description": "In complete_task(), sm.with_task_mut() is called but the returned result is discarded with 'let _ = sm.with_task_mut(...)'. The closure returns Ok(()) so this is intentional, but it's non-obvious. Consider adding a comment or restructuring to make the intent clearer."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 399,
+        "severity": "non_blocking",
+        "description": "After sm.with_task_mut() (which holds a read lock), we drop(sm) and re-acquire write lock. This pattern works but involves releasing and re-acquiring. The subsequent accept_task/reject_task calls will re-lock. This is correct but involves two separate lock acquisitions."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/state_machine.rs",
+        "line": 45,
+        "severity": "non_blocking",
+        "description": "create_task returns a cloned Task, but the task is also inserted into the DashMap. The returned Task and stored Task are separate clones, which is correct but worth noting for API clarity."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The transcript shows the worker used rust-worker skill, but the skill file path does not exist at ~/.factory/skills/rust-worker/SKILL.md. The AGENTS.md in the mission defines test patterns and conventions but no rust-worker skill was found in ~/.factory/skills/.",
+      "evidence": "Transcript shows 'Tool: Skill' calls for 'rust-worker' and 'mission-worker-base'. rust-worker skill file does not exist at the expected path."
+    },
+    {
+      "area": "conventions",
+      "observation": "The feature description specified using DashMap or per-task RwLock, and the implementation correctly uses DashMap<Uuid, Arc<RwLock<Task>>>. This approach is sound for concurrent access.",
+      "evidence": "state_machine.rs uses: tasks: DashMap<uuid::Uuid, Arc<RwLock<Task>>>"
+    },
+    {
+      "area": "verification",
+      "observation": "The feature's verificationSteps listed 'cargo test -p swell-orchestrator --test concurrent_registry' as a verification step, but no such test was created. The handoff claims all 872 tests pass but the verification step specifically requested a concurrent access test that was not implemented.",
+      "evidence": "features.json verificationSteps includes 'cargo test -p swell-orchestrator --test concurrent_registry' but grep for concurrent_registry test returns no matches in the codebase."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The implementation correctly introduces DashMap with Arc<RwLock<Task>> for fine-grained locking, changing TaskStateMachine methods from &mut self to &self. However, it fails to address the verification contract because no concurrent access test was added as explicitly required by the verificationSteps. All existing tests pass (1000 tests), but the missing concurrent registry test means we cannot verify the expected behavior of concurrent reads/writes without contention. The code changes are sound but incomplete w.r.t. the verification requirements."
+}

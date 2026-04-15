@@ -1,0 +1,32 @@
+{
+  "featureId": "task-spec-enrichment",
+  "reviewedAt": "2026-04-15T01:45:00Z",
+  "commitId": "ea6ccdd",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation is solid with proper validation, correct serde round-trip behavior, and comprehensive test coverage for valid creation and rejection cases. One minor test documentation discrepancy and one missing test for invalid serde deserialization, but neither is blocking.",
+    "issues": [
+      {
+        "file": "crates/swell-core/src/types.rs",
+        "severity": "non_blocking",
+        "description": "Handoff claims 12 tests were added, but only 11 unique test names exist. The test 'test_task_spec_valid_custom_commit_policy' appears twice (lines 839 and was intended as #12) - the second overrode the first instead of creating a distinct test case. This doesn't affect functionality since all 11 tests pass, but the test inventory in the handoff is inaccurate."
+      },
+      {
+        "file": "crates/swell-core/src/types.rs",
+        "severity": "non_blocking",
+        "description": "The validation contract (VAL-TASK-002) explicitly requires 'Test creates a TaskSpec with an invalid commit_policy string and asserts deserialization fails with a descriptive error.' The current test suite does not include a test for invalid serde deserialization - e.g., passing {\"type\": \"InvalidVariant\"} should fail. The CommitPolicy uses #[serde(tag = \"type\")] which will reject unknown variants, but this behavior is not explicitly tested."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The rust-worker skill SKILL.md mentions checking AGENTS.md and .factory/library/architecture.md for conventions, but the worker's transcript shows they did extensive file exploration (Grep, Glob, Read) to understand the codebase structure. This suggests either the skill could benefit from pointing more directly to specific files, or the worker's skill usage was appropriate for unfamiliar code.",
+      "evidence": "Transcript shows multiple Grep/Glob operations to find TaskSpec and understand crate structure before implementation. Worker spent time searching for existing patterns."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation adds TaskSpec struct with acceptance_tests, commit_policy, and escalation_policy fields to swell-core/types.rs. Validation logic correctly rejects empty test names, zero commit intervals, and zero failure thresholds. Serde round-trip works correctly with #[serde(tag = \"type\")] attributes on enums. All 11 tests pass, clippy clean. Two non-blocking issues: handoff test count discrepancy (12 claimed vs 11 actual due to duplicate test name), and missing test for invalid serde deserialization of commit_policy variants (as required by VAL-TASK-002 contract)."
+}

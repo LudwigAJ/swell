@@ -1,0 +1,39 @@
+{
+  "featureId": "task-state-file-observability",
+  "reviewedAt": "2026-04-15T02:10:00Z",
+  "commitId": "e81046b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation correctly uses write-to-temp + rename pattern for atomic writes of task state to .swell/task-state.json. The TaskStateFile struct contains all required fields (task_id, state, timestamp, iteration_count). All 7 tests pass, clippy passes with zero warnings.",
+    "issues": [
+      {
+        "file": "crates/swell-state/src/task_state_file.rs",
+        "line": 59,
+        "severity": "non_blocking",
+        "description": "If rename fails after temp file is written, the temp file is left behind (no cleanup). This is a theoretical edge case - the final state file remains consistent but temp file remnant could confuse observability tools."
+      },
+      {
+        "file": "crates/swell-state/src/task_state_file.rs",
+        "line": 38,
+        "severity": "non_blocking",
+        "description": "All tasks use the same temp file name 'task-state.json.tmp'. Concurrent writes from multiple processes could theoretically conflict, though rename atomicity ensures final state is always valid JSON."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "features.json specifies skillName: 'rust-worker' but this skill does not exist in .factory/skills/. The correct skill name is 'rust' (verified by ls .factory/skills/). Prior scrutiny reviews have flagged this same issue. The worker proceeded without issue since Rust coding was still possible, but skill tooling may be broken for workers that strictly validate skill existence.",
+      "evidence": "features.json: skillName is 'rust-worker' but .factory/skills/ contains: rust, rust-code-review, rust-patterns, rust-testing-code-review"
+    },
+    {
+      "area": "conventions",
+      "observation": "Handoff reports 8 tests including 'test_concurrent_write_safety' but actual code has 7 tests with 'test_rapid_sequential_writes' instead. This is a transcript/documentation mismatch - the actual tests are correct and comprehensive.",
+      "evidence": "Handoff tests.added.cases lists 8 tests; actual file has 7 test functions: test_write_and_read_task_state, test_read_nonexistent_file, test_atomic_write_no_partial_content, test_rapid_sequential_writes, test_write_and_read_sync, test_sync_no_partial_content, test_task_state_file_serde"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS - The atomic task-state.json observability feature is correctly implemented. Write-to-temp + rename pattern ensures no partial writes. All required fields (task_id, state, timestamp, iteration_count) are present. Tests pass (7), clippy passes with zero warnings. Two minor non-blocking issues: temp file cleanup on rename failure (theoretical), and shared temp file name across tasks (harmless due to rename atomicity). Skill name mismatch 'rust-worker' vs actual 'rust' is a pre-existing issue noted in prior reviews."
+}

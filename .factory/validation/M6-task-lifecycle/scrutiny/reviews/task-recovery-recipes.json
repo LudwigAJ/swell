@@ -1,0 +1,22 @@
+{
+  "featureId": "task-recovery-recipes",
+  "reviewedAt": "2026-04-15T02:15:00Z",
+  "commitId": "823c0f25a3e4b6da7d6f4337796c066a4cae9ed9",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "RecoveryRecipe system implemented correctly in swell-orchestrator with all required types: FailureScenario (with builder pattern, pattern matching, and context), BackoffStrategy (Fixed/Linear/Exponential/ExponentialWithJitter), RecoveryStep enum (Retry/Rollback/Escalate/SkipAndContinue), RecoverySteps wrapper, and RecoveryRecipe registry with default fallback. 47 unit tests pass covering all types, serde roundtrips, pattern matching, and VAL-TASK-008 assertions.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/recovery_recipe.rs",
+        "line": 971,
+        "severity": "non_blocking",
+        "description": "Variable 'recipe' in test_recovery_recipe_default_recipe is declared as mut but never mutated. Suggest removing the mut modifier. This is a minor style warning from clippy."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Implementation fully satisfies the feature description: RecoveryRecipe maps FailureScenario to typed RecoverySteps (Retry with backoff, Rollback, Escalate, SkipAndContinue), and unregistered scenarios fall back to a default recipe. All 47 tests pass, doc tests pass, clippy clean (with one unused_mut warning). The system is ready for integration with the broader task-lifecycle machinery."
+}

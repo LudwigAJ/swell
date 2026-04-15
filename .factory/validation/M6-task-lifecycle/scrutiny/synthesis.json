@@ -1,0 +1,149 @@
+{
+  "milestone": "M6-task-lifecycle",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --workspace",
+      "exitCode": 0,
+      "summary": "All tests passed across workspace. Notable: 1000 tests in swell-orchestrator, 490 in swell-tools, 380 in swell-core, 102 in swell-llm, 35 in swell-state, 18 in swell-memory, 13 in swell-validation, 12 integration tests"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo check --workspace",
+      "exitCode": 0,
+      "summary": "All crates compile successfully"
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0,
+      "summary": "Zero warnings across all crates"
+    }
+  },
+  "reviewsSummary": {
+    "total": 9,
+    "passed": 8,
+    "failed": 1,
+    "failedFeatures": [
+      "task-concurrent-registry"
+    ]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "task-concurrent-registry",
+      "severity": "blocking",
+      "description": "Missing concurrent access verification tests. The feature's verificationSteps explicitly required 'cargo test -p swell-orchestrator --test concurrent_registry' to test concurrent reads from multiple threads and concurrent writes to different tasks. No such test exists in the codebase. The implementation correctly uses DashMap<Uuid, Arc<RwLock<Task>>> for fine-grained locking, but without the explicitly required test, we cannot verify the expected behavior of concurrent reads/writes without contention."
+    }
+  ],
+  "nonBlockingIssues": [
+    {
+      "featureId": "task-concurrent-registry",
+      "severity": "non_blocking",
+      "description": "In complete_task(), sm.with_task_mut() returned result is discarded with 'let _ = sm.with_task_mut(...)'. Intentional but non-obvious."
+    },
+    {
+      "featureId": "task-concurrent-registry",
+      "severity": "non_blocking",
+      "description": "After sm.with_task_mut() (which holds a read lock), we drop(sm) and re-acquire write lock. Involves two separate lock acquisitions."
+    },
+    {
+      "featureId": "task-spec-enrichment",
+      "severity": "non_blocking",
+      "description": "Handoff claims 12 tests were added but only 11 unique test names exist. Duplicate test name 'test_task_spec_valid_custom_commit_policy'."
+    },
+    {
+      "featureId": "task-spec-enrichment",
+      "severity": "non_blocking",
+      "description": "Missing test for invalid serde deserialization of commit_policy variants (VAL-TASK-002 contract requires this)."
+    },
+    {
+      "featureId": "task-team-registry",
+      "severity": "non_blocking",
+      "description": "Team struct uses std::sync::RwLock instead of tokio::RwLock - minor inconsistency with crate's async patterns."
+    },
+    {
+      "featureId": "task-team-registry",
+      "severity": "non_blocking",
+      "description": "create_team() doc comment shows 'async fn' but implementation is synchronous."
+    },
+    {
+      "featureId": "task-cron-registry",
+      "severity": "non_blocking",
+      "description": "CronEvent enum is defined and exported but never emitted - dead code."
+    },
+    {
+      "featureId": "task-cron-registry",
+      "severity": "non_blocking",
+      "description": "is_due() and next_scheduled() re-parse cron expression on every invocation - minor performance issue."
+    },
+    {
+      "featureId": "task-cron-registry",
+      "severity": "non_blocking",
+      "description": "is_due() is public but appears to be an internal helper method."
+    },
+    {
+      "featureId": "task-worker-boot-lifecycle",
+      "severity": "non_blocking",
+      "description": "WorkerBootError::AlreadyFinished and WorkerBootError::WorkerNotFound variants defined but never used - dead code."
+    },
+    {
+      "featureId": "task-checkpoint-wiring",
+      "severity": "non_blocking",
+      "description": "BUG: previous_state is always set to Some(new_state) instead of actual previous state. Doesn't affect state recovery but is semantically misleading."
+    },
+    {
+      "featureId": "task-checkpoint-wiring",
+      "severity": "non_blocking",
+      "description": "Checkpoint errors are logged with warn! and ignored - design choice acceptable given feature scope."
+    },
+    {
+      "featureId": "task-state-file-observability",
+      "severity": "non_blocking",
+      "description": "If rename fails after temp file is written, temp file is left behind - theoretical edge case."
+    },
+    {
+      "featureId": "task-state-file-observability",
+      "severity": "non_blocking",
+      "description": "All tasks use same temp file name - harmless due to rename atomicity."
+    },
+    {
+      "featureId": "task-recovery-recipes",
+      "severity": "non_blocking",
+      "description": "Variable 'recipe' in test declared as mut but never mutated - minor unused_mut warning."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "features.json",
+      "suggestion": "skillName field uses 'rust-worker' but the actual skill in .factory/skills/ is named 'rust'. Workers that validate skill existence may fail to start. Should be changed to 'rust'.",
+      "evidence": "Multiple reviewers (task-checkpoint-wiring, task-state-file-observability) flagged this. features.json has skillName: 'rust-worker' but .factory/skills/ contains 'rust' skill.",
+      "isSystemic": true
+    },
+    {
+      "target": "features.json",
+      "suggestion": "verificationSteps commands don't always match actual test targets. For example, task-concurrent-registry lists 'cargo test -p swell-orchestrator --test concurrent_registry' but no such test exists. task-checkpoint-wiring lists 'cargo test -p swell-state' but tests are in swell-orchestrator. These discrepancies cause confusion and may prevent workers from running correct verification.",
+      "evidence": "task-concurrent-registry verificationSteps: '--test concurrent_registry' (doesn't exist). task-checkpoint-wiring verificationSteps: '-p swell-state --test checkpoint_wiring' but actual tests are in '-p swell-orchestrator -- checkpoint_wiring'.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md or .factory/library/",
+      "suggestion": "Add guidance that handoff test counts should be verified against actual test file before reporting. Multiple features (task-spec-enrichment, task-state-file-observability) reported incorrect test counts in handoffs, leading to incorrect expectations.",
+      "evidence": "task-spec-enrichment handoff claims 12 tests, actual is 11. task-state-file-observability handoff claims 8 tests, actual is 7.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "CronEvent enum was defined but never integrated into any event system - pattern inconsistency with TeamRegistry",
+      "reason": "This was intentionally scoped as out-of-scope per the feature description which only required CronRegistry with due_entries(). Event emission was not part of the feature contract."
+    },
+    {
+      "observation": "CheckpointingTaskStateMachine not integrated into main Orchestrator struct",
+      "reason": "Feature requirement only stated checkpoints must save on transitions and state be recoverable. Integration into Orchestrator was not explicitly required."
+    }
+  ],
+  "previousRound": null
+}
