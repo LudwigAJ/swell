@@ -168,6 +168,16 @@ pub trait SessionStore: Send + Sync {
     /// List all sessions, ordered by `updated_at_ms` descending (most recent first).
     async fn list_sessions(&self) -> Result<Vec<SessionMetadata>, SessionError>;
 
+    /// Load a session by workspace path.
+    ///
+    /// Returns the most recent session in the given workspace (by updated_at_ms).
+    /// If the session exists but workspace fingerprint doesn't match current workspace,
+    /// returns `Err(SessionError::WorkspaceMismatch)`.
+    async fn load_session_by_workspace_path(
+        &self,
+        workspace_path: impl AsRef<std::path::Path> + Send,
+    ) -> Result<Option<SessionMetadata>, SessionError>;
+
     /// Delete a session by ID.
     async fn delete_session(&self, id: Uuid) -> Result<(), SessionError>;
 }
@@ -261,6 +271,32 @@ impl SessionStore for InMemorySessionStore {
         result.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
 
         Ok(result)
+    }
+
+    async fn load_session_by_workspace_path(
+        &self,
+        workspace_path: impl AsRef<std::path::Path> + Send,
+    ) -> Result<Option<SessionMetadata>, SessionError> {
+        let workspace_fingerprint = workspace_fingerprint(&workspace_path)
+            .map_err(SessionError::FingerprintError)?;
+
+        let sessions = self.sessions.read().await;
+
+        // Find all sessions in this workspace, then pick the most recent by updated_at_ms
+        let mut candidates: Vec<&SessionMetadata> = sessions
+            .values()
+            .filter(|s| s.workspace_fingerprint == workspace_fingerprint)
+            .collect();
+
+        if candidates.is_empty() {
+            return Ok(None);
+        }
+
+        // Pick the most recent session
+        candidates.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+
+        let session = candidates.remove(0);
+        Ok(Some(session.clone()))
     }
 
     async fn delete_session(&self, id: Uuid) -> Result<(), SessionError> {
@@ -508,6 +544,51 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(loaded.id, session_id);
+    }
+
+    #[tokio::test]
+    async fn test_session_resume_by_workspace_path() {
+        let store = InMemorySessionStore::new();
+        let temp_dir = TempDir::new().unwrap();
+
+        let session_id = Uuid::new_v4();
+        let metadata = SessionMetadata::new(session_id, temp_dir.path(), None).unwrap();
+        store.save_session(metadata.clone()).await.unwrap();
+
+        // Resume by workspace path works
+        let loaded = store
+            .load_session_by_workspace_path(temp_dir.path())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.id, session_id);
+    }
+
+    #[tokio::test]
+    async fn test_session_resume_by_workspace_path_returns_most_recent() {
+        let store = InMemorySessionStore::new();
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create two sessions in the same workspace
+        let session1_id = Uuid::new_v4();
+        let mut session1 = SessionMetadata::new(session1_id, temp_dir.path(), None).unwrap();
+        session1.updated_at_ms = 100;
+
+        let session2_id = Uuid::new_v4();
+        let mut session2 = SessionMetadata::new(session2_id, temp_dir.path(), None).unwrap();
+        session2.updated_at_ms = 200; // More recent
+
+        store.save_session(session1).await.unwrap();
+        store.save_session(session2).await.unwrap();
+
+        // Resume by workspace path returns the most recent one
+        let loaded = store
+            .load_session_by_workspace_path(temp_dir.path())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.id, session2_id);
+        assert_eq!(loaded.updated_at_ms, 200);
     }
 
     #[tokio::test]
