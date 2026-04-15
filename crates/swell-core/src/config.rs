@@ -134,6 +134,23 @@ impl ConfigLoader {
         self
     }
 
+    /// Generate a .gitignore template for the .swell directory.
+    ///
+    /// This template includes entries for:
+    /// - `settings.local.json` (local override file that should not be committed)
+    /// - Other common .swell artifacts that should remain local
+    ///
+    /// Projects should include this template in their `.gitignore` or copy the
+    /// relevant entries to their existing `.gitignore`.
+    pub fn gitignore_template() -> &'static str {
+        r#"# SWELL local configuration
+# Local overrides - do not commit
+.swell/settings.local.json
+.swell/.task-state.json
+.swell/checkpoints/
+"#
+    }
+
     /// Get the user global config path
     fn user_global_path() -> Option<PathBuf> {
         dirs::home_dir().map(|h| h.join(".config").join("swell").join("settings.json"))
