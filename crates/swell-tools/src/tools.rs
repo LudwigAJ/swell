@@ -604,11 +604,189 @@ impl GitTool {
     }
 
     /// Execute git_diff - returns structured diff information
+    ///
+    /// Produces a structured diff output with file paths, added/removed line counts,
+    /// and line content for review before commit.
     async fn git_diff(&self, args: &[String], cwd: &Path) -> Result<ToolOutput, SwellError> {
-        let mut git_args = vec!["diff", "--stat"];
-        git_args.extend(args.iter().map(|s| s.as_str()));
+        // Run git diff --numstat to get per-file addition/deletion counts
+        let mut numstat_args = vec!["diff", "--numstat"];
+        numstat_args.extend(args.iter().map(|s| s.as_str()));
+        let numstat_output = self.run_git(&numstat_args, Some(cwd)).await?;
 
-        self.run_git(&git_args, Some(cwd)).await
+        // Run git diff --stat for summary
+        let mut stat_args = vec!["diff", "--stat"];
+        stat_args.extend(args.iter().map(|s| s.as_str()));
+        let stat_output = self.run_git(&stat_args, Some(cwd)).await?;
+
+        // Run git diff with unified format for line content (3 lines of context)
+        let mut diff_args = vec!["diff", "--unified=3"];
+        diff_args.extend(args.iter().map(|s| s.as_str()));
+        let diff_output = self.run_git(&diff_args, Some(cwd)).await?;
+
+        // Parse the diff output into structured format
+        let diff_info = self.parse_structured_diff(
+            &stat_output,
+            &numstat_output,
+            &diff_output,
+        );
+
+        Ok(ToolOutput {
+            is_error: diff_info.is_err(),
+            content: vec![ToolResultContent::Json(diff_info?)],
+        })
+    }
+
+    /// Parse git diff outputs into structured diff format
+    fn parse_structured_diff(
+        &self,
+        _stat_output: &ToolOutput,
+        numstat_output: &ToolOutput,
+        diff_output: &ToolOutput,
+    ) -> Result<serde_json::Value, SwellError> {
+        // Extract text content from ToolOutput
+        let get_text = |output: &ToolOutput| -> String {
+            match output.content.first() {
+                Some(ToolResultContent::Text(text)) => text.clone(),
+                _ => String::new(),
+            }
+        };
+
+        let numstat_text = get_text(numstat_output);
+        let diff_text = get_text(diff_output);
+
+        // Parse --numstat output: format is "<additions>\t<deletions>\t<path>"
+        let mut files: Vec<serde_json::Value> = Vec::new();
+        let mut file_stats: std::collections::HashMap<String, (u32, u32)> =
+            std::collections::HashMap::new();
+
+        for line in numstat_text.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() >= 3 {
+                let additions = parts[0].parse::<u32>().unwrap_or(0);
+                let deletions = parts[1].parse::<u32>().unwrap_or(0);
+                let path = parts[2].to_string();
+
+                file_stats.insert(path.clone(), (additions, deletions));
+                files.push(serde_json::json!({
+                    "path": path,
+                    "additions": additions,
+                    "deletions": deletions,
+                    "hunks": Vec::<serde_json::Value>::new()
+                }));
+            }
+        }
+
+        // If no files changed, return empty diff
+        if files.is_empty() {
+            let empty_files: Vec<serde_json::Value> = Vec::new();
+            return Ok(serde_json::json!({
+                "files": empty_files,
+                "total_additions": 0,
+                "total_deletions": 0,
+                "total_files": 0
+            }));
+        }
+
+        // Parse the unified diff text to extract hunk information
+        let mut current_file: Option<String> = None;
+        let mut current_path_idx: Option<usize> = None;
+        let mut current_hunk: Option<serde_json::Value> = None;
+        let mut current_hunk_lines: Vec<serde_json::Value> = Vec::new();
+
+        for line in diff_text.lines() {
+            // Detect new file in diff
+            if line.starts_with("diff --git") {
+                // Save previous hunk if exists
+                if let (Some(idx), Some(hunk)) = (current_path_idx.take(), current_hunk.take()) {
+                    if !current_hunk_lines.is_empty() {
+                        let hunk_obj = serde_json::json!({
+                            "header": hunk,
+                            "lines": current_hunk_lines.clone()
+                        });
+                        if let Some(file_obj) = files.get_mut(idx) {
+                            file_obj["hunks"]
+                                .as_array_mut()
+                                .unwrap()
+                                .push(hunk_obj);
+                        }
+                    }
+                }
+                current_hunk_lines.clear();
+
+                // Extract path from "diff --git a/path b/path"
+                if let Some(path) = line.strip_prefix("diff --git a/") {
+                    let path = path.split(' ').next().unwrap_or(path);
+                    let clean_path = path.strip_prefix("b/").unwrap_or(path).to_string();
+
+                    // Find matching file in our list
+                    current_path_idx = files.iter().position(|f| f["path"] == clean_path);
+                    current_file = Some(clean_path);
+                }
+            } else if line.starts_with("@@ ") {
+                // Save previous hunk
+                if let (Some(idx), Some(hunk)) = (current_path_idx, current_hunk.take()) {
+                    if !current_hunk_lines.is_empty() {
+                        let hunk_obj = serde_json::json!({
+                            "header": hunk,
+                            "lines": current_hunk_lines.clone()
+                        });
+                        if let Some(file_obj) = files.get_mut(idx) {
+                            file_obj["hunks"]
+                                .as_array_mut()
+                                .unwrap()
+                                .push(hunk_obj);
+                        }
+                    }
+                }
+                current_hunk_lines.clear();
+
+                // Start new hunk
+                current_hunk = Some(serde_json::json!(line));
+            } else if current_file.is_some() && current_path_idx.is_some() {
+                // Collect hunk lines (only for files we have in our list)
+                let (line_type, content) = if let Some(stripped) = line.strip_prefix('+') {
+                    ("addition", stripped)
+                } else if let Some(stripped) = line.strip_prefix('-') {
+                    ("deletion", stripped)
+                } else if let Some(stripped) = line.strip_prefix(' ') {
+                    ("context", stripped)
+                } else {
+                    continue;
+                };
+
+                current_hunk_lines.push(serde_json::json!({
+                    "type": line_type,
+                    "content": content
+                }));
+            }
+        }
+
+        // Save last hunk
+        if let (Some(idx), Some(hunk)) = (current_path_idx, current_hunk.take()) {
+            if !current_hunk_lines.is_empty() {
+                let hunk_obj = serde_json::json!({
+                    "header": hunk,
+                    "lines": current_hunk_lines
+                });
+                if let Some(file_obj) = files.get_mut(idx) {
+                    file_obj["hunks"]
+                        .as_array_mut()
+                        .unwrap()
+                        .push(hunk_obj);
+                }
+            }
+        }
+
+        // Calculate totals
+        let total_additions: u32 = file_stats.values().map(|(a, _)| a).sum();
+        let total_deletions: u32 = file_stats.values().map(|(_, d)| d).sum();
+
+        Ok(serde_json::json!({
+            "files": files,
+            "total_additions": total_additions,
+            "total_deletions": total_deletions,
+            "total_files": files.len() as u32
+        }))
     }
 
     /// Execute git_log - returns structured commit history
@@ -1474,6 +1652,158 @@ mod tests {
 
         // Should fail because there's nothing to commit
         assert!(result.is_err() || result.as_ref().unwrap().is_error);
+    }
+
+    #[tokio::test]
+    async fn test_git_tool_diff_structured_output() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test_file.txt");
+
+        // Initialize git repo
+        tokio::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+
+        // Create and commit initial file
+        tokio::fs::write(&file_path, "line1\nline2\nline3\n").await.unwrap();
+        tokio::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+
+        // Modify file to create diff
+        tokio::fs::write(&file_path, "line1\nMODIFIED\nline3\n").await.unwrap();
+
+        let tool = GitTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "diff",
+                "cwd": dir.path().to_str().unwrap()
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+
+        // The result should be a Json ToolResultContent
+        let json_content = match result.content.first() {
+            Some(ToolResultContent::Json(json_val)) => json_val.clone(),
+            _ => {
+                // For debugging: print what we got
+                let debug_str = format!("Unexpected content type: {:?}", result.content);
+                panic!("{}", debug_str);
+            }
+        };
+
+        // Verify structured diff output
+        assert!(json_content["files"].is_array(), "files should be an array");
+        assert!(
+            json_content["total_files"].as_u64().unwrap_or(0) > 0,
+            "total_files should be > 0"
+        );
+        assert!(
+            json_content["total_additions"].as_u64().unwrap_or(0) >= 0,
+            "total_additions should be present"
+        );
+        assert!(
+            json_content["total_deletions"].as_u64().unwrap_or(0) >= 0,
+            "total_deletions should be present"
+        );
+
+        // Verify file has hunks with line information
+        let files = json_content["files"].as_array().unwrap();
+        if !files.is_empty() {
+            let file = &files[0];
+            assert!(file["path"].is_string(), "file path should be a string");
+            assert!(file["additions"].is_u64(), "additions should be a number");
+            assert!(file["deletions"].is_u64(), "deletions should be a number");
+            assert!(file["hunks"].is_array(), "hunks should be an array");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_git_tool_diff_empty() {
+        let dir = tempdir().unwrap();
+
+        // Initialize git repo
+        tokio::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+
+        // Create and commit initial file
+        let file_path = dir.path().join("test_file.txt");
+        tokio::fs::write(&file_path, "line1\nline2\nline3\n").await.unwrap();
+        tokio::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+        tokio::process::Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(&dir)
+            .output()
+            .await
+            .unwrap();
+
+        // No changes - diff should be empty
+        let tool = GitTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "operation": "diff",
+                "cwd": dir.path().to_str().unwrap()
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error);
+
+        let json_content = match result.content.first() {
+            Some(ToolResultContent::Json(json_val)) => json_val.clone(),
+            _ => serde_json::Value::Null,
+        };
+
+        // Empty diff should have empty files array
+        assert!(json_content["files"].is_array());
+        assert_eq!(json_content["total_files"].as_u64().unwrap(), 0);
     }
 
     #[tokio::test]
