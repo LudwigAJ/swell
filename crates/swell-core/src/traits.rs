@@ -15,7 +15,7 @@
 //! - [`CheckpointStore`] - State persistence
 //! - [`ValidationGate`] - Quality assurance steps
 
-use crate::{AgentId, AgentRole, Plan, StreamEvent, SwellError, Task, TaskState};
+use crate::{AgentId, AgentRole, Plan, StreamEvent, SwellError, Task, TaskState, TurnSummaryEvent};
 use async_trait::async_trait;
 use futures::Stream;
 use serde::{Deserialize, Serialize};
@@ -712,6 +712,10 @@ pub enum Event {
     },
     Error {
         message: String,
+    },
+    /// Turn summary event emitted after each agent turn
+    TurnSummary {
+        summary: TurnSummaryEvent,
     },
 }
 

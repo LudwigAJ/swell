@@ -27,7 +27,7 @@ pub use dependency_graph::{DependencyGraph, DependencyQuery, GraphStats, ImpactR
 pub use error::SwellError;
 pub use events::{
     AgentSessionId, CrossTaskCorrelationId, EventStore, ObservableEvent, Outcome, RequestId,
-    SpanId, ToolInvocation, TraceId,
+    SpanId, ToolInvocation, TraceId, TurnSummaryEvent,
 };
 pub use kill_switch::{
     EnvVarVerifier, FileVerifier, KillLevel, KillSwitchError, KillSwitchGuard, KillSwitchState,

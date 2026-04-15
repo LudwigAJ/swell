@@ -289,6 +289,81 @@ impl ToolInvocation {
     }
 }
 
+/// Structured observability event emitted after each agent turn.
+///
+/// This event captures the complete summary of a single turn in the agent's
+/// execution loop, including token usage, tools invoked, and wall-clock duration.
+///
+/// # Fields
+///
+/// - `agent_name`: Name/identifier of the agent that executed this turn
+/// - `turn_number`: The turn number (1-indexed)
+/// - `action_taken`: Description of what the agent did (e.g., "text_completion", "tool_calls")
+/// - `tools_invoked`: List of tools that were called during this turn
+/// - `input_tokens`: Number of input tokens consumed
+/// - `output_tokens`: Number of output tokens generated
+/// - `cache_creation_input_tokens`: Tokens used for cache creation (Anthropic)
+/// - `cache_read_input_tokens`: Tokens read from cache (Anthropic)
+/// - `duration_ms`: Wall-clock duration of the turn in milliseconds
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnSummaryEvent {
+    /// Name/identifier of the agent that executed this turn
+    pub agent_name: String,
+    /// The turn number (1-indexed)
+    pub turn_number: u32,
+    /// Description of what the agent did
+    pub action_taken: String,
+    /// List of tools invoked during this turn
+    pub tools_invoked: Vec<ToolInvocation>,
+    /// Input tokens consumed
+    pub input_tokens: u64,
+    /// Output tokens generated
+    pub output_tokens: u64,
+    /// Cache creation tokens (Anthropic)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u64>,
+    /// Cache read tokens (Anthropic)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u64>,
+    /// Wall-clock duration in milliseconds
+    pub duration_ms: u64,
+}
+
+impl TurnSummaryEvent {
+    /// Create a new TurnSummaryEvent
+    pub fn new(
+        agent_name: String,
+        turn_number: u32,
+        action_taken: String,
+        tools_invoked: Vec<ToolInvocation>,
+        input_tokens: u64,
+        output_tokens: u64,
+        duration_ms: u64,
+    ) -> Self {
+        Self {
+            agent_name,
+            turn_number,
+            action_taken,
+            tools_invoked,
+            input_tokens,
+            output_tokens,
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens: None,
+            duration_ms,
+        }
+    }
+
+    /// Total tokens used in this turn
+    pub fn total_tokens(&self) -> u64 {
+        self.input_tokens.saturating_add(self.output_tokens)
+    }
+
+    /// Whether this turn invoked any tools
+    pub fn had_tool_calls(&self) -> bool {
+        !self.tools_invoked.is_empty()
+    }
+}
+
 /// The observable event schema for SWELL.
 ///
 /// This struct defines the standard event format used across all
@@ -1068,5 +1143,173 @@ mod tests {
 
         let events = store.by_task_id(&Uuid::new_v4());
         assert!(events.is_empty());
+    }
+
+    // ========================================================================
+    // TurnSummaryEvent Tests
+    // ========================================================================
+
+    #[test]
+    fn test_turn_summary_event_creation() {
+        let summary = TurnSummaryEvent::new(
+            "GeneratorAgent".to_string(),
+            1,
+            "text_completion".to_string(),
+            Vec::new(),
+            100,
+            50,
+            1500,
+        );
+
+        assert_eq!(summary.agent_name, "GeneratorAgent");
+        assert_eq!(summary.turn_number, 1);
+        assert_eq!(summary.action_taken, "text_completion");
+        assert!(summary.tools_invoked.is_empty());
+        assert_eq!(summary.input_tokens, 100);
+        assert_eq!(summary.output_tokens, 50);
+        assert_eq!(summary.duration_ms, 1500);
+    }
+
+    #[test]
+    fn test_turn_summary_event_total_tokens() {
+        let summary = TurnSummaryEvent::new(
+            "GeneratorAgent".to_string(),
+            1,
+            "text_completion".to_string(),
+            Vec::new(),
+            100,
+            50,
+            1500,
+        );
+
+        assert_eq!(summary.total_tokens(), 150);
+    }
+
+    #[test]
+    fn test_turn_summary_event_had_tool_calls() {
+        let mut summary = TurnSummaryEvent::new(
+            "GeneratorAgent".to_string(),
+            1,
+            "tool_calls".to_string(),
+            Vec::new(),
+            100,
+            50,
+            1500,
+        );
+
+        assert!(!summary.had_tool_calls());
+
+        summary.tools_invoked.push(ToolInvocation::new(
+            "file_read".to_string(),
+            serde_json::json!({"path": "/test.txt"}),
+            true,
+            100,
+        ));
+
+        assert!(summary.had_tool_calls());
+    }
+
+    #[test]
+    fn test_turn_summary_event_with_tools() {
+        let tools = vec![
+            ToolInvocation::new(
+                "file_read".to_string(),
+                serde_json::json!({"path": "/test.txt"}),
+                true,
+                100,
+            ),
+            ToolInvocation::new(
+                "shell".to_string(),
+                serde_json::json!({"command": "ls -la"}),
+                true,
+                200,
+            ),
+        ];
+
+        let summary = TurnSummaryEvent::new(
+            "GeneratorAgent".to_string(),
+            2,
+            "tool_calls".to_string(),
+            tools,
+            200,
+            100,
+            2500,
+        );
+
+        assert_eq!(summary.tools_invoked.len(), 2);
+        assert_eq!(summary.tools_invoked[0].tool_name, "file_read");
+        assert_eq!(summary.tools_invoked[1].tool_name, "shell");
+        assert_eq!(summary.total_tokens(), 300);
+    }
+
+    #[test]
+    fn test_turn_summary_event_serialization() {
+        let summary = TurnSummaryEvent::new(
+            "GeneratorAgent".to_string(),
+            1,
+            "text_completion".to_string(),
+            Vec::new(),
+            100,
+            50,
+            1500,
+        );
+
+        let json = serde_json::to_string(&summary).unwrap();
+
+        // Verify all required fields are present
+        assert!(json.contains("\"agent_name\":\"GeneratorAgent\""));
+        assert!(json.contains("\"turn_number\":1"));
+        assert!(json.contains("\"action_taken\":\"text_completion\""));
+        assert!(json.contains("\"input_tokens\":100"));
+        assert!(json.contains("\"output_tokens\":50"));
+        assert!(json.contains("\"duration_ms\":1500"));
+
+        // Deserialize and verify
+        let parsed: TurnSummaryEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.agent_name, "GeneratorAgent");
+        assert_eq!(parsed.turn_number, 1);
+        assert_eq!(parsed.input_tokens, 100);
+        assert_eq!(parsed.output_tokens, 50);
+        assert_eq!(parsed.duration_ms, 1500);
+    }
+
+    #[test]
+    fn test_turn_summary_event_with_cache_tokens() {
+        let mut summary = TurnSummaryEvent::new(
+            "GeneratorAgent".to_string(),
+            1,
+            "text_completion".to_string(),
+            Vec::new(),
+            100,
+            50,
+            1500,
+        );
+
+        summary.cache_creation_input_tokens = Some(500);
+        summary.cache_read_input_tokens = Some(1000);
+
+        assert_eq!(summary.cache_creation_input_tokens, Some(500));
+        assert_eq!(summary.cache_read_input_tokens, Some(1000));
+
+        // Verify serialization includes cache tokens
+        let json = serde_json::to_string(&summary).unwrap();
+        assert!(json.contains("cache_creation_input_tokens"));
+        assert!(json.contains("cache_read_input_tokens"));
+    }
+
+    #[test]
+    fn test_turn_summary_event_zero_tokens() {
+        let summary = TurnSummaryEvent::new(
+            "GeneratorAgent".to_string(),
+            1,
+            "text_completion".to_string(),
+            Vec::new(),
+            0,
+            0,
+            0,
+        );
+
+        assert_eq!(summary.total_tokens(), 0);
+        assert!(!summary.had_tool_calls());
     }
 }
