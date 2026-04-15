@@ -1,40 +1,15 @@
 {
   "featureId": "safety-egress-filtering",
-  "reviewedAt": "2026-04-15T18:45:00Z",
-  "commitId": "582565e",
-  "transcriptSkeletonReviewed": false,
+  "reviewedAt": "2026-04-15T19:30:00Z",
+  "commitId": "03ce3d697169025b1279af8db39b6d4b544c239c",
+  "transcriptSkeletonReviewed": true,
   "diffReviewed": true,
-  "status": "fail",
+  "status": "pass",
   "codeReview": {
-    "summary": "Commit 582565e only fixes ONE of FOUR HTTP clients. The blocking issue from prior review stated that EgressFilter was NOT wired into vault.rs, web_search.rs, opa_policy.rs, and hybrid.rs. The fix addresses only hybrid.rs (RemoteExecutor). The other three files remain unfixed.",
-    "issues": [
-      {
-        "file": "crates/swell-tools/src/vault.rs",
-        "line": 40,
-        "severity": "blocking",
-        "description": "VaultClient creates reqwest::Client directly without EgressFilter middleware. The http_client field is a plain Client (line 158-159), not wrapped with egress filtering. This was listed as a blocking issue in the prior review but was NOT fixed by commit 582565e."
-      },
-      {
-        "file": "crates/swell-tools/src/web_search.rs",
-        "line": 15,
-        "severity": "blocking",
-        "description": "SearchClient creates reqwest::Client directly without EgressFilter middleware. The client field (line 107-111) is a plain Client, not wrapped with egress filtering. This was listed as a blocking issue in the prior review but was NOT fixed by commit 582565e."
-      },
-      {
-        "file": "crates/swell-tools/src/opa_policy.rs",
-        "line": 21,
-        "severity": "blocking",
-        "description": "OpaPolicyEngine creates reqwest::Client directly without EgressFilter middleware. The client field (line 188-191) is a plain Client, not wrapped with egress filtering. This was listed as a blocking issue in the prior review but was NOT fixed by commit 582565e."
-      },
-      {
-        "file": "crates/swell-tools/src/hybrid.rs",
-        "line": 170,
-        "severity": "non_blocking",
-        "description": "RemoteExecutor now has EgressFilter properly wired in. The with_egress_filter() constructor and is_egress_allowed() check at execute() entry were added correctly. However, this was only ONE of FOUR HTTP clients that needed fixing."
-      }
-    ]
+    "summary": "The fix commit 03ce3d6 successfully wires EgressFilter into all four HTTP clients that were previously identified as missing: VaultClient, OpaPolicyEngine, OpaClient, and SearchClient. All network operations now check is_egress_allowed() before making outbound HTTP requests and return appropriate error messages when egress is denied.",
+    "issues": []
   },
   "sharedStateObservations": [],
-  "addressesFailureFrom": null,
-  "summary": "FAIL - The fix in commit 582565e only addresses hybrid.rs (RemoteExecutor). The prior blocking issue explicitly identified FOUR HTTP clients needing EgressFilter wiring: vault.rs, web_search.rs, opa_policy.rs, and hybrid.rs. Only hybrid.rs was fixed. The other three files (vault.rs at line 40/158-159, web_search.rs at line 15/107-111, opa_policy.rs at line 21/188-191) still create reqwest::Client directly without EgressFilter middleware. The feature's description states 'The filter is applied as a middleware before every outbound HTTP request made by tools or agents' - this is not achieved with only hybrid.rs fixed."
+  "addressesFailureFrom": ".factory/validation/M12-safety-runtime/scrutiny/reviews/safety-egress-filtering.json (round 2)",
+  "summary": "RE-RUN PASS: The fix commit 03ce3d6 properly addresses the prior blocking issue (round 2). All four HTTP clients (VaultClient in vault.rs, OpaPolicyEngine and OpaClient in opa_policy.rs, SearchClient in web_search.rs, and RemoteExecutor in hybrid.rs) now have EgressFilter wired via with_egress_filter() factory methods and is_egress_allowed() checks before each network operation. The implementation fully covers the feature's expectedBehavior: default-deny outbound HTTP filtering with cloud metadata endpoint 169.254.169.254 always blocked regardless of allowlist contents."
 }

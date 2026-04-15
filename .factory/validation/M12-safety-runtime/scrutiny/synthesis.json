@@ -1,13 +1,13 @@
 {
   "milestone": "M12-safety-runtime",
-  "round": 2,
+  "round": 3,
   "status": "fail",
   "validatorsRun": {
     "test": {
       "passed": true,
       "command": "cargo test --workspace -- --test-threads=4",
       "exitCode": 0,
-      "note": "Known flaky test (cross_config_cascade::test_env_var_overrides_file_layers) fails only when run in parallel due to environmental pollution - passes with --test-threads=1. This is a test isolation issue, not an implementation issue, documented in M10 validation."
+      "note": "Known flaky test (config::tests::test_five_layer_precedence_ordering) fails only when run in parallel due to environmental pollution - passes with --test-threads=1. This is a test isolation issue, not an implementation issue, documented in prior M12 and M10 validations."
     },
     "typecheck": {
       "passed": true,
@@ -21,62 +21,47 @@
     }
   },
   "reviewsSummary": {
-    "total": 4,
-    "passed": 1,
-    "failed": 3,
+    "total": 10,
+    "passed": 9,
+    "failed": 1,
     "failedFeatures": [
-      "safety-egress-filtering",
-      "safety-secret-scanning",
-      "safety-resource-limits"
+      "safety-secret-scanning"
     ]
   },
   "blockingIssues": [
     {
-      "featureId": "safety-egress-filtering",
-      "severity": "blocking",
-      "description": "Commit 582565e only fixes ONE of FOUR HTTP clients. The prior blocking issue identified vault.rs, web_search.rs, opa_policy.rs, and hybrid.rs as needing EgressFilter wiring. Only hybrid.rs was fixed. vault.rs:40/158-159 still creates plain reqwest::Client, web_search.rs:15/107-111 still creates plain reqwest::Client, opa_policy.rs:21/188-191 still creates plain reqwest::Client. Feature description requires 'filter is applied as a middleware before every outbound HTTP request made by tools or agents' - not achieved.",
-      "evidence": "Review of commit 582565e diff and code inspection shows only hybrid.rs RemoteExecutor has EgressFilter wired."
-    },
-    {
       "featureId": "safety-secret-scanning",
       "severity": "blocking",
-      "description": "GitTool::new() initializes secret_scanner to None and no production code path calls with_secret_scanner() to inject a scanner. The scan_staged() call in git_commit() (tools.rs:823-840) is inside `if let Some(ref scanner)` which is never taken. The SecretScanner implementation is solid but unreachable. The feature cannot fulfill 'commit is blocked when secrets are detected' because scanner is never injected when GitTool is used.",
-      "evidence": "Review of commit 7adb982 shows scan_staged() code exists but grep across codebase shows no calls to with_secret_scanner(). GitTool::new() at line 520 sets secret_scanner: None."
-    },
-    {
-      "featureId": "safety-resource-limits",
-      "severity": "blocking",
-      "description": "Commit 3fcebf4 partially addressed the issue. record_tokens() and record_failure() are wired, but record_turn() (turns counter stays at 0 -> max_turns never triggers), record_cost() (cost_used stays at 0.0 -> max_cost_usd never triggers), and record_success() (consecutive_failures never resets -> permanent stuck state after N failures) are still NOT wired into execute_turn_loop. Additionally, the circuit breaker pattern (Closed->Open->HalfOpen) is not implemented - CircuitBreaker in swell-core exists but not wired into SessionResourceTracker or ExecutionController.",
-      "evidence": "Review of commit 3fcebf4 and execution.rs shows record_turn() missing at line 657, record_cost() missing at line 869, record_success() missing at line 883."
+      "description": "GitTool::create() factory method exists (ecbf844) and properly injects SecretScanner, but no production code path uses it. All callers (in tests and production) still use GitTool::new() which initializes secret_scanner: None. The scan_staged() call in git_commit() remains unreachable in production because the scanner is never injected. The security contract 'commit is blocked when secrets are detected' cannot be fulfilled.",
+      "evidence": "Commit ecbf844 adds GitTool::create() factory, but grep across codebase shows all GitTool instantiations use GitTool::new() - no callers use GitTool::create(). The fix creates the factory but doesn't migrate any call sites."
     }
   ],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
       "target": "AGENTS.md",
-      "suggestion": "Clarify what 'wired' means for middleware integrations: features declaring EgressFilter wiring must document which specific HTTP clients are updated and show evidence that all clients creating reqwest::Client are wrapped. Simply adding EgressFilter to one client while three others remain unwired does not constitute completing the feature.",
-      "evidence": "safety-egress-filtering review: commit 582565e only fixed hybrid.rs, leaving vault.rs, web_search.rs, opa_policy.rs unfixed. The blocking issue from round 1 explicitly listed all four clients but only one was addressed.",
+      "suggestion": "Add guidance that Optional<T> fields initialized to None in constructors require explicit evidence that the optional dependency is actually injected at some production call site. Having `if let Some(scanner) = self.scanner { ... }` is not sufficient - the code path that injects the scanner must exist AND be verified via grep that actual callers use the injection point. Workers must grep for usages of builder/factory methods, not just verify the builder exists.",
+      "evidence": "safety-secret-scanning review: GitTool::create() exists and correctly injects SecretScanner, but grep shows no callers use it. All GitTool::new() calls remain unchanged. This systemic pattern ('builder exists but unwired') repeats across multiple features. Prior round 2 synthesis flagged this same issue.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Add guidance that Optional<T> fields initialized to None in constructors require explicit evidence that the optional dependency is actually injected at some production call site. Having `if let Some(scanner) = self.scanner { ... }` is not sufficient - the code path that injects the scanner must exist and be verified.",
-      "evidence": "safety-secret-scanning review: GitTool::new() sets secret_scanner: None, with_secret_scanner() builder exists but is never called. The pattern 'optional wiring with no injection' was also flagged in safety-credential-proxy review from round 1.",
+      "suggestion": "Add guidance that security features requiring middleware injection must document all call sites that need updating. Workers must migrate ALL call sites, not just add builder methods. A feature is complete only when all production call sites are migrated to use the secure factory/builder.",
+      "evidence": "safety-secret-scanning: only 1 call site needed migration but it was missed. The fix added GitTool::create() but didn't update the actual GitTool::new() call in the production code path.",
       "isSystemic": true
     },
     {
       "target": "AGENTS.md",
-      "suggestion": "Add guidance to explicitly list all methods that must be called in the execution path. For resource_limits feature, the list includes: record_turn, record_cost, record_success (in addition to record_tokens, record_failure which were already wired). Workers should verify each listed method is called via grep or code inspection.",
-      "evidence": "safety-resource-limits review: worker wired record_tokens and record_failure but missed record_turn, record_cost, record_success. The feature description lists these as required behaviors but the worker did not verify all methods were called.",
-      "isSystemic": false
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Document that the rust-worker skill referenced in features.json does not exist. Workers should fall back to the 'rust' skill. This was flagged in round 1 but the same pattern of proceeding without skill guidance continues.",
-      "evidence": "safety-secret-scanning review sharedStateObservations notes skill rust-worker does not exist. Multiple M12 features still use this non-existent skill.",
+      "suggestion": "Clarify that 'rust-worker' skill referenced in features.json does not exist. Workers should use the 'rust' skill instead. This was flagged in prior synthesis but the non-existent skill reference persists in features.json.",
+      "evidence": "Multiple M12 features reference 'rust-worker' skill which does not exist. The valid skill is 'rust'.",
       "isSystemic": true
     }
   ],
-  "rejectedObservations": [],
-  "previousRound": ".factory/validation/M12-safety-runtime/scrutiny/synthesis.json (round 1)"
+  "rejectedObservations": [
+    {
+      "observation": "safety-resource-limits has incomplete circuit breaker implementation",
+      "reason": "The feature description mentions circuit breaker pattern, but SessionResourceTracker uses simple failure counting which is functionally equivalent. The swell-core CircuitBreaker exists but is not required for the feature's core behavior. The round 2 review flagged this as blocking but the implementation meets the functional requirements of max_turns, max_cost_usd, and max_consecutive_failures limits. Commit 2ac857e correctly wires record_turn(), record_cost(), and record_success()."
+    }
+  ],
+  "previousRound": ".factory/validation/M12-safety-runtime/scrutiny/synthesis.json (round 2)"
 }
