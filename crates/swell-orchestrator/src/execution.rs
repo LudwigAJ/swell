@@ -2,11 +2,13 @@
 #![allow(clippy::should_implement_trait)]
 
 use crate::{
+    drift_detector::{DriftDetector, DriftReport},
     frozen_spec::FrozenSpecRef, killswitch::OrchestratorKillSwitch, EvaluatorAgent, FeatureLead,
     FeatureLeadSpawner, GeneratorAgent, Orchestrator, PlannerAgent, MAX_CONCURRENT_AGENTS,
 };
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::{
@@ -198,9 +200,15 @@ pub struct ExecutionController {
     /// Number of tail (most recent) messages to always preserve during compaction.
     tail_message_count: usize,
     /// Frozen specs indexed by task_id, created at execution start
-    frozen_specs: std::sync::RwLock<std::collections::HashMap<uuid::Uuid, FrozenSpecRef>>,
+    frozen_specs: std::sync::RwLock<HashMap<uuid::Uuid, FrozenSpecRef>>,
     /// Active FeatureLeads for complex tasks
-    feature_leads: std::sync::RwLock<std::collections::HashMap<uuid::Uuid, FeatureLead>>,
+    feature_leads: std::sync::RwLock<HashMap<uuid::Uuid, FeatureLead>>,
+    /// Drift detector for comparing actual vs planned file modifications
+    drift_detector: DriftDetector,
+    /// Files modified during the current execution session
+    modified_files: std::sync::RwLock<HashSet<String>>,
+    /// Interval in seconds for periodic drift checks (0 = only at end of execution)
+    drift_check_interval_seconds: u64,
 }
 
 impl ExecutionController {
@@ -226,8 +234,11 @@ impl ExecutionController {
             max_iterations: DEFAULT_MAX_ITERATIONS,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
             tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
-            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
-            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+            frozen_specs: std::sync::RwLock::new(HashMap::new()),
+            feature_leads: std::sync::RwLock::new(HashMap::new()),
+            drift_detector: DriftDetector::new(),
+            modified_files: std::sync::RwLock::new(HashSet::new()),
+            drift_check_interval_seconds: 0,
         }
     }
 
@@ -249,8 +260,11 @@ impl ExecutionController {
             max_iterations: DEFAULT_MAX_ITERATIONS,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
             tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
-            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
-            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+            frozen_specs: std::sync::RwLock::new(HashMap::new()),
+            feature_leads: std::sync::RwLock::new(HashMap::new()),
+            drift_detector: DriftDetector::new(),
+            modified_files: std::sync::RwLock::new(HashSet::new()),
+            drift_check_interval_seconds: 0,
         }
     }
 
@@ -278,8 +292,11 @@ impl ExecutionController {
             max_iterations,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
             tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
-            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
-            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+            frozen_specs: std::sync::RwLock::new(HashMap::new()),
+            feature_leads: std::sync::RwLock::new(HashMap::new()),
+            drift_detector: DriftDetector::new(),
+            modified_files: std::sync::RwLock::new(HashSet::new()),
+            drift_check_interval_seconds: 0,
         }
     }
 
@@ -302,8 +319,11 @@ impl ExecutionController {
             max_iterations,
             context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
             tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
-            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
-            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+            frozen_specs: std::sync::RwLock::new(HashMap::new()),
+            feature_leads: std::sync::RwLock::new(HashMap::new()),
+            drift_detector: DriftDetector::new(),
+            modified_files: std::sync::RwLock::new(HashSet::new()),
+            drift_check_interval_seconds: 0,
         }
     }
 
@@ -337,8 +357,11 @@ impl ExecutionController {
             max_iterations,
             context_compaction_threshold,
             tail_message_count,
-            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
-            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+            frozen_specs: std::sync::RwLock::new(HashMap::new()),
+            feature_leads: std::sync::RwLock::new(HashMap::new()),
+            drift_detector: DriftDetector::new(),
+            modified_files: std::sync::RwLock::new(HashSet::new()),
+            drift_check_interval_seconds: 0,
         }
     }
 
@@ -375,8 +398,11 @@ impl ExecutionController {
             max_iterations,
             context_compaction_threshold,
             tail_message_count,
-            frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
-            feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+            frozen_specs: std::sync::RwLock::new(HashMap::new()),
+            feature_leads: std::sync::RwLock::new(HashMap::new()),
+            drift_detector: DriftDetector::new(),
+            modified_files: std::sync::RwLock::new(HashSet::new()),
+            drift_check_interval_seconds: 0,
         }
     }
 
@@ -430,6 +456,95 @@ impl ExecutionController {
             .read()
             .ok()
             .and_then(|map| map.get(&task_id).cloned())
+    }
+
+    // ========================================================================
+    // Drift Detection Methods
+    // ========================================================================
+
+    /// Track a file modification during execution.
+    ///
+    /// Call this when a file is modified (e.g., via file_write or file_edit tool)
+    /// to record it for drift detection.
+    ///
+    /// # Arguments
+    /// * `file` - Path to the file that was modified
+    pub fn track_file_modification(&self, file: &str) {
+        if let Ok(mut files) = self.modified_files.write() {
+            files.insert(file.to_string());
+        }
+    }
+
+    /// Get all files modified during the current execution session.
+    ///
+    /// # Returns
+    /// A vector of file paths that have been modified since the last reset.
+    pub fn get_modified_files(&self) -> Vec<String> {
+        self.modified_files
+            .read()
+            .map(|files| files.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Reset the modified files tracker.
+    ///
+    /// Call this at the start of a new task execution.
+    pub fn reset_modified_files(&self) {
+        if let Ok(mut files) = self.modified_files.write() {
+            files.clear();
+        }
+    }
+
+    /// Check for drift between planned and actual file modifications.
+    ///
+    /// Compares the files modified during execution against the estimated files
+    /// from the task's plan. If drift exceeds the configured threshold (30%),
+    /// a warning is emitted and a DriftReport is returned.
+    ///
+    /// # Arguments
+    /// * `task_id` - The task ID to check drift for
+    /// * `estimated_files` - Files from the plan (e.g., aggregated from PlanStep.affected_files)
+    ///
+    /// # Returns
+    /// * `Some(DriftReport)` if drift exceeds the threshold
+    /// * `None` if drift is within acceptable limits
+    pub fn check_drift(&self, task_id: uuid::Uuid, estimated_files: &[String]) -> Option<DriftReport> {
+        let actual_files = self.get_modified_files();
+        let report = self.drift_detector.detect_drift(task_id, estimated_files, &actual_files);
+
+        if report.exceeds_threshold {
+            debug!(
+                task_id = %task_id,
+                drift_percentage = %report.drift_percentage,
+                estimated = %report.estimated_files,
+                actual = %report.actual_files,
+                extra_files = ?report.extra_files,
+                "Drift detected: exceeds threshold"
+            );
+            Some(report)
+        } else {
+            None
+        }
+    }
+
+    /// Get a reference to the drift detector for configuration.
+    pub fn drift_detector(&self) -> &DriftDetector {
+        &self.drift_detector
+    }
+
+    /// Get the configured drift check interval in seconds.
+    ///
+    /// A value of 0 means drift is only checked at the end of execution.
+    pub fn drift_check_interval_seconds(&self) -> u64 {
+        self.drift_check_interval_seconds
+    }
+
+    /// Set the drift check interval in seconds.
+    ///
+    /// # Arguments
+    /// * `interval_seconds` - Interval for periodic drift checks (0 = only at end)
+    pub fn set_drift_check_interval(&mut self, interval_seconds: u64) {
+        self.drift_check_interval_seconds = interval_seconds;
     }
 
     /// Execute a single task through the full Planner → Generator → Evaluator pipeline.
@@ -1141,6 +1256,9 @@ impl Clone for ExecutionController {
             tail_message_count: self.tail_message_count,
             frozen_specs: std::sync::RwLock::new(std::collections::HashMap::new()),
             feature_leads: std::sync::RwLock::new(std::collections::HashMap::new()),
+            drift_detector: self.drift_detector.clone(),
+            modified_files: std::sync::RwLock::new(HashSet::new()),
+            drift_check_interval_seconds: self.drift_check_interval_seconds,
         }
     }
 }
@@ -1198,12 +1316,14 @@ mod tests {
         // Create some tasks
         let task1 = controller
             .orchestrator
-            .create_task("Task 1".to_string())
-            .await;
+            .create_task("Task 1".to_string(), vec![])
+            .await
+            .unwrap();
         let task2 = controller
             .orchestrator
-            .create_task("Task 2".to_string())
-            .await;
+            .create_task("Task 2".to_string(), vec![])
+            .await
+            .unwrap();
 
         let results = controller.execute_batch(vec![task1.id, task2.id]).await;
         assert_eq!(results.len(), 2);

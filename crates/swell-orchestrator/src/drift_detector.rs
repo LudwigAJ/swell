@@ -135,7 +135,9 @@ impl DriftDetector {
             .cloned()
             .collect();
 
-        let exceeds_threshold = drift_percentage.abs() > self.config.threshold_percentage;
+        // Only flag positive drift (actual > estimated = scope creep)
+        // Negative drift (under-implementation) is not considered problematic
+        let exceeds_threshold = drift_percentage > self.config.threshold_percentage;
 
         DriftReport {
             task_id,

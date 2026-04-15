@@ -238,6 +238,20 @@ pub enum OrchestratorEvent {
         task_id: Uuid,
         message: String,
     },
+    /// Drift warning emitted when actual file modifications exceed planned scope.
+    /// This indicates the task may be experiencing scope creep or the plan
+    /// underestimated the required changes.
+    DriftWarning {
+        task_id: Uuid,
+        /// Percentage of drift: (actual - estimated) / estimated * 100
+        drift_percentage: f64,
+        /// Files that were modified but were not in the plan
+        unexpected_files: Vec<String>,
+        /// Total number of files in the plan
+        planned_file_count: usize,
+        /// Total number of files actually modified
+        actual_file_count: usize,
+    },
 }
 
 /// The main orchestrator that coordinates agents and tasks
@@ -250,6 +264,8 @@ pub struct Orchestrator {
     feature_lead_manager: Arc<RwLock<FeatureLeadManager>>,
     /// MCP server configuration manager for health monitoring
     mcp_manager: Arc<McpConfigManager>,
+    /// Novelty checker for duplicate task detection
+    novelty_checker: Arc<RwLock<NoveltyChecker>>,
 }
 
 impl Orchestrator {
@@ -267,6 +283,7 @@ impl Orchestrator {
             event_sender: tx,
             feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
             mcp_manager,
+            novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
         }
     }
 
@@ -282,6 +299,7 @@ impl Orchestrator {
             event_sender: tx,
             feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
             mcp_manager,
+            novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
         }
     }
 
@@ -291,32 +309,133 @@ impl Orchestrator {
         self.event_sender.subscribe()
     }
 
+    /// Emit a drift warning event when actual file modifications exceed planned scope.
+    ///
+    /// This is called by the ExecutionController when drift detection finds that
+    /// actual file modifications exceed the planned scope by more than the threshold.
+    ///
+    /// # Arguments
+    /// * `task_id` - The task experiencing drift
+    /// * `drift_percentage` - Percentage of drift: (actual - estimated) / estimated * 100
+    /// * `unexpected_files` - Files modified but not in the plan
+    /// * `planned_file_count` - Number of files in the plan
+    /// * `actual_file_count` - Number of files actually modified
+    pub fn emit_drift_warning(
+        &self,
+        task_id: Uuid,
+        drift_percentage: f64,
+        unexpected_files: Vec<String>,
+        planned_file_count: usize,
+        actual_file_count: usize,
+    ) {
+        let _ = self.event_sender.send(OrchestratorEvent::DriftWarning {
+            task_id,
+            drift_percentage,
+            unexpected_files,
+            planned_file_count,
+            actual_file_count,
+        });
+    }
+
     /// Create a new task
-    pub async fn create_task(&self, description: String) -> Task {
+    ///
+    /// The `estimated_files` parameter is used for novelty checking to detect
+    /// duplicate tasks. Tasks with description similarity >85% OR file overlap
+    /// >80% with existing tasks are rejected as duplicates.
+    pub async fn create_task(
+        &self,
+        description: String,
+        estimated_files: Vec<String>,
+    ) -> Result<Task, SwellError> {
+        // Check for duplicate tasks before creating
+        {
+            let novelty_checker = self.novelty_checker.read().await;
+            let result = novelty_checker.check(&description, &estimated_files, false);
+            if !result.is_novel {
+                if let Some(duplicate_of) = result.duplicate_of {
+                    if result.max_similarity > 0.85 {
+                        return Err(SwellError::DuplicateTask(result.max_similarity, duplicate_of));
+                    } else {
+                        return Err(SwellError::DuplicateTaskByFileOverlap(
+                            result.max_file_overlap * 100.0,
+                            duplicate_of,
+                        ));
+                    }
+                }
+            }
+        }
+
         let task = {
             let sm = self.state_machine.write().await;
             sm.create_task(description)
         };
+
+        // Track the new task for future novelty checks
+        {
+            let mut novelty_checker = self.novelty_checker.write().await;
+            novelty_checker.track_task(TrackedTask::new(
+                task.id,
+                task.description.clone(),
+                estimated_files,
+                false,
+            ));
+        }
+
         let _ = self
             .event_sender
             .send(OrchestratorEvent::TaskCreated(task.id));
-        task
+        Ok(task)
     }
 
     /// Create a new task with a specific autonomy level
+    ///
+    /// The `estimated_files` parameter is used for novelty checking to detect
+    /// duplicate tasks. Tasks with description similarity >85% OR file overlap
+    /// >80% with existing tasks are rejected as duplicates.
     pub async fn create_task_with_autonomy(
         &self,
         description: String,
         autonomy_level: swell_core::AutonomyLevel,
-    ) -> Task {
+        estimated_files: Vec<String>,
+    ) -> Result<Task, SwellError> {
+        // Check for duplicate tasks before creating
+        {
+            let novelty_checker = self.novelty_checker.read().await;
+            let result = novelty_checker.check(&description, &estimated_files, false);
+            if !result.is_novel {
+                if let Some(duplicate_of) = result.duplicate_of {
+                    if result.max_similarity > 0.85 {
+                        return Err(SwellError::DuplicateTask(result.max_similarity, duplicate_of));
+                    } else {
+                        return Err(SwellError::DuplicateTaskByFileOverlap(
+                            result.max_file_overlap * 100.0,
+                            duplicate_of,
+                        ));
+                    }
+                }
+            }
+        }
+
         let task = {
             let sm = self.state_machine.write().await;
             sm.create_task_with_autonomy(description, autonomy_level)
         };
+
+        // Track the new task for future novelty checks
+        {
+            let mut novelty_checker = self.novelty_checker.write().await;
+            novelty_checker.track_task(TrackedTask::new(
+                task.id,
+                task.description.clone(),
+                estimated_files,
+                false,
+            ));
+        }
+
         let _ = self
             .event_sender
             .send(OrchestratorEvent::TaskCreated(task.id));
-        task
+        Ok(task)
     }
 
     /// Get a task by ID
@@ -811,7 +930,7 @@ mod tests {
     async fn test_create_task_returns_task_with_created_state() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test task".to_string()).await;
+        let task = orchestrator.create_task("Test task".to_string(), vec![]).await.unwrap();
 
         assert_eq!(task.state, TaskState::Created);
         assert_eq!(task.description, "Test task");
@@ -822,8 +941,8 @@ mod tests {
     async fn test_create_task_assigns_unique_id() {
         let orchestrator = Orchestrator::new();
 
-        let task1 = orchestrator.create_task("Task 1".to_string()).await;
-        let task2 = orchestrator.create_task("Task 2".to_string()).await;
+        let task1 = orchestrator.create_task("Task 1".to_string(), vec![]).await.unwrap();
+        let task2 = orchestrator.create_task("Task 2".to_string(), vec![]).await.unwrap();
 
         assert_ne!(task1.id, task2.id);
     }
@@ -833,7 +952,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_task_returns_task() {
         let orchestrator = Orchestrator::new();
-        let created = orchestrator.create_task("Test".to_string()).await;
+        let created = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
 
         let retrieved = orchestrator.get_task(created.id).await.unwrap();
 
@@ -900,7 +1019,7 @@ mod tests {
         let agent_id = orchestrator
             .register_agent(AgentRole::Generator, "claude-sonnet".to_string())
             .await;
-        let task = orchestrator.create_task("Test".to_string()).await;
+        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
 
         // Set plan and transition to Ready first
         let plan = create_test_plan(task.id);
@@ -925,7 +1044,7 @@ mod tests {
     async fn test_assign_task_returns_error_when_no_agent_available() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         {
@@ -951,7 +1070,7 @@ mod tests {
         let agent_id = orchestrator
             .register_agent(AgentRole::Generator, "claude-sonnet".to_string())
             .await;
-        let task = orchestrator.create_task("Test".to_string()).await;
+        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         {
@@ -978,8 +1097,8 @@ mod tests {
     async fn test_get_all_tasks_returns_all_tasks() {
         let orchestrator = Orchestrator::new();
 
-        orchestrator.create_task("Task 1".to_string()).await;
-        orchestrator.create_task("Task 2".to_string()).await;
+        orchestrator.create_task("Task 1".to_string(), vec![]).await.unwrap();
+        orchestrator.create_task("Task 2".to_string(), vec![]).await.unwrap();
 
         let all = orchestrator.get_all_tasks().await;
 
@@ -990,8 +1109,8 @@ mod tests {
     async fn test_get_tasks_by_state_filters_correctly() {
         let orchestrator = Orchestrator::new();
 
-        let task1 = orchestrator.create_task("Task 1".to_string()).await;
-        let _task2 = orchestrator.create_task("Task 2".to_string()).await;
+        let task1 = orchestrator.create_task("Task 1".to_string(), vec![]).await.unwrap();
+        let _task2 = orchestrator.create_task("Task 2".to_string(), vec![]).await.unwrap();
 
         // Transition task1 to Enriched
         {
@@ -1013,7 +1132,7 @@ mod tests {
     async fn test_set_plan_attaches_plan_to_task() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
         let plan = create_test_plan(task.id);
 
         orchestrator.set_plan(task.id, plan.clone()).await.unwrap();
@@ -1031,8 +1150,9 @@ mod tests {
 
         // Use FullAuto to bypass approval gate for this lifecycle test
         let task = orchestrator
-            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
-            .await;
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto, vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
 
@@ -1046,7 +1166,7 @@ mod tests {
     async fn test_start_task_fails_without_plan() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
 
         let result = orchestrator.start_task(task.id).await;
 
@@ -1061,8 +1181,9 @@ mod tests {
 
         // Use FullAuto to bypass approval gate for this lifecycle test
         let task = orchestrator
-            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
-            .await;
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto, vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         orchestrator.start_task(task.id).await.unwrap();
@@ -1077,7 +1198,7 @@ mod tests {
     async fn test_start_validation_fails_if_not_executing() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
 
         let result = orchestrator.start_validation(task.id).await;
 
@@ -1092,8 +1213,9 @@ mod tests {
 
         // Use FullAuto to bypass approval gate for this lifecycle test
         let task = orchestrator
-            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
-            .await;
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto, vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         orchestrator.start_task(task.id).await.unwrap();
@@ -1122,8 +1244,9 @@ mod tests {
 
         // Use FullAuto to bypass approval gate for this lifecycle test
         let task = orchestrator
-            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
-            .await;
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto, vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         orchestrator.start_task(task.id).await.unwrap();
@@ -1152,8 +1275,9 @@ mod tests {
 
         // Use FullAuto to bypass approval gate for this escalation test
         let task = orchestrator
-            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
-            .await;
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto, vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
 
@@ -1249,8 +1373,9 @@ mod tests {
 
         // 1. Create task with FullAuto to bypass approval gate
         let task = orchestrator
-            .create_task_with_autonomy("Implement feature X".to_string(), AutonomyLevel::FullAuto)
-            .await;
+            .create_task_with_autonomy("Implement feature X".to_string(), AutonomyLevel::FullAuto, vec![])
+            .await
+            .unwrap();
         assert_eq!(task.state, TaskState::Created);
 
         // 2. Register agents
@@ -1319,7 +1444,7 @@ mod tests {
         let orchestrator = Orchestrator::new();
 
         // Try to assign a task that hasn't been made ready
-        let task = orchestrator.create_task("Test".to_string()).await;
+        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
 
