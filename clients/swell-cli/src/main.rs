@@ -485,6 +485,80 @@ fn handle_event(event: &DaemonEvent) {
         } => {
             eprintln!("Error: {}", message);
         }
+        DaemonEvent::ToolInvocationStarted {
+            id,
+            tool_name,
+            turn_number,
+            correlation_id: _,
+            ..
+        } => {
+            println!("[{}] Turn {}: Invoking tool '{}'", id, turn_number, tool_name);
+        }
+        DaemonEvent::ToolInvocationCompleted {
+            id,
+            tool_name,
+            success,
+            duration_ms,
+            turn_number,
+            correlation_id: _,
+            ..
+        } => {
+            let status = if *success { "success" } else { "failed" };
+            println!(
+                "[{}] Turn {}: Tool '{}' completed ({} in {}ms)",
+                id, turn_number, tool_name, status, duration_ms
+            );
+        }
+        DaemonEvent::AgentTurnStarted {
+            id,
+            agent_role,
+            turn_number,
+            correlation_id: _,
+        } => {
+            println!(
+                "[{}] Turn {}: Agent '{}' starting turn",
+                id, turn_number, agent_role
+            );
+        }
+        DaemonEvent::AgentTurnCompleted {
+            id,
+            agent_role,
+            turn_number,
+            action_taken,
+            tools_invoked,
+            duration_ms,
+            correlation_id: _,
+        } => {
+            let tools_str = if tools_invoked.is_empty() {
+                "no tools".to_string()
+            } else {
+                tools_invoked.join(", ")
+            };
+            println!(
+                "[{}] Turn {}: Agent '{}' completed - {} ({} invoked, {}ms)",
+                id, turn_number, agent_role, action_taken, tools_str, duration_ms
+            );
+        }
+        DaemonEvent::ValidationStepStarted {
+            id,
+            step_name,
+            correlation_id: _,
+        } => {
+            println!("[{}] Validation: Starting '{}'", id, step_name);
+        }
+        DaemonEvent::ValidationStepCompleted {
+            id,
+            step_name,
+            passed,
+            duration_ms,
+            correlation_id: _,
+        } => {
+            let status = if *passed { "passed" } else { "failed" };
+            println!(
+                "[{}] Validation: '{}' {} ({}ms)",
+                id, step_name, status, duration_ms
+            );
+        }
     }
 }
 

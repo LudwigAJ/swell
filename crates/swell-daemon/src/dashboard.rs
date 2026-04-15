@@ -274,6 +274,97 @@ impl From<DaemonEvent> for DashboardEvent {
                 message,
                 correlation_id,
             },
+            // Per-turn events are mapped to TaskProgress for dashboard display
+            // These are lower-level observability events that provide fine-grained progress
+            DaemonEvent::ToolInvocationStarted {
+                id,
+                tool_name,
+                turn_number,
+                correlation_id,
+                ..
+            } => DashboardEvent::TaskProgress {
+                id,
+                message: format!("[Turn {}] Invoking tool '{}'", turn_number, tool_name),
+                correlation_id,
+            },
+            DaemonEvent::ToolInvocationCompleted {
+                id,
+                tool_name,
+                success,
+                duration_ms,
+                turn_number,
+                correlation_id,
+                ..
+            } => DashboardEvent::TaskProgress {
+                id,
+                message: format!(
+                    "[Turn {}] Tool '{}' completed ({} in {}ms)",
+                    turn_number,
+                    tool_name,
+                    if success { "success" } else { "failed" },
+                    duration_ms
+                ),
+                correlation_id,
+            },
+            DaemonEvent::AgentTurnStarted {
+                id,
+                agent_role,
+                turn_number,
+                correlation_id,
+                ..
+            } => DashboardEvent::TaskProgress {
+                id,
+                message: format!("[Turn {}] Agent '{}' starting turn", turn_number, agent_role),
+                correlation_id,
+            },
+            DaemonEvent::AgentTurnCompleted {
+                id,
+                agent_role,
+                turn_number,
+                action_taken,
+                tools_invoked,
+                duration_ms,
+                correlation_id,
+                ..
+            } => DashboardEvent::TaskProgress {
+                id,
+                message: format!(
+                    "[Turn {}] Agent '{}' completed - {} ({} tools invoked, {}ms)",
+                    turn_number,
+                    agent_role,
+                    action_taken,
+                    tools_invoked.len(),
+                    duration_ms
+                ),
+                correlation_id,
+            },
+            DaemonEvent::ValidationStepStarted {
+                id,
+                step_name,
+                correlation_id,
+                ..
+            } => DashboardEvent::TaskProgress {
+                id,
+                message: format!("Starting validation: '{}'", step_name),
+                correlation_id,
+            },
+            DaemonEvent::ValidationStepCompleted {
+                id,
+                step_name,
+                passed,
+                duration_ms,
+                correlation_id,
+                ..
+            } => DashboardEvent::TaskProgress {
+                id,
+                message: format!(
+                    "Validation '{}' {} ({}ms)",
+                    step_name,
+                    if passed { "passed" } else { "failed" },
+                    duration_ms
+                ),
+                correlation_id,
+            },
         }
     }
 }

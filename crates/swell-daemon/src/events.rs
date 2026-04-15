@@ -358,6 +358,210 @@ impl EventEmitter {
         event
     }
 
+    /// Emit a ToolInvocationStarted event and record it in the log
+    pub async fn emit_tool_invocation_started(
+        &self,
+        id: Uuid,
+        tool_name: String,
+        arguments: serde_json::Value,
+        turn_number: u32,
+        correlation_id: CorrelationId,
+    ) -> DaemonEvent {
+        let event = DaemonEvent::ToolInvocationStarted {
+            id,
+            tool_name: tool_name.clone(),
+            arguments: arguments.clone(),
+            turn_number,
+            correlation_id,
+        };
+
+        let mut log = self.log.write().await;
+        log.record(correlation_id, Some(id), event.clone());
+
+        tracing::info!(
+            task_id = %id,
+            tool_name = %tool_name,
+            turn_number = %turn_number,
+            correlation_id = %correlation_id,
+            "Event: ToolInvocationStarted"
+        );
+
+        drop(log);
+        self.broadcast(&event).await;
+        event
+    }
+
+    /// Emit a ToolInvocationCompleted event and record it in the log
+    pub async fn emit_tool_invocation_completed(
+        &self,
+        id: Uuid,
+        tool_name: String,
+        success: bool,
+        duration_ms: u64,
+        turn_number: u32,
+        correlation_id: CorrelationId,
+    ) -> DaemonEvent {
+        let event = DaemonEvent::ToolInvocationCompleted {
+            id,
+            tool_name: tool_name.clone(),
+            success,
+            duration_ms,
+            turn_number,
+            correlation_id,
+        };
+
+        let mut log = self.log.write().await;
+        log.record(correlation_id, Some(id), event.clone());
+
+        tracing::info!(
+            task_id = %id,
+            tool_name = %tool_name,
+            success = %success,
+            duration_ms = %duration_ms,
+            turn_number = %turn_number,
+            correlation_id = %correlation_id,
+            "Event: ToolInvocationCompleted"
+        );
+
+        drop(log);
+        self.broadcast(&event).await;
+        event
+    }
+
+    /// Emit an AgentTurnStarted event and record it in the log
+    pub async fn emit_agent_turn_started(
+        &self,
+        id: Uuid,
+        agent_role: String,
+        turn_number: u32,
+        correlation_id: CorrelationId,
+    ) -> DaemonEvent {
+        let event = DaemonEvent::AgentTurnStarted {
+            id,
+            agent_role: agent_role.clone(),
+            turn_number,
+            correlation_id,
+        };
+
+        let mut log = self.log.write().await;
+        log.record(correlation_id, Some(id), event.clone());
+
+        tracing::info!(
+            task_id = %id,
+            agent_role = %agent_role,
+            turn_number = %turn_number,
+            correlation_id = %correlation_id,
+            "Event: AgentTurnStarted"
+        );
+
+        drop(log);
+        self.broadcast(&event).await;
+        event
+    }
+
+    /// Emit an AgentTurnCompleted event and record it in the log
+    #[allow(clippy::too_many_arguments)]
+    pub async fn emit_agent_turn_completed(
+        &self,
+        id: Uuid,
+        agent_role: String,
+        turn_number: u32,
+        action_taken: String,
+        tools_invoked: Vec<String>,
+        duration_ms: u64,
+        correlation_id: CorrelationId,
+    ) -> DaemonEvent {
+        let event = DaemonEvent::AgentTurnCompleted {
+            id,
+            agent_role: agent_role.clone(),
+            turn_number,
+            action_taken: action_taken.clone(),
+            tools_invoked: tools_invoked.clone(),
+            duration_ms,
+            correlation_id,
+        };
+
+        let mut log = self.log.write().await;
+        log.record(correlation_id, Some(id), event.clone());
+
+        tracing::info!(
+            task_id = %id,
+            agent_role = %agent_role,
+            turn_number = %turn_number,
+            action_taken = %action_taken,
+            tools_invoked = ?tools_invoked,
+            duration_ms = %duration_ms,
+            correlation_id = %correlation_id,
+            "Event: AgentTurnCompleted"
+        );
+
+        drop(log);
+        self.broadcast(&event).await;
+        event
+    }
+
+    /// Emit a ValidationStepStarted event and record it in the log
+    pub async fn emit_validation_step_started(
+        &self,
+        id: Uuid,
+        step_name: String,
+        correlation_id: CorrelationId,
+    ) -> DaemonEvent {
+        let event = DaemonEvent::ValidationStepStarted {
+            id,
+            step_name: step_name.clone(),
+            correlation_id,
+        };
+
+        let mut log = self.log.write().await;
+        log.record(correlation_id, Some(id), event.clone());
+
+        tracing::info!(
+            task_id = %id,
+            step_name = %step_name,
+            correlation_id = %correlation_id,
+            "Event: ValidationStepStarted"
+        );
+
+        drop(log);
+        self.broadcast(&event).await;
+        event
+    }
+
+    /// Emit a ValidationStepCompleted event and record it in the log
+    pub async fn emit_validation_step_completed(
+        &self,
+        id: Uuid,
+        step_name: String,
+        passed: bool,
+        duration_ms: u64,
+        correlation_id: CorrelationId,
+    ) -> DaemonEvent {
+        let event = DaemonEvent::ValidationStepCompleted {
+            id,
+            step_name: step_name.clone(),
+            passed,
+            duration_ms,
+            correlation_id,
+        };
+
+        let mut log = self.log.write().await;
+        log.record(correlation_id, Some(id), event.clone());
+
+        tracing::info!(
+            task_id = %id,
+            step_name = %step_name,
+            passed = %passed,
+            duration_ms = %duration_ms,
+            correlation_id = %correlation_id,
+            "Event: ValidationStepCompleted"
+        );
+
+        drop(log);
+        self.broadcast(&event).await;
+        event
+    }
+
     /// Get the event log for reading
     pub async fn log(&self) -> Arc<RwLock<ImmutableEventLog>> {
         Arc::clone(&self.log)

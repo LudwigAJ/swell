@@ -665,6 +665,54 @@ pub enum DaemonEvent {
         failure_class: Option<FailureClass>,
         correlation_id: CorrelationId,
     },
+    /// A tool invocation started during agent execution
+    ToolInvocationStarted {
+        id: Uuid,
+        tool_name: String,
+        arguments: serde_json::Value,
+        turn_number: u32,
+        correlation_id: CorrelationId,
+    },
+    /// A tool invocation completed during agent execution
+    ToolInvocationCompleted {
+        id: Uuid,
+        tool_name: String,
+        success: bool,
+        duration_ms: u64,
+        turn_number: u32,
+        correlation_id: CorrelationId,
+    },
+    /// An agent turn started
+    AgentTurnStarted {
+        id: Uuid,
+        agent_role: String,
+        turn_number: u32,
+        correlation_id: CorrelationId,
+    },
+    /// An agent turn completed
+    AgentTurnCompleted {
+        id: Uuid,
+        agent_role: String,
+        turn_number: u32,
+        action_taken: String,
+        tools_invoked: Vec<String>,
+        duration_ms: u64,
+        correlation_id: CorrelationId,
+    },
+    /// A validation step started
+    ValidationStepStarted {
+        id: Uuid,
+        step_name: String,
+        correlation_id: CorrelationId,
+    },
+    /// A validation step completed
+    ValidationStepCompleted {
+        id: Uuid,
+        step_name: String,
+        passed: bool,
+        duration_ms: u64,
+        correlation_id: CorrelationId,
+    },
 }
 
 // ============================================================================
@@ -1305,6 +1353,12 @@ mod tests {
                 DaemonEvent::Error { correlation_id, .. } => *correlation_id,
                 DaemonEvent::TaskProgress { correlation_id, .. } => *correlation_id,
                 DaemonEvent::TaskCompleted { correlation_id, .. } => *correlation_id,
+                DaemonEvent::ToolInvocationStarted { correlation_id, .. } => *correlation_id,
+                DaemonEvent::ToolInvocationCompleted { correlation_id, .. } => *correlation_id,
+                DaemonEvent::AgentTurnStarted { correlation_id, .. } => *correlation_id,
+                DaemonEvent::AgentTurnCompleted { correlation_id, .. } => *correlation_id,
+                DaemonEvent::ValidationStepStarted { correlation_id, .. } => *correlation_id,
+                DaemonEvent::ValidationStepCompleted { correlation_id, .. } => *correlation_id,
             }
         };
 
