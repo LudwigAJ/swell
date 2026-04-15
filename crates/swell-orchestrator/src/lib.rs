@@ -30,6 +30,7 @@ pub mod gap_analyzer;
 pub mod hard_limits;
 pub mod killswitch;
 pub mod idempotent_actions;
+pub mod loop_detection;
 pub mod langfuse_exporter;
 pub mod merge_queue;
 pub mod metrics;
