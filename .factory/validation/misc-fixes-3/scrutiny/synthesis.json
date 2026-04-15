@@ -1,0 +1,58 @@
+{
+  "milestone": "misc-fixes-3",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": false,
+      "command": "cargo test --workspace -- --test-threads=4",
+      "exitCode": 101,
+      "output": "1 test failed: config::tests::test_five_layer_precedence_ordering (panic at config.rs:552)"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo check --workspace",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "failedFeatures": ["followup-m11-daemon-mcp-health-wiring"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "followup-m11-daemon-mcp-health-wiring",
+      "severity": "blocking",
+      "description": "Tautological test assertion at crates/swell-daemon/src/commands.rs:2141 — `assert!(mcp_health.is_empty() || !mcp_health.is_empty())` always evaluates to true regardless of actual value. The comment says 'Real data from orchestrator' but the assertion doesn't verify this. Original test had `assert!(mcp_health.contains_key(\"_status\"))` which was replaced with a tautology. This provides zero verification that real MCP health data is being returned."
+    },
+    {
+      "featureId": "misc-fixes-3",
+      "severity": "blocking",
+      "description": "Test failure: test_five_layer_precedence_ordering panics at crates/swell-core/src/config.rs:552:42 with 'called `Option::unwrap()` on a `None` value'. This is a pre-existing test failure unrelated to the features being reviewed, but it blocks the milestone."
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Update swell-orchestrator/AGENTS.md Orchestrator struct documentation to include the mcp_manager field and get_mcp_health() method in the Public API section. The struct now has 6 fields but docs show 5.",
+      "evidence": "Feature review for followup-m11-daemon-mcp-health-wiring found Orchestrator struct docs don't reflect current implementation.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document secret scanner testing conventions in swell-tools/AGENTS.md: tests requiring external tools (gitleaks/ggshield) should either document the requirement or use mocks. The skip pattern used is reasonable but not documented.",
+      "evidence": "Feature review for followup-m12-secret-scanning-production-wiring noted tests skip when scanner not installed, and this convention is not documented.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}
