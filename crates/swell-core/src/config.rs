@@ -9,11 +9,34 @@
 //! 5. Local override (environment variables or CLI flags)
 //!
 //! Higher-priority layers override lower-priority values.
+//!
+//! # Section-Aware Merge Strategies
+//!
+//! Different configuration sections use different merge strategies:
+//! - **Scalar values**: Override (last writer wins)
+//! - **Nested objects**: Deep merge (keys merged recursively)
+//! - **Array settings**: Unique-extension (union of values, no duplicates)
+//! - **Designated sections**: Full replacement (e.g., `prompts` section)
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::path::{Path, PathBuf};
+
+/// Keys that use unique-extension merge strategy for arrays.
+/// These keys represent collections where values should be unioned without duplicates.
+const UNIQUE_EXTENSION_KEYS: &[&str] = &[
+    "allowed_paths",
+    "plugins",
+    "tags",
+    "items",
+    "additional_dependencies",
+    "feature_flags",
+];
+
+/// Sections that use full replacement strategy (entire section replaced, not merged).
+/// By default, this includes the `prompts` section.
+const FULL_REPLACEMENT_SECTIONS: &[&str] = &["prompts"];
 
 /// Layer index for precedence (higher = higher priority)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -237,14 +260,107 @@ impl ConfigLoader {
                     source_file: Some(source.clone()),
                 });
 
-                // Merge: higher layers override lower layers
+                // Apply section-aware merge strategy
                 if let Some(existing) = values.get_mut(&key) {
-                    *existing = val;
+                    *existing = self.apply_merge_strategy(existing.clone(), val, &key);
                 } else {
                     values.insert(key, val);
                 }
             }
         }
+    }
+
+    /// Apply the appropriate merge strategy based on the key and value types.
+    ///
+    /// - Scalar values: Override (last writer wins)
+    /// - Nested objects: Deep merge (keys merged recursively)
+    /// - Array settings in UNIQUE_EXTENSION_KEYS: Unique-extension (union, no duplicates)
+    /// - Sections in FULL_REPLACEMENT_SECTIONS: Full replacement
+    fn apply_merge_strategy(
+        &self,
+        existing: serde_json::Value,
+        new: serde_json::Value,
+        key: &str,
+    ) -> serde_json::Value {
+        // Full replacement for designated sections - higher layer completely replaces
+        if Self::is_full_replacement_section(key) {
+            return new;
+        }
+
+        // Unique extension for arrays in specific keys
+        if Self::is_unique_extension_key(key) {
+            if let (serde_json::Value::Array(existing_arr), serde_json::Value::Array(new_arr)) =
+                (&existing, &new)
+            {
+                return Self::merge_arrays_unique_extension(existing_arr.clone(), new_arr.clone());
+            }
+            // If not both arrays, fall back to override
+            return new;
+        }
+
+        // Deep merge for nested objects
+        if let (serde_json::Value::Object(existing_obj), serde_json::Value::Object(new_obj)) =
+            (&existing, &new)
+        {
+            return Self::deep_merge(existing_obj.clone(), new_obj.clone());
+        }
+
+        // Override for all other cases (scalars, different types)
+        new
+    }
+
+    /// Check if a key uses full replacement strategy
+    fn is_full_replacement_section(key: &str) -> bool {
+        FULL_REPLACEMENT_SECTIONS.contains(&key)
+    }
+
+    /// Check if a key uses unique extension strategy for arrays
+    fn is_unique_extension_key(key: &str) -> bool {
+        UNIQUE_EXTENSION_KEYS.contains(&key)
+    }
+
+    /// Deep merge two JSON objects, recursively merging nested objects.
+    /// For overlapping keys, values from new override values from existing.
+    fn deep_merge(
+        existing: serde_json::Map<String, serde_json::Value>,
+        new: serde_json::Map<String, serde_json::Value>,
+    ) -> serde_json::Value {
+        let mut result = existing;
+
+        for (key, new_value) in new {
+            if let Some(existing_value) = result.get_mut(&key) {
+                // Recursively merge nested objects
+                let merged = match (existing_value.clone(), new_value) {
+                    (serde_json::Value::Object(existing_obj), serde_json::Value::Object(new_obj)) => {
+                        Self::deep_merge(existing_obj, new_obj)
+                    }
+                    // Override for non-objects (scalars, arrays)
+                    (_, new_val) => new_val,
+                };
+                *existing_value = merged;
+            } else {
+                result.insert(key, new_value);
+            }
+        }
+
+        serde_json::Value::Object(result)
+    }
+
+    /// Merge two arrays using unique-extension strategy.
+    /// Items from both arrays are combined, with duplicates removed.
+    fn merge_arrays_unique_extension(
+        existing: Vec<serde_json::Value>,
+        new: Vec<serde_json::Value>,
+    ) -> serde_json::Value {
+        let mut result = existing;
+
+        for item in new {
+            if !result.iter().any(|e| e == &item) {
+                result.push(item);
+            }
+        }
+
+        serde_json::Value::Array(result)
     }
 }
 
