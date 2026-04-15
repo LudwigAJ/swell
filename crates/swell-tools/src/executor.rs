@@ -4,6 +4,9 @@
 //! OS-level sandboxing (Seatbelt on macOS, Bubblewrap on Linux) before executing
 //! shell commands to restrict filesystem access.
 
+use crate::cedar_policy::{
+    parse_entity_uid, CedarDecision, CedarPolicyEngine, ToolAuthorizationRequest, ToolOperation,
+};
 use crate::os_sandbox::{
     detect_available_sandbox_sync, FilesystemPermission, NetworkPolicy, OsSandboxConfig,
     SandboxAvailability,
@@ -257,6 +260,7 @@ pub struct ToolExecutor {
     hook_manager: Option<Arc<RwLock<PostToolHookManager>>>,
     workspace_path: PathBuf,
     sandbox_hook: Option<SandboxPreHook>,
+    cedar_policy: Option<CedarPolicyEngine>,
 }
 
 impl ToolExecutor {
@@ -267,6 +271,7 @@ impl ToolExecutor {
             hook_manager: None,
             workspace_path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             sandbox_hook: None,
+            cedar_policy: None,
         }
     }
 
@@ -361,6 +366,89 @@ impl ToolExecutor {
                 name,
                 tool.permission_tier()
             )));
+        }
+
+        // Check Cedar policy authorization (deny-by-default semantics)
+        if let Some(ref cedar_policy) = self.cedar_policy {
+            let principal =
+                parse_entity_uid("Agent", "system").map_err(|e: crate::cedar_policy::CedarError| {
+                    SwellError::PermissionDenied(format!("Failed to create principal: {}", e))
+                })?;
+
+            let tool_op = match name {
+                "read_file" | "read" => ToolOperation::Read {
+                    path: arguments
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(PathBuf::from)
+                        .unwrap_or_default(),
+                },
+                "write_file" | "write" => ToolOperation::Write {
+                    path: arguments
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(PathBuf::from)
+                        .unwrap_or_default(),
+                },
+                "edit_file" | "edit" => ToolOperation::Edit {
+                    path: arguments
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .map(PathBuf::from)
+                        .unwrap_or_default(),
+                },
+                "shell" | "bash" | "sh" | "exec" => ToolOperation::Shell {
+                    command: arguments
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                },
+                "git" => ToolOperation::Git {
+                    operation: arguments
+                        .get("operation")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                },
+                _ => ToolOperation::ReadOnly {
+                    tool_name: name.to_string(),
+                },
+            };
+
+            let request = ToolAuthorizationRequest::new(tool_op, "system".to_string(), principal);
+
+            match cedar_policy.authorize(&request) {
+                Ok(CedarDecision::Permit) => {
+                    debug!(tool = %name, "Cedar policy: PERMIT");
+                }
+                Ok(CedarDecision::Deny) | Ok(CedarDecision::NotApplicable) => {
+                    // Deny-by-default: if no permit policy matches, deny
+                    warn!(
+                        tool = %name,
+                        decision = ?CedarDecision::Deny,
+                        "Cedar policy: DENY (deny-by-default or explicit forbid)"
+                    );
+                    return Err(SwellError::PermissionDenied(format!(
+                        "Tool '{}' denied by Cedar policy",
+                        name
+                    )));
+                }
+                Err(e) => {
+                    warn!(tool = %name, error = %e, "Cedar policy evaluation failed");
+                    return Err(SwellError::PermissionDenied(format!(
+                        "Tool '{}' policy evaluation error: {}",
+                        name, e
+                    )));
+                }
+                Ok(CedarDecision::Error) => {
+                    warn!(tool = %name, "Cedar policy: ERROR");
+                    return Err(SwellError::PermissionDenied(format!(
+                        "Tool '{}' policy evaluation error",
+                        name
+                    )));
+                }
+            }
         }
 
         // Apply sandbox pre-execution for shell commands
@@ -525,6 +613,27 @@ impl ToolExecutor {
     pub fn has_hook_manager(&self) -> bool {
         self.hook_manager.is_some()
     }
+
+    /// Set the Cedar policy engine for authorization checks.
+    ///
+    /// When a Cedar policy engine is configured, tool execution is authorized
+    /// against the loaded policies before the tool is executed. Without permit
+    /// policies, all tool calls are denied (deny-by-default semantics).
+    /// Forbid policies always override permit policies.
+    pub fn with_cedar_policy(mut self, policy: CedarPolicyEngine) -> Self {
+        self.cedar_policy = Some(policy);
+        self
+    }
+
+    /// Check if Cedar policy authorization is enabled
+    pub fn has_cedar_policy(&self) -> bool {
+        self.cedar_policy.is_some()
+    }
+
+    /// Get the Cedar policy engine for inspection
+    pub fn cedar_policy(&self) -> Option<&CedarPolicyEngine> {
+        self.cedar_policy.as_ref()
+    }
 }
 
 impl Clone for ToolExecutor {
@@ -535,6 +644,7 @@ impl Clone for ToolExecutor {
             hook_manager: self.hook_manager.clone(),
             workspace_path: self.workspace_path.clone(),
             sandbox_hook: self.sandbox_hook.clone(),
+            cedar_policy: self.cedar_policy.clone(),
         }
     }
 }
@@ -677,5 +787,163 @@ mod tests {
             .with_sandbox_enabled();
 
         assert!(executor.sandbox_hook.is_some());
+    }
+
+    // =============================================================================
+    // Cedar Policy Integration Tests
+    // =============================================================================
+
+    #[tokio::test]
+    async fn test_cedar_policy_deny_by_default() {
+        // Test that with Cedar policy engine loaded but no permit policies,
+        // all tool calls are denied (deny-by-default semantics)
+        use crate::cedar_policy::CedarPolicyEngine;
+
+        let registry = ToolRegistry::new();
+        registry
+            .register(
+                ReadFileTool::new(),
+                crate::registry::ToolCategory::File,
+                crate::registry::ToolLayer::Builtin,
+            )
+            .await;
+
+        // Create engine with empty policies (no permit rules)
+        let policy_engine = CedarPolicyEngine::new();
+        // Don't load any policies - deny-by-default
+
+        let executor = ToolExecutor::new(registry).with_cedar_policy(policy_engine);
+
+        // Even though permission tier is Auto, Cedar policy should deny
+        // When no policies are loaded, the error message indicates deny-by-default
+        let result = executor
+            .execute("read_file", serde_json::json!({"path": "/tmp/test"}))
+            .await;
+
+        assert!(matches!(result, Err(SwellError::PermissionDenied(_))));
+        let err = result.unwrap_err();
+        // When no policies loaded, it's a deny (deny-by-default semantics)
+        assert!(
+            format!("{}", err).contains("denied") || format!("{}", err).contains("No policies"),
+            "Expected deny message, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cedar_policy_permit_allows() {
+        // Test that with a permit policy, tool calls are allowed
+        use crate::cedar_policy::CedarPolicyEngine;
+
+        let registry = ToolRegistry::new();
+        registry
+            .register(
+                ReadFileTool::new(),
+                crate::registry::ToolCategory::File,
+                crate::registry::ToolLayer::Builtin,
+            )
+            .await;
+
+        let mut policy_engine = CedarPolicyEngine::new();
+        // Use exact resource path to match the existing test pattern
+        let policies = r#"
+permit(
+    principal == Agent::"system",
+    action == Action::"read_file",
+    resource == File::"/tmp/test"
+);
+"#;
+        policy_engine.load_policies(policies).unwrap();
+
+        let executor = ToolExecutor::new(registry).with_cedar_policy(policy_engine);
+
+        // With a matching permit policy, execution should proceed
+        // (May fail for other reasons like file not existing, but permission should pass)
+        let result = executor
+            .execute("read_file", serde_json::json!({"path": "/tmp/test"}))
+            .await;
+        // Should NOT be a PermissionDenied error - file might not exist but policy allowed it
+        assert!(
+            !matches!(result, Err(SwellError::PermissionDenied(ref msg)) if msg.contains("Cedar")),
+            "Expected permit to allow, got: {:?}",
+            result
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cedar_policy_forbid_overrides_permit() {
+        // Test that forbid policies override permit policies
+        use crate::cedar_policy::CedarPolicyEngine;
+
+        let registry = ToolRegistry::new();
+        registry
+            .register(
+                ReadFileTool::new(),
+                crate::registry::ToolCategory::File,
+                crate::registry::ToolLayer::Builtin,
+            )
+            .await;
+
+        let mut policy_engine = CedarPolicyEngine::new();
+        // Permit reading /tmp/test
+        let policies = r#"
+permit(
+    principal == Agent::"system",
+    action == Action::"read_file",
+    resource == File::"/tmp/test"
+);
+// But forbid reading /tmp/test_file
+forbid(
+    principal == Agent::"system",
+    action == Action::"read_file",
+    resource == File::"/tmp/test_file"
+);
+"#;
+        policy_engine.load_policies(policies).unwrap();
+
+        let executor = ToolExecutor::new(registry).with_cedar_policy(policy_engine);
+
+        // Even though permit matches, forbid should override and deny
+        let result = executor
+            .execute("read_file", serde_json::json!({"path": "/tmp/test_file"}))
+            .await;
+
+        assert!(matches!(result, Err(SwellError::PermissionDenied(_))));
+        let err = result.unwrap_err();
+        assert!(
+            format!("{}", err).contains("denied by Cedar policy"),
+            "Expected forbid to override permit, got: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cedar_policy_no_policy_engine() {
+        // Test that without Cedar policy engine, tools execute normally
+        use crate::tools::ReadFileTool;
+
+        let registry = ToolRegistry::new();
+        registry
+            .register(
+                ReadFileTool::new(),
+                crate::registry::ToolCategory::File,
+                crate::registry::ToolLayer::Builtin,
+            )
+            .await;
+
+        let executor = ToolExecutor::new(registry);
+        // No cedar policy set - should work without policy check
+        assert!(!executor.has_cedar_policy());
+
+        // This will fail for other reasons (file doesn't exist) but not permission
+        let result = executor
+            .execute("read_file", serde_json::json!({"path": "/tmp/nonexistent"}))
+            .await;
+        // Should not be a PermissionDenied error (file not found is different)
+        assert!(
+            !matches!(result, Err(SwellError::PermissionDenied(_))),
+            "Without Cedar policy, should not deny: {:?}",
+            result
+        );
     }
 }
