@@ -12,8 +12,31 @@
 //! let masked = masker.mask_secrets("My API key is AKIAIOSFODNN7EXAMPLE");
 //! // Output: "My API key is [REDACTED AWS Access Key]"
 //! ```
+//!
+//! ## Configuration from JSON
+//!
+//! Patterns can be loaded from a JSON configuration (e.g., from settings.json):
+//!
+//! ```json
+//! {
+//!   "masking": {
+//!     "enabled": true,
+//!     "default_replacement": "[REDACTED]",
+//!     "patterns": [
+//!       {
+//!         "name": "AWS Access Key",
+//!         "pattern": "(?i)\\b(AKIA[0-9A-Z]{16})\\b",
+//!         "replacement": "[REDACTED AWS Access Key]",
+//!         "min_length": 20,
+//!         "max_length": 20
+//!       }
+//!     ]
+//!   }
+//! }
+//! ```
 
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -73,6 +96,32 @@ pub struct MaskingConfig {
     pub enabled: bool,
     /// Default replacement template
     pub default_replacement: String,
+}
+
+/// JSON-serializable pattern definition for config files
+/// This is used to deserialize patterns from settings.json
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatternDef {
+    /// Human-readable name for this secret type
+    pub name: String,
+    /// Regex pattern to match the secret
+    pub pattern: String,
+    /// Replacement string template (use {name} for the secret type)
+    pub replacement: String,
+    /// Minimum length of secret to be considered valid (default: 8)
+    #[serde(default = "default_min_length")]
+    pub min_length: usize,
+    /// Maximum length of secret to be considered valid (default: 256)
+    #[serde(default = "default_max_length")]
+    pub max_length: usize,
+}
+
+fn default_min_length() -> usize {
+    8
+}
+
+fn default_max_length() -> usize {
+    256
 }
 
 impl Default for MaskingConfig {
@@ -280,6 +329,38 @@ impl MaskingConfig {
     pub fn add_pattern(mut self, pattern: SecretPattern) -> Self {
         self.patterns.push(pattern);
         self
+    }
+
+    /// Create configuration from a list of pattern definitions (e.g., loaded from JSON).
+    ///
+    /// This allows patterns to be specified in settings.json and loaded at runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any pattern regex fails to compile.
+    pub fn from_pattern_defs(
+        patterns: Vec<PatternDef>,
+        enabled: bool,
+        default_replacement: String,
+    ) -> Result<Self, regex::Error> {
+        let patterns = patterns
+            .into_iter()
+            .map(|def| {
+                SecretPattern::with_length_bounds(
+                    &def.name,
+                    &def.pattern,
+                    &def.replacement,
+                    def.min_length,
+                    def.max_length,
+                )
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self {
+            patterns,
+            enabled,
+            default_replacement,
+        })
     }
 }
 
@@ -911,6 +992,107 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
 
         let stats_after = masker.blocking_get_stats();
         assert_eq!(stats_after.texts_processed, 0);
+    }
+
+    #[test]
+    fn test_pattern_def_from_json() {
+        // Test parsing pattern definitions from JSON
+        // Note: In JSON strings, \\b means literal \b (backslash-b), NOT regex word boundary
+        // This is the standard way to escape backslashes in JSON
+        let json = r#"{
+            "masking": {
+                "enabled": true,
+                "default_replacement": "[REDACTED]",
+                "patterns": [
+                    {
+                        "name": "Test Key",
+                        "pattern": "TESTKEY-[A-Z]{10}",
+                        "replacement": "[REDACTED Test Key]"
+                    }
+                ]
+            }
+        }"#;
+
+        let parsed: serde_json::Value = serde_json::from_str(json).unwrap();
+        let masking = parsed.get("masking").unwrap();
+
+        let config = MaskingConfig::from_pattern_defs(
+            serde_json::from_value(masking.get("patterns").unwrap().clone()).unwrap(),
+            masking.get("enabled").unwrap().as_bool().unwrap(),
+            masking.get("default_replacement").unwrap().as_str().unwrap().to_string(),
+        )
+        .unwrap();
+
+        assert!(config.enabled);
+        assert_eq!(config.patterns.len(), 1);
+        assert_eq!(config.patterns[0].name, "Test Key");
+
+        // Test that the pattern works - TESTKEY-ABCDEFGHIJ is 16 chars
+        let masker = AutoMasker::with_config(config);
+        let text = "Key: TESTKEY-ABCDEFGHIJ and more text";
+        let masked = masker.mask_secrets(text);
+        assert!(
+            !masked.contains("TESTKEY-ABCDEFGHIJ"),
+            "Secret should be masked, but got: {}",
+            masked
+        );
+        assert!(masked.contains("[REDACTED Test Key]"));
+    }
+
+    #[test]
+    fn test_pattern_def_default_lengths() {
+        // Test that default length bounds are applied when not specified
+        let json = r#"{
+            "patterns": [
+                {
+                    "name": "Test Pattern",
+                    "pattern": "(?i)\\b(TEST[A-Z]{8})\\b",
+                    "replacement": "[REDACTED]"
+                }
+            ]
+        }"#;
+
+        let parsed: serde_json::Value = serde_json::from_str(json).unwrap();
+        let pattern_defs: Vec<PatternDef> = serde_json::from_value(parsed.get("patterns").unwrap().clone()).unwrap();
+
+        assert_eq!(pattern_defs.len(), 1);
+        assert_eq!(pattern_defs[0].min_length, 8);
+        assert_eq!(pattern_defs[0].max_length, 256);
+    }
+
+    #[test]
+    fn test_from_pattern_defs_with_invalid_regex() {
+        // Test that invalid regex patterns return an error
+        let pattern_defs = vec![PatternDef {
+            name: "Invalid Pattern".to_string(),
+            pattern: r"[\invalid".to_string(),
+            replacement: "[REDACTED]".to_string(),
+            min_length: 8,
+            max_length: 256,
+        }];
+
+        let result = MaskingConfig::from_pattern_defs(pattern_defs, true, "[REDACTED]".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_from_pattern_defs_empty_patterns() {
+        // Test with empty patterns list
+        let config = MaskingConfig::from_pattern_defs(
+            vec![],
+            true,
+            "[REDACTED]".to_string(),
+        )
+        .unwrap();
+
+        assert!(config.enabled);
+        assert!(config.patterns.is_empty());
+
+        // Empty patterns should pass through text unchanged
+        let masker = AutoMasker::with_config(config);
+        let text = "No secrets here";
+        let masked = masker.mask_secrets(text);
+        assert_eq!(masked, text);
     }
 
     // Helper methods to allow blocking access in tests
