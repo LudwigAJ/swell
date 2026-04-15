@@ -1,0 +1,70 @@
+{
+  "milestone": "M6-task-lifecycle",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-TASK-001",
+    "VAL-TASK-002",
+    "VAL-TASK-003",
+    "VAL-TASK-004",
+    "VAL-TASK-005",
+    "VAL-TASK-006",
+    "VAL-TASK-007",
+    "VAL-TASK-008",
+    "VAL-TASK-009",
+    "VAL-TASK-010"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "validationDetails": {
+    "VAL-TASK-001": {
+      "tests": "concurrent_registry integration tests",
+      "result": "8 tests passed - DashMap concurrent access verified"
+    },
+    "VAL-TASK-002": {
+      "tests": "swell-core types::tests::test_task_spec_*",
+      "result": "TaskSpec with acceptance_tests/commit_policy/escalation_policy serde roundtrip verified"
+    },
+    "VAL-TASK-003": {
+      "tests": "team_registry::tests",
+      "result": "23 tests passed - TeamRegistry with shared fate notifications verified"
+    },
+    "VAL-TASK-004": {
+      "tests": "cron_registry::tests",
+      "result": "25 tests passed - CronRegistry with cron expression parsing verified"
+    },
+    "VAL-TASK-005": {
+      "tests": "worker_boot::tests",
+      "result": "32 tests passed - Worker boot lifecycle (Spawning→TrustRequired→ReadyForPrompt→Running→Finished) verified"
+    },
+    "VAL-TASK-006": {
+      "tests": "swell-core::types::tests::test_failure_class_count",
+      "result": "FailureClass enum has 12+ variants verified"
+    },
+    "VAL-TASK-007": {
+      "tests": "swell-core::types::tests::test_correlation_id_links_related_events",
+      "result": "Events carry correlation IDs linking related events verified"
+    },
+    "VAL-TASK-008": {
+      "tests": "recovery_recipe::tests including VAL-TASK-008 specific tests",
+      "result": "47 tests passed - RecoveryRecipe with FailureScenario to RecoverySteps mapping verified"
+    },
+    "VAL-TASK-009": {
+      "tests": "checkpoint_wiring::tests",
+      "result": "12 tests passed - CheckpointingTaskStateMachine auto-checkpoint on all transitions verified"
+    },
+    "VAL-TASK-010": {
+      "tests": "swell-state task_state_file::tests",
+      "result": "7 tests passed - task-state.json atomic writes with temp+rename pattern verified"
+    }
+  },
+  "previousRound": null,
+  "commit": "f2722d2"
+}
