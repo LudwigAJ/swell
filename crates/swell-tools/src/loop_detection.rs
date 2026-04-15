@@ -469,6 +469,16 @@ impl ToolLoopTracker {
         self.replan_counts.remove(&task_id);
     }
 
+    /// Clear loop context for a task - used by LoopBreaker to reset repetitive context.
+    /// This clears the execution history and re-plan count, effectively breaking the doom loop.
+    /// Unlike `clear` which is for post-completion cleanup, this is specifically for
+    /// intervention when a doom loop is detected.
+    pub async fn clear_loop_context(&mut self, task_id: Uuid) {
+        // Clear the repetitive context
+        self.history.remove(&task_id);
+        self.replan_counts.remove(&task_id);
+    }
+
     /// Clear all history
     pub fn clear_all(&mut self) {
         self.history.clear();
