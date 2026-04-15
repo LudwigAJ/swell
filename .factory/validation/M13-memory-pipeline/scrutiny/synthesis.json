@@ -1,6 +1,6 @@
 {
   "milestone": "M13-memory-pipeline",
-  "round": 1,
+  "round": 2,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -36,8 +36,8 @@
     {
       "featureId": "mem-confidence-decay",
       "severity": "blocking",
-      "description": "bayesian_confidence_decay functions are implemented but not wired into memory retrieval pipeline. The feature description says 'Wire decay.rs to implement' but no callers exist outside tests.",
-      "location": "crates/swell-memory/src/decay.rs"
+      "description": "bayesian_confidence_decay functions are implemented but not wired into memory retrieval pipeline. The feature description says 'Wire decay.rs to implement' but no callers exist outside tests. apply_decay() and bayesian_confidence_decay() are defined in decay.rs and exported in lib.rs, but search() in SqliteMemoryStore does not call them.",
+      "location": "crates/swell-memory/src/decay.rs, crates/swell-memory/src/lib.rs:search()"
     },
     {
       "featureId": "mem-confidence-decay",
@@ -48,14 +48,14 @@
     {
       "featureId": "mem-confidence-decay",
       "severity": "blocking",
-      "description": "Feature requirement 'optionally boosts confidence based on validation' is not implemented. No validation-based confidence boost mechanism exists.",
+      "description": "Feature requirement 'optionally boosts confidence based on validation' is not implemented. No validation-based confidence boost mechanism exists in decay.rs.",
       "location": "crates/swell-memory/src/decay.rs"
     },
     {
       "featureId": "mem-conflict-resolution-wiring",
       "severity": "blocking",
-      "description": "ConflictResolutionService is exported from lib.rs but NOT integrated into SqliteMemoryStore. The store() and update() methods do not call detect_and_resolve() to check for conflicting memories.",
-      "location": "crates/swell-memory/src/lib.rs - SqliteMemoryStore"
+      "description": "ConflictResolutionService is exported from lib.rs but NOT integrated into SqliteMemoryStore. The store() and update() methods do not call detect_and_resolve() to check for conflicting memories. store() uses find_similar_memory() but not the full ConflictResolutionService.",
+      "location": "crates/swell-memory/src/lib.rs - SqliteMemoryStore::store(), SqliteMemoryStore::update()"
     },
     {
       "featureId": "mem-conflict-resolution-wiring",
@@ -66,43 +66,43 @@
     {
       "featureId": "mem-golden-sample-validation",
       "severity": "blocking",
-      "description": "validate_procedure_for_auto_application method is implemented (47 tests) but never called from any external component. The feature requires wiring to validate learned procedures before auto-application but no integration exists.",
-      "location": "crates/swell-memory/src/golden_sample_testing.rs"
+      "description": "validate_procedure_for_auto_application method was added in commit 7ac4373 with 10 new tests. However, the method is still not called from any external component - it's only tested internally. The feature requires wiring to validate learned procedures before auto-application but no integration exists.",
+      "location": "crates/swell-memory/src/golden_sample_testing.rs - GoldenSampleService::validate_procedure_for_auto_application()"
     },
     {
       "featureId": "mem-hierarchical-scoping",
       "severity": "blocking",
       "description": "Database schema does not include org, workspace, framework, environment, or session_id columns. Only repository, language, task_type are persisted. The full 8-level hierarchy is NOT implemented.",
-      "location": "crates/swell-memory/src/lib.rs"
+      "location": "crates/swell-memory/src/lib.rs - SqliteMemoryStore INSERT statement"
     },
     {
       "featureId": "mem-hierarchical-scoping",
       "severity": "blocking",
-      "description": "row_to_entry() hardcodes org, workspace, framework, environment, session_id to empty/None instead of reading from database.",
+      "description": "row_to_entry() hardcodes org, workspace, framework, environment, session_id to empty/None instead of reading from database. MemoryEntry scope fields are lost on storage.",
       "location": "crates/swell-memory/src/lib.rs:614-620"
     },
     {
       "featureId": "mem-hierarchical-scoping",
       "severity": "blocking",
       "description": "cross_scope_override flag in MemoryQuery is defined but never checked or enforced in search(). The feature requirement 'Cross-scope queries require explicit cross_scope_override' is not implemented.",
-      "location": "crates/swell-memory/src/lib.rs:756"
+      "location": "crates/swell-memory/src/lib.rs:756 - search() method"
     },
     {
       "featureId": "mem-hierarchical-scoping",
       "severity": "blocking",
-      "description": "No validation rejects queries without any scope specification. Feature says 'Queries without any scope specification are rejected with an error' but this check does not exist.",
-      "location": "crates/swell-memory/src/lib.rs"
+      "description": "No validation rejects queries without any scope specification. Feature says 'Queries without any scope specification are rejected with an error' but this check does not exist in search().",
+      "location": "crates/swell-memory/src/lib.rs - search() method"
     },
     {
       "featureId": "mem-hierarchical-scoping",
       "severity": "blocking",
-      "description": "INSERT statement only persists repository, language, task_type. Other hierarchy fields from MemoryEntry are discarded.",
-      "location": "crates/swell-memory/src/lib.rs:659"
+      "description": "INSERT statement only persists repository, language, task_type. The org, workspace, framework, environment, and session_id fields from MemoryEntry are discarded on store.",
+      "location": "crates/swell-memory/src/lib.rs:659 - store() INSERT"
     },
     {
       "featureId": "mem-lancedb-integration",
       "severity": "blocking",
-      "description": "Feature 'mem-lancedb-integration' is NOT registered in features.json. The LanceDB implementation exists but was never tracked as a feature in the mission workflow.",
+      "description": "Feature 'mem-lancedb-integration' is NOT registered in features.json. The LanceDB implementation exists in lancedb_vector.rs but was never tracked as a feature in the mission workflow.",
       "location": "features.json"
     },
     {
@@ -153,5 +153,5 @@
       "reason": "Not actionable - this is a mission setup issue, not a code issue"
     }
   ],
-  "previousRound": null
+  "previousRound": ".factory/validation/M13-memory-pipeline/scrutiny/synthesis.json (round 1, commit 2109877)"
 }
