@@ -166,6 +166,15 @@ pub mod version_rollback;
 
 pub use version_rollback::{MemoryVersion, RollbackAuditEntry, RollbackResult};
 
+// Working memory compiler module - Assembles context from all memory layers
+// into a 2,000-5,000 token budget per agent invocation
+pub mod working_memory_compiler;
+
+pub use working_memory_compiler::{
+    LayerContribution, MemoryLayer, ScoredEntry, WorkingMemory, WorkingMemoryBudget,
+    WorkingMemoryCompiler, WorkingMemoryCompilerConfig,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
