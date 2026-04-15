@@ -40,6 +40,51 @@ use uuid::Uuid;
 // Re-export pricing from opentelemetry module
 use crate::opentelemetry::pricing;
 
+/// Outcome of a task for cost-per-outcome analysis
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskOutcome {
+    /// Task completed successfully
+    #[default]
+    Completed,
+    /// Task failed
+    Failed,
+    /// Task was rejected
+    Rejected,
+    /// Task was cancelled
+    Cancelled,
+    /// Task timed out
+    Timeout,
+    /// Task was escalated
+    Escalated,
+}
+
+impl TaskOutcome {
+    /// Returns true if this outcome represents success
+    pub fn is_success(&self) -> bool {
+        matches!(self, TaskOutcome::Completed)
+    }
+}
+
+/// Task cost summary including both cost and outcome for cost-per-outcome analysis
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskCostSummary {
+    /// Total cost in USD
+    pub total_cost_usd: f64,
+    /// Total input tokens
+    pub total_input_tokens: u64,
+    /// Total output tokens
+    pub total_output_tokens: u64,
+    /// Total tokens
+    pub total_tokens: u64,
+    /// Number of LLM calls
+    pub call_count: u64,
+    /// Cost breakdown by model
+    pub model_breakdown: ModelBreakdown,
+    /// Final task outcome
+    pub outcome: TaskOutcome,
+}
+
 /// A cost record for a single LLM call
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostRecord {
@@ -384,6 +429,8 @@ pub struct CostTracker {
     active_task_id: Option<Uuid>,
     /// Per-task summaries (for quick access)
     task_summaries: HashMap<Uuid, CostSummary>,
+    /// Per-task outcomes for cost-per-outcome analysis
+    task_outcomes: HashMap<Uuid, TaskOutcome>,
     /// Budget alerts triggered
     budget_alerts: Vec<BudgetAlert>,
     /// Last alert time for cooldown (in milliseconds since Unix epoch)
@@ -407,6 +454,7 @@ impl CostTracker {
             run_summary: CostSummary::new(),
             active_task_id: None,
             task_summaries: HashMap::new(),
+            task_outcomes: HashMap::new(),
             budget_alerts: Vec::new(),
             last_alert_time_ms: None,
             alert_cooldown_secs: 300, // 5 minute default cooldown
@@ -579,6 +627,32 @@ impl CostTracker {
         self.task_summaries.get(&task_id)
     }
 
+    /// Get task summary including outcome for cost-per-outcome analysis
+    /// Returns both the cost data and the final task outcome
+    pub fn get_task_summary_with_outcome(&self, task_id: Uuid) -> Option<TaskCostSummary> {
+        let summary = self.task_summaries.get(&task_id)?;
+        let outcome = self.task_outcomes.get(&task_id).copied().unwrap_or_default();
+        Some(TaskCostSummary {
+            total_cost_usd: summary.total_cost_usd,
+            total_input_tokens: summary.total_input_tokens,
+            total_output_tokens: summary.total_output_tokens,
+            total_tokens: summary.total_tokens,
+            call_count: summary.call_count,
+            model_breakdown: summary.model_breakdown.clone(),
+            outcome,
+        })
+    }
+
+    /// Set the outcome for a task (called when task completes)
+    pub fn set_task_outcome(&mut self, task_id: Uuid, outcome: TaskOutcome) {
+        self.task_outcomes.insert(task_id, outcome);
+    }
+
+    /// Get the outcome for a task
+    pub fn get_task_outcome(&self, task_id: Uuid) -> Option<TaskOutcome> {
+        self.task_outcomes.get(&task_id).copied()
+    }
+
     /// Get run-level summary
     pub fn get_summary(&self) -> &CostSummary {
         &self.run_summary
@@ -620,6 +694,7 @@ impl CostTracker {
         self.run_costs.clear();
         self.run_summary = CostSummary::new();
         self.task_summaries.clear();
+        self.task_outcomes.clear();
         self.budget_alerts.clear();
         self.last_alert_time_ms = None;
     }
@@ -628,6 +703,7 @@ impl CostTracker {
     pub fn reset_task_costs(&mut self, task_id: Uuid) {
         self.task_costs.remove(&task_id);
         self.task_summaries.remove(&task_id);
+        self.task_outcomes.remove(&task_id);
     }
 }
 
@@ -959,6 +1035,151 @@ mod tests {
         let total_cost = run_summary.model_breakdown.total_cost_usd();
         assert!(total_cost > 0.0);
         assert!((total_cost - run_summary.total_cost_usd).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_task_outcome_is_success() {
+        assert!(TaskOutcome::Completed.is_success());
+        assert!(!TaskOutcome::Failed.is_success());
+        assert!(!TaskOutcome::Rejected.is_success());
+        assert!(!TaskOutcome::Cancelled.is_success());
+        assert!(!TaskOutcome::Timeout.is_success());
+        assert!(!TaskOutcome::Escalated.is_success());
+    }
+
+    #[test]
+    fn test_task_cost_summary_with_outcome() {
+        // Test that get_task_summary_with_outcome returns both cost and outcome
+        let task_id = Uuid::new_v4();
+        let mut tracker = CostTracker::new();
+
+        // Record costs for the task
+        tracker
+            .record_task_cost(task_id, 1000, 500, "claude-3-5-sonnet")
+            .unwrap();
+        tracker
+            .record_task_cost(task_id, 2000, 1000, "gpt-4o")
+            .unwrap();
+
+        // Set task outcome
+        tracker.set_task_outcome(task_id, TaskOutcome::Completed);
+
+        // Get summary with outcome
+        let summary = tracker.get_task_summary_with_outcome(task_id);
+        assert!(summary.is_some());
+        let cost_summary = summary.unwrap();
+
+        // Verify cost data
+        assert!(cost_summary.total_cost_usd > 0.0);
+        assert_eq!(cost_summary.call_count, 2);
+        assert_eq!(cost_summary.total_tokens, 4500);
+
+        // Verify outcome is linked
+        assert_eq!(cost_summary.outcome, TaskOutcome::Completed);
+        assert!(cost_summary.outcome.is_success());
+    }
+
+    #[test]
+    fn test_cost_per_outcome_analysis() {
+        // Test cost-per-outcome analysis across multiple tasks with different outcomes
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+        let task3 = Uuid::new_v4();
+
+        let mut tracker = CostTracker::new();
+
+        // Task 1: Successful completion with moderate cost
+        tracker
+            .record_task_cost(task1, 1000, 500, "claude-3-5-sonnet")
+            .unwrap();
+        tracker.set_task_outcome(task1, TaskOutcome::Completed);
+
+        // Task 2: Failed task with higher cost (retry)
+        tracker
+            .record_task_cost(task2, 5000, 2500, "claude-3-5-sonnet")
+            .unwrap();
+        tracker
+            .record_task_cost(task2, 4000, 2000, "claude-3-opus")
+            .unwrap();
+        tracker.set_task_outcome(task2, TaskOutcome::Failed);
+
+        // Task 3: Cancelled task with low cost
+        tracker.record_task_cost(task3, 500, 250, "gpt-4o").unwrap();
+        tracker.set_task_outcome(task3, TaskOutcome::Cancelled);
+
+        // Verify each task has correct outcome linked to cost
+        let summary1 = tracker.get_task_summary_with_outcome(task1).unwrap();
+        assert_eq!(summary1.outcome, TaskOutcome::Completed);
+        assert!(summary1.outcome.is_success());
+
+        let summary2 = tracker.get_task_summary_with_outcome(task2).unwrap();
+        assert_eq!(summary2.outcome, TaskOutcome::Failed);
+        assert!(!summary2.outcome.is_success());
+
+        let summary3 = tracker.get_task_summary_with_outcome(task3).unwrap();
+        assert_eq!(summary3.outcome, TaskOutcome::Cancelled);
+        assert!(!summary3.outcome.is_success());
+
+        // Verify cost accumulation (Task 2 should have more tokens)
+        assert!(summary2.total_tokens > summary1.total_tokens);
+        assert!(summary1.total_tokens > summary3.total_tokens);
+    }
+
+    #[test]
+    fn test_get_task_outcome() {
+        // Test retrieving the outcome for a specific task
+        let task_id = Uuid::new_v4();
+        let mut tracker = CostTracker::new();
+
+        // Initially no outcome
+        assert!(tracker.get_task_outcome(task_id).is_none());
+
+        // Set outcome
+        tracker.set_task_outcome(task_id, TaskOutcome::Timeout);
+
+        // Retrieve outcome
+        let outcome = tracker.get_task_outcome(task_id);
+        assert!(outcome.is_some());
+        assert_eq!(outcome.unwrap(), TaskOutcome::Timeout);
+    }
+
+    #[test]
+    fn test_task_outcome_default() {
+        // Test that default outcome is Completed
+        let task_id = Uuid::new_v4();
+        let mut tracker = CostTracker::new();
+
+        tracker
+            .record_task_cost(task_id, 1000, 500, "claude-3-5-sonnet")
+            .unwrap();
+
+        // get_task_summary_with_outcome should return default outcome if none set
+        let summary = tracker.get_task_summary_with_outcome(task_id).unwrap();
+        assert_eq!(summary.outcome, TaskOutcome::Completed);
+    }
+
+    #[test]
+    fn test_reset_task_outcome() {
+        // Test that reset_task_costs also removes the outcome
+        let task_id = Uuid::new_v4();
+        let mut tracker = CostTracker::new();
+
+        tracker
+            .record_task_cost(task_id, 1000, 500, "claude-3-5-sonnet")
+            .unwrap();
+        tracker.set_task_outcome(task_id, TaskOutcome::Failed);
+
+        // Verify outcome is set
+        assert!(tracker.get_task_outcome(task_id).is_some());
+
+        // Reset task costs (should also clear outcome)
+        tracker.reset_task_costs(task_id);
+
+        // Outcome should be gone
+        assert!(tracker.get_task_outcome(task_id).is_none());
+
+        // Task summary should be gone too
+        assert!(tracker.get_task_summary(task_id).is_none());
     }
 }
 
