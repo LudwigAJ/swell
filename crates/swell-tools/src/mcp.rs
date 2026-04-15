@@ -434,6 +434,229 @@ impl McpLifecycleState {
     }
 }
 
+/// Plugin state for MCP servers.
+///
+/// This enum represents the lifecycle states of an MCP plugin/server:
+/// Unconfigured → Validated → Starting → Healthy → Degraded → Failed → ShuttingDown → Stopped
+///
+/// Only valid transitions are allowed between states. Invalid transitions
+/// will return an error.
+///
+/// Reference: VAL-MCP-005
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginState {
+    /// Initial state - server configuration not yet validated
+    Unconfigured,
+    /// Configuration has been validated
+    Validated,
+    /// Server is starting up
+    Starting,
+    /// Server is healthy and fully operational
+    Healthy,
+    /// Server is operational but with degraded functionality
+    Degraded,
+    /// Server has failed
+    Failed,
+    /// Server is shutting down gracefully
+    ShuttingDown,
+    /// Server has stopped (terminal state)
+    Stopped,
+}
+
+impl PluginState {
+    /// Returns the display name for this state
+    pub fn name(&self) -> &'static str {
+        match self {
+            PluginState::Unconfigured => "Unconfigured",
+            PluginState::Validated => "Validated",
+            PluginState::Starting => "Starting",
+            PluginState::Healthy => "Healthy",
+            PluginState::Degraded => "Degraded",
+            PluginState::Failed => "Failed",
+            PluginState::ShuttingDown => "ShuttingDown",
+            PluginState::Stopped => "Stopped",
+        }
+    }
+
+    /// Returns true if transitioning to the target state is valid from this state.
+    ///
+    /// Valid transitions:
+    /// - Unconfigured → Validated
+    /// - Validated → Starting
+    /// - Starting → Healthy, Degraded, or Failed
+    /// - Healthy → Degraded, Failed, or ShuttingDown
+    /// - Degraded → Healthy, Failed, or ShuttingDown
+    /// - Failed → ShuttingDown
+    /// - ShuttingDown → Stopped
+    pub fn can_transition_to(&self, target: PluginState) -> bool {
+        matches!(
+            (*self, target),
+            // Valid transitions from Unconfigured
+            (PluginState::Unconfigured, PluginState::Validated)
+            // Valid transitions from Validated
+            | (PluginState::Validated, PluginState::Starting)
+            // Valid transitions from Starting
+            | (PluginState::Starting, PluginState::Healthy)
+            | (PluginState::Starting, PluginState::Degraded)
+            | (PluginState::Starting, PluginState::Failed)
+            // Valid transitions from Healthy
+            | (PluginState::Healthy, PluginState::Degraded)
+            | (PluginState::Healthy, PluginState::Failed)
+            | (PluginState::Healthy, PluginState::ShuttingDown)
+            // Valid transitions from Degraded
+            | (PluginState::Degraded, PluginState::Healthy)
+            | (PluginState::Degraded, PluginState::Failed)
+            | (PluginState::Degraded, PluginState::ShuttingDown)
+            // Valid transitions from Failed
+            | (PluginState::Failed, PluginState::ShuttingDown)
+            // Valid transitions from ShuttingDown
+            | (PluginState::ShuttingDown, PluginState::Stopped)
+        )
+    }
+
+    /// Returns all valid transitions from this state.
+    pub fn valid_transitions(&self) -> Vec<PluginState> {
+        let mut transitions = Vec::new();
+        let all_states = [
+            PluginState::Unconfigured,
+            PluginState::Validated,
+            PluginState::Starting,
+            PluginState::Healthy,
+            PluginState::Degraded,
+            PluginState::Failed,
+            PluginState::ShuttingDown,
+            PluginState::Stopped,
+        ];
+
+        for target in &all_states {
+            if self.can_transition_to(*target) {
+                transitions.push(*target);
+            }
+        }
+        transitions
+    }
+}
+
+impl std::fmt::Display for PluginState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+/// Error returned when an invalid plugin state transition is attempted.
+///
+/// Reference: VAL-MCP-005
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginStateTransitionError {
+    /// The state we were transitioning from
+    pub from: PluginState,
+    /// The state we were attempting to transition to
+    pub to: PluginState,
+    /// Human-readable error message
+    pub message: String,
+}
+
+impl PluginStateTransitionError {
+    /// Creates a new plugin state transition error
+    pub fn new(from: PluginState, to: PluginState) -> Self {
+        Self {
+            from,
+            to,
+            message: format!(
+                "Invalid state transition from '{}' to '{}'",
+                from.name(),
+                to.name()
+            ),
+        }
+    }
+}
+
+impl std::fmt::Display for PluginStateTransitionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for PluginStateTransitionError {}
+
+/// Result type for plugin state transitions
+pub type PluginStateTransitionResult<T> = Result<T, PluginStateTransitionError>;
+
+/// Tracks the state of an MCP plugin with transition validation.
+///
+/// This struct ensures that only valid state transitions are allowed,
+/// providing safety guarantees for the plugin lifecycle.
+///
+/// # Example
+///
+/// ```
+/// use swell_tools::mcp::{PluginState, PluginStateMachine, PluginStateTransitionError};
+///
+/// let mut sm = PluginStateMachine::new();
+/// assert_eq!(sm.current_state(), PluginState::Unconfigured);
+///
+/// // Valid transition
+/// sm.transition_to(PluginState::Validated).unwrap();
+///
+/// // Invalid transition
+/// let result = sm.transition_to(PluginState::Healthy);
+/// assert!(result.is_err());
+/// assert!(matches!(
+///     result.unwrap_err(),
+///     PluginStateTransitionError { .. }
+/// ));
+/// ```
+///
+/// Reference: VAL-MCP-005
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginStateMachine {
+    current_state: PluginState,
+}
+
+impl PluginStateMachine {
+    /// Creates a new plugin state machine in the Unconfigured state.
+    pub fn new() -> Self {
+        Self {
+            current_state: PluginState::Unconfigured,
+        }
+    }
+
+    /// Creates a plugin state machine with a specific initial state.
+    ///
+    /// This is useful for restoring state from persistence or testing.
+    pub fn with_state(state: PluginState) -> Self {
+        Self { current_state: state }
+    }
+
+    /// Returns the current state.
+    pub fn current_state(&self) -> PluginState {
+        self.current_state
+    }
+
+    /// Attempts to transition to a new state.
+    ///
+    /// Returns `Ok(())` if the transition is valid, or an error containing
+    /// details about the invalid transition.
+    pub fn transition_to(&mut self, new_state: PluginState) -> PluginStateTransitionResult<()> {
+        if self.current_state.can_transition_to(new_state) {
+            self.current_state = new_state;
+            Ok(())
+        } else {
+            Err(PluginStateTransitionError::new(
+                self.current_state,
+                new_state,
+            ))
+        }
+    }
+}
+
+impl Default for PluginStateMachine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Tool behavioral annotations as defined in the MCP spec.
 /// These provide hints about tool behavior for policy evaluation.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

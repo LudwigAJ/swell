@@ -82,6 +82,7 @@ pub use loop_detection::{
 pub use mcp::{
     McpClient, McpConnectionError, McpFailureClass, McpLifecycleError, McpLifecyclePhase,
     McpLifecycleResult, McpLifecycleState, McpManager, McpToolInfo, McpToolWrapper,
+    PluginState, PluginStateMachine, PluginStateTransitionError, PluginStateTransitionResult,
 };
 pub use mcp_config::{
     McpConfigManager, McpReconnectConfig, McpServerConfig, McpServerHealth, McpServerState,
