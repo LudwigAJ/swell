@@ -14,6 +14,7 @@
 pub mod checkpoint_manager;
 pub mod manager;
 pub mod postgres;
+pub mod session;
 pub mod sqlite;
 pub mod task_state_file;
 pub mod traits;
@@ -22,6 +23,9 @@ pub mod workspace_fingerprint;
 pub use checkpoint_manager::{CheckpointManager, CheckpointManagerConfig, CheckpointMetadata};
 pub use manager::StateManager;
 pub use postgres::PostgresCheckpointStore;
+pub use session::{
+    InMemorySessionStore, SessionError, SessionMetadata, SessionState, SessionStore,
+};
 pub use sqlite::SqliteCheckpointStore;
 pub use task_state_file::{read_task_state, read_task_state_sync, write_task_state, write_task_state_sync, TaskStateFile, TaskStateFileError};
 pub use traits::*;
