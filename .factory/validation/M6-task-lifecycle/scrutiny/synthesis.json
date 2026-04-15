@@ -1,6 +1,6 @@
 {
   "milestone": "M6-task-lifecycle",
-  "round": 2,
+  "round": 3,
   "status": "fail",
   "validatorsRun": {
     "test": {
@@ -34,22 +34,16 @@
     {
       "featureId": "task-concurrent-registry",
       "severity": "blocking",
-      "description": "BLOCKING ISSUE STILL UNRESOLVED: The concurrent_registry test still does not exist. `cargo test -p swell-orchestrator --test concurrent_registry` returns: 'error: no test target named `concurrent_registry` in `swell-orchestrator` package'. The DashMap implementation is correctly in place, but the verification test that was explicitly required in verificationSteps was never added. Commit 748b3fc ('feat(mission): add fix for missing concurrent access test') only added a feature description to a different mission's features.json, NOT the actual test."
+      "description": "BLOCKING ISSUE STILL UNRESOLVED (ROUND 3): The concurrent_registry test still does not exist. `cargo test -p swell-orchestrator --test concurrent_registry` returns: 'error: no test target named `concurrent_registry` in `swell-orchestrator` package'. The DashMap implementation is correctly in place in state_machine.rs, but the verification test that was explicitly required in verificationSteps was never added. Commit 748b3fc ('feat(mission): add fix for missing concurrent access test') added a feature description to a DIFFERENT mission's features.json (67c2b690-f32a-4538-8ff8-3eb2790dc44e), NOT the actual test. This issue has been identified in rounds 1, 2, and now 3. The actual Rust test code must be added to satisfy the verificationSteps."
     }
   ],
   "nonBlockingIssues": [],
   "appliedUpdates": [],
   "suggestedGuidanceUpdates": [
     {
-      "target": "features.json",
-      "suggestion": "skillName field uses 'rust-worker' but the actual skill in .factory/skills/ is named 'rust'. Workers that validate skill existence may fail to start. Should be changed to 'rust'.",
-      "evidence": "Multiple reviewers flagged this. features.json has skillName: 'rust-worker' but .factory/skills/ contains 'rust' skill.",
-      "isSystemic": true
-    },
-    {
-      "target": "features.json",
-      "suggestion": "verificationSteps commands don't match actual test targets. task-concurrent-registry lists 'cargo test -p swell-orchestrator --test concurrent_registry' but no such test exists. Workers cannot run the specified verificationSteps.",
-      "evidence": "task-concurrent-registry verificationSteps specifies a non-existent test target.",
+      "target": "AGENTS.md",
+      "suggestion": "Add a guideline that 'fix' features must implement the actual fix, not just add feature descriptions to other missions. Workers implementing fixes should write actual code/tests, not just metadata.",
+      "evidence": "Commit 748b3fc claimed to 'add fix for missing concurrent access test' but only added a feature description to features.json in a different mission. The actual test code was never implemented.",
       "isSystemic": true
     }
   ],
