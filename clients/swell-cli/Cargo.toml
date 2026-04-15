@@ -7,6 +7,10 @@ edition.workspace = true
 name = "swell"
 path = "src/main.rs"
 
+[lib]
+name = "swell_cli"
+path = "src/lib.rs"
+
 [dependencies]
 swell-core = { path = "../../crates/swell-core" }
 tokio.workspace = true
