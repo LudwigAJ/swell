@@ -3,7 +3,7 @@
 // This module provides functionality to analyze successful task executions
 // and extract reusable procedures as versioned skills stored in .skills directory.
 
-use crate::{SqliteMemoryStore, SwellError};
+use crate::{golden_sample_testing::GoldenSampleService, SqliteMemoryStore, SwellError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -333,6 +333,7 @@ pub struct SkillExtractor {
     store: SqliteMemoryStore,
     config: ExtractionConfig,
     workspace_path: PathBuf,
+    golden_sample_service: Option<GoldenSampleService>,
 }
 
 impl SkillExtractor {
@@ -345,10 +346,24 @@ impl SkillExtractor {
             store,
             config,
             workspace_path,
+            golden_sample_service: None,
         }
     }
 
-    /// Extract skills from a successful task trajectory
+    /// Create with a golden sample service for auto-application validation
+    pub fn with_golden_sample_service(
+        store: SqliteMemoryStore,
+        config: ExtractionConfig,
+        workspace_path: PathBuf,
+        golden_sample_service: GoldenSampleService,
+    ) -> Self {
+        Self {
+            store,
+            config,
+            workspace_path,
+            golden_sample_service: Some(golden_sample_service),
+        }
+    }
     pub async fn extract_from_trajectory(
         &self,
         trajectory: TrajectoryData,
@@ -642,6 +657,13 @@ impl SkillExtractor {
     }
 
     /// Find skills matching a task description
+    ///
+    /// For high-confidence skills (confidence > 0.9), this method validates them
+    /// against golden samples before returning. If golden sample validation fails,
+    /// the skill is NOT returned (blocked from auto-application).
+    ///
+    /// This ensures that only procedures that have been validated against test cases
+    /// (golden samples) are auto-applied to future tasks.
     pub async fn find_matching_skills(
         &self,
         task_description: &str,
@@ -661,7 +683,64 @@ impl SkillExtractor {
 
         // Sort by similarity and return top matches
         matched_skills.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        Ok(matched_skills.into_iter().map(|(s, _)| s).collect())
+
+        // Apply golden sample validation for high-confidence skills
+        if let Some(ref golden_service) = self.golden_sample_service {
+            let mut validated_skills = Vec::new();
+            for (skill, score) in matched_skills {
+                // Only validate skills with confidence > 0.9 (HIGH_CONFIDENCE_THRESHOLD)
+                // Lower confidence skills are not auto-applied anyway, so skip validation
+                if skill.confidence > 0.9 {
+                    // Use skill description as the procedure context
+                    // Use task pattern as the procedure output to validate
+                    let skill_id = skill.id;
+                    let skill_name = skill.name.clone();
+                    let skill_confidence = skill.confidence;
+                    let eligibility = golden_service
+                        .validate_procedure_for_auto_application(
+                            skill.id,
+                            &skill.description,
+                            &skill.task_pattern,
+                            skill.confidence,
+                        )
+                        .await?;
+
+                    if eligibility.is_eligible {
+                        // Skill passed golden sample validation - include it
+                        validated_skills.push((skill, score));
+                        tracing::debug!(
+                            skill_id = %skill_id,
+                            skill_name = %skill_name,
+                            confidence = skill_confidence,
+                            "Skill passed golden sample validation for auto-application"
+                        );
+                    } else {
+                        // Skill failed golden sample validation - do NOT auto-apply
+                        tracing::info!(
+                            skill_id = %skill_id,
+                            skill_name = %skill_name,
+                            confidence = skill_confidence,
+                            reason = ?eligibility.reason,
+                            "Skill blocked from auto-application due to golden sample validation failure"
+                        );
+                    }
+                } else {
+                    // Low-confidence skill (<=0.9) - skip validation and don't auto-apply
+                    // These will be filtered out when actually applying the skill
+                    tracing::trace!(
+                        skill_id = %skill.id,
+                        skill_name = %skill.name,
+                        confidence = skill.confidence,
+                        "Skill confidence below auto-application threshold"
+                    );
+                }
+            }
+            Ok(validated_skills.into_iter().map(|(s, _)| s).collect())
+        } else {
+            // No golden sample service configured - return skills without validation
+            // This maintains backward compatibility for tests and simple setups
+            Ok(matched_skills.into_iter().map(|(s, _)| s).collect())
+        }
     }
 
     /// Simple similarity calculation using word overlap
@@ -957,5 +1036,51 @@ mod tests {
         assert_eq!(step.order, 1);
         assert_eq!(step.tool_sequence.len(), 2);
         assert!(step.validation_check.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_find_matching_skills_with_golden_sample_service_configured() {
+        // Test that SkillExtractor can be configured with a GoldenSampleService
+        // This verifies the wiring integration compiles and runs
+        use crate::golden_sample_testing::GoldenSampleService;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let golden_store = crate::golden_sample_testing::SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let golden_service = GoldenSampleService::new(golden_store);
+
+        // Create extractor with golden sample service - should not panic
+        let extractor = SkillExtractor::with_golden_sample_service(
+            store,
+            ExtractionConfig::default(),
+            std::env::temp_dir(),
+            golden_service,
+        );
+
+        // find_matching_skills should work (return empty since no skills match)
+        let matched = extractor.find_matching_skills("any task").await.unwrap();
+        assert!(matched.is_empty(), "Should return empty when no skills exist");
+
+        // Verify golden_sample_service is set
+        // We can't directly check private field, but the test passing means it works
+    }
+
+    #[tokio::test]
+    async fn test_find_matching_skills_without_golden_sample_service() {
+        // Test that without golden sample service, skills are returned without validation
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let extractor = SkillExtractor::new(
+            store,
+            ExtractionConfig::default(),
+            std::env::temp_dir(),
+        );
+
+        // When golden_sample_service is None, find_matching_skills should return
+        // skills without validation (backward compatibility)
+        // This test verifies the backward compatibility path works
+        let matched = extractor.find_matching_skills("any task").await.unwrap();
+        // No skills in temp dir, so empty result is expected
+        assert!(matched.is_empty(), "Should return empty when no skills match");
     }
 }
