@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use swell_core::traits::Tool;
 use swell_core::traits::ToolBehavioralHints;
 use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent, ToolRiskLevel};
@@ -14,6 +15,7 @@ use tracing::{info, warn};
 use crate::file_guardrails::{
     validate_file_size, validate_path_depth, validate_write_content, FileGuardrailConfig,
 };
+use crate::secret_scanning::SecretScanner;
 
 /// Tool for reading files with workspace path validation
 #[derive(Debug, Clone)]
@@ -516,17 +518,24 @@ impl Default for ShellTool {
 #[derive(Debug, Clone)]
 pub struct GitTool {
     default_cwd: PathBuf,
+    secret_scanner: Option<Arc<SecretScanner>>,
 }
 
 impl GitTool {
     pub fn new() -> Self {
         Self {
             default_cwd: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            secret_scanner: None,
         }
     }
 
     pub fn with_default_cwd(mut self, cwd: impl Into<PathBuf>) -> Self {
         self.default_cwd = cwd.into();
+        self
+    }
+
+    pub fn with_secret_scanner(mut self, scanner: Arc<SecretScanner>) -> Self {
+        self.secret_scanner = Some(scanner);
         self
     }
 
@@ -814,6 +823,26 @@ impl GitTool {
         metadata: Option<&str>,
         cwd: &Path,
     ) -> Result<ToolOutput, SwellError> {
+        // Scan staged changes for secrets before committing
+        if let Some(ref scanner) = self.secret_scanner {
+            match scanner.scan_staged(cwd).await {
+                Ok(result) => {
+                    if result.has_secrets() {
+                        let report = result.report();
+                        warn!(report = %report, "Commit blocked: secrets detected in staged changes");
+                        return Err(SwellError::ToolExecutionFailed(format!(
+                            "Commit blocked: secrets detected in staged changes.\n{}",
+                            report
+                        )));
+                    }
+                }
+                Err(e) => {
+                    // Log the error but don't block the commit if scanner fails
+                    warn!(error = %e, "Secret scan failed, proceeding with commit");
+                }
+            }
+        }
+
         // Build commit message with metadata trailers
         let mut full_message = message.to_string();
 
