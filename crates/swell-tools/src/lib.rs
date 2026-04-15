@@ -3,6 +3,7 @@
 //! This crate provides:
 //! - [`ToolRegistry`] - central registry for all tools
 //! - [`ToolExecutor`] - executes tools with permission enforcement
+//! - [`TrustResolver`] and [`TrustPolicy`] - allow-list based tool trust enforcement
 //! - Built-in tools: file I/O, git, shell execution
 //! - MCP client for external tool servers
 //! - [`WorktreePool`] - git worktree pool for agent isolation
@@ -37,6 +38,7 @@ pub mod secret_scanning;
 pub mod self_healing_ci;
 pub mod skill;
 pub mod tools;
+pub mod trust_policy;
 pub mod vault;
 pub mod web_search;
 pub mod worktree_isolation;
@@ -127,6 +129,7 @@ pub use self_healing_ci::{
     FailureCategory, FixType, RootCause,
 };
 pub use skill::{register_skills_from_workspace, SkillDiscovery, SkillInfo, SkillTool};
+pub use trust_policy::{TrustError, TrustPolicy, TrustResolver, TrustStatus};
 pub use vault::{
     AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType, VaultClient,
     VaultClientConfig, VaultCredentialProvider, VaultDynamicSecret, VaultError,
