@@ -1,0 +1,29 @@
+{
+  "milestone": "M13-memory-pipeline",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 12,
+    "passed": 12,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-MPIPE-001",
+    "VAL-MPIPE-002",
+    "VAL-MPIPE-003",
+    "VAL-MPIPE-004",
+    "VAL-MPIPE-005",
+    "VAL-MPIPE-006",
+    "VAL-MPIPE-007",
+    "VAL-MPIPE-008",
+    "VAL-MPIPE-009",
+    "VAL-MPIPE-010",
+    "VAL-MPIPE-011",
+    "VAL-MPIPE-012"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
