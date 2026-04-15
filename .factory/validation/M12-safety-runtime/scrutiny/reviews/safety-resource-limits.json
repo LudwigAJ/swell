@@ -1,0 +1,51 @@
+{
+  "featureId": "safety-resource-limits",
+  "reviewedAt": "2026-04-15T16:30:00Z",
+  "commitId": "9babe1b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The fix commit 3fcebf4 does NOT adequately address the original blocking issues. While record_tokens() and record_failure() are wired into execute_turn_loop, record_turn(), record_cost(), and record_success() are still NOT called. This means: (1) max_turns limit never triggers because turns counter stays at 0, (2) max_cost_usd limit never triggers because cost_used stays at 0.0, (3) max_consecutive_failures limit permanently sticks after N failures because record_success() never resets consecutive_failures. Additionally, the circuit breaker pattern (Closed→Open→HalfOpen state transitions) is not implemented - the CircuitBreaker in swell-core exists but is not wired into SessionResourceTracker or ExecutionController.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/execution.rs",
+        "line": 657,
+        "severity": "blocking",
+        "description": "record_turn() is NEVER called in execute_turn_loop. The SessionResourceTracker.turns counter stays at 0, so the max_turns limit will never trigger. A call to self.resource_tracker.record_turn() is needed after each turn completes (after line 861 where summary is pushed)."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/execution.rs",
+        "line": 869,
+        "severity": "blocking",
+        "description": "record_cost() is NEVER called. Token usage is recorded via record_tokens() but cost is not. The SessionResourceTracker.cost_used stays at 0.0, so max_cost_usd limit will never trigger. A call to self.resource_tracker.record_cost() is needed, likely using the cost from last_summary or a CostRecord/CostSummary."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/execution.rs",
+        "line": 883,
+        "severity": "blocking",
+        "description": "record_success() is NEVER called when tool calls succeed. Currently, record_failure() is only called when !tool_call.success. But record_success() should be called when a turn completes with all successes to reset consecutive_failures counter. Without this, after N failures the threshold is permanently stuck - a single success won't reset it."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/execution.rs",
+        "line": 0,
+        "severity": "blocking",
+        "description": "Circuit breaker pattern is NOT implemented. The feature description requires 'circuit breaker pattern: opens after N consecutive failures, half-opens after configurable cooldown period.' A CircuitBreaker exists in swell-core (circuit_breaker.rs) with proper Closed→Open→HalfOpen state machine, but it is not wired into SessionResourceTracker or ExecutionController. The SessionResourceTracker just has simple failure counting, not the circuit breaker state pattern."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The AGENTS.md and feature description say to use 'record_turn/cost/success' but the actual API in SessionResourceTracker provides these methods. The worker wired record_tokens and record_failure but missed record_turn, record_cost, and record_success. This suggests a naming/API discovery gap - the methods exist but weren't all discovered.",
+      "evidence": "SessionResourceTracker has record_turn(), record_cost(), record_cost_record(), record_cost_summary(), record_success() methods that are never called in execution.rs"
+    },
+    {
+      "area": "conventions",
+      "observation": "The swell-core CircuitBreaker is documented in AGENTS.md but the SessionResourceTracker in swell-tools does not use it. The feature description mentions circuit breaker but the implementation doesn't integrate with the existing swell-core CircuitBreaker.",
+      "evidence": "swell-core/AGENTS.md lists circuit_breaker.rs under 'Key modules', but execution.rs uses SessionResourceTracker which has its own simple failure counting rather than the CircuitBreaker state machine"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - The fix commit 3fcebf4 does NOT fix the blocking issues. record_tokens() and record_failure() are wired but record_turn(), record_cost(), and record_success() remain unwired. This means max_turns, max_cost_usd, and the consecutive_failures reset behavior are all non-functional. Additionally, the circuit breaker pattern (Closed→Open→HalfOpen) described in the feature is not implemented - the swell-core CircuitBreaker exists but is not integrated. The implementation is incomplete and the fix is inadequate."
+}

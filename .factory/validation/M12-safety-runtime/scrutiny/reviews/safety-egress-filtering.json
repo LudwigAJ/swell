@@ -1,62 +1,40 @@
 {
   "featureId": "safety-egress-filtering",
-  "reviewedAt": "2026-04-15T16:30:00Z",
-  "commitId": "33717d8",
-  "transcriptSkeletonReviewed": true,
+  "reviewedAt": "2026-04-15T18:45:00Z",
+  "commitId": "582565e",
+  "transcriptSkeletonReviewed": false,
   "diffReviewed": true,
   "status": "fail",
   "codeReview": {
-    "summary": "The EgressFilter module is implemented but NOT wired into the HTTP request path. The worker incorrectly concluded the feature was 'already fully implemented' when only the standalone EgressFilter struct exists with unit tests - it is never invoked by any HTTP client (vault.rs, web_search.rs, opa_policy.rs, hybrid.rs all create reqwest::Client directly without using EgressFilter). The feature description explicitly requires 'The filter is applied as a middleware before every outbound HTTP request made by tools or agents' - this critical integration is missing.",
+    "summary": "Commit 582565e only fixes ONE of FOUR HTTP clients. The blocking issue from prior review stated that EgressFilter was NOT wired into vault.rs, web_search.rs, opa_policy.rs, and hybrid.rs. The fix addresses only hybrid.rs (RemoteExecutor). The other three files remain unfixed.",
     "issues": [
       {
         "file": "crates/swell-tools/src/vault.rs",
-        "line": 45,
+        "line": 40,
         "severity": "blocking",
-        "description": "VaultClient creates reqwest::Client directly without EgressFilter middleware. HTTP requests to Vault server bypass egress filtering entirely."
+        "description": "VaultClient creates reqwest::Client directly without EgressFilter middleware. The http_client field is a plain Client (line 158-159), not wrapped with egress filtering. This was listed as a blocking issue in the prior review but was NOT fixed by commit 582565e."
       },
       {
         "file": "crates/swell-tools/src/web_search.rs",
-        "line": 42,
+        "line": 15,
         "severity": "blocking",
-        "description": "SearchClient creates reqwest::Client directly without EgressFilter middleware. Web search requests bypass egress filtering entirely."
+        "description": "SearchClient creates reqwest::Client directly without EgressFilter middleware. The client field (line 107-111) is a plain Client, not wrapped with egress filtering. This was listed as a blocking issue in the prior review but was NOT fixed by commit 582565e."
       },
       {
         "file": "crates/swell-tools/src/opa_policy.rs",
-        "line": 50,
+        "line": 21,
         "severity": "blocking",
-        "description": "OpaPolicyEngine and OpaClient create reqwest::Client directly without EgressFilter middleware. OPA policy requests bypass egress filtering entirely."
+        "description": "OpaPolicyEngine creates reqwest::Client directly without EgressFilter middleware. The client field (line 188-191) is a plain Client, not wrapped with egress filtering. This was listed as a blocking issue in the prior review but was NOT fixed by commit 582565e."
       },
       {
         "file": "crates/swell-tools/src/hybrid.rs",
-        "line": 80,
-        "severity": "blocking",
-        "description": "RemoteExecutor creates reqwest::Client directly without EgressFilter middleware. Remote execution requests bypass egress filtering entirely."
-      },
-      {
-        "file": ".swell/settings.json",
-        "line": 55,
+        "line": 170,
         "severity": "non_blocking",
-        "description": "settings.json has 'safety.blocked_network' blocklist but no 'egress.allowlist' configuration. The configurable domain allowlist described in the feature is not present."
+        "description": "RemoteExecutor now has EgressFilter properly wired in. The with_egress_filter() constructor and is_egress_allowed() check at execute() entry were added correctly. However, this was only ONE of FOUR HTTP clients that needed fixing."
       }
     ]
   },
-  "sharedStateObservations": [
-    {
-      "area": "conventions",
-      "observation": "Worker followed the skill procedure correctly (read egress.rs, ran tests), but the skill's definition of 'complete' was based on module existence and unit tests passing, not on actual integration. The AGENTS.md does not define what 'wired' means for middleware integration.",
-      "evidence": "Worker concluded 'egress.rs is already fully implemented' after examining the module and running tests. The feature requires 'applied as middleware before every outbound HTTP request' - the worker did not check if any HTTP client actually invokes EgressFilter."
-    },
-    {
-      "area": "skills",
-      "observation": "The rust-worker skill procedure asks workers to verify feature implementation but provides no guidance on how to verify middleware/wiring integration. Workers know to run tests but may not know to check if the feature is actually integrated.",
-      "evidence": "Transcript shows worker ran 'cargo test -p swell-tools -- egress_filter' which passed, then declared feature complete. No verification was done to check if EgressFilter is actually called by HTTP clients."
-    },
-    {
-      "area": "conventions",
-      "observation": "No convention exists for how to wire middleware to HTTP clients in this codebase. Each HTTP client (vault, web_search, opa, hybrid) creates its own reqwest::Client independently. A shared HTTP client builder pattern would be needed for consistent middleware application.",
-      "evidence": "Four separate HTTP clients each do 'Client::new()' or 'Client::builder()...build()' independently. No centralized HTTP client that applies egress filtering."
-    }
-  ],
+  "sharedStateObservations": [],
   "addressesFailureFrom": null,
-  "summary": "FAIL - EgressFilter module exists and tests pass, but the filter is NOT wired into any HTTP request path. The vault, web_search, opa_policy, and hybrid modules all create reqwest::Client directly without applying EgressFilter. The feature requires 'The filter is applied as a middleware before every outbound HTTP request made by tools or agents' - this integration is entirely missing. The worker incorrectly declared the feature complete based on unit tests alone."
+  "summary": "FAIL - The fix in commit 582565e only addresses hybrid.rs (RemoteExecutor). The prior blocking issue explicitly identified FOUR HTTP clients needing EgressFilter wiring: vault.rs, web_search.rs, opa_policy.rs, and hybrid.rs. Only hybrid.rs was fixed. The other three files (vault.rs at line 40/158-159, web_search.rs at line 15/107-111, opa_policy.rs at line 21/188-191) still create reqwest::Client directly without EgressFilter middleware. The feature's description states 'The filter is applied as a middleware before every outbound HTTP request made by tools or agents' - this is not achieved with only hybrid.rs fixed."
 }
