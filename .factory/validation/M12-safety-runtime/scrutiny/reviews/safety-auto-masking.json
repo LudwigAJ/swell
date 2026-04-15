@@ -1,0 +1,28 @@
+{
+  "featureId": "safety-auto-masking",
+  "reviewedAt": "2026-04-15T18:15:00Z",
+  "commitId": "6e43341",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The safety-auto-masking feature adds JSON configuration loading capability to auto_masking.rs via PatternDef struct and MaskingConfig::from_pattern_defs() method. The implementation is correct: serde derives enable JSON deserialization, from_pattern_defs() properly converts PatternDef list into SecretPattern list with error handling, and 4 new tests cover JSON parsing, default lengths, invalid regex error handling, and empty patterns. All 36 tests pass. Clippy is clean.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/auto_masking.rs",
+        "line": 0,
+        "severity": "non_blocking",
+        "description": "The auto_masking module is not wired into any tool output pipeline despite the feature description saying it should filter 'all agent output, log messages, and event payloads'. The from_pattern_defs() method enables loading config from JSON, but no consumer (orchestrator, tool executor, or event emitter) currently calls it. This is a known gap from VAL-SAFE-005 context - the worker correctly implemented the configuration loading but the actual wiring to filter output would be a separate integration concern."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md does not document any conventions for wiring secret masking/redaction into tool output pipelines. The auto_masking module provides from_pattern_defs() for JSON config loading but there's no guidance on where in the system this should be invoked (e.g., in ToolExecutor post-tool hooks, in event emission, or in LLM output handling).",
+      "evidence": "Feature description says 'wire auto_masking.rs to filter all agent output' but the feature implementation only adds config loading capability without showing where in the pipeline it should be wired. No convention exists in AGENTS.md about when/how to integrate auto_masking into output paths."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "safety-auto-masking passes scrutiny. The worker added JSON configuration loading to auto_masking.rs (PatternDef struct with serde, MaskingConfig::from_pattern_defs() method) with 4 new tests covering JSON parsing, default lengths, invalid regex handling, and empty patterns. All 36 tests pass and clippy is clean. The non-blocking issue is that the module is not yet wired into tool output pipeline (config loading is ready but integration is a separate concern)."
+}

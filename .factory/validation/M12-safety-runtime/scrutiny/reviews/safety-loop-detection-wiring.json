@@ -1,0 +1,34 @@
+{
+  "featureId": "safety-loop-detection-wiring",
+  "reviewedAt": "2026-04-15T17:45:00Z",
+  "commitId": "6e249fb",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation creates `swell-orchestrator/src/loop_detection.rs` (507 lines) wrapping `ToolLoopTracker` from `swell-tools`. Three loop patterns are correctly detected and mapped to interventions: SameToolRetry→Escalation, Oscillation→StrategyChange, ReplanningLoop→Halt. All 16 tests pass (14 new + 2 pre-existing). Clippy clean. No blocking issues found.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/loop_detection.rs",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "The feature's preconditions state 'Orchestrator supports intervention callbacks' but OrchestratorLoopDetector uses a pull-based API (check() returns Option<LoopIntervention>) rather than push callbacks. This is a reasonable design choice — the tracker has with_intervention_callback support but OrchestratorLoopDetector doesn't expose it publicly. Not a bug, but the precondition wording could be clarified in future features."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/loop_detection.rs",
+        "line": 447,
+        "severity": "non_blocking",
+        "description": "Test `test_custom_thresholds_respected` name is slightly misleading — it verifies that AT the custom threshold (5) the intervention fires, not that the threshold is 'respected' by avoiding detection. The test logic is correct (3 below threshold → no detection, 5 at threshold → detected) but the name could cause confusion during future maintenance."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The feature's skillName is 'rust-worker' but this skill does not exist in .factory/skills/. The available rust-related skills are: rust, rust-patterns, rust-code-review, rust-testing-code-review. The transcript skeleton shows the worker attempted to load 'rust-worker' (which would have failed with 'No such file or directory'), yet skillFeedback.followedProcedure was reported as true with no deviations. Either the skill was created post-hoc, the skillFeedback is inaccurate, or the worker used a fallback skill without noting it.",
+      "evidence": "features.json specifies skillName='rust-worker'; ls .factory/skills/rust-worker/ returns 'No such file or directory'; transcript shows Skill tool call for 'rust-worker'; handoff shows skillFeedback.followedProcedure=true"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Implementation is correct and complete. The OrchestratorLoopDetector correctly wraps ToolLoopTracker from swell-tools and exposes record_tool_call(), record_replan(), check(), and clear() methods. Three loop patterns are detected with correct intervention mappings: SameToolRetry→Escalation, Oscillation→StrategyChange, ReplanningLoop→Halt. 14 tests cover detection, intervention types, custom thresholds, task isolation, and clear behavior. VAL-SAFE-008 is fulfilled. Two non-blocking observations: (1) intervention callback precondition not exposed in public API, (2) rust-worker skill referenced in features.json does not exist in the skills directory."
+}
