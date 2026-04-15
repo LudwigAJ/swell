@@ -92,11 +92,13 @@ impl SpanData {
         }
     }
 
+    #[allow(dead_code)]
     fn with_parent(mut self, parent_id: &str) -> Self {
         self.parent_id = Some(parent_id.to_string());
         self
     }
 
+    #[allow(dead_code)]
     fn end_at(&mut self, end_time: DateTime<Utc>, duration_ms: u64) {
         self.end_time = end_time;
         // Set warning level if suspiciously long (> 60s)
@@ -126,6 +128,7 @@ struct GenerationData {
 }
 
 impl GenerationData {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         model: &str,
         provider: Option<&str>,
@@ -158,6 +161,7 @@ impl GenerationData {
         self
     }
 
+    #[allow(dead_code)]
     fn end_at(&mut self, end_time: DateTime<Utc>) {
         self.end_time = end_time;
     }
@@ -460,6 +464,7 @@ impl LangfuseExporter {
     /// # Returns
     ///
     /// Returns `Ok` if the generation was recorded, or an error if no active span exists.
+    #[allow(clippy::too_many_arguments)]
     pub fn emit_llm_generation(
         &self,
         task_id: Uuid,
