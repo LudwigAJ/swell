@@ -823,6 +823,100 @@ pub enum DaemonEvent {
         model_breakdown: Vec<ModelCostInfo>,
         correlation_id: CorrelationId,
     },
+    /// Typed response payloads for daemon query commands.
+    ///
+    /// This replaces the previous pattern of using `TaskCompleted` with `Uuid::nil()`
+    /// to indicate query responses. Each variant carries typed data appropriate to
+    /// the query type.
+    ///
+    /// # Variants
+    /// - `TaskList`: Response for `TaskList` command - list of all tasks
+    /// - `TaskDetail`: Response for `TaskGet` command - full task details
+    /// - `ConfigValue`: Response for `ConfigGet`/`ConfigSet` commands
+    /// - `MemoryResults`: Response for `MemoryQuery` command
+    /// - `CostData`: Response for `CostQuery` command
+    /// - `DaemonHealth`: Response for `DaemonStatus` command
+    DataResponse(Box<DataResponse>),
+}
+
+/// Typed response payloads for daemon query commands.
+///
+/// This enum provides structured, typed payloads for all daemon query responses,
+/// replacing the previous pattern of misusing `TaskCompleted` with `Uuid::nil()`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data")]
+#[allow(clippy::large_enum_variant)]
+pub enum DataResponse {
+    /// Task list response - returned when querying all tasks
+    TaskList {
+        /// List of all tasks
+        tasks: Vec<Task>,
+        correlation_id: CorrelationId,
+    },
+    /// Task detail response - returned when querying a specific task's full details
+    TaskDetail {
+        /// The full task object with all fields
+        task: Task,
+        correlation_id: CorrelationId,
+    },
+    /// Configuration value response - returned by ConfigGet and ConfigSet
+    ConfigValue {
+        /// Configuration key
+        key: String,
+        /// Configuration value
+        value: serde_json::Value,
+        /// Source file where this config was loaded from
+        source_file: Option<String>,
+        correlation_id: CorrelationId,
+    },
+    /// Memory query results - returned by MemoryQuery
+    MemoryResults {
+        /// JSON serialized recall results
+        results: String,
+        /// Number of results returned
+        count: usize,
+        correlation_id: CorrelationId,
+    },
+    /// Cost data response - returned by CostQuery
+    CostData {
+        /// Task ID queried (None if aggregate across all tasks)
+        task_id: Option<Uuid>,
+        /// Total input tokens used
+        total_input_tokens: u64,
+        /// Total output tokens generated
+        total_output_tokens: u64,
+        /// Total cost in USD
+        total_cost_usd: f64,
+        /// Per-model cost breakdown
+        model_breakdown: Vec<ModelCostInfo>,
+        correlation_id: CorrelationId,
+    },
+    /// Daemon health response - returned by DaemonStatus
+    DaemonHealth {
+        /// Number of active CLI connections
+        active_connections: usize,
+        /// Total number of tasks in the system
+        total_tasks: usize,
+        /// Number of tasks in each state
+        tasks_by_state: HashMap<String, usize>,
+        /// Total LLM tokens used in this session
+        total_tokens: u64,
+        /// Last LLM model used
+        last_model: String,
+        /// MCP server health status (server name -> health)
+        mcp_health: HashMap<String, String>,
+        /// Daemon uptime in seconds
+        uptime_seconds: u64,
+        /// Daemon version string
+        version: String,
+        /// Total budget (tokens) configured for the session
+        total_budget: u64,
+        /// Total tokens spent so far
+        total_spent: u64,
+        /// Remaining budget (tokens)
+        remaining_budget: u64,
+        correlation_id: CorrelationId,
+    },
 }
 
 // ============================================================================
@@ -1476,6 +1570,14 @@ mod tests {
                 DaemonEvent::ConfigValue { correlation_id, .. } => *correlation_id,
                 DaemonEvent::MemoryResults { correlation_id, .. } => *correlation_id,
                 DaemonEvent::CostQueryResult { correlation_id, .. } => *correlation_id,
+                DaemonEvent::DataResponse(data) => match &**data {
+                    DataResponse::TaskList { correlation_id, .. } => *correlation_id,
+                    DataResponse::TaskDetail { correlation_id, .. } => *correlation_id,
+                    DataResponse::ConfigValue { correlation_id, .. } => *correlation_id,
+                    DataResponse::MemoryResults { correlation_id, .. } => *correlation_id,
+                    DataResponse::CostData { correlation_id, .. } => *correlation_id,
+                    DataResponse::DaemonHealth { correlation_id, .. } => *correlation_id,
+                },
             }
         };
 
@@ -1523,5 +1625,253 @@ mod tests {
             .and_then(|p| p.get("correlation_id"));
 
         assert_ne!(payload_1_cid, payload_2_cid);
+    }
+
+    #[test]
+    fn test_data_response_serde_roundtrip() {
+        use std::collections::HashMap;
+
+        let correlation_id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+
+        // Test TaskList roundtrip
+        let tasks = vec![
+            Task {
+                id: Uuid::new_v4(),
+                description: "Test task 1".to_string(),
+                state: TaskState::Created,
+                source: TaskSource::UserRequest,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                assigned_agent: None,
+                plan: None,
+                dependencies: vec![],
+                dependents: vec![],
+                iteration_count: 0,
+                token_budget: 1000,
+                tokens_used: 0,
+                validation_result: None,
+                autonomy_level: AutonomyLevel::Guided,
+                paused_reason: None,
+                paused_from_state: None,
+                rejected_reason: None,
+                injected_instructions: vec![],
+                original_scope: None,
+                current_scope: TaskScope::default(),
+            },
+        ];
+        let task_list = DataResponse::TaskList {
+            tasks: tasks.clone(),
+            correlation_id,
+        };
+        let json = serde_json::to_string(&task_list).expect("should serialize");
+        let parsed: DataResponse = serde_json::from_str(&json).expect("should deserialize");
+        match parsed {
+            DataResponse::TaskList { tasks: parsed_tasks, .. } => {
+                assert_eq!(parsed_tasks.len(), 1);
+                assert_eq!(parsed_tasks[0].description, "Test task 1");
+            }
+            other => panic!("Expected TaskList, got: {:?}", other),
+        }
+
+        // Test TaskDetail roundtrip
+        let task = Task {
+            id: task_id,
+            description: "Detail test".to_string(),
+            state: TaskState::Executing,
+            source: TaskSource::UserRequest,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            assigned_agent: None,
+            plan: None,
+            dependencies: vec![],
+            dependents: vec![],
+            iteration_count: 1,
+            token_budget: 2000,
+            tokens_used: 500,
+            validation_result: None,
+            autonomy_level: AutonomyLevel::Guided,
+            paused_reason: None,
+            paused_from_state: None,
+            rejected_reason: None,
+            injected_instructions: vec![],
+            original_scope: None,
+            current_scope: TaskScope::default(),
+        };
+        let task_detail = DataResponse::TaskDetail {
+            task,
+            correlation_id,
+        };
+        let json = serde_json::to_string(&task_detail).expect("should serialize");
+        let parsed: DataResponse = serde_json::from_str(&json).expect("should deserialize");
+        match parsed {
+            DataResponse::TaskDetail { task: parsed_task, .. } => {
+                assert_eq!(parsed_task.id, task_id);
+                assert_eq!(parsed_task.description, "Detail test");
+            }
+            other => panic!("Expected TaskDetail, got: {:?}", other),
+        }
+
+        // Test ConfigValue roundtrip
+        let config_value = DataResponse::ConfigValue {
+            key: "execution.max_iterations".to_string(),
+            value: serde_json::json!(100),
+            source_file: Some("/path/to/config.json".to_string()),
+            correlation_id,
+        };
+        let json = serde_json::to_string(&config_value).expect("should serialize");
+        let parsed: DataResponse = serde_json::from_str(&json).expect("should deserialize");
+        match parsed {
+            DataResponse::ConfigValue {
+                key,
+                value,
+                source_file,
+                ..
+            } => {
+                assert_eq!(key, "execution.max_iterations");
+                assert_eq!(value, serde_json::json!(100));
+                assert_eq!(source_file, Some("/path/to/config.json".to_string()));
+            }
+            other => panic!("Expected ConfigValue, got: {:?}", other),
+        }
+
+        // Test MemoryResults roundtrip
+        let memory_results = DataResponse::MemoryResults {
+            results: r#"[{"content": "test memory"}]"#.to_string(),
+            count: 1,
+            correlation_id,
+        };
+        let json = serde_json::to_string(&memory_results).expect("should serialize");
+        let parsed: DataResponse = serde_json::from_str(&json).expect("should deserialize");
+        match parsed {
+            DataResponse::MemoryResults { results, count, .. } => {
+                assert_eq!(count, 1);
+                assert!(results.contains("test memory"));
+            }
+            other => panic!("Expected MemoryResults, got: {:?}", other),
+        }
+
+        // Test CostData roundtrip
+        let cost_data = DataResponse::CostData {
+            task_id: Some(task_id),
+            total_input_tokens: 1000,
+            total_output_tokens: 2000,
+            total_cost_usd: 0.05,
+            model_breakdown: vec![ModelCostInfo {
+                model: "claude-sonnet".to_string(),
+                call_count: 10,
+                total_input_tokens: 1000,
+                total_output_tokens: 2000,
+                total_cost_usd: 0.05,
+            }],
+            correlation_id,
+        };
+        let json = serde_json::to_string(&cost_data).expect("should serialize");
+        let parsed: DataResponse = serde_json::from_str(&json).expect("should deserialize");
+        match parsed {
+            DataResponse::CostData {
+                task_id: parsed_task_id,
+                total_input_tokens,
+                total_output_tokens,
+                total_cost_usd,
+                model_breakdown,
+                ..
+            } => {
+                assert_eq!(parsed_task_id, Some(task_id));
+                assert_eq!(total_input_tokens, 1000);
+                assert_eq!(total_output_tokens, 2000);
+                assert_eq!(total_cost_usd, 0.05);
+                assert_eq!(model_breakdown.len(), 1);
+            }
+            other => panic!("Expected CostData, got: {:?}", other),
+        }
+
+        // Test DaemonHealth roundtrip
+        let mut tasks_by_state = HashMap::new();
+        tasks_by_state.insert("Created".to_string(), 5);
+        tasks_by_state.insert("Executing".to_string(), 2);
+
+        let daemon_health = DataResponse::DaemonHealth {
+            active_connections: 3,
+            total_tasks: 7,
+            tasks_by_state,
+            total_tokens: 50000,
+            last_model: "claude-sonnet".to_string(),
+            mcp_health: HashMap::new(),
+            uptime_seconds: 3600,
+            version: "1.0.0".to_string(),
+            total_budget: 1_000_000,
+            total_spent: 50000,
+            remaining_budget: 950_000,
+            correlation_id,
+        };
+        let json = serde_json::to_string(&daemon_health).expect("should serialize");
+        let parsed: DataResponse = serde_json::from_str(&json).expect("should deserialize");
+        match parsed {
+            DataResponse::DaemonHealth {
+                active_connections,
+                total_tasks,
+                tasks_by_state,
+                uptime_seconds,
+                version,
+                ..
+            } => {
+                assert_eq!(active_connections, 3);
+                assert_eq!(total_tasks, 7);
+                assert_eq!(tasks_by_state.get("Created"), Some(&5));
+                assert_eq!(uptime_seconds, 3600);
+                assert_eq!(version, "1.0.0");
+            }
+            other => panic!("Expected DaemonHealth, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_data_response_in_daemon_event_serde() {
+        // Verify DataResponse wraps correctly in DaemonEvent
+        let correlation_id = Uuid::new_v4();
+        let task = Task {
+            id: Uuid::new_v4(),
+            description: "Test".to_string(),
+            state: TaskState::Created,
+            source: TaskSource::UserRequest,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            assigned_agent: None,
+            plan: None,
+            dependencies: vec![],
+            dependents: vec![],
+            iteration_count: 0,
+            token_budget: 1000,
+            tokens_used: 0,
+            validation_result: None,
+            autonomy_level: AutonomyLevel::Guided,
+            paused_reason: None,
+            paused_from_state: None,
+            rejected_reason: None,
+            injected_instructions: vec![],
+            original_scope: None,
+            current_scope: TaskScope::default(),
+        };
+
+        let event = DaemonEvent::DataResponse(Box::new(DataResponse::TaskDetail {
+            task,
+            correlation_id,
+        }));
+
+        let json = serde_json::to_string(&event).expect("should serialize");
+        assert!(json.contains("DataResponse"));
+        assert!(json.contains("TaskDetail"));
+
+        let parsed: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
+        match parsed {
+            DaemonEvent::DataResponse(data) => match &*data {
+                DataResponse::TaskDetail { correlation_id: cid, .. } => {
+                    assert_eq!(*cid, correlation_id);
+                }
+                other => panic!("Expected DataResponse::TaskDetail, got: {:?}", other),
+            },
+            other => panic!("Expected DataResponse::TaskDetail, got: {:?}", other),
+        }
     }
 }

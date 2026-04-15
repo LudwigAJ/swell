@@ -7,7 +7,7 @@ use crate::events::EventEmitter;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use swell_core::{get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, TaskState};
+use swell_core::{get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, DataResponse, TaskState};
 use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
 use tokio::sync::Mutex;
@@ -155,15 +155,13 @@ pub async fn handle_command(
         CliCommand::TaskList => {
             let orch = orchestrator.lock().await;
             let tasks = orch.get_all_tasks().await;
-            let json = serde_json::to_string(&tasks).unwrap_or_else(|_| "[]".to_string());
             info!(task_count = tasks.len(), "Task list requested");
-            // Send as a special event with nil UUID to indicate list response
+            // Use proper DataResponse variant for typed query response
             let correlation_id = EventEmitter::new_correlation_id();
-            DaemonEvent::TaskCompleted {
-                id: Uuid::nil(),
-                pr_url: Some(json),
+            DaemonEvent::DataResponse(Box::new(DataResponse::TaskList {
+                tasks,
                 correlation_id,
-            }
+            }))
         }
         CliCommand::TaskWatch { task_id } => {
             let orch = orchestrator.lock().await;
@@ -976,14 +974,11 @@ mod tests {
         .await;
 
         match event {
-            DaemonEvent::TaskCompleted { id, pr_url, .. } => {
-                assert_eq!(id, Uuid::nil()); // nil indicates list response
-                assert!(pr_url.is_some());
-                let json = pr_url.unwrap();
-                assert_eq!(json, "[]");
+            DaemonEvent::DataResponse(DataResponse::TaskList { tasks, .. }) => {
+                assert!(tasks.is_empty());
             }
             other => panic!(
-                "Expected TaskCompleted event with nil UUID, got: {:?}",
+                "Expected DataResponse::TaskList event, got: {:?}",
                 other
             ),
         }
@@ -1012,16 +1007,10 @@ mod tests {
         .await;
 
         match event {
-            DaemonEvent::TaskCompleted { id, pr_url, .. } => {
-                assert_eq!(id, Uuid::nil());
-                assert!(pr_url.is_some());
-                let json = pr_url.unwrap();
-                // Parse the JSON and check we have 3 tasks
-                let tasks: Vec<swell_core::Task> =
-                    serde_json::from_str(&json).expect("Should be valid JSON");
+            DaemonEvent::DataResponse(DataResponse::TaskList { tasks, .. }) => {
                 assert_eq!(tasks.len(), 3);
             }
-            other => panic!("Expected TaskCompleted event, got: {:?}", other),
+            other => panic!("Expected DataResponse::TaskList event, got: {:?}", other),
         }
     }
 

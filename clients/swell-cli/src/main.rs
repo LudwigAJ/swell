@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::time::Duration;
 use swell_cli::repl;
 use swell_cli::CliError;
-use swell_core::{CliCommand, DaemonEvent, Task};
+use swell_core::{CliCommand, DaemonEvent, DataResponse, Task};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::signal::unix::{signal, SignalKind};
@@ -693,20 +693,16 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
             .map_err(|e| CliError::JsonParseError(format!("Response: {}", e)))?;
 
         match response {
-            DaemonEvent::TaskCompleted { id, pr_url, .. } => {
-                if id == Uuid::nil() {
-                    if let Some(json) = pr_url {
-                        if json_output {
-                            // Raw JSON output
-                            println!("{}", json);
-                        } else {
-                            // Formatted table output
-                            let tasks: Vec<Task> = serde_json::from_str(&json).map_err(|e| {
-                                CliError::JsonParseError(format!("Task list: {}", e))
-                            })?;
-                            print_task_table(&tasks);
-                        }
-                    }
+            DaemonEvent::DataResponse(DataResponse::TaskList { tasks, .. }) => {
+                if json_output {
+                    // Raw JSON output
+                    let json = serde_json::to_string(&tasks).map_err(|e| {
+                        CliError::JsonParseError(format!("Task list: {}", e))
+                    })?;
+                    println!("{}", json);
+                } else {
+                    // Formatted table output
+                    print_task_table(&tasks);
                 }
             }
             DaemonEvent::Error { message, .. } => {
