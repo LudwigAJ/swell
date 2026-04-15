@@ -276,7 +276,7 @@ async fn test_generator_agent_receives_memory_context_in_prompt() {
     // Additional check: if execution succeeded, verify the output contains memory context
     if let Ok(res) = result {
         assert!(
-            res.success || !res.error.is_some(),
+            res.error.is_none(),
             "GeneratorAgent execution should succeed or have no error: {:?}",
             res.error
         );
@@ -331,8 +331,8 @@ async fn test_execution_controller_with_memory_context() {
         },
     ];
 
-    // Create memory blocks from entries
-    let memory_blocks = create_memory_blocks(&memory_entries);
+    // Create memory blocks from entries (used for context in memory integration tests)
+    let _memory_blocks = create_memory_blocks(&memory_entries);
 
     // Create a capturing mock LLM
     let scenario = vec![
@@ -507,7 +507,7 @@ async fn test_memory_context_preserved_across_turns() {
         workspace_path: Some(".".to_string()),
     };
 
-    let result = generator.execute(context).await;
+    let _result = generator.execute(context).await;
 
     // Check that the memory context appears in one of the captured prompts
     // Even if execution fails (e.g., mock exhausted), we can still verify memory was included
