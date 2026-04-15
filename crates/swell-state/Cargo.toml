@@ -15,6 +15,7 @@ chrono.workspace = true
 uuid.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
+fnv.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true

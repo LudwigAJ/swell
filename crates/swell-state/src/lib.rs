@@ -17,6 +17,7 @@ pub mod postgres;
 pub mod sqlite;
 pub mod task_state_file;
 pub mod traits;
+pub mod workspace_fingerprint;
 
 pub use checkpoint_manager::{CheckpointManager, CheckpointManagerConfig, CheckpointMetadata};
 pub use manager::StateManager;
@@ -24,6 +25,7 @@ pub use postgres::PostgresCheckpointStore;
 pub use sqlite::SqliteCheckpointStore;
 pub use task_state_file::{read_task_state, read_task_state_sync, write_task_state, write_task_state_sync, TaskStateFile, TaskStateFileError};
 pub use traits::*;
+pub use workspace_fingerprint::workspace_fingerprint;
 
 #[cfg(test)]
 mod tests {

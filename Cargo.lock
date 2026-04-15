@@ -3397,6 +3397,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "fnv",
  "serde",
  "serde_json",
  "sqlx",
