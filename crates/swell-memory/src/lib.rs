@@ -303,6 +303,33 @@ impl SqliteMemoryStore {
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
 
+        // Add columns for full 8-level scope hierarchy (VAL-MPIPE-010)
+        // org, workspace, repo, language, framework, environment, task_type, session
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN org TEXT NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN workspace TEXT NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN framework TEXT")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN environment TEXT")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
+        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN session_id TEXT")
+            .execute(pool)
+            .await
+            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_memory_block_type ON memory_entries(block_type)",
         )
@@ -644,6 +671,12 @@ impl SqliteMemoryStore {
         let source_episode_id_str: Option<String> = row.get("source_episode_id");
         let evidence: Option<String> = row.get("evidence");
         let provenance_context_str: Option<String> = row.get("provenance_context");
+        // Full 8-level scope hierarchy (VAL-MPIPE-010)
+        let org: String = row.get("org");
+        let workspace: String = row.get("workspace");
+        let framework: Option<String> = row.get("framework");
+        let environment: Option<String> = row.get("environment");
+        let session_id: Option<String> = row.get("session_id");
 
         let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid timestamp: {}", e)))?
@@ -693,11 +726,11 @@ impl SqliteMemoryStore {
             source_episode_id,
             evidence,
             provenance_context,
-            org: String::new(),
-            workspace: String::new(),
-            framework: None,
-            environment: None,
-            session_id: None,
+            org,
+            workspace,
+            framework,
+            environment,
+            session_id,
         })
     }
 }
@@ -801,8 +834,8 @@ impl MemoryStore for SqliteMemoryStore {
 
         sqlx::query(
             r#"
-            INSERT INTO memory_entries (id, block_type, label, content, embedding, created_at, updated_at, metadata, repository, language, task_type, last_reinforcement, is_stale)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO memory_entries (id, block_type, label, content, embedding, created_at, updated_at, metadata, repository, language, task_type, last_reinforcement, is_stale, org, workspace, framework, environment, session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(entry.id.to_string())
@@ -818,6 +851,11 @@ impl MemoryStore for SqliteMemoryStore {
         .bind(&entry.task_type)
         .bind(last_reinforcement_str)
         .bind(is_stale)
+        .bind(&entry.org)
+        .bind(&entry.workspace)
+        .bind(&entry.framework)
+        .bind(&entry.environment)
+        .bind(&entry.session_id)
         .execute(self.pool.as_ref())
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -921,7 +959,7 @@ impl MemoryStore for SqliteMemoryStore {
         let result = sqlx::query(
             r#"
             UPDATE memory_entries 
-            SET block_type = ?, label = ?, content = ?, embedding = ?, updated_at = ?, metadata = ?
+            SET block_type = ?, label = ?, content = ?, embedding = ?, updated_at = ?, metadata = ?, org = ?, workspace = ?, language = ?, framework = ?, environment = ?, session_id = ?
             WHERE id = ?
             "#,
         )
@@ -931,6 +969,12 @@ impl MemoryStore for SqliteMemoryStore {
         .bind(embedding_bytes)
         .bind(updated_at_str)
         .bind(metadata_str)
+        .bind(&entry.org)
+        .bind(&entry.workspace)
+        .bind(&entry.language)
+        .bind(&entry.framework)
+        .bind(&entry.environment)
+        .bind(&entry.session_id)
         .bind(entry.id.to_string())
         .execute(self.pool.as_ref())
         .await
@@ -968,7 +1012,48 @@ impl MemoryStore for SqliteMemoryStore {
     /// Excludes stale memories from retrieval results.
     /// Applies time-based confidence decay before ranking/returning memories.
     /// Accessing a memory through retrieval resets its decay timer (reinforcement).
+    ///
+    /// # Scope Enforcement (VAL-MPIPE-010)
+    /// - Repository scope is REQUIRED for all operations
+    /// - Unscoped queries (all scope fields empty) are rejected with descriptive error
+    /// - Cross-scope access (different org/workspace) requires cross_scope_override=true
     async fn search(&self, query: MemoryQuery) -> Result<Vec<MemorySearchResult>, SwellError> {
+        // =============================================================================
+        // Scope validation: reject unscoped queries and enforce cross-scope override
+        // =============================================================================
+        let all_scope_fields_empty = query.org.is_empty()
+            && query.workspace.is_empty()
+            && query.repository.is_empty()
+            && query.language.is_none()
+            && query.framework.is_none()
+            && query.environment.is_none()
+            && query.task_type.is_none()
+            && query.session_id.is_none();
+
+        if all_scope_fields_empty {
+            return Err(SwellError::DatabaseError(
+                "Memory query rejected: no scope specified. At least one scope field (org, workspace, repository, language, framework, environment, task_type, session_id) must be provided. Use cross_scope_override=true to bypass cross-scope restrictions.".to_string()
+            ));
+        }
+
+        // Repository is the minimum required scope for isolation
+        if query.repository.is_empty() {
+            return Err(SwellError::DatabaseError(
+                "Memory query rejected: repository scope is required. Memories are isolated by repository. Provide a repository value or use cross_scope_override=true with explicit scope values.".to_string()
+            ));
+        }
+
+        // Check for cross-scope access and enforce cross_scope_override
+        // If any of the higher-level scopes (org, workspace) differ from stored entries,
+        // we need cross_scope_override to be true
+        let cross_scope_access = !query.cross_scope_override;
+        if cross_scope_access {
+            // For now, we enforce that org and workspace must be consistent within a repo
+            // This prevents leaking data across org/workspace boundaries
+            // If an entry has org="my-org" and query has org="other-org", that's cross-scope
+            // Note: We check entries individually below after retrieving them
+        }
+
         let mut sql = String::from("SELECT * FROM memory_entries WHERE repository = ?");
         let mut params: Vec<String> = Vec::new();
 
@@ -977,6 +1062,25 @@ impl MemoryStore for SqliteMemoryStore {
 
         // Exclude stale memories from retrieval
         sql.push_str(" AND is_stale = 0");
+
+        // Cross-scope filtering: When cross_scope_override is false, we enforce
+        // org/workspace isolation in SQL. When true, we skip SQL filtering and
+        // allow cross-scope access (post-filter will not block entries).
+        let enforce_cross_scope_boundaries = !query.cross_scope_override;
+
+        // Additional scope filters for full 8-level hierarchy
+        // Only apply org/workspace filters when cross_scope_override is disabled
+        if enforce_cross_scope_boundaries {
+            if !query.org.is_empty() {
+                sql.push_str(" AND org = ?");
+                params.push(query.org.clone());
+            }
+
+            if !query.workspace.is_empty() {
+                sql.push_str(" AND workspace = ?");
+                params.push(query.workspace.clone());
+            }
+        }
 
         if let Some(ref query_text) = query.query_text {
             sql.push_str(" AND (content LIKE ? OR label LIKE ?)");
@@ -1010,10 +1114,28 @@ impl MemoryStore for SqliteMemoryStore {
             params.push(language.clone());
         }
 
+        // Optional framework filter
+        if let Some(ref framework) = query.framework {
+            sql.push_str(" AND framework = ?");
+            params.push(framework.clone());
+        }
+
+        // Optional environment filter
+        if let Some(ref environment) = query.environment {
+            sql.push_str(" AND environment = ?");
+            params.push(environment.clone());
+        }
+
         // Optional task_type filter
         if let Some(ref task_type) = query.task_type {
             sql.push_str(" AND task_type = ?");
             params.push(task_type.clone());
+        }
+
+        // Optional session_id filter
+        if let Some(ref session_id) = query.session_id {
+            sql.push_str(" AND session_id = ?");
+            params.push(session_id.clone());
         }
 
         sql.push_str(&format!(" LIMIT {} OFFSET {}", query.limit, query.offset));
@@ -1035,6 +1157,29 @@ impl MemoryStore for SqliteMemoryStore {
         for row in rows {
             let entry = Self::row_to_entry(&row)?;
             let entry_id = entry.id; // Save ID before moving entry
+
+            // =============================================================================
+            // Cross-scope enforcement: deny access if entry has different org/workspace
+            // than the query, unless cross_scope_override is true
+            // =============================================================================
+            if !query.cross_scope_override {
+                // Check org mismatch (if query specifies org)
+                if !query.org.is_empty() && entry.org != query.org {
+                    tracing::debug!(
+                        "Blocking cross-scope access: entry org='{}' vs query org='{}'",
+                        entry.org, query.org
+                    );
+                    continue; // Skip this entry - cross-scope access denied
+                }
+                // Check workspace mismatch (if query specifies workspace)
+                if !query.workspace.is_empty() && entry.workspace != query.workspace {
+                    tracing::debug!(
+                        "Blocking cross-scope access: entry workspace='{}' vs query workspace='{}'",
+                        entry.workspace, query.workspace
+                    );
+                    continue; // Skip this entry - cross-scope access denied
+                }
+            }
 
             // Calculate base relevance score
             let base_score = if let Some(ref query_text) = query.query_text {
@@ -2766,5 +2911,476 @@ mod tests {
             procedural_result.score,
             task_result.score
         );
+    }
+
+    // ============================================================================
+    // Hierarchical Scoping Tests (VAL-MPIPE-010)
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_hierarchical_scoping_all_fields_persist() {
+        // Test that all 8 scope fields are persisted and retrieved correctly
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "test-project".to_string(),
+            content: "Test content with full scope".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            // Full 8-level scope hierarchy
+            org: "my-org".to_string(),
+            workspace: "my-workspace".to_string(),
+            repository: "my-repo".to_string(),
+            language: Some("rust".to_string()),
+            framework: Some("axum".to_string()),
+            environment: Some("prod".to_string()),
+            task_type: Some("feature".to_string()),
+            session_id: Some("session-123".to_string()),
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+
+        let id = store.store(entry.clone()).await.unwrap();
+        let retrieved = store.get(id).await.unwrap().unwrap();
+
+        // Verify all scope fields were persisted and retrieved
+        assert_eq!(retrieved.org, "my-org");
+        assert_eq!(retrieved.workspace, "my-workspace");
+        assert_eq!(retrieved.repository, "my-repo");
+        assert_eq!(retrieved.language, Some("rust".to_string()));
+        assert_eq!(retrieved.framework, Some("axum".to_string()));
+        assert_eq!(retrieved.environment, Some("prod".to_string()));
+        assert_eq!(retrieved.task_type, Some("feature".to_string()));
+        assert_eq!(retrieved.session_id, Some("session-123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_scoping_unscoped_query_rejected() {
+        // Test that queries without any scope are rejected
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Store an entry first so there's something to potentially find
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "test-project".to_string(),
+            content: "Test content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            org: "my-org".to_string(),
+            workspace: "my-workspace".to_string(),
+            repository: "my-repo".to_string(),
+            language: None,
+            framework: None,
+            environment: None,
+            task_type: None,
+            session_id: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+        store.store(entry).await.unwrap();
+
+        // Query with NO scope fields should be rejected
+        let result = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                org: String::new(),
+                workspace: String::new(),
+                repository: String::new(), // Empty repository = unscoped
+                language: None,
+                framework: None,
+                environment: None,
+                task_type: None,
+                session_id: None,
+                cross_scope_override: false,
+                source_episode_id: None,
+            })
+            .await;
+
+        // Should be rejected with descriptive error
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("repository"), "Error should mention repository requirement");
+        assert!(err.to_string().contains("scope"), "Error should mention scope requirement");
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_scoping_cross_scope_denied_without_override() {
+        // Test that cross-scope access is denied without cross_scope_override
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Store entry with specific org and workspace
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "cross-scope-test".to_string(),
+            content: "Content that should be isolated".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            org: "org-a".to_string(),
+            workspace: "workspace-a".to_string(),
+            repository: "repo-a".to_string(),
+            language: None,
+            framework: None,
+            environment: None,
+            task_type: None,
+            session_id: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+        store.store(entry.clone()).await.unwrap();
+
+        // Query with different org - should return empty (cross-scope denied)
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                org: "org-b".to_string(), // Different org
+                workspace: String::new(),
+                repository: "repo-a".to_string(),
+                language: None,
+                framework: None,
+                environment: None,
+                task_type: None,
+                session_id: None,
+                cross_scope_override: false,
+                source_episode_id: None,
+            })
+            .await
+            .unwrap();
+
+        // Should not find the entry because org-b != org-a
+        assert!(results.is_empty(), "Cross-scope access should be denied without override");
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_scoping_cross_scope_allowed_with_override() {
+        // Test that cross-scope access works with cross_scope_override=true
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Store entry with specific org and workspace
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "cross-scope-allowed".to_string(),
+            content: "Content accessible with override".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            org: "org-a".to_string(),
+            workspace: "workspace-a".to_string(),
+            repository: "repo-a".to_string(),
+            language: None,
+            framework: None,
+            environment: None,
+            task_type: None,
+            session_id: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+        store.store(entry.clone()).await.unwrap();
+
+        // Query with different org but cross_scope_override=true
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                org: "org-b".to_string(), // Different org
+                workspace: String::new(),
+                repository: "repo-a".to_string(),
+                language: None,
+                framework: None,
+                environment: None,
+                task_type: None,
+                session_id: None,
+                cross_scope_override: true, // Override enabled
+                source_episode_id: None,
+            })
+            .await
+            .unwrap();
+
+        // Should find the entry because override is enabled
+        assert_eq!(results.len(), 1, "Cross-scope access should be allowed with override");
+        assert_eq!(results[0].entry.id, entry.id);
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_scoping_workspace_cross_scope_denied() {
+        // Test that cross-workspace access is also denied without override
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "workspace-isolation".to_string(),
+            content: "Content isolated by workspace".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            org: "my-org".to_string(),
+            workspace: "workspace-a".to_string(),
+            repository: "repo-a".to_string(),
+            language: None,
+            framework: None,
+            environment: None,
+            task_type: None,
+            session_id: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+        store.store(entry.clone()).await.unwrap();
+
+        // Query with same org but different workspace
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                org: "my-org".to_string(), // Same org
+                workspace: "workspace-b".to_string(), // Different workspace
+                repository: "repo-a".to_string(),
+                language: None,
+                framework: None,
+                environment: None,
+                task_type: None,
+                session_id: None,
+                cross_scope_override: false,
+                source_episode_id: None,
+            })
+            .await
+            .unwrap();
+
+        // Should not find the entry because workspace-b != workspace-a
+        assert!(results.is_empty(), "Cross-workspace access should be denied without override");
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_scoping_same_scope_returns_result() {
+        // Test that entries within the same scope are returned correctly
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "same-scope-entry".to_string(),
+            content: "Content within same scope".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            org: "my-org".to_string(),
+            workspace: "my-workspace".to_string(),
+            repository: "my-repo".to_string(),
+            language: Some("rust".to_string()),
+            framework: None,
+            environment: None,
+            task_type: None,
+            session_id: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+        store.store(entry.clone()).await.unwrap();
+
+        // Query with matching org and workspace
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                org: "my-org".to_string(),
+                workspace: "my-workspace".to_string(),
+                repository: "my-repo".to_string(),
+                language: None,
+                framework: None,
+                environment: None,
+                task_type: None,
+                session_id: None,
+                cross_scope_override: false,
+                source_episode_id: None,
+            })
+            .await
+            .unwrap();
+
+        // Should find the entry
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.id, entry.id);
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_scoping_filter_by_language() {
+        // Test that language filter works in the 8-level hierarchy
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let rust_entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "rust-project".to_string(),
+            content: "Rust content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            org: "my-org".to_string(),
+            workspace: "my-workspace".to_string(),
+            repository: "my-repo".to_string(),
+            language: Some("rust".to_string()),
+            framework: None,
+            environment: None,
+            task_type: None,
+            session_id: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+
+        let python_entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "python-project".to_string(),
+            content: "Python content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            org: "my-org".to_string(),
+            workspace: "my-workspace".to_string(),
+            repository: "my-repo".to_string(),
+            language: Some("python".to_string()),
+            framework: None,
+            environment: None,
+            task_type: None,
+            session_id: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+
+        store.store(rust_entry.clone()).await.unwrap();
+        store.store(python_entry.clone()).await.unwrap();
+
+        // Query filtering by language=rust
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                org: "my-org".to_string(),
+                workspace: "my-workspace".to_string(),
+                repository: "my-repo".to_string(),
+                language: Some("rust".to_string()),
+                framework: None,
+                environment: None,
+                task_type: None,
+                session_id: None,
+                cross_scope_override: false,
+                source_episode_id: None,
+            })
+            .await
+            .unwrap();
+
+        // Should only find the rust entry
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].entry.id, rust_entry.id);
+        assert_eq!(results[0].entry.language, Some("rust".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_hierarchical_scoping_update_persists_scope_fields() {
+        // Test that update() correctly persists all scope fields
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "update-test".to_string(),
+            content: "Original content".to_string(),
+            embedding: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metadata: serde_json::json!({}),
+            org: "my-org".to_string(),
+            workspace: "my-workspace".to_string(),
+            repository: "my-repo".to_string(),
+            language: None,
+            framework: None,
+            environment: None,
+            task_type: None,
+            session_id: None,
+            last_reinforcement: None,
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+
+        store.store(entry.clone()).await.unwrap();
+
+        // Update the entry with new scope values (keeping same org/workspace to avoid cross-scope issues)
+        let mut updated = entry.clone();
+        updated.content = "Updated content".to_string();
+        updated.language = Some("rust".to_string());
+        updated.framework = Some("axum".to_string());
+        updated.environment = Some("prod".to_string());
+        updated.session_id = Some("session-456".to_string());
+
+        store.update(updated.clone()).await.unwrap();
+
+        // Retrieve and verify scope fields were updated
+        let retrieved = store.get(entry.id).await.unwrap().unwrap();
+        assert_eq!(retrieved.org, "my-org");
+        assert_eq!(retrieved.workspace, "my-workspace");
+        assert_eq!(retrieved.language, Some("rust".to_string()));
+        assert_eq!(retrieved.framework, Some("axum".to_string()));
+        assert_eq!(retrieved.environment, Some("prod".to_string()));
+        assert_eq!(retrieved.session_id, Some("session-456".to_string()));
+        assert_eq!(retrieved.content, "Updated content");
     }
 }
