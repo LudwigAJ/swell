@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::{
-    AgentContext, AgentResult, LlmMessage, StreamEvent, SwellError, ToolOutput, ToolResultContent,
-    ValidationResult,
+    AgentContext, AgentResult, LlmMessage, Plan, StreamEvent, SwellError, ToolOutput,
+    ToolResultContent, ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
 use swell_tools::ToolRegistry;
@@ -389,9 +389,29 @@ impl ExecutionController {
 
             // Update task with planner output if successful
             if planner_result.success {
-                // The planner should have set a plan on the task through the context
-                // Re-fetch the task to get the updated plan
-                info!(task_id = %task_id, "PlannerAgent completed successfully");
+                // Parse the plan from the planner result output
+                // The planner returns JSON with structure: {"plan": {...}, "handoff": {...}}
+                let output: serde_json::Value =
+                    serde_json::from_str(&planner_result.output).map_err(|e| {
+                        SwellError::LlmError(format!(
+                            "Failed to parse planner output: {}",
+                            e
+                        ))
+                    })?;
+
+                let plan_value = output.get("plan").ok_or_else(|| {
+                    SwellError::LlmError("Planner output missing 'plan' field".to_string())
+                })?;
+
+                // Convert to Plan struct
+                let plan: Plan = serde_json::from_value(plan_value.clone()).map_err(|e| {
+                    SwellError::LlmError(format!("Failed to parse plan from planner output: {}", e))
+                })?;
+
+                // Set the plan on the task so start_task can proceed
+                self.orchestrator.set_plan(task_id, plan).await?;
+
+                info!(task_id = %task_id, "PlannerAgent completed successfully, plan set on task");
             } else {
                 // Planner failed - return early with failure
                 return Ok(ValidationResult {
