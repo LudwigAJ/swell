@@ -70,7 +70,7 @@ pub use egress::{
     presets, Destination, EgressCheckResult, EgressDecision, EgressFilter, EgressFilterConfig,
     EgressRule, IpNetwork,
 };
-pub use executor::ToolExecutor;
+pub use executor::{SandboxPreHook, ToolExecutor};
 pub use hybrid::{
     ExecutorInput, HybridConfig, HybridExecutor, LocalExecutor, RemoteExecutor, RiskClass,
     ToolExecutorTrait,
