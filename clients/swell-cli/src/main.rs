@@ -100,6 +100,33 @@ async fn main() {
                 }
             }
         }
+        "reject" => {
+            if args.len() < 3 {
+                Err(CliError::MissingArgument("task-id".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(task_id) => {
+                        // Parse optional --reason flag
+                        let reason = if args.len() > 4 && args[3] == "--reason" {
+                            args[4..].join(" ")
+                        } else {
+                            "User rejected the plan".to_string()
+                        };
+                        // Confirmation prompt before rejecting
+                        if !confirm(&format!(
+                            "Are you sure you want to reject task {}?",
+                            task_id
+                        )) {
+                            println!("Rejection cancelled.");
+                            return;
+                        }
+                        let cmd = CliCommand::TaskReject { task_id, reason };
+                        send_command(&socket_path, cmd).await
+                    }
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
+            }
+        }
         "cancel" => {
             if args.len() < 3 {
                 Err(CliError::MissingArgument("task-id".to_string()))
@@ -583,6 +610,7 @@ Usage:
     swell list [--json]           List all tasks (--json for raw JSON)
     swell watch <task-id>        Watch task status
     swell approve <task-id>      Approve task plan
+    swell reject <task-id> [--reason <reason>]   Reject task plan
     swell cancel <task-id>        Cancel a task
     swell pause <task-id> [--reason <reason>]   Pause a running task
     swell resume <task-id>       Resume a paused task
