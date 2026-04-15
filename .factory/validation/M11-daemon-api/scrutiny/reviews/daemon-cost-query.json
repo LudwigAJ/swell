@@ -1,0 +1,28 @@
+{
+  "featureId": "daemon-cost-query",
+  "reviewedAt": "2026-04-15T15:45:00Z",
+  "commitId": "e726a47",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "CostQuery command implemented correctly in daemon protocol. The implementation adds: (1) CostQuery variant to CliCommand enum with optional task_id, (2) CostQueryResult variant to DaemonEvent enum with all required fields (total_input_tokens, total_output_tokens, total_cost_usd, model_breakdown), (3) handler in commands.rs that queries global cost tracker, (4) enhanced GlobalLlmCostData to track per-model breakdowns, (5) display logic in CLI main.rs and dashboard.rs. Tests verify parsing and serialization.",
+    "issues": [
+      {
+        "file": "crates/swell-daemon/src/commands.rs",
+        "line": 175,
+        "severity": "non_blocking",
+        "description": "Per-task cost tracking not yet implemented - when task_id is Some, the handler still returns aggregate data instead of per-task breakdown. A TODO comment acknowledges this limitation: 'TODO: Wire in per-task cost tracking from orchestrator's task_board for per-task cost queries.' This is documented as a known limitation in the handoff."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "description": "The CostQuery command in the daemon protocol has no corresponding CLI subcommand to invoke it. The CLI displays CostQueryResult when received, but users cannot actively query cost data via CLI (e.g., 'swell cost' command). If cost querying is a user-facing feature, it should be documented that users invoke it through other commands or via the dashboard API.",
+      "location": "clients/swell-cli/src/main.rs - command dispatch section (args[1].as_str() match)"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes scrutiny. CostQuery command is correctly implemented in the daemon protocol with proper types, handlers, and tests. The per-model breakdown correctly sums to totals. The only limitation is per-task cost tracking (when specific task_id is provided) which returns aggregate data instead - this is acknowledged with a TODO and does not block the core VAL-API-005 requirement."
+}

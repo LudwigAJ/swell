@@ -1,0 +1,26 @@
+{
+  "featureId": "daemon-memory-query",
+  "reviewedAt": "2026-04-15T16:15:00Z",
+  "commitId": "31e0cee",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation adds MemoryQuery command to daemon protocol that queries memory via RecallService BM25 search with scope filters. Key types added: MemoryQueryScope, MemoryQuery variant in CliCommand, MemoryResults in DaemonEvent. The handler builds RecallQuery and calls RecallService::search(). Results are sorted by descending BM25 score (with timestamp as tiebreaker), filtered by scope fields (session_id, task_id, agent_role), and limited to the specified limit. CLI handle_event displays MemoryResults. VAL-API-004 assertion expects 'cargo test -p swell-memory -- memory_query' but the actual test filter in swell-memory/tests/repo_scoping.rs uses 'test_memory_entries_tagged_with_repo_context' naming - the feature fulfills the requirement but the verificationStep has incorrect test filter.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "VAL-API-004 verificationStep specifies 'cargo test -p swell-memory -- memory_query' but no test with 'memory_query' in its name exists. The actual test filter for this functionality is 'test_query_returns_only_same_repo_results' in repo_scoping.rs. The verificationStep should reference the correct test name, or the test should be renamed to match.",
+      "evidence": "features.json VAL-API-004 verificationSteps vs crates/swell-memory/tests/repo_scoping.rs:72"
+    },
+    {
+      "area": "services",
+      "observation": "No CLI subcommand added to invoke MemoryQuery from the command line. The daemon-side handler exists and MemoryResults display is wired in handle_event, but 'swell memory <query>' or similar CLI entry point is not implemented. The CLI's main match statement at line 65-260 only handles: task, list, watch, approve, reject, cancel, pause, resume, inject, scope, repl commands.",
+      "evidence": "clients/swell-cli/src/main.rs:65-260 - no 'memory' command branch"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature daemon-memory-query passes scrutiny. The MemoryQuery command is properly implemented in swell-daemon with correct BM25 scoring, scope filtering, and result limiting. The swell-memory recall module correctly orders results by descending relevance score. Minor shared-state issues: (1) VAL-API-004 verificationStep has wrong test filter name, (2) no CLI subcommand exists to invoke the MemoryQuery - but these do not block the feature since the core daemon protocol requirement is fulfilled."
+}

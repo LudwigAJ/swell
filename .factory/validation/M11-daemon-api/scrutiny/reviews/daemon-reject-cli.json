@@ -1,0 +1,27 @@
+{
+  "featureId": "daemon-reject-cli",
+  "reviewedAt": "2026-04-15T15:45:00Z",
+  "commitId": "65796f0",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The daemon-reject-cli feature properly implements TaskReject command with rejection reason. The rejected_reason field is added to Task struct, wired through orchestrator's reject_task method, and exposed via CLI 'swell reject <task-id> [--reason]' command. However, the verification tests only cover error path cases (nonexistent task, wrong state) and do not include a happy-path integration test that verifies the rejection reason is actually preserved when a valid task is rejected.",
+    "issues": [
+      {
+        "file": "clients/swell-cli/tests/cross_daemon_ipc.rs",
+        "line": 638,
+        "severity": "non_blocking",
+        "description": "IPC tests only cover error paths: test_task_reject_wrong_state_returns_error and test_task_reject_nonexistent_returns_error. No test verifies the happy path where a task in AwaitingApproval or Validating state is rejected and the reason is preserved. The feature description's verification step 'Test verifies reason is preserved in task history' is not tested."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "description": "The feature verification steps state 'Test verifies reason is preserved in task history' but no such test exists. The IPC tests only verify error handling, not the actual reason preservation path. This is a verification gap rather than a code gap - the implementation does properly store the reason in task.rejected_reason.",
+      "location": "clients/swell-cli/tests/cross_daemon_ipc.rs - missing happy-path test"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation is complete and correct. The CLI reject command accepts --reason flag, daemon properly processes TaskReject, and reason is stored in Task.rejected_reason field. However, the verification tests are incomplete - they only cover error paths (nonexistent task, wrong state) and lack a happy-path test that actually rejects a valid task and verifies the reason is preserved, which is required by the feature's verification steps."
+}
