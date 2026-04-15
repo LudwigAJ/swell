@@ -693,12 +693,15 @@ impl Agent for PlannerAgent {
 }
 
 /// Generator agent - implements code based on plans using ReAct loop
+#[derive(Clone)]
 pub struct GeneratorAgent {
     model: String,
     llm: Option<Arc<dyn LlmBackend>>,
     tool_registry: Option<Arc<ToolRegistry>>,
     checkpoint_manager: Option<Arc<CheckpointManager>>,
     max_iterations: u32,
+    /// Memory blocks for context injection into LLM prompts
+    memory_blocks: Vec<MemoryBlock>,
 }
 
 impl GeneratorAgent {
@@ -710,6 +713,7 @@ impl GeneratorAgent {
             tool_registry: None,
             checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
+            memory_blocks: Vec::new(),
         }
     }
 
@@ -721,6 +725,7 @@ impl GeneratorAgent {
             tool_registry: None,
             checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
+            memory_blocks: Vec::new(),
         }
     }
 
@@ -732,6 +737,7 @@ impl GeneratorAgent {
             tool_registry: Some(tool_registry),
             checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
+            memory_blocks: Vec::new(),
         }
     }
 
@@ -747,12 +753,19 @@ impl GeneratorAgent {
             tool_registry: Some(tool_registry),
             checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
+            memory_blocks: Vec::new(),
         }
     }
 
     /// Add a checkpoint manager to enable checkpointing after each tool call
     pub fn with_checkpoint_manager(mut self, checkpoint_manager: Arc<CheckpointManager>) -> Self {
         self.checkpoint_manager = Some(checkpoint_manager);
+        self
+    }
+
+    /// Add memory blocks to the agent for context injection into LLM prompts
+    pub fn with_memory_blocks(mut self, memory_blocks: Vec<MemoryBlock>) -> Self {
+        self.memory_blocks = memory_blocks;
         self
     }
 
@@ -875,6 +888,22 @@ impl GeneratorAgent {
         step: &PlanStep,
         llm: &Arc<dyn LlmBackend>,
     ) -> Result<(String, u64), SwellError> {
+        // Build memory context if memory blocks are available
+        let memory_context = if !self.memory_blocks.is_empty() {
+            let mut ctx = "## Relevant Context\n\n".to_string();
+            for block in &self.memory_blocks {
+                ctx.push_str(&format!(
+                    "- [{}] {}\n  {}\n\n",
+                    format!("{:?}", block.block_type).to_lowercase(),
+                    block.label,
+                    block.content
+                ));
+            }
+            ctx
+        } else {
+            String::new()
+        };
+
         let prompt = format!(
             r#"<role>
 You are the GENERATOR agent for SWELL, an autonomous coding engine built in Rust.
@@ -906,7 +935,7 @@ Handoff from previous agent:
 - Known issues: None reported
 - What's next: Implement the step above
 </context>
-
+{}
 <constraints>
 Do NOT:
 - Hallucinate file contents or assume implementation details without reading them
@@ -942,7 +971,8 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
             step.affected_files,
             format!("{:?}", step.risk_level),
             thought,
-            step.affected_files.len()
+            step.affected_files.len(),
+            memory_context
         );
 
         let messages = vec![LlmMessage {
@@ -1063,7 +1093,11 @@ impl Agent for GeneratorAgent {
         );
         start_comment.log();
 
-        // Get the plan from context or create a simple one from task description
+        // Copy memory blocks from context into a cloned agent for LLM prompt injection
+        let mut agent_with_memory = self.clone();
+        agent_with_memory
+            .memory_blocks
+            .clone_from(&context.memory_blocks);
         let plan = if let Some(plan) = &context.task.plan {
             plan.clone()
         } else {
@@ -1123,7 +1157,7 @@ impl Agent for GeneratorAgent {
                 }
             }
 
-            let (step_output, step_tool_calls, step_tokens) = self
+            let (step_output, step_tool_calls, step_tokens) = agent_with_memory
                 .execute_step_with_react(step, &context.task, workspace_path)
                 .await?;
             all_outputs.push(step_output);
