@@ -79,7 +79,10 @@ pub use loop_detection::{
     LoopDetectionResult, LoopPattern, LoopPatternType, SharedToolLoopTracker, ToolExecution,
     ToolLoopTracker,
 };
-pub use mcp::{McpClient, McpManager, McpToolInfo, McpToolWrapper};
+pub use mcp::{
+    McpClient, McpLifecycleError, McpLifecyclePhase, McpLifecycleResult, McpLifecycleState,
+    McpManager, McpToolInfo, McpToolWrapper,
+};
 pub use mcp_config::{
     McpConfigManager, McpReconnectConfig, McpServerConfig, McpServerHealth, McpServerState,
     McpServersConfig,

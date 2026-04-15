@@ -329,6 +329,10 @@ impl McpConfigManager {
         // Create client with the command string and environment variables
         let client = McpClient::new_with_env(server_config.to_command_string(), server_config.env);
 
+        // Mark ServerRegistration phase as complete before connecting
+        // (ServerRegistration happens in McpConfigManager when registering in server_states)
+        client.mark_server_registered().await;
+
         // Attempt connection
         match client.connect().await {
             Ok(()) => {

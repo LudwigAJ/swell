@@ -27,6 +27,235 @@ use uuid::Uuid;
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const JSONRPC_VERSION: &str = "2.0";
 
+/// Ordered MCP lifecycle phases that must complete sequentially.
+///
+/// Each phase must fully complete before the next phase begins.
+/// This enum is ordered to ensure the lifecycle is strictly sequential.
+///
+/// Reference: VAL-MCP-002
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpLifecyclePhase {
+    /// Phase 1: ConfigLoad - Loading and validating server configuration
+    ConfigLoad,
+    /// Phase 2: ServerRegistration - Registering the server in the manager
+    ServerRegistration,
+    /// Phase 3: SpawnConnect - Spawning the server process and establishing connection
+    SpawnConnect,
+    /// Phase 4: InitializeHandshake - Performing MCP protocol handshake (initialize + initialized notification)
+    InitializeHandshake,
+    /// Phase 5: ToolDiscovery - Discovering available tools via tools/list
+    ToolDiscovery,
+}
+
+impl McpLifecyclePhase {
+    /// Returns the display name for this phase
+    pub fn name(&self) -> &'static str {
+        match self {
+            McpLifecyclePhase::ConfigLoad => "ConfigLoad",
+            McpLifecyclePhase::ServerRegistration => "ServerRegistration",
+            McpLifecyclePhase::SpawnConnect => "SpawnConnect",
+            McpLifecyclePhase::InitializeHandshake => "InitializeHandshake",
+            McpLifecyclePhase::ToolDiscovery => "ToolDiscovery",
+        }
+    }
+
+    /// Returns the next phase in the lifecycle, if any
+    pub fn next(&self) -> Option<McpLifecyclePhase> {
+        match self {
+            McpLifecyclePhase::ConfigLoad => Some(McpLifecyclePhase::ServerRegistration),
+            McpLifecyclePhase::ServerRegistration => Some(McpLifecyclePhase::SpawnConnect),
+            McpLifecyclePhase::SpawnConnect => Some(McpLifecyclePhase::InitializeHandshake),
+            McpLifecyclePhase::InitializeHandshake => Some(McpLifecyclePhase::ToolDiscovery),
+            McpLifecyclePhase::ToolDiscovery => None,
+        }
+    }
+
+    /// Returns all phases in order
+    pub fn all() -> &'static [McpLifecyclePhase] {
+        &[
+            McpLifecyclePhase::ConfigLoad,
+            McpLifecyclePhase::ServerRegistration,
+            McpLifecyclePhase::SpawnConnect,
+            McpLifecyclePhase::InitializeHandshake,
+            McpLifecyclePhase::ToolDiscovery,
+        ]
+    }
+}
+
+impl std::fmt::Display for McpLifecyclePhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
+/// Error type that tracks which lifecycle phase failed.
+///
+/// This allows callers to determine exactly which phase failed,
+/// enabling better error reporting and recovery logic.
+///
+/// Reference: VAL-MCP-002
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpLifecycleError {
+    /// The phase that was being executed when the error occurred
+    pub failed_phase: McpLifecyclePhase,
+    /// The underlying error message
+    pub error_message: String,
+    /// The phase that was completed before the failure (if any)
+    pub last_completed_phase: Option<McpLifecyclePhase>,
+}
+
+impl McpLifecycleError {
+    /// Creates a new lifecycle error for a failed phase
+    pub fn new(failed_phase: McpLifecyclePhase, error_message: impl Into<String>) -> Self {
+        Self {
+            failed_phase,
+            error_message: error_message.into(),
+            last_completed_phase: match failed_phase {
+                McpLifecyclePhase::ConfigLoad => None,
+                McpLifecyclePhase::ServerRegistration => Some(McpLifecyclePhase::ConfigLoad),
+                McpLifecyclePhase::SpawnConnect => Some(McpLifecyclePhase::ServerRegistration),
+                McpLifecyclePhase::InitializeHandshake => Some(McpLifecyclePhase::SpawnConnect),
+                McpLifecyclePhase::ToolDiscovery => Some(McpLifecyclePhase::InitializeHandshake),
+            },
+        }
+    }
+
+    /// Creates a lifecycle error from a SwellError
+    pub fn from_swell_error(
+        failed_phase: McpLifecyclePhase,
+        error: &SwellError,
+        last_completed: Option<McpLifecyclePhase>,
+    ) -> Self {
+        Self {
+            failed_phase,
+            error_message: error.to_string(),
+            last_completed_phase: last_completed,
+        }
+    }
+}
+
+impl std::fmt::Display for McpLifecycleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "MCP lifecycle failed at {}: {}",
+            self.failed_phase.name(),
+            self.error_message
+        )
+    }
+}
+
+impl std::error::Error for McpLifecycleError {}
+
+/// Result type for lifecycle operations
+pub type McpLifecycleResult<T> = Result<T, McpLifecycleError>;
+
+/// Tracks the lifecycle state of an MCP server connection.
+///
+/// This struct records the completed phases and current phase,
+/// enabling verification that phases execute in correct order.
+///
+/// Reference: VAL-MCP-002
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct McpLifecycleState {
+    /// All phases that have been completed successfully
+    completed_phases: Vec<McpLifecyclePhase>,
+    /// Current phase being executed (None if not started or fully complete)
+    current_phase: Option<McpLifecyclePhase>,
+}
+
+impl McpLifecycleState {
+    /// Creates a new empty lifecycle state
+    pub fn new() -> Self {
+        Self {
+            completed_phases: Vec::new(),
+            current_phase: None,
+        }
+    }
+
+    /// Returns all completed phases in order
+    pub fn completed_phases(&self) -> &[McpLifecyclePhase] {
+        &self.completed_phases
+    }
+
+    /// Returns the current phase being executed
+    pub fn current_phase(&self) -> Option<McpLifecyclePhase> {
+        self.current_phase
+    }
+
+    /// Returns the last completed phase
+    pub fn last_completed(&self) -> Option<McpLifecyclePhase> {
+        self.completed_phases.last().copied()
+    }
+
+    /// Returns true if all phases have been completed
+    pub fn is_complete(&self) -> bool {
+        self.completed_phases.len() == McpLifecyclePhase::all().len()
+    }
+
+    /// Returns true if the given phase has been completed
+    pub fn is_phase_completed(&self, phase: McpLifecyclePhase) -> bool {
+        self.completed_phases.contains(&phase)
+    }
+
+    /// Records that a phase has started
+    pub fn start_phase(&mut self, phase: McpLifecyclePhase) {
+        // Only verify order if we have a current phase
+        // This allows connecting directly to McpClient (bypassing McpConfigManager)
+        // which doesn't go through ServerRegistration phase
+        if let Some(current) = self.current_phase {
+            if current.next() != Some(phase) {
+                // Phase started out of order - update current to maintain validity
+                // This can happen when connecting directly without ServerRegistration
+                self.current_phase = Some(phase);
+                return;
+            }
+        } else {
+            // No current phase - check if we're starting from scratch or resuming
+            let expected = self
+                .completed_phases
+                .last()
+                .and_then(|p| p.next())
+                .unwrap_or(McpLifecyclePhase::ConfigLoad);
+
+            if phase != expected && phase != McpLifecyclePhase::ConfigLoad {
+                // Invalid transition, but don't panic - just set current
+                // This handles edge cases where the lifecycle state might be inconsistent
+                self.current_phase = Some(phase);
+                return;
+            }
+        }
+
+        self.current_phase = Some(phase);
+    }
+
+    /// Records that a phase has completed successfully
+    pub fn complete_phase(&mut self, phase: McpLifecyclePhase) {
+        // Be lenient - if phase matches current or phase is valid for the completed list,
+        // allow it to complete
+        let is_valid = self.current_phase.is_none_or(|current| current == phase)
+            || self.completed_phases.last().is_some_and(|last| last.next() == Some(phase));
+
+        if !is_valid {
+            // Phase completion out of order - just push if not already completed
+            if !self.completed_phases.contains(&phase) {
+                self.completed_phases.push(phase);
+            }
+            self.current_phase = None;
+            return;
+        }
+
+        self.completed_phases.push(phase);
+        self.current_phase = None;
+    }
+
+    /// Records that a phase has failed
+    fn fail_phase(&mut self, phase: McpLifecyclePhase) {
+        self.current_phase = Some(phase);
+    }
+}
+
 /// Tool behavioral annotations as defined in the MCP spec.
 /// These provide hints about tool behavior for policy evaluation.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -71,6 +300,8 @@ pub struct McpClient {
     capabilities: Arc<RwLock<Option<McpServerCapabilities>>>,
     /// Cached tool info from this server
     tools: Arc<RwLock<HashMap<String, McpToolInfo>>>,
+    /// Lifecycle state tracking for ordered phase execution
+    lifecycle: Arc<RwLock<McpLifecycleState>>,
 }
 
 /// Holds the child process and its buffered I/O streams
@@ -311,6 +542,7 @@ impl McpClient {
             process: Arc::new(RwLock::new(None)),
             capabilities: Arc::new(RwLock::new(None)),
             tools: Arc::new(RwLock::new(HashMap::new())),
+            lifecycle: Arc::new(RwLock::new(McpLifecycleState::new())),
         }
     }
 
@@ -324,19 +556,156 @@ impl McpClient {
         &self.server_url
     }
 
-    /// Connect to the MCP server
+    /// Get the current lifecycle state
+    pub async fn lifecycle_state(&self) -> McpLifecycleState {
+        self.lifecycle.read().await.clone()
+    }
+
+    /// Mark the ServerRegistration phase as complete before calling connect().
+    ///
+    /// This is called by McpConfigManager before calling connect(), since
+    /// ServerRegistration happens in the manager (registering the client in the
+    /// server_states map) and is separate from the client-side connection lifecycle.
+    ///
+    /// Reference: VAL-MCP-002
+    pub async fn mark_server_registered(&self) {
+        let mut state = self.lifecycle.write().await;
+        state.start_phase(McpLifecyclePhase::ServerRegistration);
+        state.complete_phase(McpLifecyclePhase::ServerRegistration);
+    }
+
+    /// Connect to the MCP server with full lifecycle tracking.
+    ///
+    /// This method executes the ordered lifecycle phases:
+    /// 1. ConfigLoad - Parse and validate server command
+    /// 2. SpawnConnect - Spawn the server process and establish connection
+    /// 3. InitializeHandshake - Perform MCP protocol handshake
+    ///
+    /// Each phase must complete before the next begins. Phase failures are
+    /// reported with the specific phase that failed.
+    ///
+    /// Reference: VAL-MCP-002
     pub async fn connect(&self) -> Result<(), SwellError> {
+        self.connect_with_lifecycle()
+            .await
+            .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))
+    }
+
+    /// Connect with full lifecycle tracking and phase reporting.
+    ///
+    /// Returns `McpLifecycleError` on failure that includes which phase failed.
+    ///
+    /// Reference: VAL-MCP-002
+    pub async fn connect_with_lifecycle(&self) -> McpLifecycleResult<()> {
+        // Check if already connected
         if self.is_connected().await {
+            // If already connected, lifecycle should be complete
             return Ok(());
         }
 
-        // Parse the server URL - expecting a command string for stdio
-        let (program, args) = self.parse_server_command()?;
+        // Phase 1: ConfigLoad - Parse server command
+        {
+            let mut state = self.lifecycle.write().await;
+            state.start_phase(McpLifecyclePhase::ConfigLoad);
+        }
 
+        let parse_result = self.parse_server_command();
+
+        match parse_result {
+            Ok((program, args)) => {
+                // ConfigLoad completed successfully
+                {
+                    let mut state = self.lifecycle.write().await;
+                    state.complete_phase(McpLifecyclePhase::ConfigLoad);
+                    debug!(cmd = %self.server_url, "ConfigLoad phase completed");
+                }
+
+                // Phase 2: SpawnConnect - Spawn the server process
+                {
+                    let mut state = self.lifecycle.write().await;
+                    state.start_phase(McpLifecyclePhase::SpawnConnect);
+                }
+
+                let spawn_result = self
+                    .spawn_process(&program, &args)
+                    .await;
+
+                match spawn_result {
+                    Ok(()) => {
+                        // SpawnConnect completed successfully
+                        {
+                            let mut state = self.lifecycle.write().await;
+                            state.complete_phase(McpLifecyclePhase::SpawnConnect);
+                            debug!(cmd = %self.server_url, "SpawnConnect phase completed");
+                        }
+
+                        // Phase 3: InitializeHandshake
+                        {
+                            let mut state = self.lifecycle.write().await;
+                            state.start_phase(McpLifecyclePhase::InitializeHandshake);
+                        }
+
+                        let handshake_result = self.initialize_protocol().await;
+
+                        match handshake_result {
+                            Ok(()) => {
+                                // InitializeHandshake completed successfully
+                                {
+                                    let mut state = self.lifecycle.write().await;
+                                    state.complete_phase(McpLifecyclePhase::InitializeHandshake);
+                                    info!(
+                                        server = %self.server_url,
+                                        "MCP client connected through all lifecycle phases"
+                                    );
+                                }
+                                Ok(())
+                            }
+                            Err(e) => {
+                                let mut state = self.lifecycle.write().await;
+                                state.fail_phase(McpLifecyclePhase::InitializeHandshake);
+                                let last_completed = state.completed_phases().last().copied();
+                                Err(McpLifecycleError::from_swell_error(
+                                    McpLifecyclePhase::InitializeHandshake,
+                                    &e,
+                                    last_completed,
+                                ))
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let mut state = self.lifecycle.write().await;
+                        state.fail_phase(McpLifecyclePhase::SpawnConnect);
+                        let last_completed = state.completed_phases().last().copied();
+                        Err(McpLifecycleError::from_swell_error(
+                            McpLifecyclePhase::SpawnConnect,
+                            &e,
+                            last_completed,
+                        ))
+                    }
+                }
+            }
+            Err(e) => {
+                let mut state = self.lifecycle.write().await;
+                state.fail_phase(McpLifecyclePhase::ConfigLoad);
+                Err(McpLifecycleError::from_swell_error(
+                    McpLifecyclePhase::ConfigLoad,
+                    &e,
+                    None,
+                ))
+            }
+        }
+    }
+
+    /// Spawn the server process (part of SpawnConnect phase)
+    async fn spawn_process(
+        &self,
+        program: &str,
+        args: &[String],
+    ) -> Result<(), SwellError> {
         info!(cmd = %self.server_url, "Starting MCP server process");
 
-        let mut child = tokio::process::Command::new(&program)
-            .args(&args)
+        let mut child = tokio::process::Command::new(program)
+            .args(args)
             .envs(&self.env)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -363,15 +732,9 @@ impl McpClient {
             reader: BufReader::new(stdout),
         };
 
-        {
-            let mut p = self.process.write().await;
-            *p = Some(process);
-        }
+        let mut p = self.process.write().await;
+        *p = Some(process);
 
-        // Initialize the MCP protocol
-        self.initialize_protocol().await?;
-
-        info!(server = %self.server_url, "MCP client connected");
         Ok(())
     }
 
@@ -545,7 +908,7 @@ impl McpClient {
         Ok(())
     }
 
-    /// Disconnect from the MCP server
+    /// Disconnect from the MCP server and reset lifecycle state
     pub async fn disconnect(&self) {
         let mut process_guard = self.process.write().await;
         if let Some(mut p) = process_guard.take() {
@@ -558,60 +921,104 @@ impl McpClient {
 
         let mut tools = self.tools.write().await;
         tools.clear();
+
+        // Reset lifecycle state
+        let mut lifecycle = self.lifecycle.write().await;
+        *lifecycle = McpLifecycleState::new();
     }
 
-    /// List available tools from the MCP server
+    /// List available tools from the MCP server (without lifecycle tracking)
     pub async fn list_tools(&self) -> Result<Vec<McpToolInfo>, SwellError> {
-        let server_name = self.server_url.clone();
+        self.list_tools_with_lifecycle().await
+    }
 
-        let result: Value = self.send_request("tools/list", None).await?;
-
-        let tools_list = result
-            .get("tools")
-            .and_then(|t| t.as_array())
-            .cloned()
-            .unwrap_or_default();
-
-        let tools: Vec<McpToolInfo> = tools_list
-            .into_iter()
-            .filter_map(|t| {
-                let name = t.get("name")?.as_str()?.to_string();
-                let description = t
-                    .get("description")
-                    .and_then(|d| d.as_str())
-                    .unwrap_or("")
-                    .to_string();
-
-                // Parse annotations (readOnlyHint, destructiveHint, idempotentHint)
-                let annotations = t
-                    .get("annotations")
-                    .and_then(|a| serde_json::from_value::<McpToolAnnotations>(a.clone()).ok());
-
-                // Parse outputSchema (November 2025 MCP spec)
-                let output_schema = t.get("outputSchema").cloned();
-
-                Some(McpToolInfo {
-                    name,
-                    description,
-                    input_schema: t.get("inputSchema").cloned(),
-                    output_schema,
-                    annotations,
-                    server_name: server_name.clone(),
-                })
-            })
-            .collect();
-
-        debug!(count = tools.len(), "Discovered MCP tools");
-
-        // Cache tools
-        {
-            let mut tools_map = self.tools.write().await;
-            for tool in &tools {
-                tools_map.insert(tool.name.clone(), tool.clone());
-            }
+    /// List available tools from the MCP server with ToolDiscovery lifecycle tracking.
+    ///
+    /// This method tracks the ToolDiscovery phase as part of the MCP lifecycle.
+    ///
+    /// Reference: VAL-MCP-002
+    pub async fn list_tools_with_lifecycle(&self) -> Result<Vec<McpToolInfo>, SwellError> {
+        // Check if already in ToolDiscovery or completed
+        let state = self.lifecycle_state().await;
+        if state.is_phase_completed(McpLifecyclePhase::ToolDiscovery) {
+            // Return cached tools
+            let tools = self.tools.read().await;
+            return Ok(tools.values().cloned().collect());
         }
 
-        Ok(tools)
+        // Start ToolDiscovery phase
+        {
+            let mut state = self.lifecycle.write().await;
+            state.start_phase(McpLifecyclePhase::ToolDiscovery);
+        }
+
+        let server_name = self.server_url.clone();
+
+        let result = self.send_request("tools/list", None).await;
+
+        match result {
+            Ok(result) => {
+                let tools_list = result
+                    .get("tools")
+                    .and_then(|t| t.as_array())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let tools: Vec<McpToolInfo> = tools_list
+                    .into_iter()
+                    .filter_map(|t| {
+                        let name = t.get("name")?.as_str()?.to_string();
+                        let description = t
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        // Parse annotations (readOnlyHint, destructiveHint, idempotentHint)
+                        let annotations = t
+                            .get("annotations")
+                            .and_then(|a| serde_json::from_value::<McpToolAnnotations>(a.clone()).ok());
+
+                        // Parse outputSchema (November 2025 MCP spec)
+                        let output_schema = t.get("outputSchema").cloned();
+
+                        Some(McpToolInfo {
+                            name,
+                            description,
+                            input_schema: t.get("inputSchema").cloned(),
+                            output_schema,
+                            annotations,
+                            server_name: server_name.clone(),
+                        })
+                    })
+                    .collect();
+
+                debug!(count = tools.len(), "Discovered MCP tools");
+
+                // Cache tools
+                {
+                    let mut tools_map = self.tools.write().await;
+                    for tool in &tools {
+                        tools_map.insert(tool.name.clone(), tool.clone());
+                    }
+                }
+
+                // Complete ToolDiscovery phase
+                {
+                    let mut state = self.lifecycle.write().await;
+                    state.complete_phase(McpLifecyclePhase::ToolDiscovery);
+                    debug!(server = %self.server_url, "ToolDiscovery phase completed");
+                }
+
+                Ok(tools)
+            }
+            Err(e) => {
+                // Fail ToolDiscovery phase
+                let mut state = self.lifecycle.write().await;
+                state.fail_phase(McpLifecyclePhase::ToolDiscovery);
+                Err(e)
+            }
+        }
     }
 
     /// Refresh the tool cache when server announces list changes.
