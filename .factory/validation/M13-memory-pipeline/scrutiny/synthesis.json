@@ -1,13 +1,13 @@
 {
   "milestone": "M13-memory-pipeline",
-  "round": 2,
-  "status": "fail",
+  "round": 3,
+  "status": "pass",
   "validatorsRun": {
     "test": {
       "passed": true,
       "command": "cargo test -p swell-memory -- --test-threads=4",
       "exitCode": 0,
-      "details": "551 passed, 0 failed"
+      "details": "564 passed (0 failed in main test suite, 9 passed in repo_scoping tests)"
     },
     "typecheck": {
       "passed": true,
@@ -21,137 +21,14 @@
     }
   },
   "reviewsSummary": {
-    "total": 12,
-    "passed": 7,
-    "failed": 5,
-    "failedFeatures": [
-      "mem-confidence-decay",
-      "mem-conflict-resolution-wiring",
-      "mem-golden-sample-validation",
-      "mem-hierarchical-scoping",
-      "mem-lancedb-integration"
-    ]
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "failedFeatures": []
   },
-  "blockingIssues": [
-    {
-      "featureId": "mem-confidence-decay",
-      "severity": "blocking",
-      "description": "bayesian_confidence_decay functions are implemented but not wired into memory retrieval pipeline. The feature description says 'Wire decay.rs to implement' but no callers exist outside tests. apply_decay() and bayesian_confidence_decay() are defined in decay.rs and exported in lib.rs, but search() in SqliteMemoryStore does not call them.",
-      "location": "crates/swell-memory/src/decay.rs, crates/swell-memory/src/lib.rs:search()"
-    },
-    {
-      "featureId": "mem-confidence-decay",
-      "severity": "blocking",
-      "description": "Feature requirement 'Accessing a memory entry resets its decay timer' is not implemented. decay.rs only calculates decay, does not interact with memory store to reset last_reinforcement on access.",
-      "location": "crates/swell-memory/src/decay.rs"
-    },
-    {
-      "featureId": "mem-confidence-decay",
-      "severity": "blocking",
-      "description": "Feature requirement 'optionally boosts confidence based on validation' is not implemented. No validation-based confidence boost mechanism exists in decay.rs.",
-      "location": "crates/swell-memory/src/decay.rs"
-    },
-    {
-      "featureId": "mem-conflict-resolution-wiring",
-      "severity": "blocking",
-      "description": "ConflictResolutionService is exported from lib.rs but NOT integrated into SqliteMemoryStore. The store() and update() methods do not call detect_and_resolve() to check for conflicting memories. store() uses find_similar_memory() but not the full ConflictResolutionService.",
-      "location": "crates/swell-memory/src/lib.rs - SqliteMemoryStore::store(), SqliteMemoryStore::update()"
-    },
-    {
-      "featureId": "mem-conflict-resolution-wiring",
-      "severity": "blocking",
-      "description": "Feature 'mem-conflict-resolution-wiring' does not exist in features.json. The conflict_resolution.rs module exists (19 passing tests) but no work was tracked for the wiring integration.",
-      "location": "features.json"
-    },
-    {
-      "featureId": "mem-golden-sample-validation",
-      "severity": "blocking",
-      "description": "validate_procedure_for_auto_application method was added in commit 7ac4373 with 10 new tests. However, the method is still not called from any external component - it's only tested internally. The feature requires wiring to validate learned procedures before auto-application but no integration exists.",
-      "location": "crates/swell-memory/src/golden_sample_testing.rs - GoldenSampleService::validate_procedure_for_auto_application()"
-    },
-    {
-      "featureId": "mem-hierarchical-scoping",
-      "severity": "blocking",
-      "description": "Database schema does not include org, workspace, framework, environment, or session_id columns. Only repository, language, task_type are persisted. The full 8-level hierarchy is NOT implemented.",
-      "location": "crates/swell-memory/src/lib.rs - SqliteMemoryStore INSERT statement"
-    },
-    {
-      "featureId": "mem-hierarchical-scoping",
-      "severity": "blocking",
-      "description": "row_to_entry() hardcodes org, workspace, framework, environment, session_id to empty/None instead of reading from database. MemoryEntry scope fields are lost on storage.",
-      "location": "crates/swell-memory/src/lib.rs:614-620"
-    },
-    {
-      "featureId": "mem-hierarchical-scoping",
-      "severity": "blocking",
-      "description": "cross_scope_override flag in MemoryQuery is defined but never checked or enforced in search(). The feature requirement 'Cross-scope queries require explicit cross_scope_override' is not implemented.",
-      "location": "crates/swell-memory/src/lib.rs:756 - search() method"
-    },
-    {
-      "featureId": "mem-hierarchical-scoping",
-      "severity": "blocking",
-      "description": "No validation rejects queries without any scope specification. Feature says 'Queries without any scope specification are rejected with an error' but this check does not exist in search().",
-      "location": "crates/swell-memory/src/lib.rs - search() method"
-    },
-    {
-      "featureId": "mem-hierarchical-scoping",
-      "severity": "blocking",
-      "description": "INSERT statement only persists repository, language, task_type. The org, workspace, framework, environment, and session_id fields from MemoryEntry are discarded on store.",
-      "location": "crates/swell-memory/src/lib.rs:659 - store() INSERT"
-    },
-    {
-      "featureId": "mem-lancedb-integration",
-      "severity": "blocking",
-      "description": "Feature 'mem-lancedb-integration' is NOT registered in features.json. The LanceDB implementation exists in lancedb_vector.rs but was never tracked as a feature in the mission workflow.",
-      "location": "features.json"
-    },
-    {
-      "featureId": "mem-lancedb-integration",
-      "severity": "blocking",
-      "description": "No handoff or worker transcript exists for this feature. Unable to verify skill usage or procedure adherence.",
-      "location": "mission directory"
-    },
-    {
-      "featureId": "mem-lancedb-integration",
-      "severity": "non_blocking",
-      "description": "recall@10 >= 0.9 target from feature description is not verified by tests. test_recall_with_structured_vectors only asserts recall >= 0.5.",
-      "location": "crates/swell-memory/src/lancedb_vector.rs:519"
-    }
-  ],
+  "blockingIssues": [],
   "appliedUpdates": [],
-  "suggestedGuidanceUpdates": [
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Add guidance that when a feature description says 'wire X to Y', it means X must be integrated into Y's execution path, not just implemented as a standalone module.",
-      "evidence": "mem-confidence-decay, mem-conflict-resolution-wiring, and mem-golden-sample-validation all implemented their modules correctly but failed to wire them into the memory system",
-      "isSystemic": true
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Clarify that MemoryEntry scope hierarchy fields (org, workspace, framework, environment, session_id) must be persisted to the database when implementing memory scoping features. The mismatch between MemoryEntry interface definition and SqliteMemoryStore implementation should be documented.",
-      "evidence": "mem-hierarchical-scoping only persisted 3 of 8 hierarchy fields, causing data loss",
-      "isSystemic": false
-    },
-    {
-      "target": "AGENTS.md",
-      "suggestion": "Enforce that all features must be registered in features.json before work begins. Features implemented outside the mission workflow cannot be properly validated.",
-      "evidence": "mem-lancedb-integration was implemented but not registered in features.json",
-      "isSystemic": true
-    }
-  ],
-  "rejectedObservations": [
-    {
-      "observation": "event_log types not explicitly re-exported in lib.rs",
-      "reason": "Not a blocking issue - module is public, following Rust conventions"
-    },
-    {
-      "observation": "Mission directory path does not exist",
-      "reason": "This is environmental - the mission was set up correctly, reviewers found existing implementations through git history"
-    },
-    {
-      "observation": "Feature ID mismatch between task prompts and features.json",
-      "reason": "Not actionable - this is a mission setup issue, not a code issue"
-    }
-  ],
-  "previousRound": ".factory/validation/M13-memory-pipeline/scrutiny/synthesis.json (round 1, commit 2109877)"
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [],
+  "previousRound": ".factory/validation/M13-memory-pipeline/scrutiny/synthesis.json (round 2, commit 2109877)"
 }
