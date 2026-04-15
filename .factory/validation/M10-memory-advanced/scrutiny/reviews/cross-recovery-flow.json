@@ -1,0 +1,21 @@
+{
+  "featureId": "cross-recovery-flow",
+  "reviewedAt": "2026-04-15T11:45:00.000Z",
+  "commitId": "6edf603",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The cross-recovery-flow integration test is comprehensive with 29 tests covering all three requirements: (1) tool failure classification by FailureClass including pattern matching for timeout/rate limit/network errors, (2) recovery recipe selection with exact match/pattern match/tool-specific match/default fallback, and (3) execution continuation after recovery actions. All tests pass and clippy shows no warnings.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The feature specifies skillName 'rust-worker' but this skill does not exist in .factory/skills/. The worker transcript shows the skill was loaded but returned no content (skillFeedback indicates procedure was followed). This indicates either the skill should exist but is missing, or the feature's skillName field is incorrect.",
+      "evidence": "features.json has skillName: 'rust-worker' but ls .factory/skills/ shows no rust-worker directory. Only 'rust', 'rust-code-review', 'rust-patterns', and 'rust-testing-code-review' exist."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review passed. The integration test comprehensively validates tool failure classification, recovery recipe selection, and execution continuation. 29 tests all pass. One observation: the 'rust-worker' skill referenced in features.json doesn't exist in .factory/skills/."
+}

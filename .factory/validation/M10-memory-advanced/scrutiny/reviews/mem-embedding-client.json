@@ -1,0 +1,38 @@
+{
+  "featureId": "mem-embedding-client",
+  "reviewedAt": "2026-04-15T10:45:00.000Z",
+  "commitId": "0912683",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation fully covers the feature requirements. EmbeddingModel enum with VoyageCode3 variant, EmbeddingClient trait with async embed() method, and VoyageEmbeddingClient with real HTTP request structure are all implemented correctly. Tests verify the implementation against a mock HTTP server. All verification steps pass: cargo check, clippy, and cargo test with 389 tests passed.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/embedding.rs",
+        "line": 87,
+        "severity": "non_blocking",
+        "description": "The `model` field stored in VoyageEmbeddingClient is never read — `embed()` always hardcodes `EmbeddingModel::VoyageCode3` (line 278). The field was intended for extensibility but currently serves no purpose. Consider either using `self.model` in `embed()` or removing the field if no other model variants are planned."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "Worker used mockito for HTTP mocking in tests without any special service setup. This is straightforward and doesn't require documentation in services.yaml — mockito is a standard Rust testing dependency.",
+      "evidence": "Transcript shows `use mockito::Server;` and tests run with standard `cargo test` commands"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker followed the crate-scoped validation pattern correctly: `cargo check -p swell-memory`, `cargo clippy -p swell-memory`, `cargo test -p swell-memory`. This matches AGENTS.md guidance for crate-scoped validation.",
+      "evidence": "Handoff verification shows all commands used `-p swell-memory` flag"
+    },
+    {
+      "area": "skills",
+      "observation": "The feature's skillName is 'rust-worker' but that skill file doesn't exist at `.factory/skills/rust-worker/SKILL.md`. The actual skill file is at `.factory/skills/rust/SKILL.md`. The worker didn't reference the rust-worker skill directly in the transcript skeleton but followed general Rust conventions.",
+      "evidence": "Transcript shows skill invocation was for 'mission-worker-base' and 'rust-worker' but neither path exists. Worker proceeded with standard Rust patterns."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature mem-embedding-client passes review. All expected behavior items are implemented: EmbeddingModel enum with VoyageCode3 variant, EmbeddingClient trait with async embed() method, and VoyageEmbeddingClient with real HTTP requests to Voyage AI API. The implementation correctly sends POST to https://api.voyageai.com/v1/embeddings with model and input fields, and tests verify this using mockito mock server. The only non-blocking observation is that the stored `model` field in VoyageEmbeddingClient is unused — `embed()` hardcodes VoyageCode3. This is acceptable for initial implementation but should be addressed if additional model variants are added."
+}

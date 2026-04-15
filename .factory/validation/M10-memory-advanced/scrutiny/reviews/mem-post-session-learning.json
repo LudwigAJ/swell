@@ -1,0 +1,39 @@
+{
+  "featureId": "mem-post-session-learning",
+  "reviewedAt": "2026-04-15T12:54:00Z",
+  "commitId": "af3cef0",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Feature fully implemented. post_session_learning.rs (786 lines) provides LearnedPattern, ToolCallRecord, TaskTrajectory, PostSessionLearner, and PostSessionLearningService. Trajectory analysis extracts tool sequences using sliding windows (2-5 tools), counts occurrences, and stores patterns with confidence scores. 17 comprehensive tests cover extraction, confidence scoring, validation boost, and persistence. All 425 swell-memory tests pass. Clippy clean.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/post_session_learning.rs",
+        "line": 50,
+        "severity": "non_blocking",
+        "description": "LearnedPattern::new() sets confidence to 0.0 initially, then build_patterns calls update_confidence(). This is correct but could be simplified - new() could initialize with update_confidence() called immediately."
+      },
+      {
+        "file": "crates/swell-memory/src/post_session_learning.rs",
+        "line": 45,
+        "severity": "non_blocking",
+        "description": "generate_pattern_name truncates sequences > 50 chars by taking first 47 chars + '...pattern', resulting in names like 'read_file_edit_file...pattern'. The label check in get_patterns looks for ends_with('...pattern') which works, but a more robust approach might use a consistent prefix like 'post_session_'."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Feature specifies skillName 'rust-worker' but the skill file was not found at .factory/skills/rust-worker/SKILL.md. Transcript skeleton references mission-worker-base and rust-worker skills, but only .factory/skills/rust/SKILL.md exists in the project skills directory. Cannot verify if worker followed the correct procedure.",
+      "evidence": "jq --arg id 'mem-post-session-learning' returned skillName='rust-worker' but ls .factory/skills/rust-worker/ returned ENOENT. Glob found skills at .factory/skills/rust/ but not rust-worker."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Feature fulfills VAL-MEM-006 but this assertion was not visible in the validation contract excerpt provided. The scrutiny validator should verify VAL-MEM-006 is documented in the mission's validation contract.",
+      "evidence": "features.json shows 'fulfills': ['VAL-MEM-006']' but grep for VAL-MEM-006 in validation-contract.md returned no matches in the visible excerpt."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "mem-post-session-learning passes scrutiny review. Implementation is complete: PostSessionLearner analyzes task trajectories, extracts tool sequences via sliding windows (length 2-5), counts occurrences, and stores patterns with confidence scores (formula: min(observations/10, 1.0) + 0.1 if validated, capped at 0.95). Patterns are stored as MemoryEntry blocks with Skill block type and label prefix 'pattern:'. Retrieval via get_patterns filters by repository and parses only entries with labels ending in '...pattern'. 17 tests validate all core functionality. Two minor non-blocking observations: (1) confidence initialization could be consolidated in new(), (2) pattern label convention relies on '...pattern' suffix which is fragile but functional. Worker skill file not found - could not verify procedure adherence. Feature fulfills VAL-MEM-006 but assertion not found in visible contract excerpt."
+}

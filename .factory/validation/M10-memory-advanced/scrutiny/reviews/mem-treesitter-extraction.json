@@ -1,0 +1,34 @@
+{
+  "featureId": "mem-treesitter-extraction",
+  "reviewedAt": "2026-04-15T14:30:00Z",
+  "commitId": "0374025",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation correctly extracts typed nodes (File, Function, Struct/Type, Method, Import) from Rust source via tree-sitter and creates correct edge types (Contains, Calls, Imports). The extraction pipeline is well-tested with 8 unit tests covering node extraction, edge creation, type mapping, and integration. The swell-core treesitter.rs modification to handle 'use_declaration' nodes is correct.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/treesitter_extraction.rs",
+        "line": 30,
+        "severity": "non_blocking",
+        "description": "The 'chunk_to_node' field is populated but never read through any public method. While technically correct (clippy passes with #[expect(dead_code)]), this field adds confusion about its purpose. Consider either exposing a getter method or removing the field if truly unnecessary."
+      },
+      {
+        "file": "crates/swell-memory/src/treesitter_extraction.rs",
+        "line": 206,
+        "severity": "non_blocking",
+        "description": "The 'insert_into_graph' async function is declared and exported but has no test coverage. The test_integration_with_knowledge_graph test validates the extraction pipeline but doesn't persist to an actual SqliteKnowledgeGraph. This is acceptable since the function is straightforward (just iterates and inserts), but a minimal test would improve confidence."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The rust-worker skill file was not found at the expected path (~/.factory/skills/rust-worker/SKILL.md). Unable to verify if worker followed the correct procedure. The transcript shows the worker followed standard crate-scoped validation patterns from AGENTS.md.",
+      "evidence": "~/.factory/skills/rust-worker/SKILL.md does not exist"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes review. Tree-sitter AST extraction pipeline is correctly implemented with proper node type mapping (Function, Method, Class, Module, Type for Struct/Enum/Trait, Import) and edge types (Contains, Calls, Imports, DependsOn). 8 unit tests cover extraction logic. All verification steps passed (397 swell-memory tests, 8 tree-sitter tests, clippy). Minor observations: (1) insert_into_graph lacks direct test but extraction is well-validated, (2) chunk_to_node field is unused through public API but correctly annotated. The discovered limitation about Calls edges always originating from File node (due to source_chunk not being populated in tree-sitter collection) is accurately documented in the handoff."
+}

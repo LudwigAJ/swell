@@ -1,0 +1,63 @@
+{
+  "featureId": "mem-working-memory-compiler",
+  "reviewedAt": "2026-04-15T10:45:00Z",
+  "commitId": "c76443b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Implementation adds working_memory_compiler module with WorkingMemoryBudget, MemoryLayer, WorkingMemory, and WorkingMemoryCompiler. However, VAL-MEM-005 validation requirements are not fully met — the tests do not verify multi-layer composition, and there are several code-level issues with token estimation and was_trimmed logic.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/working_memory_compiler.rs",
+        "line": 1,
+        "severity": "blocking",
+        "description": "VAL-MEM-005 contract requires BOTH (a) output within [2000, 5000] token range AND (b) contributions from at least 2 memory layers. The test test_compiler_token_budget (lines 895-931) only asserts `result.token_count <= 5000`. It never asserts that content comes from >= 2 layers. Test comment even acknowledges 'result might be below min if not enough content, which is acceptable' — but the contract does not allow falling below 2000 tokens."
+      },
+      {
+        "file": "crates/swell-memory/src/working_memory_compiler.rs",
+        "line": 195,
+        "severity": "non_blocking",
+        "description": "was_trimmed flag logic appears inverted: `let was_trimmed = !trimmed_entries.is_empty() || total_tokens > self.config.budget.min_tokens;`. This means any content that exceeds min_tokens is flagged as trimmed, which is incorrect. If content is under min_tokens, was_trimmed is false even though we couldn't fill the budget. If content is over min_tokens (up to max), was_trimmed is true even though we may not have actually trimmed anything."
+      },
+      {
+        "file": "crates/swell-memory/src/working_memory_compiler.rs",
+        "line": 383,
+        "severity": "non_blocking",
+        "description": "Token estimation for semantic entities uses name twice instead of name and description: `let text = format!(\"{}: {}\", entity.name, entity.name);`. This means semantic entities with short names but long descriptions will have underestimated token counts, potentially causing semantic content to exceed budget when actually added."
+      },
+      {
+        "file": "crates/swell-memory/src/working_memory_compiler.rs",
+        "line": 241,
+        "severity": "non_blocking",
+        "description": "compile() method accepts semantic_store, procedural_store, skills, and repository/task_id but no knowledge_graph parameter. The module docstring (lines 5-9) lists 'Knowledge Graph (code structure via knowledge graph)' as a consumed layer, but KnowledgeGraph is not integrated into the compile flow. MemoryLayer::KnowledgeGraph exists but has no corresponding fetch method."
+      },
+      {
+        "file": "crates/swell-memory/src/working_memory_compiler.rs",
+        "line": 261,
+        "severity": "non_blocking",
+        "description": "The `contributions` variable (LayerContribution) is accumulated during compilation but never returned or exposed. It's initialized and updated but serves no purpose — it's dead code."
+      },
+      {
+        "file": "crates/swell-memory/src/working_memory_compiler.rs",
+        "line": 343,
+        "severity": "non_blocking",
+        "description": "score_episodic_entry() references 'recency_boost_days' config field but never uses it in the calculation. The recency factor is hardcoded to 30-day decay: `let recency_factor = (-age_days / 30.0).exp().min(1.0);` despite config.recency_boost_days existing."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The worker used skillName 'rust-worker' in features.json, but this skill file does not exist in .factory/skills/. The actual available skills are 'rust' and 'rust-patterns', 'rust-code-review', 'rust-testing-code-review'. Worker followed the 'mission-worker-base' skill procedure instead based on transcript skeleton, which was appropriate.",
+      "evidence": "ls .factory/skills/ shows no 'rust-worker' directory; transcript shows Skill call for 'mission-worker-base' and 'rust-worker' returned file not found error"
+    },
+    {
+      "area": "conventions",
+      "observation": "The swell-memory AGENTS.md does not document the working_memory_compiler module, and the crate's public API section does not list these new exports (WorkingMemoryBudget, WorkingMemoryCompiler, etc.). The AGENTS.md public API documentation should be updated when new modules are added.",
+      "evidence": "crates/swell-memory/AGENTS.md shows Key Re-exports but no working_memory_compiler entries"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature adds working memory compiler module with proper token budget enforcement and multi-layer scoring. However, VAL-MEM-005 pass criteria are not fully tested: test_compiler_token_budget asserts max_tokens but not >= 2 layers and not min_tokens. Several non-blocking issues with token estimation, was_trimmed logic, and missing knowledge graph integration. The blocking issue is the insufficient test coverage for the validation contract."
+}
