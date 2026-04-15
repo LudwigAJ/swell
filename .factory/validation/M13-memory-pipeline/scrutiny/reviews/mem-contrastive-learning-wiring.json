@@ -1,0 +1,45 @@
+{
+  "featureId": "mem-contrastive-learning-wiring",
+  "reviewedAt": "2026-04-15T23:00:00Z",
+  "commitId": "f4dc9f4e303516273057588dc17e57926a320e67",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Feature successfully wires contrastive learning to procedure preconditions. The implementation adds DifferentiatingFactor types, identify_differentiating_factors(), factor_to_precondition(), and tighten_procedure_preconditions() methods. All 38 contrastive_learning tests pass and clippy reports no warnings.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/contrastive_learning.rs",
+        "line": 751,
+        "severity": "non_blocking",
+        "description": "In analyze_trajectory_pairs(), the aggregated DifferentiatingFactor is created with success_has_failure_has_not hardcoded to true. This overwrites the correct value from identify_differentiating_factors(). While this doesn't affect factor_to_precondition() (which uses factor_type instead), it corrupts the semantic meaning of the field. If factor_type is ToolNotUsedInSuccess but success_has_failure_has_not is true, the data is inconsistent."
+      },
+      {
+        "file": "crates/swell-memory/src/contrastive_learning.rs",
+        "line": 721,
+        "severity": "non_blocking",
+        "description": "pairs_analyzed is set to successes.len().min(failures.len()), but the actual number of pairs analyzed may be less due to file overlap filtering (line 735-738: only pairs with intersecting files_modified are analyzed). This could mislead users about how many pairs contributed to the result."
+      },
+      {
+        "file": "crates/swell-memory/src/contrastive_learning.rs",
+        "line": 218,
+        "severity": "suggestion",
+        "description": "source_pair_id field in DifferentiatingFactor is always set to None (line 218) and never populated during identify_differentiating_factors(). This field could be useful for tracing which trajectory pair produced a factor, but currently serves no purpose."
+      },
+      {
+        "file": "crates/swell-memory/src/contrastive_learning.rs",
+        "line": 270,
+        "severity": "suggestion",
+        "description": "DifferentiatingFactorType::StepOrderDifference and DifferentiatingFactorType::ContextVarPresentInSuccess/ContextVarPresentInFailure are defined but factor_to_precondition() returns None for these types. These factor types could be converted to preconditions (e.g., StepOrderRequired, ContextVarRequired/Forbidden) but currently are silently dropped."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "category": "conventions",
+      "observation": "The project AGENTS.md documents test commands as 'cargo test -p <crate>' but the commit message and tests use 'cargo test -p swell-memory'. The workspace-level test command format is consistent with AGENTS.md, but crate-level testing is also valid."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The feature implementation is complete and functional. It successfully wires contrastive learning to procedure preconditions by identifying differentiating factors (tool usage, file modifications, risk levels) between success/failure trajectory pairs and converting them to preconditions. All 38 tests pass and clippy reports no warnings. There are some data structure inconsistencies (success_has_failure_has_not not preserved during aggregation) and incomplete field usage (source_pair_id always None) that don't block the core functionality but could be addressed in follow-up work."
+}

@@ -2188,7 +2188,9 @@ mod tests {
 
         // Verify the error message mentions secrets
         if let Ok(result) = result {
-            let error_msg = result.content.iter()
+            let error_msg = result
+                .content
+                .iter()
                 .map(|c| match c {
                     ToolResultContent::Text(t) => t.clone(),
                     ToolResultContent::Json(j) => serde_json::to_string(j).unwrap_or_default(),
@@ -2197,8 +2199,8 @@ mod tests {
                 })
                 .collect::<String>();
             assert!(
-                error_msg.to_lowercase().contains("secret") ||
-                error_msg.to_lowercase().contains("blocked"),
+                error_msg.to_lowercase().contains("secret")
+                    || error_msg.to_lowercase().contains("blocked"),
                 "Error message should mention secrets or blocking: {}",
                 error_msg
             );

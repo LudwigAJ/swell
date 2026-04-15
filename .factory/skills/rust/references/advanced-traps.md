@@ -1,4 +1,4 @@
-# Advanced Traps — unsafe, macros, FFI, testing, performance
+# Advanced Traps — unsafe, macros, FFI, testing, performance, documentation
 
 ## Unsafe Code
 
@@ -44,3 +44,35 @@
 - **`Box<dyn Trait>` indirection** — generics are faster if possible
 - **`#[inline]` across crates** — needed for cross-crate inlining
 - **Debug vs Release** — 10-100x difference, always bench in release
+
+## Documentation Best Practices
+
+### Crate-level front page with `//!` docs
+Use `//!` at the top of `lib.rs` as the entry point: explain the crate's role, show a realistic starting example, and document major features.
+
+### Per-item docs follow a predictable shape
+One-line summary → more detail → example → `# Panics` / `# Errors` sections when needed. The first paragraph should stand on its own because rustdoc reuses it in search.
+
+```rust
+/// Returns a new [`String`] with `s` appended.
+///
+/// # Panics
+/// Panics if `s` is empty.
+///
+/// # Example
+/// ```
+/// let s = MyType::new("hello ");
+/// assert_eq!("hello Georges", s.concat_str("Georges").as_str());
+/// ```
+pub fn concat_str(&self, s: &str) -> String { /* ... */ }
+```
+
+### Treat documentation examples as tests
+Rustdoc compiles code blocks by default. Use targeted annotations:
+- `no_run` — compiles but doesn't execute
+- `should_panic` — failure is the point
+- `compile_fail` — type-system counterexample
+- Avoid `ignore` — disables checking and makes stale examples easier to miss
+
+### Guides should work like integration tests
+Write end-to-end examples that compile and reflect real usage, not just isolated method docs. Keep guide code additive (each stage self-contained) rather than patching previous snippets.

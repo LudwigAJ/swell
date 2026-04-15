@@ -22,6 +22,12 @@ fn create_test_entry(label: &str, content: &str, repository: &str) -> MemoryEntr
         repository: repository.to_string(),
         language: None,
         task_type: None,
+        org: String::new(),
+        workspace: String::new(),
+        framework: None,
+        environment: None,
+        session_id: None,
+
         last_reinforcement: None,
         is_stale: false,
         source_episode_id: None,
@@ -89,6 +95,13 @@ async fn test_query_returns_only_same_repo_results() {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            cross_scope_override: false,
+
             source_episode_id: None,
         })
         .await
@@ -129,6 +142,13 @@ async fn test_cross_repo_query_returns_empty() {
             repository: "repo-b".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            cross_scope_override: false,
+
             source_episode_id: None,
         })
         .await
@@ -172,6 +192,13 @@ async fn test_full_cross_repo_isolation() {
                 repository: repo.to_string(),
                 language: None,
                 task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+
                 source_episode_id: None,
             })
             .await
@@ -377,6 +404,13 @@ async fn test_text_search_respects_repo_scope() {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            cross_scope_override: false,
+
             source_episode_id: None,
         })
         .await
@@ -398,6 +432,13 @@ async fn test_text_search_respects_repo_scope() {
             repository: "repo-b".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            cross_scope_override: false,
+
             source_episode_id: None,
         })
         .await
@@ -432,6 +473,13 @@ async fn test_repo_scope_with_and_without_query_text() {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            cross_scope_override: false,
+
             source_episode_id: None,
         })
         .await
@@ -451,6 +499,13 @@ async fn test_repo_scope_with_and_without_query_text() {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            cross_scope_override: false,
+
             source_episode_id: None,
         })
         .await
@@ -470,6 +525,13 @@ async fn test_repo_scope_with_and_without_query_text() {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            cross_scope_override: false,
+
             source_episode_id: None,
         })
         .await

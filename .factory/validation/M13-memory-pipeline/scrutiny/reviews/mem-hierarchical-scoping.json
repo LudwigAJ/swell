@@ -1,0 +1,63 @@
+{
+  "featureId": "mem-hierarchical-scoping",
+  "reviewedAt": "2026-04-15T22:00:00Z",
+  "commitId": "c0b31e51c48d45f748d2c7fb7b9ce8c9d6f2a174",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The feature partially implements repository-level scoping but does NOT implement the full 8-level hierarchy described in the feature. The MemoryEntry struct defines org, workspace, framework, environment, and session_id fields, but these are NOT persisted to the database - they are hardcoded to empty/None when reading entries back. The cross_scope_override flag is defined but NEVER checked or enforced in the search function. There is no validation to reject queries without any scope specification.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 249,
+        "severity": "blocking",
+        "description": "Database schema does not include org, workspace, framework, environment, or session_id columns. The full 8-level hierarchy (org → workspace → repo → language → framework → environment → task_type → session) is NOT persisted. Only repository, language, and task_type are stored."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 614,
+        "severity": "blocking",
+        "description": "row_to_entry() hardcodes org, workspace, framework, environment, session_id to empty/None instead of reading them from the database. These fields exist in MemoryEntry but are never populated from stored data."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 756,
+        "severity": "blocking",
+        "description": "The search() function ignores the cross_scope_override flag entirely. The feature description states 'Cross-scope queries require an explicit cross_scope_override flag; without it, cross-scope access is denied' but this is not implemented."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 756,
+        "severity": "blocking",
+        "description": "No validation exists to reject queries without any scope specification. The feature says 'Queries without any scope specification are rejected with an error' but the code does not check if repository is empty before using it in the query."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 757,
+        "severity": "blocking",
+        "description": "The search function only filters by repository, language, and task_type. The other hierarchy levels (org, workspace, framework, environment, session_id) from MemoryQuery are completely ignored during filtering."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 659,
+        "severity": "blocking",
+        "description": "The INSERT statement for store() only persists repository, language, and task_type. The org, workspace, framework, environment, and session_id fields from the MemoryEntry are discarded."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The skillFeedback fields (followedProcedure, deviations) are not accessible since the mission directory was not found at the expected path. Unable to verify if the worker followed the expected procedure.",
+      "evidence": "Mission directory /Users/ludwigjonsson/Projects/swell/.factory/missions/2f12aed8-06f1-4fd8-8452-f96b2ef57a43 does not exist"
+    },
+    {
+      "area": "conventions",
+      "observation": "The MemoryEntry struct in swell-core defines 8 scope hierarchy fields with documentation comments, but the implementation in swell-memory only uses 3 of them. This mismatch between interface definition and implementation is not documented anywhere.",
+      "evidence": "MemoryEntry in traits.rs:297-325 defines org, workspace, repository, language, framework, environment, task_type, session_id. SqliteMemoryStore only persists/uses repository, language, task_type."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - The mem-hierarchical-scoping feature does not meet its specification. The implementation only covers repository-level scoping with language and task_type filters, but the feature description explicitly requires the full 8-level hierarchy (org → workspace → repo → language → framework → environment → task_type → session) with scope validation and cross_scope_override enforcement. The MemoryEntry struct defines all 8 hierarchy fields but the SQLite store only persists/uses 3 of them (repository, language, task_type). The cross_scope_override flag is defined in MemoryQuery but never checked. No validation rejects empty scope queries. 9 repository-scoping tests pass but they do not cover the missing functionality."
+}

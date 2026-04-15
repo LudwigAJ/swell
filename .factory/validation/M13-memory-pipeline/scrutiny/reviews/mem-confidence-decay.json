@@ -1,0 +1,47 @@
+{
+  "featureId": "mem-confidence-decay",
+  "reviewedAt": "2026-04-15T22:00:00Z",
+  "commitId": "3da89d4414f3e69921946dd790788cf8c4026327",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The implementation adds bayesian_confidence_decay calculation functions with correct lambda values (procedural=0.01, environmental=1.0, buffer=5.0) and comprehensive tests. However, the feature description states 'Wire decay.rs to implement Bayesian confidence' and includes requirements for 'Accessing a memory entry resets its decay timer and optionally boosts confidence based on validation' - these integration aspects are NOT implemented. The functions are defined but not wired into memory retrieval.",
+    "issues": [
+      {
+        "severity": "blocking",
+        "description": "The bayesian_confidence_decay functions are implemented but not wired into memory retrieval. The feature says 'Wire decay.rs' implying integration, but no callers exist outside of tests. The functions are exported in lib.rs but never called from memory retrieval code paths.",
+        "location": "crates/swell-memory/src/decay.rs - the functions exist but have no consumers in the retrieval pipeline"
+      },
+      {
+        "severity": "blocking",
+        "description": "Feature requirement 'Accessing a memory entry resets its decay timer' is not implemented. The decay.rs module only calculates decay; it does not interact with memory store to reset last_reinforcement on access.",
+        "location": "crates/swell-memory/src/decay.rs - missing integration with memory store"
+      },
+      {
+        "severity": "blocking",
+        "description": "Feature requirement 'optionally boosts confidence based on validation' is not implemented. No validation-based confidence boost mechanism exists in the decay module.",
+        "location": "crates/swell-memory/src/decay.rs - no confidence boost logic present"
+      },
+      {
+        "severity": "non_blocking",
+        "description": "The staleness.rs module has a reinforce() function that could be used to reset decay timers, but decay.rs does not call it. The two modules (decay and staleness) are separate concerns but should be coordinated for proper memory lifecycle management.",
+        "location": "crates/swell-memory/src/decay.rs vs crates/swell-memory/src/staleness.rs"
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "category": "skills",
+      "observation": "The worker session ID 6ebf199b-3345-43a3-81a8-91ef2f574943 was specified but no worker transcripts or handoff files exist at the expected mission directory path. The mission directory structure differs from what the task specifies.",
+      "evidence": "Mission dir /Users/ludwigjonsson/Projects/swell/.factory/missions/2f12aed8-06f1-4fd8-8452-f96b2ef57a43 does not exist"
+    },
+    {
+      "category": "knowledge",
+      "observation": "The feature description mentions 'wiring' decay.rs into the memory system, but the implementation only adds pure calculation functions without integration. This suggests the worker may have misunderstood the scope - they implemented the decay calculation but not the memory system integration.",
+      "evidence": "grep shows bayesian_confidence_decay only appears in lib.rs exports and test code, never in actual retrieval paths"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - The bayesian_confidence_decay calculation functions are correctly implemented with proper lambda values (0.01, 1.0, 5.0) and comprehensive tests pass. However, the feature explicitly requires 'wiring' decay into memory system with 'access resets decay timer' and 'confidence boost on validation' - these integration requirements are NOT implemented. The functions exist but are unused in the memory retrieval pipeline."
+}

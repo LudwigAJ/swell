@@ -46,6 +46,57 @@ fn normal_cdf(x: f64) -> f64 {
     0.5 * (1.0 + erf_approx(x / std::f64::consts::SQRT_2))
 }
 
+/// A precondition that must be met for a procedure to be applicable
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcedurePrecondition {
+    /// The type of precondition (tool_required, file_exists, context_var, etc.)
+    pub precondition_type: PreconditionType,
+    /// The specific value required (e.g., tool name, file path, variable name)
+    pub value: String,
+    /// Whether this precondition is strict (must have) or soft (should have)
+    pub is_strict: bool,
+    /// Confidence in this precondition based on contrastive analysis
+    pub confidence: f64,
+    /// Evidence: which differentiating factor produced this precondition
+    pub source_factor: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PreconditionType {
+    /// Tool must be used in this procedure
+    ToolRequired,
+    /// Tool must NOT be used (differentiating negative)
+    ToolForbidden,
+    /// File must exist before procedure
+    FileExists,
+    /// File must NOT be modified (differentiating negative)
+    FileUntouched,
+    /// Context variable must be set
+    ContextVarRequired,
+    /// Context variable must NOT be certain value
+    ContextVarForbidden,
+    /// Sequence of steps must be in order
+    StepOrderRequired,
+    /// Risk level threshold
+    MaxRiskLevel,
+}
+
+impl PreconditionType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PreconditionType::ToolRequired => "tool_required",
+            PreconditionType::ToolForbidden => "tool_forbidden",
+            PreconditionType::FileExists => "file_exists",
+            PreconditionType::FileUntouched => "file_untouched",
+            PreconditionType::ContextVarRequired => "context_var_required",
+            PreconditionType::ContextVarForbidden => "context_var_forbidden",
+            PreconditionType::StepOrderRequired => "step_order_required",
+            PreconditionType::MaxRiskLevel => "max_risk_level",
+        }
+    }
+}
+
 /// A procedure representing a reusable strategy or action pattern with effectiveness tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Procedure {
@@ -61,6 +112,10 @@ pub struct Procedure {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub metadata: serde_json::Value,
+    /// Preconditions derived from contrastive learning analysis
+    /// These tighten the procedure's applicability criteria based on
+    /// what distinguishes successful executions from failed ones
+    pub preconditions: Vec<ProcedurePrecondition>,
 }
 
 impl Procedure {
@@ -79,7 +134,88 @@ impl Procedure {
             created_at: now,
             updated_at: now,
             metadata: serde_json::json!({}),
+            preconditions: Vec::new(),
         }
+    }
+
+    /// Add a precondition derived from contrastive learning analysis
+    /// If a precondition of the same type and value already exists, it updates
+    /// the confidence (only increases, never decreases) and source factor
+    pub fn add_precondition(&mut self, precondition: ProcedurePrecondition) {
+        // Check if we already have this precondition
+        if let Some(existing) = self.preconditions.iter_mut().find(|p| {
+            p.precondition_type == precondition.precondition_type && p.value == precondition.value
+        }) {
+            // Update confidence (only increase, never decrease)
+            if precondition.confidence > existing.confidence {
+                existing.confidence = precondition.confidence;
+            }
+            // Update source factor if provided
+            if let Some(ref source) = precondition.source_factor {
+                if existing.source_factor.is_none() {
+                    existing.source_factor = Some(source.clone());
+                }
+            }
+            // Update strictness - if any version says it's strict, it becomes strict
+            if precondition.is_strict {
+                existing.is_strict = true;
+            }
+        } else {
+            // Add new precondition
+            self.preconditions.push(precondition);
+        }
+        self.updated_at = Utc::now();
+    }
+
+    /// Add a tool-required precondition (tool must be used in this procedure)
+    pub fn require_tool(&mut self, tool_name: &str, confidence: f64, source: Option<String>) {
+        self.add_precondition(ProcedurePrecondition {
+            precondition_type: PreconditionType::ToolRequired,
+            value: tool_name.to_string(),
+            is_strict: false,
+            confidence,
+            source_factor: source,
+        });
+    }
+
+    /// Add a tool-forbidden precondition (tool must NOT be used)
+    pub fn forbid_tool(&mut self, tool_name: &str, confidence: f64, source: Option<String>) {
+        self.add_precondition(ProcedurePrecondition {
+            precondition_type: PreconditionType::ToolForbidden,
+            value: tool_name.to_string(),
+            is_strict: true, // Forbidden tools are strict
+            confidence,
+            source_factor: source,
+        });
+    }
+
+    /// Add a file-untouched precondition (file must NOT be modified)
+    pub fn preserve_file(&mut self, file_path: &str, confidence: f64, source: Option<String>) {
+        self.add_precondition(ProcedurePrecondition {
+            precondition_type: PreconditionType::FileUntouched,
+            value: file_path.to_string(),
+            is_strict: true, // Preserved files are strict
+            confidence,
+            source_factor: source,
+        });
+    }
+
+    /// Get preconditions that are strict (must be met for procedure to apply)
+    pub fn strict_preconditions(&self) -> Vec<&ProcedurePrecondition> {
+        self.preconditions.iter().filter(|p| p.is_strict).collect()
+    }
+
+    /// Get preconditions that are soft (should be met for better results)
+    pub fn soft_preconditions(&self) -> Vec<&ProcedurePrecondition> {
+        self.preconditions.iter().filter(|p| !p.is_strict).collect()
+    }
+
+    /// Get the highest confidence among all preconditions
+    pub fn highest_precondition_confidence(&self) -> f64 {
+        self.preconditions
+            .iter()
+            .map(|p| p.confidence)
+            .fold(0.0, f64::max)
     }
 
     /// Update the effectiveness based on an outcome (success/failure)
@@ -511,13 +647,22 @@ impl SqliteProceduralStore {
                 last_used TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
-                metadata TEXT NOT NULL
+                metadata TEXT NOT NULL,
+                preconditions TEXT NOT NULL DEFAULT '[]'
             )
             "#,
         )
         .execute(pool)
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        // Add preconditions column if it doesn't exist (migration for existing databases)
+        let _ = sqlx::query(
+            "ALTER TABLE procedures ADD COLUMN preconditions TEXT NOT NULL DEFAULT '[]'",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_procedures_name ON procedures(name)")
             .execute(pool)
@@ -552,6 +697,7 @@ impl SqliteProceduralStore {
         let created_at_str: String = row.get("created_at");
         let updated_at_str: String = row.get("updated_at");
         let metadata_str: String = row.get("metadata");
+        let preconditions_str: String = row.get("preconditions");
 
         let steps: Vec<ProcedureStep> = serde_json::from_str(&steps_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid JSON steps: {}", e)))?;
@@ -571,6 +717,8 @@ impl SqliteProceduralStore {
             .with_timezone(&chrono::Utc);
         let metadata: serde_json::Value = serde_json::from_str(&metadata_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid JSON metadata: {}", e)))?;
+        let preconditions: Vec<ProcedurePrecondition> = serde_json::from_str(&preconditions_str)
+            .map_err(|e| SwellError::DatabaseError(format!("Invalid JSON preconditions: {}", e)))?;
 
         let effectiveness = BetaPosterior {
             alpha,
@@ -591,6 +739,7 @@ impl SqliteProceduralStore {
             created_at,
             updated_at,
             metadata,
+            preconditions,
         })
     }
 }
@@ -604,13 +753,15 @@ impl ProceduralStore for SqliteProceduralStore {
         let last_used_str = procedure.last_used.map(|dt| dt.to_rfc3339());
         let metadata_str = serde_json::to_string(&procedure.metadata)
             .map_err(|e| SwellError::DatabaseError(e.to_string()))?;
+        let preconditions_str = serde_json::to_string(&procedure.preconditions)
+            .map_err(|e| SwellError::DatabaseError(e.to_string()))?;
         let created_at_str = procedure.created_at.to_rfc3339();
         let updated_at_str = procedure.updated_at.to_rfc3339();
 
         sqlx::query(
             r#"
-            INSERT INTO procedures (id, name, description, context_pattern, steps, alpha, beta, successes, failures, usage_count, last_used, created_at, updated_at, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO procedures (id, name, description, context_pattern, steps, alpha, beta, successes, failures, usage_count, last_used, created_at, updated_at, metadata, preconditions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(procedure.id.to_string())
@@ -627,6 +778,7 @@ impl ProceduralStore for SqliteProceduralStore {
         .bind(&created_at_str)
         .bind(&updated_at_str)
         .bind(&metadata_str)
+        .bind(&preconditions_str)
         .execute(self.pool.as_ref())
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;

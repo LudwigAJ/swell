@@ -1,0 +1,39 @@
+{
+  "featureId": "mem-conflict-resolution-wiring",
+  "reviewedAt": "2026-04-15T22:00:00Z",
+  "commitId": null,
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": false,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Feature 'mem-conflict-resolution-wiring' does not exist in features.json and no work appears to have been done. The conflict_resolution.rs module exists and is fully implemented with 19 passing tests, but it is NOT wired into the SqliteMemoryStore or any other memory system component. The wiring work (integrating ConflictResolutionService into memory store operations) has not been performed.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/conflict_resolution.rs",
+        "line": 1,
+        "severity": "blocking",
+        "description": "The conflict_resolution.rs module exists and is well-implemented with all required features: cosine distance detection in 0.15-0.40 range, resolution strategies (newer_wins, operator_overrides, higher_confidence_wins), and ConflictResolutionLogEntry with winner_id, loser_ids, and timestamp. However, this module is NOT integrated/wired into the SqliteMemoryStore. The feature 'mem-conflict-resolution-wiring' does not exist in features.json - there is no worker session, handoff, or commit associated with this wiring work."
+      },
+      {
+        "file": "crates/swell-memory/src/lib.rs",
+        "line": 1,
+        "severity": "blocking",
+        "description": "The ConflictResolutionService, MemoryConflictDetector, and related types are exported from lib.rs but are NOT used anywhere in the memory store implementation. The SqliteMemoryStore::store() and update() methods do not call ConflictResolutionService::detect_and_resolve() to check for conflicting memories before storing."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "features",
+      "observation": "The feature 'mem-conflict-resolution-wiring' is not present in features.json. The mission directory path provided (2f12aed8-06f1-4fd8-8452-f96b2ef57a43) does not exist. The worker session ID (5fc5fec7-4447-4bd6-a8ff-460c4d82a879) does not exist. No handoff file or transcript skeleton is available for this feature.",
+      "evidence": "features.json does not contain 'mem-conflict-resolution-wiring'. Mission dir at 2f12aed8-06f1-4fd8-8452-f96b2ef57a43 does not exist. The only conflict resolution related feature is 'mem-conflict-resolution' which was cancelled (milestone: memory, status: cancelled, workerSessionIds: [])."
+    },
+    {
+      "area": "conventions",
+      "observation": "The conflict_resolution module implementation follows the existing patterns correctly - it's a standalone module with proper exports in lib.rs. The lack of wiring appears to be a missing feature, not a convention violation.",
+      "evidence": "conflict_resolution.rs follows the same module structure as other modules (golden_sample_testing.rs, pattern_learning.rs, etc.) and exports properly via lib.rs"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - The feature 'mem-conflict-resolution-wiring' does not exist. No work has been performed on wiring conflict_resolution.rs into the memory system. The conflict_resolution.rs module is fully implemented (19 tests passing) but sits unused - it is not integrated into SqliteMemoryStore or any other component. To complete this feature, one would need to: (1) Convert MemoryEntry to ConflictMemoryInfo when storing/updating memories, (2) Call ConflictResolutionService::detect_and_resolve() to find conflicts, (3) Handle resolution results by marking superseded memories and logging decisions."
+}

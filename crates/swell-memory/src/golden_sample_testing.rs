@@ -2335,11 +2335,19 @@ mod tests {
         let procedure_confidence = 0.2; // Deprecated zone
 
         let result = service
-            .validate_procedure_for_auto_application(Uuid::new_v4(), "test", "expected", procedure_confidence)
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "test",
+                "expected",
+                procedure_confidence,
+            )
             .await
             .unwrap();
 
-        assert!(!result.is_eligible, "Deprecated procedure should not be eligible");
+        assert!(
+            !result.is_eligible,
+            "Deprecated procedure should not be eligible"
+        );
         assert_eq!(result.reason, AutoApplicationReason::Deprecated);
     }
 
@@ -2369,10 +2377,13 @@ mod tests {
 
         // Low confidence + no samples = not eligible
         assert!(!result.is_eligible);
-        assert_eq!(result.reason, AutoApplicationReason::ConfidenceTooLow {
-            actual_confidence: 0.7,
-            required_confidence: HIGH_CONFIDENCE_THRESHOLD,
-        });
+        assert_eq!(
+            result.reason,
+            AutoApplicationReason::ConfidenceTooLow {
+                actual_confidence: 0.7,
+                required_confidence: HIGH_CONFIDENCE_THRESHOLD,
+            }
+        );
     }
 
     #[tokio::test]
@@ -2401,7 +2412,10 @@ mod tests {
 
         // High confidence but no samples to validate against = not eligible
         assert!(!result.is_eligible);
-        assert_eq!(result.reason, AutoApplicationReason::NoGoldenSamplesAvailable);
+        assert_eq!(
+            result.reason,
+            AutoApplicationReason::NoGoldenSamplesAvailable
+        );
     }
 
     #[tokio::test]

@@ -20,7 +20,7 @@ pub use swell_core::SwellError;
 pub use golden_sample_testing::{
     AutoApplicationEligibility, AutoApplicationReason, GoldenSample, GoldenSampleConfig,
     GoldenSampleService, GoldenSampleSource, GoldenSampleStore, GoldenSampleTester,
-    GoldenSampleValidationResult, HIGH_CONFIDENCE_THRESHOLD, ProcedureValidation,
+    GoldenSampleValidationResult, ProcedureValidation, HIGH_CONFIDENCE_THRESHOLD,
 };
 
 // Memory blocks module - Project/User/Task blocks with auto-loading and context assembly
@@ -87,11 +87,15 @@ pub mod pattern_learning;
 // contrastive loss to train embeddings for better retrieval
 pub mod contrastive_learning;
 
+// LanceDB vector store module - IVF-PQ indexing for approximate nearest neighbor search
+pub mod lancedb_vector;
+
 pub use contrastive_learning::{
     ContrastiveAnalyzer, ContrastiveLearningConfig, ContrastiveLearningResult,
-    ContrastiveLearningService, ContrastivePair, ContrastiveTrainer, FailureReason,
-    FailureTrajectory, LossComponents, PairType, StepStatus, SuccessOutcome, SuccessTrajectory,
-    ToolCallRecord, TrajectoryStep, ValidationErrorRecord,
+    ContrastiveLearningService, ContrastivePair, ContrastiveTrainer, DifferentiatingFactor,
+    DifferentiatingFactorType, FactorIdentificationResult, FailureReason, FailureTrajectory,
+    LossComponents, PairType, StepStatus, SuccessOutcome, SuccessTrajectory, ToolCallRecord,
+    TrajectoryStep, ValidationErrorRecord,
 };
 
 // Operator feedback module - Parses CLAUDE.md/AGENTS.md with higher trust weight than agent self-learning
@@ -118,8 +122,8 @@ pub use semantic::{
 pub mod procedural;
 
 pub use procedural::{
-    BetaPosterior, ConfidenceLevel, ProceduralStore, Procedure, ProcedureQuery, ProcedureResult,
-    ProcedureStep, SqliteProceduralStore,
+    BetaPosterior, ConfidenceLevel, PreconditionType, ProceduralStore, Procedure,
+    ProcedurePrecondition, ProcedureQuery, ProcedureResult, ProcedureStep, SqliteProceduralStore,
 };
 
 // Meta-cognitive memory module - Self-knowledge for model performance tracking,
@@ -609,6 +613,11 @@ impl SqliteMemoryStore {
             source_episode_id,
             evidence,
             provenance_context,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
         })
     }
 }
@@ -744,6 +753,8 @@ impl MemoryStore for SqliteMemoryStore {
 
     /// Search memories by query (basic LIKE for MVP, vector search can be stubbed)
     /// Excludes stale memories from retrieval results.
+    /// Applies time-based confidence decay before ranking/returning memories.
+    /// Accessing a memory through retrieval resets its decay timer (reinforcement).
     async fn search(&self, query: MemoryQuery) -> Result<Vec<MemorySearchResult>, SwellError> {
         let mut sql = String::from("SELECT * FROM memory_entries WHERE repository = ?");
         let mut params: Vec<String> = Vec::new();
@@ -804,30 +815,72 @@ impl MemoryStore for SqliteMemoryStore {
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
+        let now = chrono::Utc::now();
         let mut results = Vec::new();
+        let mut ids_to_reinforce: Vec<Uuid> = Vec::new();
+
         for row in rows {
             let entry = Self::row_to_entry(&row)?;
-            // For MVP, use a simple relevance score based on label match
-            let score = if let Some(ref query_text) = query.query_text {
+            let entry_id = entry.id; // Save ID before moving entry
+
+            // Calculate base relevance score
+            let base_score = if let Some(ref query_text) = query.query_text {
                 if entry
                     .label
                     .to_lowercase()
                     .contains(&query_text.to_lowercase())
                 {
-                    0.9
+                    0.9f64
                 } else if entry
                     .content
                     .to_lowercase()
                     .contains(&query_text.to_lowercase())
                 {
-                    0.7
+                    0.7f64
                 } else {
-                    0.5
+                    0.5f64
                 }
             } else {
-                0.5
+                0.5f64
             };
-            results.push(MemorySearchResult { entry, score });
+
+            // Apply time-based confidence decay if last_reinforcement is available
+            let decayed_score = if let Some(last_reinforcement) = entry.last_reinforcement {
+                let decay_rate = decay::decay_rate_for_block_type(entry.block_type);
+                // Use bayesian confidence decay: c(t) = c₀ × e^(-λt)
+                // Start with base confidence of 1.0, decay based on time since last reinforcement
+                let decayed_confidence = decay::bayesian_confidence_decay(
+                    1.0,
+                    decay_rate,
+                    last_reinforcement,
+                    now,
+                );
+                // Apply decay factor to the base score
+                // If no time has passed, decayed_confidence ≈ 1.0, so score is unchanged
+                // If time has passed, decayed_confidence < 1.0, so score is reduced
+                base_score * decayed_confidence
+            } else {
+                // No last_reinforcement means we can't apply decay properly
+                // Use a moderate score since we don't know the age
+                base_score * 0.8
+            };
+
+            results.push(MemorySearchResult {
+                entry,
+                score: decayed_score as f32,
+            });
+
+            // Track ID for reinforcement after scoring
+            ids_to_reinforce.push(entry_id);
+        }
+
+        // Sort by decayed score (highest first)
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Reinforce all accessed memories (reset their decay timers)
+        for id in ids_to_reinforce {
+            // Best effort reinforcement - ignore errors
+            let _ = self.reinforce(id).await;
         }
 
         Ok(results)
@@ -1058,6 +1111,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: Some("rust".to_string()),
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1092,6 +1151,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: Some("bugfix".to_string()),
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1129,6 +1194,12 @@ mod tests {
             repository: "my-repo".to_string(),
             language: Some("rust".to_string()),
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1148,6 +1219,12 @@ mod tests {
             repository: "my-repo".to_string(),
             language: None,
             task_type: Some("feature".to_string()),
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1168,6 +1245,13 @@ mod tests {
                 repository: "my-repo".to_string(),
                 language: None,
                 task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+
                 source_episode_id: None,
             })
             .await
@@ -1193,6 +1277,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: Some("rust".to_string()),
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1212,6 +1302,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: Some("python".to_string()),
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1233,6 +1329,13 @@ mod tests {
                 repository: "test-repo".to_string(),
                 language: Some("rust".to_string()),
                 task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+
                 source_episode_id: None,
             })
             .await
@@ -1258,6 +1361,12 @@ mod tests {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1277,6 +1386,12 @@ mod tests {
             repository: "repo-b".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1298,6 +1413,13 @@ mod tests {
                 repository: "repo-a".to_string(),
                 language: None,
                 task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+
                 source_episode_id: None,
             })
             .await
@@ -1317,6 +1439,13 @@ mod tests {
                 repository: "repo-b".to_string(),
                 language: None,
                 task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+
                 source_episode_id: None,
             })
             .await
@@ -1342,6 +1471,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1361,6 +1496,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1402,6 +1543,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1421,6 +1568,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1460,6 +1613,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1485,6 +1644,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1523,6 +1688,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1548,6 +1719,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1576,6 +1753,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1598,6 +1781,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1630,6 +1819,12 @@ mod tests {
             repository: "repo-a".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1654,6 +1849,12 @@ mod tests {
             repository: "repo-b".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1727,6 +1928,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
             source_episode_id: None,
@@ -1759,6 +1966,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
             source_episode_id: None,
@@ -1781,6 +1994,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: Some(chrono::Utc::now() - chrono::Duration::days(60)),
             is_stale: true, // Mark as stale
             source_episode_id: None,
@@ -1807,6 +2026,13 @@ mod tests {
                 repository: "test-repo".to_string(),
                 language: None,
                 task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+
                 source_episode_id: None,
             })
             .await
@@ -1834,6 +2060,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -1876,6 +2108,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
             source_episode_id: None,
@@ -1914,6 +2152,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
             source_episode_id: None,
@@ -1933,6 +2177,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
             source_episode_id: None,
@@ -1967,6 +2217,13 @@ mod tests {
                 repository: "test-repo".to_string(),
                 language: None,
                 task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+
                 source_episode_id: None,
             })
             .await
@@ -1993,6 +2250,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
             source_episode_id: None,
@@ -2012,6 +2275,12 @@ mod tests {
             repository: "test-repo".to_string(),
             language: None,
             task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+
             last_reinforcement: Some(chrono::Utc::now()),
             is_stale: false,
             source_episode_id: None,
@@ -2033,5 +2302,256 @@ mod tests {
         let stale_after = store.get_stale_memories().await.unwrap();
         assert_eq!(stale_after.len(), 1);
         assert_eq!(stale_after[0].id, entry1.id);
+    }
+
+    // ============================================================================
+    // Confidence Decay Tests (VAL-MPIPE-002)
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_search_applies_confidence_decay_to_scores() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        // Create a memory entry with last_reinforcement set to now
+        let now = chrono::Utc::now();
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "procedural-project".to_string(),
+            content: "Procedural content about Rust".to_string(),
+            embedding: None,
+            created_at: now,
+            updated_at: now,
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: Some("rust".to_string()),
+            task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            last_reinforcement: Some(now),
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+
+        store.store(entry.clone()).await.unwrap();
+
+        // Search should find the entry with high score (recently reinforced)
+        let results = store
+            .search(MemoryQuery {
+                query_text: Some("Rust".to_string()),
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                repository: "test-repo".to_string(),
+                language: None,
+                task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+                source_episode_id: None,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        // Score should be moderate-high (0.7 since content matched "Rust")
+        // With no time elapsed, decay factor ≈ 1.0, so final score ≈ 0.7
+        // Label "procedural-project" does NOT contain "Rust" (label match = 0.9)
+        // But content "Procedural content about Rust" DOES contain "Rust" (content match = 0.7)
+        assert!(results[0].score > 0.6, "Recent memory should have score > 0.6 after decay. Got {:.4}", results[0].score);
+    }
+
+    #[tokio::test]
+    async fn test_search_decay_resets_on_access() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let now = chrono::Utc::now();
+        let entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project,
+            label: "test-project".to_string(),
+            content: "Test content".to_string(),
+            embedding: None,
+            created_at: now,
+            updated_at: now,
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            last_reinforcement: Some(now - chrono::Duration::days(30)), // 30 days old
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+
+        store.store(entry.clone()).await.unwrap();
+
+        // Before search - check last_reinforcement
+        let before = store.get(entry.id).await.unwrap().unwrap();
+        let before_reinforcement = before.last_reinforcement.unwrap();
+
+        // Search - this should reset the decay timer (reinforce)
+        let _results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                repository: "test-repo".to_string(),
+                language: None,
+                task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+                source_episode_id: None,
+            })
+            .await
+            .unwrap();
+
+        // After search - check that last_reinforcement was updated
+        let after = store.get(entry.id).await.unwrap().unwrap();
+        let after_reinforcement = after.last_reinforcement.unwrap();
+
+        // The reinforcement timestamp should have been updated to now (or very recent)
+        assert!(
+            after_reinforcement > before_reinforcement,
+            "Accessing memory should reset decay timer (reinforce)"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_search_decay_ordering_different_rates() {
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+
+        let now = chrono::Utc::now();
+        let two_days_ago = now - chrono::Duration::days(2);
+        let two_days_ago_str = two_days_ago.to_rfc3339();
+
+        // Create two entries with different block types
+        // Block type determines decay rate: Project=Procedural(slow), Task=Environmental(medium)
+        let procedural = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Project, // Procedural (λ=0.01, slow decay)
+            label: "project-entry".to_string(),
+            content: "Project content".to_string(),
+            embedding: None,
+            created_at: now,
+            updated_at: now,
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            last_reinforcement: None, // Will be set by store() to now
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+
+        let task_entry = MemoryEntry {
+            id: Uuid::new_v4(),
+            block_type: MemoryBlockType::Task, // Environmental (λ=1.0, moderate decay)
+            label: "task-entry".to_string(),
+            content: "Task content".to_string(),
+            embedding: None,
+            created_at: now,
+            updated_at: now,
+            metadata: serde_json::json!({}),
+            repository: "test-repo".to_string(),
+            language: None,
+            task_type: None,
+            org: String::new(),
+            workspace: String::new(),
+            framework: None,
+            environment: None,
+            session_id: None,
+            last_reinforcement: None, // Will be set by store() to now
+            is_stale: false,
+            source_episode_id: None,
+            evidence: None,
+            provenance_context: None,
+        };
+
+        store.store(procedural.clone()).await.unwrap();
+        store.store(task_entry.clone()).await.unwrap();
+
+        // IMPORTANT: store() sets last_reinforcement to now, but we need it to be 2 days ago
+        // to test the decay. Use direct SQL to update the timestamps.
+        sqlx::query("UPDATE memory_entries SET last_reinforcement = ? WHERE id = ?")
+            .bind(&two_days_ago_str)
+            .bind(procedural.id.to_string())
+            .execute(store.pool.as_ref())
+            .await
+            .unwrap();
+
+        sqlx::query("UPDATE memory_entries SET last_reinforcement = ? WHERE id = ?")
+            .bind(&two_days_ago_str)
+            .bind(task_entry.id.to_string())
+            .execute(store.pool.as_ref())
+            .await
+            .unwrap();
+
+        // Now search - both entries should have decay applied
+        let results = store
+            .search(MemoryQuery {
+                query_text: None,
+                block_types: None,
+                labels: None,
+                limit: 10,
+                offset: 0,
+                repository: "test-repo".to_string(),
+                language: None,
+                task_type: None,
+                org: String::new(),
+                workspace: String::new(),
+                framework: None,
+                environment: None,
+                session_id: None,
+                cross_scope_override: false,
+                source_episode_id: None,
+            })
+            .await
+            .unwrap();
+
+        // Should have 2 results
+        assert_eq!(results.len(), 2);
+
+        // Both have base_score = 0.5 (no query_text)
+        // After 2 days with λ=0.01: procedural ≈ 0.9802 (0.5 * 0.9802 = 0.4901)
+        // After 2 days with λ=1.0: task ≈ 0.1353 (0.5 * 0.1353 = 0.0677)
+        // So procedural should have higher score
+        let procedural_result = results.iter().find(|r| r.entry.id == procedural.id).unwrap();
+        let task_result = results.iter().find(|r| r.entry.id == task_entry.id).unwrap();
+
+        assert!(
+            procedural_result.score > task_result.score,
+            "Procedural (slow decay) should score higher than Environmental after same time. Got procedural={:.4}, task={:.4}",
+            procedural_result.score,
+            task_result.score
+        );
     }
 }

@@ -198,8 +198,8 @@ use std::sync::Arc;
 use swell_core::{
     AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult,
 };
-use swell_tools::mcp_config::{McpConfigManager, McpServerHealth};
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
+use swell_tools::mcp_config::{McpConfigManager, McpServerHealth};
 use tokio::sync::{broadcast, RwLock};
 use tracing::{info, warn};
 use uuid::Uuid;

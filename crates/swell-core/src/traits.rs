@@ -303,12 +303,26 @@ pub struct MemoryEntry {
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub metadata: serde_json::Value,
-    /// Repository scope - memories are isolated by repository by default
+    // =============================================================================
+    // Full 8-level scope hierarchy: org → workspace → repo → language → framework
+    // → environment → task_type → session
+    // =============================================================================
+    /// Organization scope - top level of the hierarchy
+    pub org: String,
+    /// Workspace scope - second level of the hierarchy
+    pub workspace: String,
+    /// Repository scope - third level of the hierarchy (memories are isolated by repository)
     pub repository: String,
-    /// Optional language filter (e.g., "rust", "python")
+    /// Language scope (e.g., "rust", "python")
     pub language: Option<String>,
-    /// Optional task type filter (e.g., "bugfix", "feature", "refactor")
+    /// Framework scope (e.g., "axum", "actix", "react")
+    pub framework: Option<String>,
+    /// Environment scope (e.g., "prod", "dev", "test")
+    pub environment: Option<String>,
+    /// Task type scope (e.g., "bugfix", "feature", "refactor")
     pub task_type: Option<String>,
+    /// Session scope - finest granularity (session ID)
+    pub session_id: Option<String>,
     /// Last time this memory was reinforced (accessed, used, or confirmed valid).
     /// Used for staleness detection - memories not reinforced within the staleness
     /// window are considered stale and excluded from retrieval.
@@ -336,9 +350,15 @@ impl Default for MemoryEntry {
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
             metadata: serde_json::json!({}),
+            // Full scope hierarchy
+            org: String::new(),
+            workspace: String::new(),
             repository: String::new(),
             language: None,
+            framework: None,
+            environment: None,
             task_type: None,
+            session_id: None,
             last_reinforcement: None,
             is_stale: false,
             source_episode_id: None,
@@ -356,14 +376,35 @@ pub struct MemoryQuery {
     pub labels: Option<Vec<String>>,
     pub limit: usize,
     pub offset: usize,
-    /// Repository scope - REQUIRED for all memory operations
+    // =============================================================================
+    // Full 8-level scope hierarchy: org → workspace → repo → language → framework
+    // → environment → task_type → session
+    // At least ONE scope level must be specified. Cross-scope queries require
+    // cross_scope_override = true.
+    // =============================================================================
+    /// Organization scope - top level of the hierarchy
+    pub org: String,
+    /// Workspace scope - second level of the hierarchy
+    pub workspace: String,
+    /// Repository scope - third level of the hierarchy (REQUIRED for all operations)
     pub repository: String,
-    /// Optional language filter
+    /// Language scope (e.g., "rust", "python")
     pub language: Option<String>,
-    /// Optional task type filter
+    /// Framework scope (e.g., "axum", "actix", "react")
+    pub framework: Option<String>,
+    /// Environment scope (e.g., "prod", "dev", "test")
+    pub environment: Option<String>,
+    /// Task type scope (e.g., "bugfix", "feature", "refactor")
     pub task_type: Option<String>,
+    /// Session scope - finest granularity
+    pub session_id: Option<String>,
     /// Optional source episode ID filter - find memories from a specific episode
     pub source_episode_id: Option<Uuid>,
+    /// Override flag for cross-scope queries.
+    /// When true, allows accessing data from different org/workspace/repo.
+    /// When false (default), cross-scope access is denied.
+    #[serde(default)]
+    pub cross_scope_override: bool,
 }
 
 impl Default for MemoryQuery {
@@ -374,10 +415,16 @@ impl Default for MemoryQuery {
             labels: None,
             limit: 10,
             offset: 0,
+            org: String::new(),
+            workspace: String::new(),
             repository: String::new(),
             language: None,
+            framework: None,
+            environment: None,
             task_type: None,
+            session_id: None,
             source_episode_id: None,
+            cross_scope_override: false,
         }
     }
 }

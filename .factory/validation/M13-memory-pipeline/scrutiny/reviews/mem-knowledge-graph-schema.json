@@ -1,0 +1,26 @@
+{
+  "featureId": "mem-knowledge-graph-schema",
+  "reviewedAt": "2026-04-15T23:00:00.000Z",
+  "commitId": "3e5302c",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The knowledge_graph.rs implementation adds typed metadata on nodes and edges with confidence (f64), evidence_count (u32), temporal validity (valid_from DateTime, valid_until Option<DateTime>), and provenance (Vec<ProvenanceReference>). Query methods support filtering by minimum confidence threshold and temporal validity range. All 13 tests pass and clippy shows no warnings.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The mission directory specified in the task (/Users/ludwigjonsson/Projects/swell/.factory/missions/2f12aed8-06f1-4fd8-8452-f96b2ef57a43) does not exist. The worker session ID (135c0a3a-3261-4b29-b87b-ea4309f76d35) and handoff files are not accessible. Review was performed based on code inspection and test execution only.",
+      "evidence": "Mission path not found in filesystem. Only existing mission is /Users/ludwigjonsson/Projects/swell/.factory/missions/67c2b690-f32a-4538-8ff8-3eb2790dc44e"
+    },
+    {
+      "area": "skills",
+      "observation": "Cannot verify worker skill usage without access to worker transcripts. The feature implementation appears complete and follows Rust conventions, but the absence of mission context prevents full procedure verification.",
+      "evidence": "No worker-transcripts.jsonl available for session 135c0a3a-3261-4b29-b87b-ea4309f76d35"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Code review of knowledge_graph.rs confirms the implementation adds typed metadata on nodes and edges: confidence (f64), evidence_count (u32), temporal validity (valid_from DateTime, valid_until Option<DateTime>), and provenance (Vec<ProvenanceReference>). Query methods query_nodes_with_metadata and query_edges_with_metadata support filtering by minimum confidence threshold and temporal validity range. Tests verify all metadata fields and query filters work correctly. The implementation passes all tests and clippy checks. Note: The mission directory was not accessible for this review, so transcript and handoff verification could not be performed."
+}

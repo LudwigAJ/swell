@@ -218,9 +218,15 @@ pub fn create_project_block(
             "repository": repository,
             "description": "Project architecture and conventions"
         }),
+        // Full scope hierarchy
+        org: String::new(),
+        workspace: String::new(),
         repository: repository.to_string(),
         language: None,
+        framework: None,
+        environment: None,
         task_type: None,
+        session_id: None,
         last_reinforcement: Some(now),
         is_stale: false,
         source_episode_id: None,
@@ -253,9 +259,15 @@ pub fn create_user_block_with_repo(
             "user_id": user_id,
             "description": "User preferences and settings"
         }),
+        // Full scope hierarchy
+        org: String::new(),
+        workspace: String::new(),
         repository: repository.to_string(),
         language: None,
+        framework: None,
+        environment: None,
         task_type: None,
+        session_id: None,
         last_reinforcement: Some(now),
         is_stale: false,
         source_episode_id: None,
@@ -284,9 +296,15 @@ pub fn create_task_block_with_repo(task_id: Uuid, context: &str, repository: &st
             "task_id": task_id.to_string(),
             "description": "Task-specific context and background"
         }),
+        // Full scope hierarchy
+        org: String::new(),
+        workspace: String::new(),
         repository: repository.to_string(),
         language: None,
+        framework: None,
+        environment: None,
         task_type: None,
+        session_id: None,
         last_reinforcement: Some(now),
         is_stale: false,
         source_episode_id: None,

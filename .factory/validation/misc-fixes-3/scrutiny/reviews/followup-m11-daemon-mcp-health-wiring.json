@@ -1,0 +1,34 @@
+{
+  "featureId": "followup-m11-daemon-mcp-health-wiring",
+  "reviewedAt": "2026-04-15T21:10:00Z",
+  "commitId": "b3cab7f43af998d87a68894bede4461cb615d553",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The MCP health wiring implementation is correct in structure, but the test assertion is a tautology that provides no verification of real health data.",
+    "issues": [
+      {
+        "file": "crates/swell-daemon/src/commands.rs",
+        "line": 2141,
+        "severity": "blocking",
+        "description": "Test assertion `assert!(mcp_health.is_empty() || !mcp_health.is_empty())` is a tautology — it always evaluates to true regardless of mcp_health value. This provides zero verification that real MCP health data is being returned. The comment says 'Real data from orchestrator' but the assertion doesn't actually verify this. Compare to original test which checked `assert!(mcp_health.contains_key(\"_status\"))`."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 555,
+        "severity": "non_blocking",
+        "description": "get_mcp_health() returns std::collections::HashMap which should be HashMap<String, String> imported from std::collections for consistency with other HashMap usage in the crate."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The Orchestrator struct's AGENTS.md documentation in swell-orchestrator/AGENTS.md does not list mcp_manager field or get_mcp_health() method in the Public API section. The struct definition shows 5 fields but now has 6.",
+      "evidence": "crates/swell-orchestrator/AGENTS.md shows Orchestrator struct with 5 fields (state_machine, agent_pool, checkpoint_manager, event_sender, feature_lead_manager) but the implementation now has 6 fields including mcp_manager. The get_mcp_health() method is not documented in the Public API section."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The implementation correctly wires real MCP health from McpConfigManager through the Orchestrator to the daemon status handler. The boundary change (swell-daemon -> swell-orchestrator) is appropriate and minimal. However, the test assertion at line 2141 in commands.rs is a tautology (always true) and provides no verification that the health data is real. This is a blocking issue that must be fixed before the feature can pass scrutiny."
+}

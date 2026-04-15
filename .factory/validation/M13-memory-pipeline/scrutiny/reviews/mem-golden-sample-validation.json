@@ -1,0 +1,43 @@
+{
+  "featureId": "mem-golden-sample-validation",
+  "reviewedAt": "2026-04-15T22:00:00Z",
+  "commitId": "7ac4373",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The confidence-gated golden sample validation method was implemented (commit 7ac4373), adding AutoApplicationEligibility checking with confidence >0.9 threshold and golden sample validation. However, the validate_procedure_for_auto_application method is not wired into any caller - the feature description says to 'wire golden_sample_testing.rs to validate learned procedures' but there's no integration with the orchestrator, learning pipeline, or post_session_learning to actually call this method. The implementation itself is well-structured with 47 passing tests, but it remains unused.",
+    "issues": [
+      {
+        "file": "crates/swell-memory/src/golden_sample_testing.rs",
+        "line": 1100,
+        "severity": "blocking",
+        "description": "validate_procedure_for_auto_application method is implemented but never called from any external component. The feature description requires 'wiring golden_sample_testing.rs to validate learned procedures' but there's no evidence of this wiring in the orchestrator, learning_pipeline.rs, post_session_learning.rs, or any other component that would invoke this validation before auto-application."
+      },
+      {
+        "file": "crates/swell-memory/src/post_session_learning.rs",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "Post-session learning has its own validation mechanism (LearnedPattern::validate) that doesn't integrate with GoldenSampleService::validate_procedure_for_auto_application. The two validation systems appear disconnected."
+      },
+      {
+        "file": "crates/swell-orchestrator/src",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "No references to GoldenSampleService, AutoApplicationEligibility, or validate_procedure_for_auto_application found in the orchestrator. The orchestrator should be calling this validation before allowing auto-application of procedures."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "category": "knowledge",
+      "observation": "The golden sample testing module defines validate_procedure_for_auto_application which should gate auto-application of learned procedures, but this gate is not actually enforced anywhere in the codebase. This was discovered by grep searching for uses of GoldenSampleService and finding only self-use in tests."
+    },
+    {
+      "category": "conventions",
+      "observation": "The feature ID 'mem-golden-sample-validation' specified in the task does not exist in features.json. The closest feature ID is 'mem-golden-sample-testing'. This mismatch between task description and actual feature ID may indicate a naming or tracking issue in the mission setup."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation is incomplete - while the validate_procedure_for_auto_application method is correctly implemented and well-tested (47 tests pass), it is not wired into any caller. The feature requires wiring golden_sample_testing.rs to validate learned procedures before auto-application, but no integration points exist. The method sits unused in the swell-memory crate. Cargo check and clippy pass. The implementation needs to be wired into the orchestrator or learning pipeline to fulfill the feature requirement."
+}
