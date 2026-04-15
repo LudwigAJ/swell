@@ -1,0 +1,28 @@
+{
+  "featureId": "obs-diff-review",
+  "reviewedAt": "2026-04-15T08:45:00Z",
+  "commitId": "7c660fb",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation produces structured diff output with file paths, line-level additions/deletions, and per-hunk content (addition/deletion/context types). The git_diff operation now runs git diff --numstat for statistics and git diff --unified=3 for line content, parsing both into a structured JSON format. Two tests verify the implementation: test_git_tool_diff_structured_output and test_git_tool_diff_empty.",
+    "issues": [
+      {
+        "file": "crates/swell-tools/src/tools.rs",
+        "line": 636,
+        "severity": "non_blocking",
+        "description": "The _stat_output parameter in parse_structured_diff is unused. The function signature accepts stat_output but the function body only uses numstat_output and diff_output. This is dead code - consider removing the parameter or using it for something."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The rust-worker skill at ~/.factory/skills/rust/SKILL.md was not found at the expected path. The transcript shows the worker used the 'rust-worker' skill but the actual skill file was located at ~/.factory/skills/rust/SKILL.md (not rust-worker). This suggests either the skill was renamed or the skillName 'rust-worker' in features.json may be incorrect/misleading.",
+      "evidence": "features.json specifies skillName: 'rust-worker' but ls ~/.factory/skills/ shows 'rust' directory, not 'rust-worker'. The worker transcript shows 'Skill: rust-worker' was invoked successfully."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature obs-diff-review successfully implemented. The git_diff operation in swell-tools now produces structured JSON output containing file paths, added/removed line counts, and per-hunk line content with type classification (addition/deletion/context). Two tests verify the behavior: test_git_tool_diff_structured_output and test_git_tool_diff_empty. All tests pass and clippy is clean. One minor non-blocking issue: unused _stat_output parameter in parse_structured_diff."
+}

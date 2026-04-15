@@ -1,0 +1,26 @@
+{
+  "featureId": "obs-langfuse-integration",
+  "reviewedAt": "2026-04-15T09:45:00.000Z",
+  "commitId": "5910442",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "LangfuseExporter implementation is complete and correct. It properly maps task execution to Langfuse traces with one trace per task (via start_task_trace), one span per agent turn (via start_turn_span/end_turn_span), and generation events for LLM calls (via emit_llm_generation). The implementation builds on swell-core's LangfuseClient and follows the Observation/Trace builder pattern correctly.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The rust-worker skill procedure (step 3 Red-Green TDD) requires writing failing tests first before implementation. The transcript skeleton shows the worker first implemented the full LangfuseExporter, then added integration tests in a separate commit (78e5d4f then 5910442). This is the inverse of TDD. The skillFeedback.deviations field is empty [], which incorrectly suggests the procedure was followed.",
+      "evidence": "Transcript shows implementation occurred before test-writing. Commit 78e5d4f is the feature implementation, commit 5910442 adds tests. Both commits by same worker session but tests were added in a separate commit after implementation was complete."
+    },
+    {
+      "area": "conventions",
+      "observation": "The langfuse_exporter.rs uses `#[allow(dead_code)]` on with_parent methods (lines 95, 168) and `#[allow(clippy::too_many_arguments)]` on emit_llm_generation (line 465) and GenerationData::new (line 131). These are minor suppressions but are not unusual given the builder pattern API. No AGENTS.md documents the convention for when allow attributes are appropriate vs when to refactor.",
+      "evidence": "langfuse_exporter.rs:95,131,168,465"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature obs-langfuse-integration passes scrutiny. LangfuseExporter correctly implements VAL-OBS-012: one trace per task, one span per agent turn, generation events for LLM calls. Tests verify all three behaviors. However, the skillFeedback incorrectly claims the worker followed TDD procedure (Red first) when the implementation preceded tests in separate commits."
+}

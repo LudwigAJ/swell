@@ -1,0 +1,15 @@
+{
+  "featureId": "obs-cache-events",
+  "reviewedAt": "2026-04-15T06:15:00Z",
+  "commitId": "13c2083",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation correctly fixes the SSE parser bug where StreamEvent::Usage was not emitted when cache tokens were present without output_tokens. The fix broadens the condition from `if u.output_tokens.is_some()` to `if u.output_tokens.is_some() || u.cache_creation_input_tokens.is_some() || u.cache_read_input_tokens.is_some()`, ensuring Usage events are emitted whenever any token data is present. The StreamEvent::Usage type already had proper fields for cache tokens (cache_creation_input_tokens and cache_read_input_tokens as Option<u64>), so no new event type was needed. 4 tests verify the behavior including JSON serialization for machine-parseability.",
+    "issues": []
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Implementation passes review. Fixed SSE parser condition to emit Usage events when cache tokens are present (even without output_tokens). Added 4 tests covering cache token event emission and JSON serialization. No bugs or edge cases identified."
+}

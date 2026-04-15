@@ -1,0 +1,28 @@
+{
+  "featureId": "obs-task-interruption",
+  "reviewedAt": "2026-04-15T08:45:00Z",
+  "commitId": "562b644cf12052108f279096dd7544fa75b3702b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Feature adds 15 comprehensive integration tests for task interruption (pause/resume/redirect) functionality. The tests verify existing implementations of pause_task, resume_task, and inject_instruction in the state machine and orchestrator. All VAL-OBS-008 assertions are covered including state transitions, error cases, scope modification, and checkpoint preservation.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/tests/task_interruption.rs",
+        "line": 301,
+        "severity": "non_blocking",
+        "description": "Missing test case: inject_instruction into terminal states (Accepted/Rejected) should return an error. The state_machine.rs:320-323 shows this is a valid error case, but no test verifies this behavior."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Feature specifies skillName 'rust-worker' which does not exist at .factory/skills/rust-worker/SKILL.md. The transcript shows worker loaded both 'mission-worker-base' and 'rust-worker' skills, but only 'mission-worker-base' is present in .factory/skills/. This may have left the worker without proper procedural guidance.",
+      "evidence": "features.json:skillName = 'rust-worker' but ls .factory/skills/ shows no rust-worker/ directory. Transcript shows: 'Skill rust-worker' was requested but skillFeedback.followedProcedure is true, suggesting the worker proceeded without the intended skill guidance."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review passes. The feature adds 15 integration tests validating pause/resume/redirect functionality for VAL-OBS-008. Implementation correctly delegates to existing state machine methods. One non-blocking gap: missing test for injecting into terminal states (Accepted/Rejected). Skill reference issue noted: 'rust-worker' skill specified in feature does not exist."
+}
