@@ -11,6 +11,10 @@ use tokio::fs as tokio_fs;
 use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
 
+use crate::file_guardrails::{
+    validate_file_size, validate_path_depth, validate_write_content, FileGuardrailConfig,
+};
+
 /// Tool for reading files with workspace path validation
 #[derive(Debug, Clone)]
 pub struct ReadFileTool {
@@ -169,6 +173,7 @@ impl Default for ReadFileTool {
 pub struct WriteFileTool {
     max_size: usize,
     workspace_path: Option<PathBuf>,
+    guardrail_config: FileGuardrailConfig,
 }
 
 impl WriteFileTool {
@@ -176,6 +181,7 @@ impl WriteFileTool {
         Self {
             max_size: 10_000_000,
             workspace_path: None,
+            guardrail_config: FileGuardrailConfig::default(),
         } // 10MB default
     }
 
@@ -187,6 +193,17 @@ impl WriteFileTool {
     pub fn with_workspace_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.workspace_path = Some(path.into());
         self
+    }
+
+    /// Set the file guardrail configuration for write validation
+    pub fn with_guardrail_config(mut self, config: FileGuardrailConfig) -> Self {
+        self.guardrail_config = config;
+        self
+    }
+
+    /// Configure guardrails to use defaults (binary detection, size limit, depth limit)
+    pub fn with_default_guardrails(self) -> Self {
+        self.with_guardrail_config(FileGuardrailConfig::default())
     }
 
     /// Validate that the path is within the workspace boundaries using two-layer safety:
@@ -302,6 +319,14 @@ impl Tool for WriteFileTool {
         let args: Args = serde_json::from_value(arguments)
             .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
 
+        let path = Path::new(&args.path);
+
+        // Apply file guardrails: binary detection, size limit, depth limit
+        let content_bytes = args.content.as_bytes();
+        validate_write_content(content_bytes, &self.guardrail_config)?;
+        validate_file_size(content_bytes.len(), &self.guardrail_config)?;
+        validate_path_depth(path, &self.guardrail_config)?;
+
         if args.content.len() > self.max_size {
             return Err(SwellError::ToolExecutionFailed(format!(
                 "Content too large: {} bytes (max: {})",
@@ -311,8 +336,6 @@ impl Tool for WriteFileTool {
         }
 
         // Use atomic write with temporary file and rename for atomicity
-        let path = Path::new(&args.path);
-
         // Validate path is within workspace
         self.validate_path(path)?;
 
@@ -924,6 +947,7 @@ impl Default for GitTool {
 pub struct FileEditTool {
     max_diff_size: usize,
     workspace_path: Option<PathBuf>,
+    guardrail_config: FileGuardrailConfig,
 }
 
 impl FileEditTool {
@@ -931,6 +955,7 @@ impl FileEditTool {
         Self {
             max_diff_size: 1_000_000,
             workspace_path: None,
+            guardrail_config: FileGuardrailConfig::default(),
         } // 1MB default
     }
 
@@ -942,6 +967,17 @@ impl FileEditTool {
     pub fn with_workspace_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.workspace_path = Some(path.into());
         self
+    }
+
+    /// Set the file guardrail configuration for write validation
+    pub fn with_guardrail_config(mut self, config: FileGuardrailConfig) -> Self {
+        self.guardrail_config = config;
+        self
+    }
+
+    /// Configure guardrails to use defaults (binary detection, size limit, depth limit)
+    pub fn with_default_guardrails(self) -> Self {
+        self.with_guardrail_config(FileGuardrailConfig::default())
     }
 
     /// Validate that the path is within the workspace boundaries using two-layer safety:
@@ -1123,6 +1159,12 @@ impl Tool for FileEditTool {
             .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
 
         let path = Path::new(&args.path);
+
+        // Apply file guardrails for the new content: binary detection, size limit, depth limit
+        // Note: For edits, we validate the new_str since that's the content being added
+        validate_write_content(args.new_str.as_bytes(), &self.guardrail_config)?;
+        validate_file_size(args.new_str.len(), &self.guardrail_config)?;
+        validate_path_depth(path, &self.guardrail_config)?;
 
         // Validate path is within workspace (two-layer safety: prefix + canonical)
         self.validate_path(path)?;

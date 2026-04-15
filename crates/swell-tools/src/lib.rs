@@ -20,6 +20,7 @@ pub mod conflict_resolution;
 pub mod credential_proxy;
 pub mod egress;
 pub mod executor;
+pub mod file_guardrails;
 pub mod hooks;
 pub mod hybrid;
 pub mod killswitch;
@@ -71,6 +72,10 @@ pub use egress::{
     EgressRule, IpNetwork,
 };
 pub use executor::{SandboxPreHook, ToolExecutor};
+pub use file_guardrails::{
+    validate_file_size, validate_path_depth, validate_write_content, validate_write_operation,
+    BinaryDetectionReason, FileGuardrailConfig, DEFAULT_MAX_DIRECTORY_DEPTH, DEFAULT_MAX_FILE_SIZE,
+};
 pub use hybrid::{
     ExecutorInput, HybridConfig, HybridExecutor, LocalExecutor, RemoteExecutor, RiskClass,
     ToolExecutorTrait,
