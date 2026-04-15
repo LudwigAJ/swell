@@ -215,6 +215,8 @@ pub use tiered_storage::{
 pub struct SqliteMemoryStore {
     /// The underlying SQLite connection pool
     pub pool: Arc<SqlitePool>,
+    /// Conflict resolution service for detecting and resolving memory conflicts
+    conflict_service: Arc<ConflictResolutionService>,
 }
 
 impl SqliteMemoryStore {
@@ -237,8 +239,12 @@ impl SqliteMemoryStore {
         // Also initialize the conversation_logs schema for recall functionality
         Self::init_conversation_logs_schema(&pool).await?;
 
+        // Initialize conflict resolution log schema
+        Self::init_conflict_resolution_schema(&pool).await?;
+
         Ok(Self {
             pool: Arc::new(pool),
+            conflict_service: Arc::new(ConflictResolutionService::new()),
         })
     }
 
@@ -438,6 +444,46 @@ impl SqliteMemoryStore {
         Ok(())
     }
 
+    /// Initialize conflict resolution log schema
+    async fn init_conflict_resolution_schema(pool: &SqlitePool) -> Result<(), SwellError> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS conflict_resolution_log (
+                id TEXT PRIMARY KEY,
+                conflict_id TEXT NOT NULL,
+                memory_ids TEXT NOT NULL,
+                winner_id TEXT NOT NULL,
+                loser_ids TEXT NOT NULL,
+                strategy TEXT NOT NULL,
+                conflict_type TEXT NOT NULL,
+                distance REAL NOT NULL,
+                resolution_reason TEXT NOT NULL,
+                repository TEXT NOT NULL,
+                resolved_at TEXT NOT NULL
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_conflict_log_conflict_id ON conflict_resolution_log(conflict_id)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_conflict_log_repository ON conflict_resolution_log(repository)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Helper to convert block_type enum to string
     fn block_type_to_string(block_type: MemoryBlockType) -> String {
         match block_type {
@@ -498,6 +544,40 @@ impl SqliteMemoryStore {
         // Cosine distance = 1 - cosine similarity
         // Clamp to handle floating point errors
         (1.0 - cosine_similarity).clamp(0.0, 1.0)
+    }
+
+    /// Persist a conflict resolution log entry to the database
+    async fn persist_conflict_log_entry(
+        &self,
+        entry: &ConflictResolutionLogEntry,
+    ) -> Result<(), SwellError> {
+        let memory_ids_json =
+            serde_json::to_string(&entry.memory_ids).map_err(|e| SwellError::DatabaseError(e.to_string()))?;
+        let loser_ids_json =
+            serde_json::to_string(&entry.loser_ids).map_err(|e| SwellError::DatabaseError(e.to_string()))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO conflict_resolution_log (id, conflict_id, memory_ids, winner_id, loser_ids, strategy, conflict_type, distance, resolution_reason, repository, resolved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            "#,
+        )
+        .bind(entry.id.to_string())
+        .bind(entry.conflict_id.to_string())
+        .bind(memory_ids_json)
+        .bind(entry.winner_id.to_string())
+        .bind(loser_ids_json)
+        .bind(entry.strategy.to_string())
+        .bind(entry.conflict_type.to_string())
+        .bind(entry.distance)
+        .bind(&entry.resolution_reason)
+        .bind(&entry.repository)
+        .bind(entry.resolved_at.to_rfc3339())
+        .execute(self.pool.as_ref())
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+
+        Ok(())
     }
 
     /// Check if entry is too similar to any existing memory in the same repository
@@ -627,9 +707,11 @@ impl MemoryStore for SqliteMemoryStore {
     /// Store a new memory entry
     /// Rejects memories with cosine distance < 0.15 (similarity > 0.85) to existing memories
     /// in the same repository to prevent duplication.
+    /// Runs conflict detection and resolution before persistence (VAL-MPIPE-008).
+    /// Conflict resolution decisions are logged with reason, winner, loser, and timestamp.
     /// Sets last_reinforcement to now() for new entries and is_stale to false.
     async fn store(&self, entry: MemoryEntry) -> Result<Uuid, SwellError> {
-        // Check for similar memories before storing
+        // Step 1: Check for similar memories before storing
         // Reject if cosine distance < 0.15 (i.e., similarity > 0.85)
         const SIMILARITY_THRESHOLD: f32 = 0.15;
         if let Some(similar_id) = self
@@ -639,6 +721,69 @@ impl MemoryStore for SqliteMemoryStore {
             return Err(SwellError::SimilarMemoryFound(similar_id));
         }
 
+        // Step 2: Run conflict detection and resolution (VAL-MPIPE-008)
+        // Query existing memories in the same repository with the same label
+        let existing_memories = self
+            .get_by_label(entry.label.clone(), entry.repository.clone())
+            .await?;
+
+        if !existing_memories.is_empty() {
+            // Build ConflictMemoryInfo for the new entry
+            let new_memory_info = ConflictMemoryInfo {
+                id: entry.id,
+                label: entry.label.clone(),
+                content: entry.content.clone(),
+                embedding: entry.embedding.clone(),
+                created_at: entry.created_at,
+                updated_at: entry.updated_at,
+                confidence: 1.0, // New entries start with full confidence
+                source: MemorySource::Unknown, // Default source for new entries
+                repository: entry.repository.clone(),
+                metadata: entry.metadata.clone(),
+            };
+
+            // Build ConflictMemoryInfo for existing entries
+            let existing_info: Vec<ConflictMemoryInfo> = existing_memories
+                .iter()
+                .map(|m| ConflictMemoryInfo {
+                    id: m.id,
+                    label: m.label.clone(),
+                    content: m.content.clone(),
+                    embedding: m.embedding.clone(),
+                    created_at: m.created_at,
+                    updated_at: m.updated_at,
+                    confidence: 0.8, // Default confidence for existing entries
+                    source: MemorySource::Unknown,
+                    repository: m.repository.clone(),
+                    metadata: m.metadata.clone(),
+                })
+                .collect();
+
+            // Detect and resolve conflicts
+            let resolution_results = self
+                .conflict_service
+                .detect_and_resolve(&new_memory_info, &existing_info)
+                .await;
+
+            for result in resolution_results {
+                // Log the conflict resolution decision
+                let log_entry = ConflictResolutionLogEntry::from_result(&result, entry.repository.clone());
+
+                // Persist the log entry to the database
+                self.persist_conflict_log_entry(&log_entry).await?;
+
+                tracing::info!(
+                    conflict_id = %result.conflict.id,
+                    winner_id = %result.winner_id,
+                    loser_ids = ?result.loser_ids,
+                    strategy = %result.strategy_used,
+                    reason = %result.resolution_reason,
+                    "Memory conflict resolved and logged"
+                );
+            }
+        }
+
+        // Step 3: Persist the new memory entry
         let block_type_str = Self::block_type_to_string(entry.block_type);
         let embedding_bytes = entry
             .embedding
@@ -695,7 +840,75 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     /// Update an existing memory entry
+    /// Runs conflict detection and resolution before update (VAL-MPIPE-008).
+    /// Conflict resolution decisions are logged with reason, winner, loser, and timestamp.
     async fn update(&self, entry: MemoryEntry) -> Result<(), SwellError> {
+        // Step 1: Run conflict detection and resolution before update (VAL-MPIPE-008)
+        // Query existing memories in the same repository with the same label (excluding self)
+        let existing_memories = self
+            .get_by_label(entry.label.clone(), entry.repository.clone())
+            .await?;
+
+        // Filter out the entry being updated itself
+        let other_memories: Vec<_> = existing_memories.into_iter().filter(|m| m.id != entry.id).collect();
+
+        if !other_memories.is_empty() {
+            // Build ConflictMemoryInfo for the updated entry
+            let updated_memory_info = ConflictMemoryInfo {
+                id: entry.id,
+                label: entry.label.clone(),
+                content: entry.content.clone(),
+                embedding: entry.embedding.clone(),
+                created_at: entry.created_at,
+                updated_at: chrono::Utc::now(), // Use current time for update
+                confidence: 1.0, // Full confidence for updated entry
+                source: MemorySource::Unknown,
+                repository: entry.repository.clone(),
+                metadata: entry.metadata.clone(),
+            };
+
+            // Build ConflictMemoryInfo for other existing entries
+            let existing_info: Vec<ConflictMemoryInfo> = other_memories
+                .iter()
+                .map(|m| ConflictMemoryInfo {
+                    id: m.id,
+                    label: m.label.clone(),
+                    content: m.content.clone(),
+                    embedding: m.embedding.clone(),
+                    created_at: m.created_at,
+                    updated_at: m.updated_at,
+                    confidence: 0.8,
+                    source: MemorySource::Unknown,
+                    repository: m.repository.clone(),
+                    metadata: m.metadata.clone(),
+                })
+                .collect();
+
+            // Detect and resolve conflicts
+            let resolution_results = self
+                .conflict_service
+                .detect_and_resolve(&updated_memory_info, &existing_info)
+                .await;
+
+            for result in resolution_results {
+                // Log the conflict resolution decision
+                let log_entry = ConflictResolutionLogEntry::from_result(&result, entry.repository.clone());
+
+                // Persist the log entry to the database
+                self.persist_conflict_log_entry(&log_entry).await?;
+
+                tracing::info!(
+                    conflict_id = %result.conflict.id,
+                    winner_id = %result.winner_id,
+                    loser_ids = ?result.loser_ids,
+                    strategy = %result.strategy_used,
+                    reason = %result.resolution_reason,
+                    "Memory conflict resolved and logged during update"
+                );
+            }
+        }
+
+        // Step 2: Perform the update
         let block_type_str = Self::block_type_to_string(entry.block_type);
         let embedding_bytes = entry
             .embedding
