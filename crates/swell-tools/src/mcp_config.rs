@@ -28,7 +28,7 @@ use swell_core::SwellError;
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-use super::mcp::{McpClient, McpToolInfo};
+use super::mcp::{McpClient, McpConnectionError, McpToolInfo};
 
 /// Configuration for a single MCP server
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -304,7 +304,13 @@ impl McpConfigManager {
         self.start_server(name).await
     }
 
-    /// Start a specific server
+    /// Start a specific server with retry logic based on failure classification.
+    ///
+    /// Recoverable errors (timeout, connection refused) are retried with exponential
+    /// backoff up to `max_reconnect_attempts`. Non-recoverable errors (binary not found,
+    /// protocol mismatch) fail immediately without retry.
+    ///
+    /// Reference: VAL-MCP-003
     pub async fn start_server(&self, name: &str) -> Result<McpClient, SwellError> {
         // Get server config
         let server_config = self
@@ -333,8 +339,12 @@ impl McpConfigManager {
         // (ServerRegistration happens in McpConfigManager when registering in server_states)
         client.mark_server_registered().await;
 
-        // Attempt connection
-        match client.connect().await {
+        // Attempt connection with retry logic for recoverable errors
+        let result = self
+            .connect_with_retry(&client, name)
+            .await;
+
+        match result {
             Ok(()) => {
                 // Update state to healthy
                 let mut states = self.server_states.write().await;
@@ -352,14 +362,94 @@ impl McpConfigManager {
                 Ok(client)
             }
             Err(e) => {
-                // Update state to disconnected
+                // Update state to disconnected or failed based on error classification
                 let mut states = self.server_states.write().await;
                 if let Some(state) = states.get_mut(name) {
-                    state.health = McpServerHealth::Disconnected;
+                    // If we've exhausted retries or error is non-recoverable, mark as failed
+                    if state.reconnect_attempts >= self.reconnect_config.max_reconnect_attempts
+                        || !e.is_recoverable()
+                    {
+                        state.health = McpServerHealth::Failed;
+                    } else {
+                        state.health = McpServerHealth::Disconnected;
+                    }
                 }
 
                 error!(server = %name, error = %e, "Failed to start MCP server");
-                Err(e)
+                Err(SwellError::ToolExecutionFailed(e.to_string()))
+            }
+        }
+    }
+
+    /// Connect with retry logic based on failure classification.
+    ///
+    /// For recoverable errors, retries with exponential backoff up to max_attempts.
+    /// For non-recoverable errors, returns immediately without retry.
+    ///
+    /// Reference: VAL-MCP-003
+    async fn connect_with_retry(
+        &self,
+        client: &McpClient,
+        name: &str,
+    ) -> Result<(), McpConnectionError> {
+        let max_attempts = self.reconnect_config.max_reconnect_attempts;
+        let base_delay_ms = self.reconnect_config.reconnect_delay_ms;
+
+        let mut attempt = 0;
+
+        loop {
+            // Attempt connection
+            match client.connect_with_classification().await {
+                Ok(()) => return Ok(()),
+                Err(connection_error) => {
+                    // Check if error is recoverable
+                    if !connection_error.is_recoverable() {
+                        // Non-recoverable error - fail immediately
+                        warn!(
+                            server = %name,
+                            phase = %connection_error.lifecycle_error.failed_phase,
+                            error = %connection_error.lifecycle_error.error_message,
+                            "MCP connection failed with non-recoverable error - failing immediately"
+                        );
+                        return Err(connection_error);
+                    }
+
+                    // Recoverable error - check if we have retries left
+                    attempt += 1;
+                    if attempt >= max_attempts {
+                        warn!(
+                            server = %name,
+                            attempts = attempt,
+                            error = %connection_error.lifecycle_error.error_message,
+                            "MCP connection failed after max retry attempts"
+                        );
+                        return Err(connection_error);
+                    }
+
+                    // Calculate exponential backoff delay
+                    let delay_ms = base_delay_ms * 2u64.pow(attempt - 1);
+                    warn!(
+                        server = %name,
+                        attempt = attempt,
+                        max_attempts = max_attempts,
+                        delay_ms = delay_ms,
+                        error = %connection_error.lifecycle_error.error_message,
+                        "MCP connection failed with recoverable error - retrying with backoff"
+                    );
+
+                    // Update reconnect attempts in state
+                    {
+                        let mut states = self.server_states.write().await;
+                        if let Some(state) = states.get_mut(name) {
+                            state.reconnect_attempts = attempt;
+                            state.health = McpServerHealth::Reconnecting;
+                        }
+                    }
+
+                    // Wait with exponential backoff before retry
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms))
+                        .await;
+                }
             }
         }
     }

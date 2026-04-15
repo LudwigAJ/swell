@@ -151,6 +151,184 @@ impl std::error::Error for McpLifecycleError {}
 /// Result type for lifecycle operations
 pub type McpLifecycleResult<T> = Result<T, McpLifecycleError>;
 
+/// Classification of MCP connection failures.
+///
+/// This enum determines whether a connection failure is recoverable (can be retried)
+/// or non-recoverable (should fail immediately without retry).
+///
+/// Reference: VAL-MCP-003
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpFailureClass {
+    /// The error is recoverable and can be retried with backoff.
+    /// Examples: timeout, connection refused, temporary network issues.
+    Recoverable,
+    /// The error is non-recoverable and should fail immediately without retry.
+    /// Examples: binary not found, protocol version mismatch, invalid configuration.
+    NonRecoverable,
+}
+
+impl McpFailureClass {
+    /// Returns true if this failure class is recoverable
+    pub fn is_recoverable(&self) -> bool {
+        matches!(self, McpFailureClass::Recoverable)
+    }
+
+    /// Returns true if this failure class is non-recoverable
+    pub fn is_non_recoverable(&self) -> bool {
+        matches!(self, McpFailureClass::NonRecoverable)
+    }
+}
+
+/// Error that occurred during MCP connection with failure classification.
+///
+/// This type augments `McpLifecycleError` with information about whether
+/// the error is recoverable (eligible for retry) or non-recoverable
+/// (should fail immediately).
+///
+/// Reference: VAL-MCP-003
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpConnectionError {
+    /// The underlying lifecycle error
+    #[serde(flatten)]
+    pub lifecycle_error: McpLifecycleError,
+    /// Classification of this failure
+    pub failure_class: McpFailureClass,
+    /// Additional context about the error for debugging
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+}
+
+impl McpConnectionError {
+    /// Create a new connection error with failure classification
+    pub fn new(
+        lifecycle_error: McpLifecycleError,
+        failure_class: McpFailureClass,
+    ) -> Self {
+        Self {
+            lifecycle_error,
+            failure_class,
+            context: None,
+        }
+    }
+
+    /// Create a new connection error with additional context
+    pub fn with_context(
+        lifecycle_error: McpLifecycleError,
+        failure_class: McpFailureClass,
+        context: impl Into<String>,
+    ) -> Self {
+        Self {
+            lifecycle_error,
+            failure_class,
+            context: Some(context.into()),
+        }
+    }
+
+    /// Returns true if this error is recoverable
+    pub fn is_recoverable(&self) -> bool {
+        self.failure_class.is_recoverable()
+    }
+
+    /// Returns true if this error is non-recoverable
+    pub fn is_non_recoverable(&self) -> bool {
+        self.failure_class.is_non_recoverable()
+    }
+
+    /// Classify an error based on the error message and phase.
+    ///
+    /// This function analyzes the error details to determine if it's recoverable
+    /// or non-recoverable.
+    ///
+    /// Reference: VAL-MCP-003
+    pub fn classify_error(
+        phase: McpLifecyclePhase,
+        error_message: &str,
+    ) -> McpFailureClass {
+        let error_lower = error_message.to_lowercase();
+
+        // Non-recoverable errors by phase and pattern
+        match phase {
+            McpLifecyclePhase::ConfigLoad => {
+                // Invalid command/empty config is non-recoverable
+                if error_lower.contains("empty")
+                    || error_lower.contains("invalid command")
+                    || error_lower.contains("not found")
+                {
+                    McpFailureClass::NonRecoverable
+                } else {
+                    McpFailureClass::Recoverable
+                }
+            }
+            McpLifecyclePhase::ServerRegistration => {
+                // Server registration failures are generally non-recoverable
+                McpFailureClass::NonRecoverable
+            }
+            McpLifecyclePhase::SpawnConnect => {
+                // Binary not found is non-recoverable
+                if error_lower.contains("no such file")
+                    || error_lower.contains("not found")
+                    || error_lower.contains("enoent")
+                    || error_lower.contains("executable")
+                    || error_lower.contains("cannot find")
+                {
+                    McpFailureClass::NonRecoverable
+                } else {
+                    // All other spawn errors are treated as recoverable
+                    McpFailureClass::Recoverable
+                }
+            }
+            McpLifecyclePhase::InitializeHandshake => {
+                // Protocol version mismatch is non-recoverable
+                if error_lower.contains("protocol")
+                    || error_lower.contains("version mismatch")
+                    || error_lower.contains("incompatible")
+                {
+                    McpFailureClass::NonRecoverable
+                } else {
+                    // Other initialization errors are recoverable
+                    McpFailureClass::Recoverable
+                }
+            }
+            McpLifecyclePhase::ToolDiscovery => {
+                // Tool discovery failures are recoverable (server might be busy)
+                McpFailureClass::Recoverable
+            }
+        }
+    }
+
+    /// Create a connection error from a lifecycle error by classifying it
+    pub fn from_lifecycle_error(lifecycle_error: McpLifecycleError) -> Self {
+        let failure_class = Self::classify_error(
+            lifecycle_error.failed_phase,
+            &lifecycle_error.error_message,
+        );
+
+        Self {
+            lifecycle_error,
+            failure_class,
+            context: None,
+        }
+    }
+}
+
+impl std::fmt::Display for McpConnectionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} [{}]",
+            self.lifecycle_error,
+            if self.is_recoverable() {
+                "recoverable"
+            } else {
+                "non-recoverable"
+            }
+        )
+    }
+}
+
+impl std::error::Error for McpConnectionError {}
+
 /// Tracks the lifecycle state of an MCP server connection.
 ///
 /// This struct records the completed phases and current phase,
@@ -447,15 +625,41 @@ impl McpToolInfo {
 }
 
 /// Wrapper tool for MCP tools - implements the Tool trait
+///
+/// MCP tools are registered with normalized names following the `mcp__<server>__<tool>`
+/// convention, with all components lowercased. This ensures consistent tool identification
+/// across the system.
+///
+/// Reference: VAL-MCP-004
 #[derive(Debug, Clone)]
 pub struct McpToolWrapper {
     info: McpToolInfo,
     client: McpClient,
+    /// Cached normalized name in mcp__<server>__<tool> format (lowercased)
+    normalized_name: String,
 }
 
 impl McpToolWrapper {
-    fn new(info: McpToolInfo, client: McpClient) -> Self {
-        Self { info, client }
+    /// Create a new MCP tool wrapper with normalized naming.
+    ///
+    /// The tool name is normalized to `mcp__<server>__<tool>` format with all
+    /// components lowercased for consistent tool identification.
+    ///
+    /// Reference: VAL-MCP-004
+    pub fn new(info: McpToolInfo, client: McpClient) -> Self {
+        // Normalize server and tool names: lowercase and preserve underscores
+        // Format: mcp__<server>__<tool>
+        let normalized_name = format!(
+            "mcp__{}__{}",
+            info.server_name.to_lowercase(),
+            info.name.to_lowercase()
+        );
+
+        Self {
+            info,
+            client,
+            normalized_name,
+        }
     }
 
     /// Returns the output schema for this tool, if specified
@@ -472,7 +676,7 @@ impl McpToolWrapper {
 #[async_trait]
 impl Tool for McpToolWrapper {
     fn name(&self) -> &str {
-        &self.info.name
+        &self.normalized_name
     }
 
     fn description(&self) -> String {
@@ -692,6 +896,31 @@ impl McpClient {
                     &e,
                     None,
                 ))
+            }
+        }
+    }
+
+    /// Connect with failure classification for retry decisions.
+    ///
+    /// This method wraps `connect_with_lifecycle` and classifies the resulting
+    /// error as either recoverable (eligible for retry with backoff) or
+    /// non-recoverable (should fail immediately).
+    ///
+    /// Reference: VAL-MCP-003
+    pub async fn connect_with_classification(
+        &self,
+    ) -> Result<(), McpConnectionError> {
+        match self.connect_with_lifecycle().await {
+            Ok(()) => Ok(()),
+            Err(lifecycle_error) => {
+                let connection_error = McpConnectionError::from_lifecycle_error(lifecycle_error);
+                debug!(
+                    phase = %connection_error.lifecycle_error.failed_phase,
+                    class = if connection_error.is_recoverable() { "recoverable" } else { "non-recoverable" },
+                    error = %connection_error.lifecycle_error.error_message,
+                    "MCP connection failed with classification"
+                );
+                Err(connection_error)
             }
         }
     }

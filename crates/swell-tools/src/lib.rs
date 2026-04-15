@@ -80,8 +80,8 @@ pub use loop_detection::{
     ToolLoopTracker,
 };
 pub use mcp::{
-    McpClient, McpLifecycleError, McpLifecyclePhase, McpLifecycleResult, McpLifecycleState,
-    McpManager, McpToolInfo, McpToolWrapper,
+    McpClient, McpConnectionError, McpFailureClass, McpLifecycleError, McpLifecyclePhase,
+    McpLifecycleResult, McpLifecycleState, McpManager, McpToolInfo, McpToolWrapper,
 };
 pub use mcp_config::{
     McpConfigManager, McpReconnectConfig, McpServerConfig, McpServerHealth, McpServerState,
