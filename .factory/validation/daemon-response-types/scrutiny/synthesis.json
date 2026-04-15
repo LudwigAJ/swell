@@ -1,0 +1,45 @@
+{
+  "milestone": "daemon-response-types",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": {
+      "passed": true,
+      "command": "cargo test --package swell-core",
+      "exitCode": 0
+    },
+    "check": {
+      "passed": true,
+      "command": "cargo check --package swell-core",
+      "exitCode": 0
+    },
+    "clippy": {
+      "passed": true,
+      "command": "cargo clippy --package swell-core -- -D warnings",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [],
+  "rejectedObservations": [],
+  "previousRound": null,
+  "featureSummary": {
+    "id": "daemon-response-types",
+    "description": "Add DataResponse variant to DaemonEvent enum for typed query response payloads",
+    "filesChanged": [
+      "crates/swell-core/src/types.rs",
+      "crates/swell-daemon/src/commands.rs",
+      "clients/swell-cli/src/main.rs"
+    ],
+    "linesAdded": 371,
+    "testsAdded": 2,
+    "testsModified": 2
+  }
+}
