@@ -181,6 +181,15 @@ pub use working_memory_compiler::{
     WorkingMemoryCompiler, WorkingMemoryCompilerConfig,
 };
 
+// Tiered storage module - 5-tier memory storage with eviction policies:
+// T0 (In-Context), T1 (Session), T2 (Knowledge), T3 (Archive), T4 (Cold)
+pub mod tiered_storage;
+
+pub use tiered_storage::{
+    AccessTracking, EvictionResult, MemoryTier, TierStats, TieredMemoryEntry, TieredStorage,
+    TieredStorageConfig,
+};
+
 /// SQLite-based implementation of the MemoryStore trait
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
