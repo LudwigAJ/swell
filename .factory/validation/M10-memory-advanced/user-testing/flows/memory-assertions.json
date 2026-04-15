@@ -1,0 +1,54 @@
+{
+  "milestone": "M10-memory-advanced",
+  "groupId": "memory-assertions",
+  "assertionsTested": [
+    "VAL-MEM-001",
+    "VAL-MEM-002",
+    "VAL-MEM-003",
+    "VAL-MEM-004",
+    "VAL-MEM-005",
+    "VAL-MEM-006",
+    "VAL-MEM-007"
+  ],
+  "status": "passed",
+  "details": {
+    "VAL-MEM-001": {
+      "status": "passed",
+      "testCommand": "cargo check -p swell-memory",
+      "evidence": "EmbeddingModel enum with VoyageCode3 variant exists, EmbeddingClient trait with correct async fn embed signature confirmed via compilation"
+    },
+    "VAL-MEM-002": {
+      "status": "passed",
+      "testCommand": "cargo test -p swell-memory -- voyage_embedding",
+      "evidence": "3 voyage_embedding tests passed: test_voyage_embedding_config_builder, test_voyage_embedding_config_default, test_voyage_embedding_client_with_mock_server"
+    },
+    "VAL-MEM-003": {
+      "status": "passed",
+      "testCommand": "cargo test -p swell-core treesitter -- --test-threads=4",
+      "evidence": "8 treesitter tests passed covering Rust function parsing, language detection, dependency extraction, chunk boundaries"
+    },
+    "VAL-MEM-004": {
+      "status": "passed",
+      "testCommand": "cargo test -p swell-memory -- knowledge_graph",
+      "evidence": "7 knowledge_graph tests passed: test_add_edge, test_delete_node, test_traverse, test_find_path, test_cross_references"
+    },
+    "VAL-MEM-005": {
+      "status": "passed",
+      "testCommand": "cargo test -p swell-memory -- working_memory",
+      "evidence": "11 working_memory_compiler tests passed including test_working_memory_is_within_budget, test_compiler_token_budget confirming 2000-5000 token range"
+    },
+    "VAL-MEM-006": {
+      "status": "passed",
+      "testCommand": "cargo test -p swell-memory -- skill_extraction",
+      "evidence": "8 skill_extraction tests passed including test_skill_extractor_similarity confirming patterns are extracted and persisted"
+    },
+    "VAL-MEM-007": {
+      "status": "passed",
+      "testCommand": "cargo test -p swell-memory -- repo_scoping",
+      "evidence": "9 repo_scoping tests passed including test_cross_repo_query_returns_empty, test_memory_entries_tagged_with_repo_context confirming repository isolation"
+    }
+  },
+  "toolsUsed": ["cargo test", "cargo check"],
+  "frictions": [],
+  "blockers": []
+}
