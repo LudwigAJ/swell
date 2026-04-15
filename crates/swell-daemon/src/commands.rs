@@ -30,6 +30,7 @@ use uuid::Uuid;
 /// - `TaskGet` - Returns full task details as JSON (description, plan, state, scope, cost, timestamps)
 /// - `DaemonStatus` - Returns daemon health status including connections, tasks, cost, and MCP health
 /// - `MemoryQuery` - Query memory with BM25 search and temporal filters
+/// - `CostQuery` - Query cost data for a task or aggregate across all tasks
 ///
 /// # Error Handling
 /// Returns `DaemonEvent::Error` with a message for:
@@ -551,6 +552,65 @@ pub async fn handle_command(
                         )
                         .await
                 }
+            }
+        }
+        CliCommand::CostQuery { task_id } => {
+            info!(task_id = ?task_id, "CostQuery requested");
+            use swell_core::cost_tracking::get_global_model_breakdown;
+
+            let correlation_id = EventEmitter::new_correlation_id();
+
+            // If task_id is specified, we would need per-task cost tracking which requires
+            // the orchestrator to have a CostTracker. For now, we return aggregate data.
+            // TODO: Wire in per-task cost tracking from orchestrator's task_board
+            if task_id.is_some() {
+                info!("Per-task cost query - using aggregate (per-task tracking pending)");
+            }
+
+            // Get aggregate cost data from global tracker
+            let model_breakdown = get_global_model_breakdown();
+
+            // Calculate totals from model breakdown
+            let total_input_tokens: u64 = model_breakdown
+                .iter()
+                .map(|m| m.input_tokens)
+                .sum();
+            let total_output_tokens: u64 = model_breakdown
+                .iter()
+                .map(|m| m.output_tokens)
+                .sum();
+            let total_cost_usd: f64 = model_breakdown
+                .iter()
+                .map(|m| m.cost_usd)
+                .sum();
+
+            // Convert to ModelCostInfo for the response
+            let breakdown: Vec<swell_core::ModelCostInfo> = model_breakdown
+                .into_iter()
+                .map(|m| swell_core::ModelCostInfo {
+                    model: m.model,
+                    call_count: m.call_count,
+                    total_input_tokens: m.input_tokens,
+                    total_output_tokens: m.output_tokens,
+                    total_cost_usd: m.cost_usd,
+                })
+                .collect();
+
+            info!(
+                total_input_tokens,
+                total_output_tokens,
+                total_cost_usd,
+                model_count = breakdown.len(),
+                "CostQuery returning aggregate data"
+            );
+
+            DaemonEvent::CostQueryResult {
+                task_id,
+                total_input_tokens,
+                total_output_tokens,
+                total_cost_usd,
+                model_breakdown: breakdown,
+                correlation_id,
             }
         }
     }
@@ -2173,6 +2233,79 @@ mod tests {
         match command {
             CliCommand::DaemonStatus => {}
             other => panic!("Expected DaemonStatus command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_cost_query_no_task_id() {
+        let json = r#"{"type":"CostQuery","payload":{}}"#;
+        let command = parse_command(json).unwrap();
+
+        match command {
+            CliCommand::CostQuery { task_id } => {
+                assert!(task_id.is_none(), "Expected no task_id");
+            }
+            other => panic!("Expected CostQuery command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_parse_cost_query_with_task_id() {
+        let task_id = Uuid::new_v4();
+        let json = format!(r#"{{"type":"CostQuery","payload":{{"task_id":"{}"}}}}"#, task_id);
+        let command = parse_command(&json).unwrap();
+
+        match command {
+            CliCommand::CostQuery { task_id: result_id } => {
+                assert_eq!(result_id, Some(task_id), "Expected task_id to match");
+            }
+            other => panic!("Expected CostQuery command, got: {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_cost_query_result_event_serialization() {
+        let task_id = Some(Uuid::new_v4());
+        let correlation_id = Uuid::new_v4();
+        let event = DaemonEvent::CostQueryResult {
+            task_id,
+            total_input_tokens: 100000,
+            total_output_tokens: 50000,
+            total_cost_usd: 0.75,
+            model_breakdown: vec![swell_core::ModelCostInfo {
+                model: "claude-3-5-sonnet-20241022".to_string(),
+                call_count: 5,
+                total_input_tokens: 100000,
+                total_output_tokens: 50000,
+                total_cost_usd: 0.75,
+            }],
+            correlation_id,
+        };
+
+        let serialized = serde_json::to_string(&event).unwrap();
+        assert!(serialized.contains("CostQueryResult"));
+        assert!(serialized.contains("100000"));
+        assert!(serialized.contains("0.75"));
+
+        let deserialized: DaemonEvent = serde_json::from_str(&serialized).unwrap();
+        match deserialized {
+            DaemonEvent::CostQueryResult {
+                task_id: result_task_id,
+                total_input_tokens,
+                total_output_tokens,
+                total_cost_usd,
+                model_breakdown,
+                correlation_id: result_corr_id,
+            } => {
+                assert_eq!(result_task_id, task_id);
+                assert_eq!(total_input_tokens, 100000);
+                assert_eq!(total_output_tokens, 50000);
+                assert!((total_cost_usd - 0.75).abs() < 0.001);
+                assert_eq!(model_breakdown.len(), 1);
+                assert_eq!(model_breakdown[0].model, "claude-3-5-sonnet-20241022");
+                assert_eq!(result_corr_id, correlation_id);
+            }
+            other => panic!("Expected CostQueryResult event, got: {:?}", other),
         }
     }
 

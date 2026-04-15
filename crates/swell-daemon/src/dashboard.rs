@@ -414,6 +414,32 @@ impl From<DaemonEvent> for DashboardEvent {
                 message: format!("Memory query returned {} results ({} bytes)", count, results.len()),
                 correlation_id,
             },
+            // CostQueryResult - emit as progress with cost summary
+            DaemonEvent::CostQueryResult {
+                task_id,
+                total_input_tokens,
+                total_output_tokens,
+                total_cost_usd,
+                model_breakdown,
+                correlation_id,
+            } => {
+                let summary = if model_breakdown.is_empty() {
+                    "No cost data available".to_string()
+                } else {
+                    format!(
+                        "Cost: {} in + {} out = ${} ({} models)",
+                        total_input_tokens,
+                        total_output_tokens,
+                        total_cost_usd,
+                        model_breakdown.len()
+                    )
+                };
+                DashboardEvent::TaskProgress {
+                    id: task_id.unwrap_or(Uuid::nil()),
+                    message: summary,
+                    correlation_id,
+                }
+            }
         }
     }
 }

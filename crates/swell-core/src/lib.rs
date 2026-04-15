@@ -19,8 +19,9 @@ pub use audit::{
     ChainVerificationResult, GENESIS_HASH,
 };
 pub use cost_tracking::{
-    get_last_llm_model, get_total_llm_tokens, record_llm_cost, BudgetAlert, BudgetAlertType,
-    CostBudget, CostRecord, CostSummary, CostTracker, CostTrackerError, ModelBreakdown,
+    get_global_model_breakdown, get_last_llm_model, get_total_llm_tokens, record_llm_cost,
+    record_llm_cost_with_breakdown, BudgetAlert, BudgetAlertType, CostBudget, CostRecord,
+    CostSummary, CostTracker, CostTrackerError, GlobalModelBreakdown, ModelBreakdown,
     ModelCostInfo, TaskCostSummary, TaskOutcome,
 };
 pub use dependency_graph::{DependencyGraph, DependencyQuery, GraphStats, ImpactResult};

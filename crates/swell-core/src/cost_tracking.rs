@@ -35,6 +35,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 use uuid::Uuid;
 
 // Re-export pricing from opentelemetry module
@@ -1191,9 +1193,6 @@ mod tests {
 // Global Cost Tracker for LLM Usage
 // =============================================================================
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{LazyLock, Mutex};
-
 /// Global cost data shared across all LLM backends and the dashboard.
 /// This allows tracking LLM costs from runtime call sites.
 static GLOBAL_LLM_COST_TRACKER: LazyLock<std::sync::RwLock<GlobalLlmCostData>> =
@@ -1205,6 +1204,19 @@ pub struct GlobalLlmCostData {
     total_tokens: AtomicU64,
     /// The last model used (for per-model breakdown)
     last_model: Mutex<String>,
+    /// Per-model cost breakdown
+    model_stats: Mutex<HashMap<String, ModelStats>>,
+}
+
+/// Per-model statistics for global tracking
+#[derive(Debug, Clone, Default)]
+struct ModelStats {
+    /// Total input tokens for this model
+    input_tokens: u64,
+    /// Total output tokens for this model
+    output_tokens: u64,
+    /// Number of calls with this model
+    call_count: u64,
 }
 
 impl GlobalLlmCostData {
@@ -1213,6 +1225,7 @@ impl GlobalLlmCostData {
         Self {
             total_tokens: AtomicU64::new(0),
             last_model: Mutex::new(String::new()),
+            model_stats: Mutex::new(HashMap::new()),
         }
     }
 
@@ -1226,6 +1239,28 @@ impl GlobalLlmCostData {
         // 3. We use atomic token count as a guard to ensure model is only read after first write
         if let Ok(mut last_model) = self.last_model.lock() {
             *last_model = model.to_string();
+        }
+        // Update per-model stats
+        if let Ok(mut stats) = self.model_stats.lock() {
+            let entry = stats.entry(model.to_string()).or_default();
+            entry.call_count += 1;
+            // We don't have input/output split at this level, so we just track total tokens
+            // The caller should use record_tokens_with_breakdown for detailed tracking
+        }
+    }
+
+    /// Record tokens with input/output breakdown
+    pub fn record_tokens_with_breakdown(&self, input_tokens: u64, output_tokens: u64, model: &str) {
+        let total = input_tokens + output_tokens;
+        self.total_tokens.fetch_add(total, Ordering::Relaxed);
+        if let Ok(mut last_model) = self.last_model.lock() {
+            *last_model = model.to_string();
+        }
+        if let Ok(mut stats) = self.model_stats.lock() {
+            let entry = stats.entry(model.to_string()).or_default();
+            entry.input_tokens += input_tokens;
+            entry.output_tokens += output_tokens;
+            entry.call_count += 1;
         }
     }
 
@@ -1247,6 +1282,18 @@ impl GlobalLlmCostData {
             String::new()
         }
     }
+
+    /// Get per-model breakdown
+    pub fn get_model_breakdown(&self) -> Vec<(String, u64, u64, u64)> {
+        if let Ok(stats) = self.model_stats.lock() {
+            stats
+                .iter()
+                .map(|(model, s)| (model.clone(), s.input_tokens, s.output_tokens, s.call_count))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 impl Default for GlobalLlmCostData {
@@ -1262,6 +1309,12 @@ pub fn record_llm_cost(tokens_used: u64, model: &str) {
     global.record_tokens(tokens_used, model);
 }
 
+/// Record LLM cost with input/output token breakdown to the global tracker.
+pub fn record_llm_cost_with_breakdown(input_tokens: u64, output_tokens: u64, model: &str) {
+    let global = GLOBAL_LLM_COST_TRACKER.read().unwrap();
+    global.record_tokens_with_breakdown(input_tokens, output_tokens, model);
+}
+
 /// Get current total tokens from global tracker
 pub fn get_total_llm_tokens() -> u64 {
     let global = GLOBAL_LLM_COST_TRACKER.read().unwrap();
@@ -1272,4 +1325,46 @@ pub fn get_total_llm_tokens() -> u64 {
 pub fn get_last_llm_model() -> String {
     let global = GLOBAL_LLM_COST_TRACKER.read().unwrap();
     global.last_model()
+}
+
+/// Per-model breakdown entry for global cost tracking
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GlobalModelBreakdown {
+    /// Model name
+    pub model: String,
+    /// Total input tokens
+    pub input_tokens: u64,
+    /// Total output tokens
+    pub output_tokens: u64,
+    /// Total tokens
+    pub total_tokens: u64,
+    /// Number of calls
+    pub call_count: u64,
+    /// Estimated cost in USD
+    pub cost_usd: f64,
+}
+
+/// Get per-model cost breakdown from global tracker.
+/// Returns aggregated stats across all LLM calls.
+pub fn get_global_model_breakdown() -> Vec<GlobalModelBreakdown> {
+    use crate::opentelemetry::pricing;
+
+    let global = GLOBAL_LLM_COST_TRACKER.read().unwrap();
+    let breakdown = global.get_model_breakdown();
+
+    breakdown
+        .into_iter()
+        .map(|(model, input_tokens, output_tokens, call_count)| {
+            let total_tokens = input_tokens + output_tokens;
+            let cost_usd = pricing::for_model(&model).calculate_cost(input_tokens, output_tokens);
+            GlobalModelBreakdown {
+                model,
+                input_tokens,
+                output_tokens,
+                total_tokens,
+                call_count,
+                cost_usd,
+            }
+        })
+        .collect()
 }

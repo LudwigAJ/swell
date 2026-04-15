@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::cost_tracking::ModelCostInfo;
+
 /// Task lifecycle states as defined in the orchestrator spec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -626,6 +628,11 @@ pub enum CliCommand {
         /// Maximum number of results
         limit: usize,
     },
+    /// Query cost data for a specific task or aggregate across all tasks
+    CostQuery {
+        /// Task ID to query cost for. If None, returns aggregate cost across all tasks.
+        task_id: Option<Uuid>,
+    },
 }
 
 /// A correlation ID used to track related events across the system.
@@ -795,6 +802,20 @@ pub enum DaemonEvent {
         results: String,
         /// Number of results returned
         count: usize,
+        correlation_id: CorrelationId,
+    },
+    /// Cost query results for a task or aggregate
+    CostQueryResult {
+        /// Task ID queried (None if aggregate)
+        task_id: Option<Uuid>,
+        /// Total input tokens
+        total_input_tokens: u64,
+        /// Total output tokens
+        total_output_tokens: u64,
+        /// Total cost in USD
+        total_cost_usd: f64,
+        /// Per-model cost breakdown
+        model_breakdown: Vec<ModelCostInfo>,
         correlation_id: CorrelationId,
     },
 }
@@ -1449,6 +1470,7 @@ mod tests {
                 DaemonEvent::DaemonHealth { correlation_id, .. } => *correlation_id,
                 DaemonEvent::ConfigValue { correlation_id, .. } => *correlation_id,
                 DaemonEvent::MemoryResults { correlation_id, .. } => *correlation_id,
+                DaemonEvent::CostQueryResult { correlation_id, .. } => *correlation_id,
             }
         };
 
