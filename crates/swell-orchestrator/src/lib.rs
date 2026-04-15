@@ -29,6 +29,7 @@ pub mod frozen_spec;
 pub mod gap_analyzer;
 pub mod hard_limits;
 pub mod idempotent_actions;
+pub mod langfuse_exporter;
 pub mod merge_queue;
 pub mod metrics;
 pub mod model_fallback;
@@ -156,6 +157,7 @@ pub use sprint_contracts::{
     ContractNegotiator, ContractStatus, EvaluatorContext, GeneratorContext, SprintContract,
     ValidationGate,
 };
+pub use langfuse_exporter::{LangfuseExporter, LangfuseExporterError};
 pub use stacked_prs::{
     FileChangeRisk, Pr, PrFileChange, PrStack, PrStackManager, StackedPrConfig, StackedPrError,
     DEFAULT_MAX_PR_LINES, MIN_PR_LINES,
