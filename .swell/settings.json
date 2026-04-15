@@ -58,6 +58,14 @@
       "block": 0.0
     }
   },
+  "orchestrator": {
+    "value_scorer": {
+      "spec_weight": 0.4,
+      "blocking_weight": 0.3,
+      "complexity_weight": 0.3,
+      "discard_threshold": 2.0
+    }
+  },
   "git": {
     "branch_prefix": "agent",
     "max_active_branches": 20,

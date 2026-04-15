@@ -187,8 +187,8 @@ pub use task_graph::TaskGraph;
 pub use team_registry::{Team, TeamEvent, TeamRegistry, TeamTaskFailed};
 pub use tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
 pub use value_scorer::{
-    BlockingImpactScore, SpecAlignmentScore, TaskDependency, TaskScore, ValueScorer,
-    ValueScorerConfig,
+    BlockingImpactScore, ComplexityScore, SpecAlignmentScore, TaskDependency, TaskScore,
+    ValueScorer, ValueScorerConfig,
 };
 pub use worker_boot::{WorkerBoot, WorkerBootError, WorkerBootState};
 pub use worker_pool::{

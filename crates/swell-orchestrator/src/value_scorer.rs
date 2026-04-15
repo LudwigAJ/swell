@@ -1,9 +1,11 @@
-//! Value Scorer - scores tasks 1-5 on spec alignment and blocking impact for prioritization.
+//! Value Scorer - scores tasks 1-5 on spec alignment, blocking impact, and complexity for prioritization.
 //!
 //! This module provides functionality to:
 //! - Score tasks 1-5 on spec alignment (how well task matches the spec)
 //! - Score tasks 1-5 on blocking impact (how much task blocks other work)
+//! - Score tasks 1-5 on complexity (estimated implementation complexity)
 //! - Combine scores into a single priority score for task scheduling
+//! - Filter tasks below configurable discard threshold
 //!
 //! # Scoring Scales (1-5)
 //!
@@ -21,16 +23,24 @@
 //! - 2: Few tasks blocked (indirect)
 //! - 1: No tasks blocked
 //!
+//! ## Complexity Score
+//! - 5: Very complex (large refactor, many files, intricate logic)
+//! - 4: Complex (multiple modules, significant changes)
+//! - 3: Moderate complexity (standard implementation)
+//! - 2: Low complexity (small change, isolated)
+//! - 1: Trivial (single file, obvious fix)
+//!
 //! # Combined Score
 //!
 //! The combined priority score is a weighted average:
-//! `priority = spec_alignment * spec_weight + blocking_impact * blocking_weight`
+//! `priority = spec_alignment * spec_weight + blocking_impact * blocking_weight + (6 - complexity) * complexity_weight`
 //!
-//! Default weights: spec=0.6, blocking=0.4
+//! Note: Complexity is inverted (6 - complexity) so that lower complexity = higher priority.
+//! Default weights: spec=0.4, blocking=0.3, complexity=0.3
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use tracing::debug;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 /// Spec alignment level (1-5)
@@ -149,6 +159,73 @@ impl std::fmt::Display for BlockingImpactScore {
     }
 }
 
+/// Complexity score level (1-5)
+///
+/// Higher scores mean more complex tasks. Complexity is inverted when computing
+/// priority (i.e., `6 - complexity` so that lower complexity = higher priority).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComplexityScore(u8);
+
+impl ComplexityScore {
+    /// Create a new complexity score (clamps to 1-5)
+    pub fn new(score: u8) -> Self {
+        Self(score.clamp(1, 5))
+    }
+
+    /// Score 1: Trivial (single file, obvious fix)
+    pub fn trivial() -> Self {
+        Self(1)
+    }
+
+    /// Score 2: Low complexity (small change, isolated)
+    pub fn low() -> Self {
+        Self(2)
+    }
+
+    /// Score 3: Moderate complexity (standard implementation)
+    pub fn moderate() -> Self {
+        Self(3)
+    }
+
+    /// Score 4: Complex (multiple modules, significant changes)
+    pub fn complex() -> Self {
+        Self(4)
+    }
+
+    /// Score 5: Very complex (large refactor, many files, intricate logic)
+    pub fn very_complex() -> Self {
+        Self(5)
+    }
+
+    /// Get the raw score value
+    pub fn value(&self) -> u8 {
+        self.0
+    }
+
+    /// Get as f32 for calculations
+    pub fn as_f32(&self) -> f32 {
+        self.0 as f32
+    }
+
+    /// Get the inverted score (6 - value) for priority computation
+    /// This inverts complexity so that lower complexity = higher priority
+    pub fn inverted(&self) -> f32 {
+        (6 - self.0) as f32
+    }
+}
+
+impl Default for ComplexityScore {
+    fn default() -> Self {
+        Self::moderate()
+    }
+}
+
+impl std::fmt::Display for ComplexityScore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// A task dependency relationship for blocking analysis
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TaskDependency {
@@ -167,6 +244,8 @@ pub struct TaskScore {
     pub spec_alignment: SpecAlignmentScore,
     /// Blocking impact score (1-5)
     pub blocking_impact: BlockingImpactScore,
+    /// Complexity score (1-5, higher = more complex)
+    pub complexity: ComplexityScore,
     /// Combined priority score (1-5, weighted average)
     pub priority_score: f32,
     /// Which other tasks this task blocks
@@ -176,19 +255,21 @@ pub struct TaskScore {
 }
 
 impl TaskScore {
-    /// Create a new task score
+    /// Create a new task score with all three dimensions
     pub fn new(
         task_id: Uuid,
         spec_alignment: SpecAlignmentScore,
         blocking_impact: BlockingImpactScore,
+        complexity: ComplexityScore,
         blocks: Vec<Uuid>,
         depends_on: Vec<Uuid>,
     ) -> Self {
-        let priority_score = Self::compute_priority(spec_alignment, blocking_impact);
+        let priority_score = Self::compute_priority(spec_alignment, blocking_impact, complexity);
         Self {
             task_id,
             spec_alignment,
             blocking_impact,
+            complexity,
             priority_score,
             blocks,
             depends_on,
@@ -196,20 +277,32 @@ impl TaskScore {
     }
 
     /// Compute the combined priority score
+    ///
+    /// Formula: priority = spec * spec_weight + blocking * blocking_weight + (6 - complexity) * complexity_weight
+    /// Note: Complexity is inverted (6 - complexity) so lower complexity = higher priority
     fn compute_priority(
         spec_alignment: SpecAlignmentScore,
         blocking_impact: BlockingImpactScore,
+        complexity: ComplexityScore,
     ) -> f32 {
-        // Default weights: spec=0.6, blocking=0.4
-        let spec_weight = 0.6;
-        let blocking_weight = 0.4;
+        // Default weights: spec=0.4, blocking=0.3, complexity=0.3
+        let spec_weight = 0.4;
+        let blocking_weight = 0.3;
+        let complexity_weight = 0.3;
 
-        spec_alignment.as_f32() * spec_weight + blocking_impact.as_f32() * blocking_weight
+        spec_alignment.as_f32() * spec_weight
+            + blocking_impact.as_f32() * blocking_weight
+            + complexity.inverted() * complexity_weight
     }
 
     /// Get the priority as an integer (rounded)
     pub fn priority_rounded(&self) -> u8 {
         (self.priority_score + 0.5) as u8
+    }
+
+    /// Check if this task should be discarded based on threshold
+    pub fn is_discarded(&self, threshold: f32) -> bool {
+        self.priority_score < threshold
     }
 }
 
@@ -220,18 +313,26 @@ pub struct ValueScorerConfig {
     pub spec_weight: f32,
     /// Weight for blocking impact in combined score (0.0-1.0)
     pub blocking_weight: f32,
+    /// Weight for complexity in combined score (0.0-1.0)
+    /// Note: Complexity is inverted so lower complexity = higher priority
+    pub complexity_weight: f32,
+    /// Minimum priority score to keep a task (tasks below this are discarded)
+    /// Default is 2.0
+    pub discard_threshold: f32,
 }
 
 impl Default for ValueScorerConfig {
     fn default() -> Self {
         Self {
-            spec_weight: 0.6,
-            blocking_weight: 0.4,
+            spec_weight: 0.4,
+            blocking_weight: 0.3,
+            complexity_weight: 0.3,
+            discard_threshold: 2.0,
         }
     }
 }
 
-/// Value Scorer for scoring tasks on spec alignment and blocking impact
+/// Value Scorer for scoring tasks on spec alignment, blocking impact, and complexity
 pub struct ValueScorer {
     config: ValueScorerConfig,
     /// Map of task ID to spec requirement IDs it fulfills
@@ -242,6 +343,8 @@ pub struct ValueScorer {
     known_requirements: HashSet<Uuid>,
     /// Dependency graph (blocker -> blocked)
     dependencies: HashMap<Uuid, Vec<Uuid>>,
+    /// Explicit complexity scores for tasks
+    complexity_scores: HashMap<Uuid, ComplexityScore>,
 }
 
 impl ValueScorer {
@@ -254,8 +357,9 @@ impl ValueScorer {
     pub fn with_config(config: ValueScorerConfig) -> Self {
         let spec_weight = config.spec_weight;
         let blocking_weight = config.blocking_weight;
+        let complexity_weight = config.complexity_weight;
         // Ensure weights sum to 1.0
-        let total = spec_weight + blocking_weight;
+        let total = spec_weight + blocking_weight + complexity_weight;
         assert!(
             (total - 1.0).abs() < 0.001,
             "Weights must sum to 1.0, got {}",
@@ -268,6 +372,7 @@ impl ValueScorer {
             requirement_implementers: HashMap::new(),
             known_requirements: HashSet::new(),
             dependencies: HashMap::new(),
+            complexity_scores: HashMap::new(),
         }
     }
 
@@ -299,14 +404,39 @@ impl ValueScorer {
         self.dependencies.entry(blocker).or_default().push(blocked);
     }
 
-    /// Score a task based on spec alignment and blocking impact
+    /// Set explicit complexity score for a task
+    ///
+    /// Use this to provide estimated complexity from task description analysis
+    /// or dependency analysis. If not set, defaults to moderate (3).
+    pub fn set_complexity(&mut self, task_id: Uuid, complexity: ComplexityScore) {
+        debug!(
+            task_id = %task_id,
+            complexity = %complexity,
+            "Setting complexity score"
+        );
+        self.complexity_scores.insert(task_id, complexity);
+    }
+
+    /// Register a dependency and set complexity for the blocking task
+    pub fn register_dependency_with_complexity(
+        &mut self,
+        blocker: Uuid,
+        blocked: Uuid,
+        complexity: ComplexityScore,
+    ) {
+        self.register_dependency(blocker, blocked);
+        self.set_complexity(blocker, complexity);
+    }
+
+    /// Score a task based on spec alignment, blocking impact, and complexity
     pub fn score_task(&self, task_id: Uuid) -> TaskScore {
         let spec_alignment = self.compute_spec_alignment(task_id);
         let blocking_impact = self.compute_blocking_impact(task_id);
+        let complexity = self.get_complexity(task_id);
         let blocks = self.get_blocked_tasks(task_id);
         let depends_on = self.get_blocking_tasks(task_id);
 
-        TaskScore::new(task_id, spec_alignment, blocking_impact, blocks, depends_on)
+        TaskScore::new(task_id, spec_alignment, blocking_impact, complexity, blocks, depends_on)
     }
 
     /// Score multiple tasks
@@ -443,6 +573,61 @@ impl ValueScorer {
             })
             .collect()
     }
+
+    /// Get complexity score for a task (explicit or default)
+    fn get_complexity(&self, task_id: Uuid) -> ComplexityScore {
+        self.complexity_scores
+            .get(&task_id)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Score tasks and filter by discard threshold
+    ///
+    /// Returns (kept_scores, discarded_scores) tuple where:
+    /// - kept_scores: tasks with priority >= discard_threshold
+    /// - discarded_scores: tasks with priority < discard_threshold
+    ///
+    /// Discarded tasks are logged with reason and their scores.
+    pub fn score_and_filter(&self, task_ids: &[Uuid]) -> (Vec<TaskScore>, Vec<TaskScore>) {
+        let threshold = self.config.discard_threshold;
+        let mut kept = Vec::new();
+        let mut discarded = Vec::new();
+
+        for task_id in task_ids {
+            let score = self.score_task(*task_id);
+            if score.is_discarded(threshold) {
+                debug!(
+                    task_id = %task_id,
+                    priority_score = %score.priority_score,
+                    threshold = %threshold,
+                    spec_alignment = %score.spec_alignment,
+                    blocking_impact = %score.blocking_impact,
+                    complexity = %score.complexity,
+                    "Task discarded: below priority threshold"
+                );
+                discarded.push(score);
+            } else {
+                kept.push(score);
+            }
+        }
+
+        if !discarded.is_empty() {
+            info!(
+                discarded_count = discarded.len(),
+                kept_count = kept.len(),
+                threshold = %threshold,
+                "Filtered tasks by discard threshold"
+            );
+        }
+
+        (kept, discarded)
+    }
+
+    /// Get the configured discard threshold
+    pub fn discard_threshold(&self) -> f32 {
+        self.config.discard_threshold
+    }
 }
 
 impl Default for ValueScorer {
@@ -519,38 +704,40 @@ mod tests {
         let score = TaskScore::new(
             task_id,
             SpecAlignmentScore::implements(), // 4
-            BlockingImpactScore::multiple(),  // 4
+            BlockingImpactScore::multiple(),   // 4
+            ComplexityScore::moderate(),       // 3 (inverted to 3)
             vec![],
             vec![],
         );
 
-        // priority = 4 * 0.6 + 4 * 0.4 = 2.4 + 1.6 = 4.0
-        assert!((score.priority_score - 4.0).abs() < 0.001);
+        // priority = 4 * 0.4 + 4 * 0.3 + (6-3) * 0.3 = 1.6 + 1.2 + 0.9 = 3.7
+        assert!((score.priority_score - 3.7).abs() < 0.001);
     }
 
     #[test]
     fn test_task_score_priority_rounded() {
         let task_id = Uuid::new_v4();
 
-        // 4.0 -> rounds to 4
+        // 3.0 -> rounds to 3
         let score = TaskScore::new(
             task_id,
             SpecAlignmentScore::implements(),
             BlockingImpactScore::some(),
+            ComplexityScore::moderate(),
             vec![],
             vec![],
         );
-        assert_eq!(score.priority_rounded(), 4);
+        assert_eq!(score.priority_rounded(), 3);
 
-        // 4.6 -> rounds to 5
+        // 5 * 0.4 + 5 * 0.3 + (6-1) * 0.3 = 2.0 + 1.5 + 1.5 = 5.0
         let score = TaskScore::new(
             task_id,
             SpecAlignmentScore::required(),
             BlockingImpactScore::critical_path(),
+            ComplexityScore::trivial(), // complexity 1, inverted = 5
             vec![],
             vec![],
         );
-        // priority = 5 * 0.6 + 5 * 0.4 = 5.0
         assert_eq!(score.priority_rounded(), 5);
     }
 
@@ -727,28 +914,36 @@ mod tests {
     #[test]
     fn test_custom_weights() {
         let config = ValueScorerConfig {
-            spec_weight: 0.7,
+            spec_weight: 0.5,
             blocking_weight: 0.3,
+            complexity_weight: 0.2,
+            discard_threshold: 2.5,
         };
         let scorer = ValueScorer::with_config(config);
 
-        assert!((scorer.config().spec_weight - 0.7).abs() < 0.001);
+        assert!((scorer.config().spec_weight - 0.5).abs() < 0.001);
         assert!((scorer.config().blocking_weight - 0.3).abs() < 0.001);
+        assert!((scorer.config().complexity_weight - 0.2).abs() < 0.001);
+        assert!((scorer.config().discard_threshold - 2.5).abs() < 0.001);
     }
 
     #[test]
     fn test_weights_must_sum_to_one() {
         let config = ValueScorerConfig {
-            spec_weight: 0.5,
-            blocking_weight: 0.5,
+            spec_weight: 0.4,
+            blocking_weight: 0.3,
+            complexity_weight: 0.3,
+            discard_threshold: 2.0,
         };
         let _scorer = ValueScorer::with_config(config); // Should not panic
 
         let bad_config = ValueScorerConfig {
             spec_weight: 0.3,
             blocking_weight: 0.3,
+            complexity_weight: 0.3,
+            discard_threshold: 2.0,
         };
-        // This should panic due to assertion
+        // This should panic due to assertion (0.3+0.3+0.3 = 0.9, not 1.0)
         let result = std::panic::catch_unwind(|| ValueScorer::with_config(bad_config));
         assert!(result.is_err());
     }
@@ -764,6 +959,341 @@ mod tests {
 
         assert_eq!(score.spec_alignment.value(), 1);
         assert_eq!(score.blocking_impact.value(), 1);
+    }
+
+    // --- ComplexityScore Tests ---
+
+    #[test]
+    fn test_complexity_score_clamp() {
+        let score = ComplexityScore::new(0);
+        assert_eq!(score.value(), 1);
+
+        let score = ComplexityScore::new(10);
+        assert_eq!(score.value(), 5);
+
+        let score = ComplexityScore::new(3);
+        assert_eq!(score.value(), 3);
+    }
+
+    #[test]
+    fn test_complexity_score_levels() {
+        assert_eq!(ComplexityScore::trivial().value(), 1);
+        assert_eq!(ComplexityScore::low().value(), 2);
+        assert_eq!(ComplexityScore::moderate().value(), 3);
+        assert_eq!(ComplexityScore::complex().value(), 4);
+        assert_eq!(ComplexityScore::very_complex().value(), 5);
+    }
+
+    #[test]
+    fn test_complexity_inverted() {
+        // Lower complexity = higher inverted score
+        assert!((ComplexityScore::trivial().inverted() - 5.0).abs() < 0.001);  // 6-1=5
+        assert!((ComplexityScore::low().inverted() - 4.0).abs() < 0.001);       // 6-2=4
+        assert!((ComplexityScore::moderate().inverted() - 3.0).abs() < 0.001); // 6-3=3
+        assert!((ComplexityScore::complex().inverted() - 2.0).abs() < 0.001);  // 6-4=2
+        assert!((ComplexityScore::very_complex().inverted() - 1.0).abs() < 0.001); // 6-5=1
+    }
+
+    // --- Complexity in Priority Computation Tests ---
+
+    #[test]
+    fn test_complexity_affects_priority() {
+        let task_id = Uuid::new_v4();
+        let spec = SpecAlignmentScore::implements(); // 4
+        let blocking = BlockingImpactScore::some();  // 3
+
+        // Trivial complexity (1) -> inverted is 5
+        let score_trivial = TaskScore::new(
+            task_id,
+            spec,
+            blocking,
+            ComplexityScore::trivial(),
+            vec![],
+            vec![],
+        );
+        // 4 * 0.4 + 3 * 0.3 + 5 * 0.3 = 1.6 + 0.9 + 1.5 = 4.0
+
+        // Very complex (5) -> inverted is 1
+        let score_complex = TaskScore::new(
+            task_id,
+            spec,
+            blocking,
+            ComplexityScore::very_complex(),
+            vec![],
+            vec![],
+        );
+        // 4 * 0.4 + 3 * 0.3 + 1 * 0.3 = 1.6 + 0.9 + 0.3 = 2.8
+
+        // Trivial should have higher priority than complex
+        assert!(score_trivial.priority_score > score_complex.priority_score);
+        assert!((score_trivial.priority_score - 4.0).abs() < 0.001);
+        assert!((score_complex.priority_score - 2.8).abs() < 0.001);
+    }
+
+    // --- is_discarded Tests ---
+
+    #[test]
+    fn test_is_discarded() {
+        let task_id = Uuid::new_v4();
+        let score = TaskScore::new(
+            task_id,
+            SpecAlignmentScore::not_mentioned(), // 1
+            BlockingImpactScore::none(),         // 1
+            ComplexityScore::very_complex(),     // 5, inverted = 1
+            vec![],
+            vec![],
+        );
+        // 1 * 0.4 + 1 * 0.3 + 1 * 0.3 = 0.4 + 0.3 + 0.3 = 1.0
+
+        assert!(score.is_discarded(2.0)); // 1.0 < 2.0
+        assert!(!score.is_discarded(1.0)); // 1.0 >= 1.0
+    }
+
+    #[test]
+    fn test_is_not_discarded_high_score() {
+        let task_id = Uuid::new_v4();
+        let score = TaskScore::new(
+            task_id,
+            SpecAlignmentScore::required(),    // 5
+            BlockingImpactScore::critical_path(), // 5
+            ComplexityScore::trivial(),        // 1, inverted = 5
+            vec![],
+            vec![],
+        );
+        // 5 * 0.4 + 5 * 0.3 + 5 * 0.3 = 2.0 + 1.5 + 1.5 = 5.0
+
+        assert!(!score.is_discarded(2.0)); // 5.0 >= 2.0
+    }
+
+    // --- score_and_filter Tests ---
+
+    #[test]
+    fn test_score_and_filter_all_above_threshold() {
+        let mut scorer = ValueScorer::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // Give both tasks high spec alignment
+        scorer.register_spec_link(task1, Uuid::new_v4());
+        scorer.register_spec_link(task2, Uuid::new_v4());
+
+        let (kept, discarded) = scorer.score_and_filter(&[task1, task2]);
+
+        assert_eq!(kept.len(), 2);
+        assert!(discarded.is_empty());
+    }
+
+    #[test]
+    fn test_score_and_filter_some_discarded() {
+        let mut scorer = ValueScorer::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // task1 has spec link (high priority)
+        scorer.register_spec_link(task1, Uuid::new_v4());
+        // task2 has nothing (low priority)
+
+        let (kept, _discarded) = scorer.score_and_filter(&[task1, task2]);
+
+        // task1 should be kept, task2 should be discarded
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].task_id, task1);
+    }
+
+    #[test]
+    fn test_score_and_filter_custom_threshold() {
+        let config = ValueScorerConfig {
+            spec_weight: 0.4,
+            blocking_weight: 0.3,
+            complexity_weight: 0.3,
+            discard_threshold: 4.0, // High threshold
+        };
+        let mut scorer = ValueScorer::with_config(config);
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // task1 has spec link (should give priority ~4.0)
+        scorer.register_spec_link(task1, Uuid::new_v4());
+        // task2 has nothing
+
+        let (kept, _discarded) = scorer.score_and_filter(&[task1, task2]);
+
+        // With threshold 4.0, even spec-linked task might be discarded
+        // spec_link gives spec=4, blocking=1, complexity=3(default)
+        // 4 * 0.4 + 1 * 0.3 + 3 * 0.3 = 1.6 + 0.3 + 0.9 = 2.8
+        // 2.8 < 4.0, so both should be discarded
+        assert_eq!(kept.len(), 0);
+        assert_eq!(_discarded.len(), 2);
+    }
+
+    #[test]
+    fn test_score_and_filter_empty_input() {
+        let scorer = ValueScorer::new();
+        let (kept, discarded) = scorer.score_and_filter(&[]);
+
+        assert!(kept.is_empty());
+        assert!(discarded.is_empty());
+    }
+
+    #[test]
+    fn test_score_and_filter_none_discarded() {
+        let config = ValueScorerConfig {
+            spec_weight: 0.4,
+            blocking_weight: 0.3,
+            complexity_weight: 0.3,
+            discard_threshold: 1.0, // Very low threshold
+        };
+        let scorer = ValueScorer::with_config(config);
+        let task_id = Uuid::new_v4();
+
+        let (kept, discarded) = scorer.score_and_filter(&[task_id]);
+
+        // With threshold 1.0, even task with priority 1.0 should be kept
+        assert_eq!(kept.len(), 1);
+        assert!(discarded.is_empty());
+    }
+
+    // --- Complexity Registration Tests ---
+
+    #[test]
+    fn test_set_complexity() {
+        let mut scorer = ValueScorer::new();
+        let task_id = Uuid::new_v4();
+
+        scorer.set_complexity(task_id, ComplexityScore::very_complex());
+
+        let score = scorer.score_task(task_id);
+        assert_eq!(score.complexity.value(), 5);
+    }
+
+    #[test]
+    fn test_complexity_defaults_to_moderate() {
+        let scorer = ValueScorer::new();
+        let task_id = Uuid::new_v4();
+
+        let score = scorer.score_task(task_id);
+        assert_eq!(score.complexity.value(), 3); // Default is moderate
+    }
+
+    #[test]
+    fn test_register_dependency_with_complexity() {
+        let mut scorer = ValueScorer::new();
+        let blocker = Uuid::new_v4();
+        let blocked = Uuid::new_v4();
+
+        scorer.register_dependency_with_complexity(
+            blocker,
+            blocked,
+            ComplexityScore::complex(),
+        );
+
+        let score = scorer.score_task(blocker);
+        assert_eq!(score.complexity.value(), 4);
+    }
+
+    #[test]
+    fn test_complexity_affects_filtering() {
+        let mut scorer = ValueScorer::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // Both have spec alignment
+        scorer.register_spec_link(task1, Uuid::new_v4());
+        scorer.register_spec_link(task2, Uuid::new_v4());
+
+        // But different complexity
+        scorer.set_complexity(task1, ComplexityScore::trivial());  // High priority
+        scorer.set_complexity(task2, ComplexityScore::very_complex()); // Low priority
+
+        let (kept, discarded) = scorer.score_and_filter(&[task1, task2]);
+
+        // task1 should be kept (high priority due to low complexity)
+        // task2 might be discarded depending on threshold
+        // With spec=4, blocking=1:
+        // task1: 4*0.4 + 1*0.3 + 5*0.3 = 1.6 + 0.3 + 1.5 = 3.4
+        // task2: 4*0.4 + 1*0.3 + 1*0.3 = 1.6 + 0.3 + 0.3 = 2.2
+        // Both >= 2.0, so both kept
+        assert_eq!(kept.len(), 2);
+    }
+
+    #[test]
+    fn test_score_and_filter_some_discarded_v2() {
+        let mut scorer = ValueScorer::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // task1 has spec link (high priority)
+        scorer.register_spec_link(task1, Uuid::new_v4());
+        // task2 has nothing
+
+        let (kept, _discarded) = scorer.score_and_filter(&[task1, task2]);
+
+        // task1 should be kept, task2 should be discarded
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].task_id, task1);
+    }
+
+    // --- discard_threshold accessor test ---
+
+    #[test]
+    fn test_discard_threshold_accessor() {
+        let config = ValueScorerConfig {
+            spec_weight: 0.4,
+            blocking_weight: 0.3,
+            complexity_weight: 0.3,
+            discard_threshold: 2.5,
+        };
+        let scorer = ValueScorer::with_config(config);
+
+        assert!((scorer.discard_threshold() - 2.5).abs() < 0.001);
+    }
+
+    // --- Default config test ---
+
+    #[test]
+    fn test_default_config_has_three_weights() {
+        let config = ValueScorerConfig::default();
+
+        // Check all three weights are set
+        assert!((config.spec_weight - 0.4).abs() < 0.001);
+        assert!((config.blocking_weight - 0.3).abs() < 0.001);
+        assert!((config.complexity_weight - 0.3).abs() < 0.001);
+        assert!((config.discard_threshold - 2.0).abs() < 0.001);
+
+        // Weights should sum to 1.0
+        let total = config.spec_weight + config.blocking_weight + config.complexity_weight;
+        assert!((total - 1.0).abs() < 0.001);
+    }
+
+    // --- Edge case: score_and_filter with explicit complexity ---
+
+    #[test]
+    fn test_score_and_filter_with_explicit_complexity() {
+        let mut scorer = ValueScorer::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+        let task3 = Uuid::new_v4();
+
+        // task1: spec aligned, low complexity -> should be kept
+        scorer.register_spec_link(task1, Uuid::new_v4());
+        scorer.set_complexity(task1, ComplexityScore::trivial());
+
+        // task2: spec aligned, high complexity -> might be discarded
+        scorer.register_spec_link(task2, Uuid::new_v4());
+        scorer.set_complexity(task2, ComplexityScore::very_complex());
+
+        // task3: no spec alignment, high complexity -> should be discarded
+        scorer.set_complexity(task3, ComplexityScore::very_complex());
+
+        let (kept, discarded) = scorer.score_and_filter(&[task1, task2, task3]);
+
+        // task1 should definitely be kept (spec=4, complexity=1 -> inverted=5)
+        // priority = 4*0.4 + 1*0.3 + 5*0.3 = 1.6 + 0.3 + 1.5 = 3.4
+        assert!(kept.iter().any(|s| s.task_id == task1));
+
+        // task3 should definitely be discarded (spec=1, complexity=5 -> inverted=1)
+        // priority = 1*0.4 + 1*0.3 + 1*0.3 = 0.4 + 0.3 + 0.3 = 1.0
+        assert!(discarded.iter().any(|s| s.task_id == task3));
     }
 
     #[test]
