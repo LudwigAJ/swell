@@ -720,6 +720,14 @@ impl ProceduralStore for SqliteProceduralStore {
         let mut results = Vec::new();
         for row in rows {
             let procedure = self.row_to_procedure(&row)?;
+
+            // Deprioritize procedures with confidence < 0.3 (Deprecated)
+            // These are filtered out by default unless explicitly included via min_confidence
+            if procedure.effectiveness.confidence_level() == ConfidenceLevel::Deprecated {
+                // Skip deprecated procedures - they should not be used
+                continue;
+            }
+
             let relevance = if let Some(ref keywords) = query.keywords {
                 self.calculate_relevance(&procedure, keywords)
             } else {
@@ -1540,5 +1548,360 @@ mod tests {
         let json = serde_json::to_string(&level).unwrap();
         let deserialized: ConfidenceLevel = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, level);
+    }
+
+    // =====================================================================
+    // Beta posterior tracking tests (mem-procedural-beta feature)
+    // =====================================================================
+
+    #[test]
+    fn test_beta_posterior_new_procedure_starts_with_uniform_prior() {
+        // New procedures should start with α=1, β=1 (mean=0.5)
+        let procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        // Check initial Beta posterior state
+        assert_eq!(procedure.effectiveness.alpha, 1.0);
+        assert_eq!(procedure.effectiveness.beta, 1.0);
+        assert_eq!(procedure.effectiveness.successes, 0);
+        assert_eq!(procedure.effectiveness.failures, 0);
+
+        // Mean should be 0.5 (α / (α + β) = 1 / 2)
+        let mean = procedure.expected_success_rate();
+        assert!(
+            (mean - 0.5).abs() < 0.001,
+            "Expected mean 0.5, got {}",
+            mean
+        );
+    }
+
+    #[test]
+    fn test_beta_posterior_success_increments_alpha() {
+        // On success, α should increment
+        let mut procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        // Record 3 successes
+        procedure.record_outcome(true);
+        procedure.record_outcome(true);
+        procedure.record_outcome(true);
+
+        // α = 1 + 3 = 4
+        assert_eq!(procedure.effectiveness.alpha, 4.0);
+        assert_eq!(procedure.effectiveness.successes, 3);
+
+        // β should still be 1
+        assert_eq!(procedure.effectiveness.beta, 1.0);
+        assert_eq!(procedure.effectiveness.failures, 0);
+
+        // Mean = α / (α + β) = 4 / 5 = 0.8
+        let mean = procedure.expected_success_rate();
+        assert!(
+            (mean - 0.8).abs() < 0.001,
+            "Expected mean 0.8, got {}",
+            mean
+        );
+    }
+
+    #[test]
+    fn test_beta_posterior_failure_increments_beta() {
+        // On failure, β should increment
+        let mut procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        // Record 2 failures
+        procedure.record_outcome(false);
+        procedure.record_outcome(false);
+
+        // β = 1 + 2 = 3
+        assert_eq!(procedure.effectiveness.beta, 3.0);
+        assert_eq!(procedure.effectiveness.failures, 2);
+
+        // α should still be 1
+        assert_eq!(procedure.effectiveness.alpha, 1.0);
+        assert_eq!(procedure.effectiveness.successes, 0);
+
+        // Mean = α / (α + β) = 1 / 4 = 0.25
+        let mean = procedure.expected_success_rate();
+        assert!(
+            (mean - 0.25).abs() < 0.001,
+            "Expected mean 0.25, got {}",
+            mean
+        );
+    }
+
+    #[test]
+    fn test_beta_posterior_mixed_success_and_failure() {
+        // Mixed outcomes: 7 successes, 3 failures
+        let mut procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        // Record 7 successes
+        for _ in 0..7 {
+            procedure.record_outcome(true);
+        }
+        // Record 3 failures
+        for _ in 0..3 {
+            procedure.record_outcome(false);
+        }
+
+        // Final state: α = 1 + 7 = 8, β = 1 + 3 = 4
+        assert_eq!(procedure.effectiveness.alpha, 8.0);
+        assert_eq!(procedure.effectiveness.beta, 4.0);
+        assert_eq!(procedure.effectiveness.successes, 7);
+        assert_eq!(procedure.effectiveness.failures, 3);
+
+        // Mean = α / (α + β) = 8 / 12 = 0.667
+        let mean = procedure.expected_success_rate();
+        assert!(
+            (mean - 0.667).abs() < 0.01,
+            "Expected mean ~0.667, got {}",
+            mean
+        );
+    }
+
+    #[test]
+    fn test_beta_posterior_mean_computation() {
+        // Verify mean = α / (α + β) formula
+        // Start with Beta(3, 2) which means α=3, β=2
+        let bp = BetaPosterior::new(3.0, 2.0);
+
+        // Mean should be 3 / (3 + 2) = 0.6
+        let mean = bp.mean();
+        assert!(
+            (mean - 0.6).abs() < 0.001,
+            "Expected mean 0.6, got {}",
+            mean
+        );
+    }
+
+    #[test]
+    fn test_confidence_below_03_is_deprecated() {
+        // Procedures with mean confidence < 0.3 should be Deprecated
+        // This is the threshold for deprioritization
+
+        // Beta(1, 5) -> mean = 1/6 ≈ 0.167 (< 0.3 = Deprecated)
+        let mut procedure = Procedure::new(
+            "deprecated_procedure".to_string(),
+            "A deprecated procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        // Record 4 more failures to get Beta(1, 5)
+        for _ in 0..4 {
+            procedure.record_outcome(false);
+        }
+
+        // Mean = 1 / (1 + 5) = 1/6 ≈ 0.167
+        let mean = procedure.expected_success_rate();
+        assert!(mean < 0.3, "Mean {} should be < 0.3", mean);
+        assert_eq!(procedure.confidence_level(), ConfidenceLevel::Deprecated);
+    }
+
+    #[test]
+    fn test_confidence_above_03_is_not_deprecated() {
+        // Procedures with mean confidence >= 0.3 should NOT be Deprecated
+
+        // Beta(5, 1) -> mean = 5/6 ≈ 0.833 (>= 0.3 = Confident)
+        let mut procedure = Procedure::new(
+            "confident_procedure".to_string(),
+            "A confident procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        // Record 4 more successes to get Beta(5, 1)
+        for _ in 0..4 {
+            procedure.record_outcome(true);
+        }
+
+        // Mean = 5 / (5 + 1) = 5/6 ≈ 0.833
+        let mean = procedure.expected_success_rate();
+        assert!(mean >= 0.3, "Mean {} should be >= 0.3", mean);
+        assert_ne!(procedure.confidence_level(), ConfidenceLevel::Deprecated);
+    }
+
+    #[tokio::test]
+    async fn test_find_by_context_deprioritizes_low_confidence() {
+        // Procedures with confidence < 0.3 should be excluded from retrieval
+        let store = SqliteProceduralStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
+        // Create a low-confidence procedure (mean < 0.3)
+        // Beta(1, 5) -> mean = 1/6 ≈ 0.167 (< 0.3 = Deprecated)
+        let mut low_confidence = Procedure::new(
+            "low_confidence".to_string(),
+            "A low confidence procedure".to_string(),
+            "test context".to_string(),
+        );
+        for _ in 0..4 {
+            low_confidence.record_outcome(false);
+        }
+
+        // Create a normal-confidence procedure (mean >= 0.3)
+        let normal_confidence = Procedure::new(
+            "normal_confidence".to_string(),
+            "A normal confidence procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        store.store_procedure(low_confidence.clone()).await.unwrap();
+        store
+            .store_procedure(normal_confidence.clone())
+            .await
+            .unwrap();
+
+        // Query should NOT return the low-confidence procedure
+        let query = ProcedureQuery::new().with_keywords("test".to_string());
+        let results = store.find_by_context(query).await.unwrap();
+
+        // Low confidence procedure should be deprioritized (excluded)
+        let found_low_confidence = results.iter().any(|r| r.procedure.name == "low_confidence");
+        assert!(
+            !found_low_confidence,
+            "Low confidence procedure should be excluded from results"
+        );
+
+        // Normal confidence procedure should be found
+        let found_normal = results
+            .iter()
+            .any(|r| r.procedure.name == "normal_confidence");
+        assert!(
+            found_normal,
+            "Normal confidence procedure should be in results"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_find_by_context_includes_uncertain_confidence() {
+        // Procedures with confidence 0.3-0.6 (Uncertain) should be included
+        let store = SqliteProceduralStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
+        // Create a new procedure (starts with Beta(1,1) -> mean = 0.5 = Uncertain)
+        let uncertain_procedure = Procedure::new(
+            "uncertain_procedure".to_string(),
+            "An uncertain procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        store
+            .store_procedure(uncertain_procedure.clone())
+            .await
+            .unwrap();
+
+        // Query should return the uncertain procedure
+        let query = ProcedureQuery::new().with_keywords("test".to_string());
+        let results = store.find_by_context(query).await.unwrap();
+
+        // Uncertain procedure should be included (mean 0.5 >= 0.3)
+        let found = results
+            .iter()
+            .any(|r| r.procedure.name == "uncertain_procedure");
+        assert!(found, "Uncertain procedure (mean 0.5) should be in results");
+    }
+
+    #[tokio::test]
+    async fn test_procedure_retrieval_ranking_by_confidence() {
+        // Higher confidence procedures should rank higher when keyword matches are equal
+        let store = SqliteProceduralStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
+        // Create a high confidence procedure (Beta(51, 1) -> mean ≈ 0.98)
+        let mut high_confidence = Procedure::new(
+            "high_conf".to_string(),
+            "High confidence".to_string(),
+            "rust fix".to_string(),
+        );
+        for _ in 0..50 {
+            high_confidence.record_outcome(true);
+        }
+
+        // Create a medium confidence procedure (Beta(3, 2) -> mean = 0.6)
+        let mut medium_confidence = Procedure::new(
+            "medium_conf".to_string(),
+            "Medium confidence".to_string(),
+            "rust fix".to_string(),
+        );
+        medium_confidence.record_outcome(true);
+        medium_confidence.record_outcome(true);
+        medium_confidence.record_outcome(true);
+        medium_confidence.record_outcome(false);
+        medium_confidence.record_outcome(false);
+
+        store
+            .store_procedure(high_confidence.clone())
+            .await
+            .unwrap();
+        store
+            .store_procedure(medium_confidence.clone())
+            .await
+            .unwrap();
+
+        // Query for "rust" - both match equally, but high confidence should rank higher
+        let query = ProcedureQuery::new().with_keywords("rust".to_string());
+        let results = store.find_by_context(query).await.unwrap();
+
+        assert_eq!(results.len(), 2);
+        // High confidence should be first
+        assert_eq!(results[0].procedure.name, "high_conf");
+        assert_eq!(results[1].procedure.name, "medium_conf");
+    }
+
+    #[tokio::test]
+    async fn test_record_outcome_updates_alpha_beta() {
+        // Verify that record_outcome properly updates alpha (success) and beta (failure)
+        let store = SqliteProceduralStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+
+        let procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        let id = store.store_procedure(procedure.clone()).await.unwrap();
+
+        // Record outcomes: success, success, failure
+        store.record_outcome(id, true).await.unwrap();
+        store.record_outcome(id, true).await.unwrap();
+        store.record_outcome(id, false).await.unwrap();
+
+        // Retrieve and verify
+        let updated = store.get_procedure(id).await.unwrap().unwrap();
+
+        // α = 1 + 2 = 3 (2 successes)
+        assert_eq!(updated.effectiveness.alpha, 3.0);
+        assert_eq!(updated.effectiveness.successes, 2);
+
+        // β = 1 + 1 = 2 (1 failure)
+        assert_eq!(updated.effectiveness.beta, 2.0);
+        assert_eq!(updated.effectiveness.failures, 1);
+
+        // Mean = 3 / (3 + 2) = 0.6
+        let mean = updated.expected_success_rate();
+        assert!(
+            (mean - 0.6).abs() < 0.001,
+            "Expected mean 0.6, got {}",
+            mean
+        );
+
+        // Usage count should be 3
+        assert_eq!(updated.usage_count, 3);
     }
 }
