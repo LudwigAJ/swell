@@ -69,9 +69,7 @@ async fn main() {
             let json_output = args.contains(&"--json".to_string());
             list_tasks(&socket_path, json_output).await
         }
-        "status" => {
-            status(&socket_path).await
-        }
+        "status" => status(&socket_path).await,
         "watch" => {
             if args.len() < 3 {
                 Err(CliError::MissingArgument("task-id".to_string()))
@@ -651,63 +649,61 @@ fn handle_event(event: &DaemonEvent) {
                 );
             }
         }
-        DaemonEvent::DataResponse(ref data) => {
-            match &**data {
-                DataResponse::TaskList { tasks, .. } => {
-                    println!("Task list: {} tasks", tasks.len());
-                }
-                DataResponse::TaskDetail { task, .. } => {
-                    println!("Task detail: {} - {:?}", task.id, task.state);
-                }
-                DataResponse::ConfigValue { key, value, .. } => {
-                    println!("Config {} = {}", key, value);
-                }
-                DataResponse::MemoryResults { count, results, .. } => {
-                    println!("Memory results: {} items", count);
-                    println!("{}", results);
-                }
-                DataResponse::CostData { total_cost_usd, .. } => {
-                    println!("Total cost: ${:.4}", total_cost_usd);
-                }
-                DataResponse::DaemonHealth {
-                    active_connections,
-                    total_tasks,
-                    tasks_by_state,
-                    total_tokens,
-                    last_model,
-                    mcp_health,
-                    uptime_seconds,
-                    version,
-                    total_budget,
-                    total_spent,
-                    remaining_budget,
-                    correlation_id: _,
-                } => {
-                    println!("=== Daemon Status ===");
-                    println!("Version: {}", version);
-                    println!("Uptime: {}s", uptime_seconds);
-                    println!("Active connections: {}", active_connections);
-                    println!("Total tasks: {}", total_tasks);
-                    println!("Tasks by state:");
-                    for (state, count) in tasks_by_state.iter() {
-                        println!("  {}: {}", state, count);
-                    }
-                    println!("LLM tokens used: {}", total_tokens);
-                    println!("Last model: {}", last_model);
-                    println!("MCP health:");
-                    if mcp_health.is_empty() {
-                        println!("  (no MCP servers configured)");
-                    } else {
-                        for (server, status) in mcp_health.iter() {
-                            println!("  {}: {}", server, status);
-                        }
-                    }
-                    println!("Total budget: {} tokens", total_budget);
-                    println!("Total spent: {} tokens", total_spent);
-                    println!("Remaining budget: {} tokens", remaining_budget);
-                }
+        DaemonEvent::DataResponse(ref data) => match &**data {
+            DataResponse::TaskList { tasks, .. } => {
+                println!("Task list: {} tasks", tasks.len());
             }
-        }
+            DataResponse::TaskDetail { task, .. } => {
+                println!("Task detail: {} - {:?}", task.id, task.state);
+            }
+            DataResponse::ConfigValue { key, value, .. } => {
+                println!("Config {} = {}", key, value);
+            }
+            DataResponse::MemoryResults { count, results, .. } => {
+                println!("Memory results: {} items", count);
+                println!("{}", results);
+            }
+            DataResponse::CostData { total_cost_usd, .. } => {
+                println!("Total cost: ${:.4}", total_cost_usd);
+            }
+            DataResponse::DaemonHealth {
+                active_connections,
+                total_tasks,
+                tasks_by_state,
+                total_tokens,
+                last_model,
+                mcp_health,
+                uptime_seconds,
+                version,
+                total_budget,
+                total_spent,
+                remaining_budget,
+                correlation_id: _,
+            } => {
+                println!("=== Daemon Status ===");
+                println!("Version: {}", version);
+                println!("Uptime: {}s", uptime_seconds);
+                println!("Active connections: {}", active_connections);
+                println!("Total tasks: {}", total_tasks);
+                println!("Tasks by state:");
+                for (state, count) in tasks_by_state.iter() {
+                    println!("  {}: {}", state, count);
+                }
+                println!("LLM tokens used: {}", total_tokens);
+                println!("Last model: {}", last_model);
+                println!("MCP health:");
+                if mcp_health.is_empty() {
+                    println!("  (no MCP servers configured)");
+                } else {
+                    for (server, status) in mcp_health.iter() {
+                        println!("  {}: {}", server, status);
+                    }
+                }
+                println!("Total budget: {} tokens", total_budget);
+                println!("Total spent: {} tokens", total_spent);
+                println!("Remaining budget: {} tokens", remaining_budget);
+            }
+        },
     }
 }
 

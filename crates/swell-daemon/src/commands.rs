@@ -7,7 +7,9 @@ use crate::events::EventEmitter;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use swell_core::{get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, DataResponse, TaskState};
+use swell_core::{
+    get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, DataResponse, TaskState,
+};
 use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
 use tokio::sync::Mutex;
@@ -982,21 +984,13 @@ mod tests {
         .await;
 
         match event {
-            DaemonEvent::DataResponse(data) => {
-                match *data {
-                    DataResponse::TaskList { tasks, .. } => {
-                        assert!(tasks.is_empty());
-                    }
-                    other => panic!(
-                        "Expected DataResponse::TaskList event, got: {:?}",
-                        other
-                    ),
+            DaemonEvent::DataResponse(data) => match *data {
+                DataResponse::TaskList { tasks, .. } => {
+                    assert!(tasks.is_empty());
                 }
-            }
-            other => panic!(
-                "Expected DataResponse event, got: {:?}",
-                other
-            ),
+                other => panic!("Expected DataResponse::TaskList event, got: {:?}", other),
+            },
+            other => panic!("Expected DataResponse event, got: {:?}", other),
         }
     }
 
@@ -1023,14 +1017,12 @@ mod tests {
         .await;
 
         match event {
-            DaemonEvent::DataResponse(data) => {
-                match *data {
-                    DataResponse::TaskList { tasks, .. } => {
-                        assert_eq!(tasks.len(), 3);
-                    }
-                    other => panic!("Expected DataResponse::TaskList event, got: {:?}", other),
+            DaemonEvent::DataResponse(data) => match *data {
+                DataResponse::TaskList { tasks, .. } => {
+                    assert_eq!(tasks.len(), 3);
                 }
-            }
+                other => panic!("Expected DataResponse::TaskList event, got: {:?}", other),
+            },
             other => panic!("Expected DataResponse event, got: {:?}", other),
         }
     }
@@ -2148,9 +2140,9 @@ mod tests {
                 // Cost tracking should be initialized (tokens is u64 so always >= 0)
                 let _ = total_tokens;
                 assert!(!last_model.is_empty() || last_model.is_empty()); // Model may or may not be set
-                // MCP health contains a placeholder entry since swell-daemon doesn't have direct
-                // access to MCP manager (which lives in swell-tools). Real MCP health would be
-                // wired through the orchestrator or a shared McpHealthTracker.
+                                                                          // MCP health contains a placeholder entry since swell-daemon doesn't have direct
+                                                                          // access to MCP manager (which lives in swell-tools). Real MCP health would be
+                                                                          // wired through the orchestrator or a shared McpHealthTracker.
                 assert!(mcp_health.contains_key("_status"));
                 assert!(mcp_health.get("_status").unwrap().contains("pending"));
                 // Verify uptime, version, and budget fields

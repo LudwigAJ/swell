@@ -1049,6 +1049,46 @@ impl GoldenSampleTester {
     }
 }
 
+/// Result of checking if a procedure is eligible for auto-application.
+/// Combines confidence threshold check with golden sample validation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoApplicationEligibility {
+    /// Whether the procedure can be auto-applied
+    pub is_eligible: bool,
+    /// Reason for eligibility or ineligibility
+    pub reason: AutoApplicationReason,
+    /// The golden sample validation result (if applicable)
+    pub validation_result: Option<GoldenSampleValidationResult>,
+    /// The procedure's confidence score
+    pub confidence: f64,
+    /// Whether the procedure is blocked due to failed golden sample validation
+    pub blocked_by_golden_samples: bool,
+}
+
+/// Reason why a procedure is or is not eligible for auto-application
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AutoApplicationReason {
+    /// Procedure has confidence >0.9 and passed all golden samples - eligible for auto-application
+    EligibleHighConfidencePassedSamples,
+    /// Procedure has confidence >0.9 but failed golden samples - NOT eligible
+    BlockedByFailedGoldenSamples,
+    /// Procedure has confidence <=0.9 - NOT eligible regardless of golden sample results
+    ConfidenceTooLow {
+        /// The actual confidence of the procedure
+        actual_confidence: f64,
+        /// The required confidence threshold
+        required_confidence: f64,
+    },
+    /// No golden samples available to validate against
+    NoGoldenSamplesAvailable,
+    /// Procedure is deprecated (confidence < 0.3)
+    Deprecated,
+}
+
+/// Threshold for high confidence - procedures must have confidence > 0.9
+/// to be considered for auto-application.
+pub const HIGH_CONFIDENCE_THRESHOLD: f64 = 0.9;
+
 /// Service for managing golden samples and procedure validation
 pub struct GoldenSampleService {
     store: SqliteGoldenSampleStore,
@@ -1148,6 +1188,91 @@ impl GoldenSampleService {
             validation_result.is_eligible_for_promotion,
             validation_result,
         ))
+    }
+
+    /// Validate a procedure for auto-application eligibility.
+    ///
+    /// This method checks if a procedure can be automatically applied based on:
+    /// 1. The procedure's confidence score must be > 0.9 (HIGH_CONFIDENCE_THRESHOLD)
+    /// 2. If confidence > 0.9, the procedure must pass ALL applicable golden samples
+    /// 3. If confidence <= 0.9, the procedure is NEVER auto-applied regardless of golden samples
+    ///
+    /// # Arguments
+    /// * `procedure_id` - Unique identifier for the procedure
+    /// * `procedure_context` - Context/keywords to match against golden samples
+    /// * `procedure_output` - The actual output from the procedure to validate
+    /// * `procedure_confidence` - The procedure's confidence score (mean of Beta posterior)
+    ///
+    /// # Returns
+    /// `AutoApplicationEligibility` indicating whether the procedure can be auto-applied
+    pub async fn validate_procedure_for_auto_application(
+        &self,
+        procedure_id: Uuid,
+        procedure_context: &str,
+        procedure_output: &str,
+        procedure_confidence: f64,
+    ) -> Result<AutoApplicationEligibility, SwellError> {
+        // Check for deprecated procedures (confidence < 0.3)
+        if procedure_confidence < 0.3 {
+            return Ok(AutoApplicationEligibility {
+                is_eligible: false,
+                reason: AutoApplicationReason::Deprecated,
+                validation_result: None,
+                confidence: procedure_confidence,
+                blocked_by_golden_samples: false,
+            });
+        }
+
+        // Check confidence threshold
+        if procedure_confidence <= HIGH_CONFIDENCE_THRESHOLD {
+            return Ok(AutoApplicationEligibility {
+                is_eligible: false,
+                reason: AutoApplicationReason::ConfidenceTooLow {
+                    actual_confidence: procedure_confidence,
+                    required_confidence: HIGH_CONFIDENCE_THRESHOLD,
+                },
+                validation_result: None,
+                confidence: procedure_confidence,
+                blocked_by_golden_samples: false,
+            });
+        }
+
+        // Confidence > 0.9 - need to validate against golden samples
+        let validation_result = self
+            .validate_before_promotion(procedure_id, procedure_context, procedure_output)
+            .await?;
+
+        // Check if there are samples to validate against
+        if validation_result.samples_tested == 0 {
+            return Ok(AutoApplicationEligibility {
+                is_eligible: false,
+                reason: AutoApplicationReason::NoGoldenSamplesAvailable,
+                validation_result: Some(validation_result),
+                confidence: procedure_confidence,
+                blocked_by_golden_samples: false,
+            });
+        }
+
+        // High confidence + samples exist - check if all passed
+        if validation_result.samples_passed == validation_result.samples_tested {
+            // All samples passed - eligible for auto-application
+            Ok(AutoApplicationEligibility {
+                is_eligible: true,
+                reason: AutoApplicationReason::EligibleHighConfidencePassedSamples,
+                validation_result: Some(validation_result),
+                confidence: procedure_confidence,
+                blocked_by_golden_samples: false,
+            })
+        } else {
+            // Some samples failed - NOT eligible, blocked by golden samples
+            Ok(AutoApplicationEligibility {
+                is_eligible: false,
+                reason: AutoApplicationReason::BlockedByFailedGoldenSamples,
+                validation_result: Some(validation_result),
+                confidence: procedure_confidence,
+                blocked_by_golden_samples: true,
+            })
+        }
     }
 }
 
@@ -2030,5 +2155,434 @@ mod tests {
         assert!(simple_glob_match("test*fail", "testXYZfail"));
         // No match
         assert!(!simple_glob_match("test*foo", "testbar"));
+    }
+
+    // =====================================================================
+    // Confidence-Gated Golden Sample Validation Tests
+    // These tests verify that procedures with confidence >0.9 must pass
+    // golden samples before auto-application, and procedures with
+    // confidence <=0.9 are never auto-applied regardless of golden sample results.
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_high_confidence_procedure_passes_samples_eligible() {
+        // High-confidence procedure (mean > 0.9) that passes golden samples
+        // should be ELIGIBLE for auto-application.
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        // Add a golden sample
+        let sample = GoldenSample::new(
+            "rust_fix_success".to_string(),
+            "Rust fix should complete successfully".to_string(),
+            "rust fix".to_string(),
+            "Fix the compilation error".to_string(),
+            "compilation successful".to_string(),
+        );
+        service.add_sample(sample).await.unwrap();
+
+        // Create high-confidence procedure (mean > 0.9)
+        // Beta(11, 1) has mean 11/12 ≈ 0.917
+        let procedure_confidence = 11.0 / 12.0; // ~0.917
+
+        // Validate with output that matches the sample
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "rust fix",
+                "compilation successful",
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_eligible,
+            "High-confidence procedure (>0.9) passing golden samples should be eligible"
+        );
+        assert!(
+            !result.blocked_by_golden_samples,
+            "Should not be blocked since samples passed"
+        );
+        assert_eq!(
+            result.reason,
+            AutoApplicationReason::EligibleHighConfidencePassedSamples
+        );
+    }
+
+    #[tokio::test]
+    async fn test_high_confidence_procedure_fails_samples_not_eligible() {
+        // High-confidence procedure (mean > 0.9) that FAILS golden samples
+        // should NOT be eligible for auto-application.
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        // Add a golden sample
+        let sample = GoldenSample::new(
+            "rust_fix_success".to_string(),
+            "Rust fix should complete successfully".to_string(),
+            "rust fix".to_string(),
+            "Fix the compilation error".to_string(),
+            "compilation successful".to_string(),
+        );
+        service.add_sample(sample).await.unwrap();
+
+        // Create high-confidence procedure (mean > 0.9)
+        let procedure_confidence = 0.95; // > 0.9 threshold
+
+        // Validate with output that DOES NOT match the sample
+        // Using "task completed without issues" which has NO overlap with "compilation successful"
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "rust fix",
+                "task completed without issues", // No overlap with "compilation successful"
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_eligible,
+            "High-confidence procedure (>0.9) failing golden samples should NOT be eligible"
+        );
+        assert!(
+            result.blocked_by_golden_samples,
+            "Should be blocked because golden samples failed"
+        );
+        assert_eq!(
+            result.reason,
+            AutoApplicationReason::BlockedByFailedGoldenSamples
+        );
+    }
+
+    #[tokio::test]
+    async fn test_low_confidence_procedure_never_auto_applied() {
+        // Procedure with confidence <= 0.9 should NEVER be auto-applied,
+        // regardless of whether golden samples pass or fail.
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        // Add a golden sample
+        let sample = GoldenSample::new(
+            "rust_fix_success".to_string(),
+            "Rust fix should complete successfully".to_string(),
+            "rust fix".to_string(),
+            "Fix the compilation error".to_string(),
+            "compilation successful".to_string(),
+        );
+        service.add_sample(sample).await.unwrap();
+
+        // Create low-confidence procedure (mean <= 0.9)
+        let procedure_confidence = 0.85; // <= 0.9 threshold
+
+        // Validate with output that matches the sample
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "rust fix",
+                "compilation successful", // Output matches the sample
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_eligible,
+            "Low-confidence procedure (<=0.9) should NEVER be auto-applied, even if samples pass"
+        );
+        assert!(
+            !result.blocked_by_golden_samples,
+            "Should NOT be blocked by golden samples - reason is confidence"
+        );
+        match &result.reason {
+            AutoApplicationReason::ConfidenceTooLow {
+                actual_confidence,
+                required_confidence,
+            } => {
+                assert_eq!(actual_confidence, &0.85);
+                assert_eq!(required_confidence, &HIGH_CONFIDENCE_THRESHOLD);
+            }
+            _ => panic!("Expected ConfidenceTooLow reason"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_deprecated_procedure_not_eligible() {
+        // Procedure with confidence < 0.3 (deprecated) should not be eligible
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        // Add a golden sample
+        let sample = GoldenSample::new(
+            "test_sample".to_string(),
+            "Test sample".to_string(),
+            "test".to_string(),
+            "input".to_string(),
+            "expected".to_string(),
+        );
+        service.add_sample(sample).await.unwrap();
+
+        // Create deprecated procedure (confidence < 0.3)
+        let procedure_confidence = 0.2; // Deprecated zone
+
+        let result = service
+            .validate_procedure_for_auto_application(Uuid::new_v4(), "test", "expected", procedure_confidence)
+            .await
+            .unwrap();
+
+        assert!(!result.is_eligible, "Deprecated procedure should not be eligible");
+        assert_eq!(result.reason, AutoApplicationReason::Deprecated);
+    }
+
+    #[tokio::test]
+    async fn test_no_golden_samples_low_confidence_not_eligible() {
+        // When no golden samples are available, procedure with confidence <= 0.9
+        // should NOT be eligible (no validation possible)
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        // No golden samples added
+
+        // Create low-confidence procedure
+        let procedure_confidence = 0.7;
+
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "some context",
+                "some output",
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        // Low confidence + no samples = not eligible
+        assert!(!result.is_eligible);
+        assert_eq!(result.reason, AutoApplicationReason::ConfidenceTooLow {
+            actual_confidence: 0.7,
+            required_confidence: HIGH_CONFIDENCE_THRESHOLD,
+        });
+    }
+
+    #[tokio::test]
+    async fn test_no_golden_samples_high_confidence_not_eligible() {
+        // When no golden samples are available, high-confidence procedure
+        // should NOT be eligible (cannot validate without samples)
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        // No golden samples added
+
+        // Create high-confidence procedure
+        let procedure_confidence = 0.95;
+
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "some context",
+                "some output",
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        // High confidence but no samples to validate against = not eligible
+        assert!(!result.is_eligible);
+        assert_eq!(result.reason, AutoApplicationReason::NoGoldenSamplesAvailable);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_samples_all_pass_eligible() {
+        // Procedure must pass ALL golden samples to be eligible
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        // Add multiple golden samples with context patterns that all contain "rust"
+        // so they are all found when searching for "rust"
+        let sample1 = GoldenSample::new(
+            "lint_clean".to_string(),
+            "Lint should be clean".to_string(),
+            "rust lint".to_string(), // Contains "rust" - will be found
+            "Run lint".to_string(),
+            "lint passed clean".to_string(),
+        );
+        let sample2 = GoldenSample::new(
+            "tests_pass".to_string(),
+            "Tests should pass".to_string(),
+            "rust test".to_string(), // Contains "rust" - will be found
+            "Run tests".to_string(),
+            "all tests passed successfully".to_string(),
+        );
+        service.add_sample(sample1).await.unwrap();
+        service.add_sample(sample2).await.unwrap();
+
+        // High confidence procedure
+        let procedure_confidence = 0.92;
+
+        // Output matches both samples when context "rust" finds both samples
+        // and output contains both expected outputs
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "rust", // Search for "rust" to find both samples
+                "lint passed clean and all tests passed successfully", // Contains both expected outputs
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        assert!(result.is_eligible, "Procedure with high confidence passing all samples should be eligible. Got reason: {:?}", result.reason);
+        assert_eq!(
+            result.reason,
+            AutoApplicationReason::EligibleHighConfidencePassedSamples
+        );
+    }
+
+    #[tokio::test]
+    async fn test_multiple_samples_one_fails_not_eligible() {
+        // Procedure must pass ALL golden samples - one failure blocks eligibility
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        // Add multiple golden samples with context patterns that all contain "rust"
+        let sample1 = GoldenSample::new(
+            "lint_clean".to_string(),
+            "Lint should be clean".to_string(),
+            "rust lint".to_string(), // Contains "rust" - will be found
+            "Run lint".to_string(),
+            "rust lint completed successfully".to_string(), // Distinctive words
+        );
+        let sample2 = GoldenSample::new(
+            "tests_pass".to_string(),
+            "Tests should pass".to_string(),
+            "rust test".to_string(), // Contains "rust" - will be found
+            "Run tests".to_string(),
+            "rust test suite passed 100 percent".to_string(), // Distinctive words
+        );
+        service.add_sample(sample1).await.unwrap();
+        service.add_sample(sample2).await.unwrap();
+
+        // High confidence procedure
+        let procedure_confidence = 0.92;
+
+        // Output matches sample1 but NOT sample2
+        // Sample1 expects "rust lint completed successfully" - output contains this
+        // Sample2 expects "rust test suite passed 100 percent" - output does NOT contain these distinctive words
+        // The output has NO overlap with sample2's expected words
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "rust", // Search for "rust" to find both samples
+                "rust lint completed successfully with no warnings", // Contains sample1 but NOT sample2
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        assert!(!result.is_eligible);
+        assert!(result.blocked_by_golden_samples);
+        assert_eq!(
+            result.reason,
+            AutoApplicationReason::BlockedByFailedGoldenSamples
+        );
+    }
+
+    #[tokio::test]
+    async fn test_boundary_confidence_090_not_eligible() {
+        // Exactly 0.9 is NOT eligible (must be > 0.9)
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        let sample = GoldenSample::new(
+            "test".to_string(),
+            "Test".to_string(),
+            "test".to_string(),
+            "input".to_string(),
+            "output".to_string(),
+        );
+        service.add_sample(sample).await.unwrap();
+
+        // Exactly 0.9 confidence
+        let procedure_confidence = 0.9;
+
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "test",
+                "output matches expected output", // Should pass
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        // 0.9 is NOT > 0.9, so should not be eligible
+        assert!(!result.is_eligible);
+        match &result.reason {
+            AutoApplicationReason::ConfidenceTooLow {
+                actual_confidence,
+                required_confidence,
+            } => {
+                assert_eq!(actual_confidence, &0.9);
+                assert_eq!(required_confidence, &HIGH_CONFIDENCE_THRESHOLD);
+            }
+            _ => panic!("Expected ConfidenceTooLow reason"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_boundary_confidence_091_eligible() {
+        // Just above 0.9 (0.91) with passing samples should be eligible
+        let store = SqliteGoldenSampleStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let service = GoldenSampleService::new(store);
+
+        let sample = GoldenSample::new(
+            "test".to_string(),
+            "Test".to_string(),
+            "test".to_string(),
+            "input".to_string(),
+            "output".to_string(),
+        );
+        service.add_sample(sample).await.unwrap();
+
+        // Just above 0.9 threshold
+        let procedure_confidence = 0.91;
+
+        let result = service
+            .validate_procedure_for_auto_application(
+                Uuid::new_v4(),
+                "test",
+                "output matches expected output",
+                procedure_confidence,
+            )
+            .await
+            .unwrap();
+
+        // 0.91 > 0.9, so should be eligible if samples pass
+        assert!(result.is_eligible);
+        assert_eq!(
+            result.reason,
+            AutoApplicationReason::EligibleHighConfidencePassedSamples
+        );
     }
 }

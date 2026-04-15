@@ -479,7 +479,8 @@ mod tests {
         // For procedural with λ=0.01 and 1 time unit: c(1) = 1.0 × e^(-0.01×1) ≈ 0.99005
         let now = Utc::now();
         let one_time_unit_ago = now - Duration::seconds(86400); // 1 day = 1 time unit
-        let confidence = bayesian_confidence_decay(1.0, DecayRate::Procedural, one_time_unit_ago, now);
+        let confidence =
+            bayesian_confidence_decay(1.0, DecayRate::Procedural, one_time_unit_ago, now);
         let expected = (-0.01_f64).exp(); // e^(-0.01) ≈ 0.99005
         assert!(
             (confidence - expected).abs() < 0.0001,
@@ -511,7 +512,8 @@ mod tests {
         // c(1) = 1.0 × e^(-0.01×1) ≈ 0.99005
         let now = Utc::now();
         let one_time_unit_ago = now - Duration::seconds(86400);
-        let confidence = bayesian_confidence_decay(1.0, DecayRate::Procedural, one_time_unit_ago, now);
+        let confidence =
+            bayesian_confidence_decay(1.0, DecayRate::Procedural, one_time_unit_ago, now);
         assert!(
             (confidence - 0.99005).abs() < 0.001,
             "Procedural should retain ~99% after 1 time unit, got {:.4}",
@@ -582,7 +584,8 @@ mod tests {
         let now = Utc::now();
         let initial_confidence = 0.75;
         let past = now - Duration::days(365); // Large time gap
-        let confidence = bayesian_confidence_decay(initial_confidence, DecayRate::Buffer, past, now);
+        let confidence =
+            bayesian_confidence_decay(initial_confidence, DecayRate::Buffer, past, now);
         assert!(
             confidence <= initial_confidence,
             "Confidence {:.6} should not exceed initial {:.6}",
@@ -597,8 +600,10 @@ mod tests {
         let now = Utc::now();
         let past = now - Duration::days(1);
 
-        let procedural_confidence = bayesian_confidence_decay(1.0, DecayRate::Procedural, past, now);
-        let environmental_confidence = bayesian_confidence_decay(1.0, DecayRate::Environmental, past, now);
+        let procedural_confidence =
+            bayesian_confidence_decay(1.0, DecayRate::Procedural, past, now);
+        let environmental_confidence =
+            bayesian_confidence_decay(1.0, DecayRate::Environmental, past, now);
         let buffer_confidence = bayesian_confidence_decay(1.0, DecayRate::Buffer, past, now);
 
         assert!(
@@ -637,7 +642,8 @@ mod tests {
         // Environmental with λ=1.0: c(1) = 1.0 × e^(-1.0×1) ≈ 0.3679
         let now = Utc::now();
         let one_time_unit_ago = now - Duration::seconds(86400);
-        let confidence = bayesian_confidence_decay(1.0, DecayRate::Environmental, one_time_unit_ago, now);
+        let confidence =
+            bayesian_confidence_decay(1.0, DecayRate::Environmental, one_time_unit_ago, now);
         let expected = (-1.0_f64).exp(); // e^(-1.0) ≈ 0.3679
         assert!(
             (confidence - expected).abs() < 0.001,

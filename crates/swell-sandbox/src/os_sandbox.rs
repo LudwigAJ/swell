@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
-use swell_core::{SwellError, SandboxOutput};
+use swell_core::{SandboxOutput, SwellError};
 
 #[cfg(target_os = "macos")]
 use tokio::process::Command;
@@ -307,10 +307,7 @@ impl SeatbeltSandbox {
             let path_str = path.to_string_lossy();
             match perm {
                 FilesystemPermission::ReadOnly => {
-                    profile.push_str(&format!(
-                        "(allow file-read* (literal \"{}\"))\n",
-                        path_str
-                    ));
+                    profile.push_str(&format!("(allow file-read* (literal \"{}\"))\n", path_str));
                     profile.push_str(&format!(
                         "(allow file-read-metadata* (literal \"{}\"))\n",
                         path_str

@@ -370,10 +370,11 @@ impl ToolExecutor {
 
         // Check Cedar policy authorization (deny-by-default semantics)
         if let Some(ref cedar_policy) = self.cedar_policy {
-            let principal =
-                parse_entity_uid("Agent", "system").map_err(|e: crate::cedar_policy::CedarError| {
+            let principal = parse_entity_uid("Agent", "system").map_err(
+                |e: crate::cedar_policy::CedarError| {
                     SwellError::PermissionDenied(format!("Failed to create principal: {}", e))
-                })?;
+                },
+            )?;
 
             let tool_op = match name {
                 "read_file" | "read" => ToolOperation::Read {
@@ -490,9 +491,7 @@ impl ToolExecutor {
                             let is_error = output.exit_code != 0;
                             return Ok(ToolOutput {
                                 is_error,
-                                content: vec![swell_core::ToolResultContent::Text(
-                                    output.stdout,
-                                )],
+                                content: vec![swell_core::ToolResultContent::Text(output.stdout)],
                             });
                         }
                         Err(e) => {
@@ -549,9 +548,7 @@ impl ToolExecutor {
         })?;
 
         if parts.is_empty() {
-            return Err(SwellError::ToolExecutionFailed(
-                "Empty command".into(),
-            ));
+            return Err(SwellError::ToolExecutionFailed("Empty command".into()));
         }
 
         let cmd = parts[0].clone();
@@ -736,8 +733,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sandbox_pre_hook_network_policy() {
-        let hook = SandboxPreHook::new()
-            .with_network_policy(NetworkPolicy::AllowAll);
+        let hook = SandboxPreHook::new().with_network_policy(NetworkPolicy::AllowAll);
 
         assert_eq!(hook.config().network_policy, NetworkPolicy::AllowAll);
     }

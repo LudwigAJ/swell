@@ -161,8 +161,11 @@ impl OrchestratorKillSwitch {
         }
 
         // ScopeBlock blocks file operations on specific paths
-        if (level == KillLevel::ScopeBlock || level == KillLevel::NetworkKill || level == KillLevel::FullStop)
-            && is_file_tool(tool_name) {
+        if (level == KillLevel::ScopeBlock
+            || level == KillLevel::NetworkKill
+            || level == KillLevel::FullStop)
+            && is_file_tool(tool_name)
+        {
             if let Some(path) = extract_path_argument(tool_name, arguments) {
                 self.guard.check_path(&path).await?;
             }
@@ -268,7 +271,15 @@ fn is_file_tool(tool_name: &str) -> bool {
 /// Extract the path argument from tool arguments if present.
 fn extract_path_argument(_tool_name: &str, arguments: &serde_json::Value) -> Option<String> {
     // Common path argument names
-    let path_keys = ["path", "file", "file_path", "target", "destination", "src", "source"];
+    let path_keys = [
+        "path",
+        "file",
+        "file_path",
+        "target",
+        "destination",
+        "src",
+        "source",
+    ];
 
     // Try to find path in arguments
     if let Some(obj) = arguments.as_object() {
@@ -358,14 +369,14 @@ mod tests {
             .check_tool_dispatch("http_request", &serde_json::json!({}))
             .await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), KillSwitchError::NetworkKilled(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            KillSwitchError::NetworkKilled(_)
+        ));
 
         // But should allow file tools
         let result = ks
-            .check_tool_dispatch(
-                "file_read",
-                &serde_json::json!({"path": "/tmp/test.txt"}),
-            )
+            .check_tool_dispatch("file_read", &serde_json::json!({"path": "/tmp/test.txt"}))
             .await;
         assert!(result.is_ok());
     }
@@ -378,8 +389,7 @@ mod tests {
             blocked_patterns: vec![],
         })
         .await;
-        ks.trigger(KillLevel::ScopeBlock, "test", "test")
-            .await;
+        ks.trigger(KillLevel::ScopeBlock, "test", "test").await;
 
         // Should block access to /secret
         let result = ks.check_path("/secret/file.txt").await;
@@ -401,32 +411,28 @@ mod tests {
         assert!(!ks.is_level_active(KillLevel::FullStop).await);
 
         // Trigger Throttle
-        ks.trigger(KillLevel::Throttle, "test", "test")
-            .await;
+        ks.trigger(KillLevel::Throttle, "test", "test").await;
         assert!(ks.is_level_active(KillLevel::Throttle).await);
         assert!(!ks.is_level_active(KillLevel::ScopeBlock).await); // Not yet
         assert!(!ks.is_level_active(KillLevel::NetworkKill).await);
         assert!(!ks.is_level_active(KillLevel::FullStop).await);
 
         // Escalate to ScopeBlock
-        ks.trigger(KillLevel::ScopeBlock, "test", "test")
-            .await;
+        ks.trigger(KillLevel::ScopeBlock, "test", "test").await;
         assert!(ks.is_level_active(KillLevel::Throttle).await);
         assert!(ks.is_level_active(KillLevel::ScopeBlock).await);
         assert!(!ks.is_level_active(KillLevel::NetworkKill).await);
         assert!(!ks.is_level_active(KillLevel::FullStop).await);
 
         // Escalate to NetworkKill
-        ks.trigger(KillLevel::NetworkKill, "test", "test")
-            .await;
+        ks.trigger(KillLevel::NetworkKill, "test", "test").await;
         assert!(ks.is_level_active(KillLevel::Throttle).await);
         assert!(ks.is_level_active(KillLevel::ScopeBlock).await);
         assert!(ks.is_level_active(KillLevel::NetworkKill).await);
         assert!(!ks.is_level_active(KillLevel::FullStop).await);
 
         // Escalate to FullStop
-        ks.trigger(KillLevel::FullStop, "test", "test")
-            .await;
+        ks.trigger(KillLevel::FullStop, "test", "test").await;
         assert!(ks.is_level_active(KillLevel::Throttle).await);
         assert!(ks.is_level_active(KillLevel::ScopeBlock).await);
         assert!(ks.is_level_active(KillLevel::NetworkKill).await);
@@ -441,10 +447,7 @@ mod tests {
 
         // FullStop should block even file tools
         let result = ks
-            .check_tool_dispatch(
-                "file_read",
-                &serde_json::json!({"path": "/tmp/test.txt"}),
-            )
+            .check_tool_dispatch("file_read", &serde_json::json!({"path": "/tmp/test.txt"}))
             .await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), KillSwitchError::FullStop(_)));
@@ -518,9 +521,7 @@ mod tests {
     async fn test_kill_level_ordering() {
         // Verify the severity ordering: Throttle < ScopeBlock < NetworkKill < FullStop
         assert!(KillLevel::Throttle.severity() < KillLevel::ScopeBlock.severity());
-        assert!(
-            KillLevel::ScopeBlock.severity() < KillLevel::NetworkKill.severity()
-        );
+        assert!(KillLevel::ScopeBlock.severity() < KillLevel::NetworkKill.severity());
         assert!(KillLevel::NetworkKill.severity() < KillLevel::FullStop.severity());
     }
 
@@ -530,12 +531,10 @@ mod tests {
 
         assert!(ks.active_level().await.is_none());
 
-        ks.trigger(KillLevel::Throttle, "test", "test")
-            .await;
+        ks.trigger(KillLevel::Throttle, "test", "test").await;
         assert_eq!(ks.active_level().await, Some(KillLevel::Throttle));
 
-        ks.trigger(KillLevel::FullStop, "test", "test")
-            .await;
+        ks.trigger(KillLevel::FullStop, "test", "test").await;
         assert_eq!(ks.active_level().await, Some(KillLevel::FullStop));
     }
 
@@ -547,15 +546,11 @@ mod tests {
             blocked_patterns: vec!["*.pem".to_string(), "*.key".to_string()],
         })
         .await;
-        ks.trigger(KillLevel::ScopeBlock, "test", "test")
-            .await;
+        ks.trigger(KillLevel::ScopeBlock, "test", "test").await;
 
         // Should block /etc paths
         let result = ks
-            .check_tool_dispatch(
-                "file_read",
-                &serde_json::json!({"path": "/etc/passwd"}),
-            )
+            .check_tool_dispatch("file_read", &serde_json::json!({"path": "/etc/passwd"}))
             .await;
         assert!(result.is_err());
 

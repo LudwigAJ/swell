@@ -193,7 +193,10 @@ impl RemoteExecutor {
     }
 
     /// Create a new RemoteExecutor with an egress filter for network filtering
-    pub fn with_egress_filter(sandbox_endpoint: impl Into<String>, egress_filter: Arc<EgressFilter>) -> Self {
+    pub fn with_egress_filter(
+        sandbox_endpoint: impl Into<String>,
+        egress_filter: Arc<EgressFilter>,
+    ) -> Self {
         Self {
             sandbox_endpoint: sandbox_endpoint.into(),
             client: reqwest::Client::new(),
@@ -206,7 +209,10 @@ impl RemoteExecutor {
         if let Some(ref filter) = self.egress_filter {
             // Extract host from sandbox endpoint URL
             let (host, port) = if let Ok(url) = url::Url::parse(&self.sandbox_endpoint) {
-                (url.host_str().unwrap_or("").to_string(), url.port().unwrap_or(8080))
+                (
+                    url.host_str().unwrap_or("").to_string(),
+                    url.port().unwrap_or(8080),
+                )
             } else {
                 // If we can't parse the URL, extract host:port manually
                 let address = &self.sandbox_endpoint;

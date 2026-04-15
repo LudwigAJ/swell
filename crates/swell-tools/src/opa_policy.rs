@@ -296,7 +296,10 @@ impl OpaPolicyEngine {
             // Extract host and port from OPA server URL
             let address = &self.server_url;
             let (host, port) = if let Ok(url) = url::Url::parse(address) {
-                (url.host_str().unwrap_or("").to_string(), url.port().unwrap_or(8181))
+                (
+                    url.host_str().unwrap_or("").to_string(),
+                    url.port().unwrap_or(8181),
+                )
             } else {
                 // Fallback: parse manually
                 let address = address
@@ -304,7 +307,10 @@ impl OpaPolicyEngine {
                     .trim_start_matches("https://");
                 let parts: Vec<&str> = address.split(':').collect();
                 let host = parts.first().unwrap_or(&"localhost").to_string();
-                let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(8181);
+                let port = parts
+                    .get(1)
+                    .and_then(|p| p.parse::<u16>().ok())
+                    .unwrap_or(8181);
                 (host, port)
             };
 
@@ -495,7 +501,10 @@ impl OpaClient {
             // Extract host and port from OPA server URL
             let address = &self.base_url;
             let (host, port) = if let Ok(url) = url::Url::parse(address) {
-                (url.host_str().unwrap_or("").to_string(), url.port().unwrap_or(8181))
+                (
+                    url.host_str().unwrap_or("").to_string(),
+                    url.port().unwrap_or(8181),
+                )
             } else {
                 // Fallback: parse manually
                 let address = address
@@ -503,7 +512,10 @@ impl OpaClient {
                     .trim_start_matches("https://");
                 let parts: Vec<&str> = address.split(':').collect();
                 let host = parts.first().unwrap_or(&"localhost").to_string();
-                let port = parts.get(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(8181);
+                let port = parts
+                    .get(1)
+                    .and_then(|p| p.parse::<u16>().ok())
+                    .unwrap_or(8181);
                 (host, port)
             };
 

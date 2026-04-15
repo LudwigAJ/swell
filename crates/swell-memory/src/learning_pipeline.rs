@@ -357,9 +357,7 @@ impl DeprecationReason {
             DeprecationReason::LowSuccessRate => {
                 "Success rate too low to meet threshold requirements"
             }
-            DeprecationReason::HypothesisFailed => {
-                "Failed to meet Hypothesis stage requirements"
-            }
+            DeprecationReason::HypothesisFailed => "Failed to meet Hypothesis stage requirements",
             DeprecationReason::EvidenceFailed => {
                 "Failed to meet Evidence stage requirements for promotion"
             }
@@ -506,10 +504,7 @@ impl LearningPipeline {
 
     /// Get all non-deprecated entries
     pub fn get_active_entries(&self) -> Vec<&LearningEntry> {
-        self.entries
-            .values()
-            .filter(|e| !e.is_deprecated)
-            .collect()
+        self.entries.values().filter(|e| !e.is_deprecated).collect()
     }
 
     /// Process a new observation, creating a new entry or updating existing
@@ -522,7 +517,10 @@ impl LearningPipeline {
         let existing_id = self
             .entries
             .values()
-            .find(|e| self.observation_key(&e.observation) == observation_key && e.repository == repository)
+            .find(|e| {
+                self.observation_key(&e.observation) == observation_key
+                    && e.repository == repository
+            })
             .map(|e| e.id);
 
         match existing_id {
@@ -729,10 +727,22 @@ mod tests {
 
     #[test]
     fn test_pipeline_stage_next() {
-        assert_eq!(PipelineStage::Observation.next_stage(), Some(PipelineStage::Pattern));
-        assert_eq!(PipelineStage::Pattern.next_stage(), Some(PipelineStage::Hypothesis));
-        assert_eq!(PipelineStage::Hypothesis.next_stage(), Some(PipelineStage::Evidence));
-        assert_eq!(PipelineStage::Evidence.next_stage(), Some(PipelineStage::Promoted));
+        assert_eq!(
+            PipelineStage::Observation.next_stage(),
+            Some(PipelineStage::Pattern)
+        );
+        assert_eq!(
+            PipelineStage::Pattern.next_stage(),
+            Some(PipelineStage::Hypothesis)
+        );
+        assert_eq!(
+            PipelineStage::Hypothesis.next_stage(),
+            Some(PipelineStage::Evidence)
+        );
+        assert_eq!(
+            PipelineStage::Evidence.next_stage(),
+            Some(PipelineStage::Promoted)
+        );
         assert_eq!(PipelineStage::Promoted.next_stage(), None);
         assert_eq!(PipelineStage::Deprecated.next_stage(), None);
     }
@@ -929,7 +939,10 @@ mod tests {
         // Should be deprecated at Pattern stage with LowSuccessRate
         // (5 occurrences, 40% success rate - can't advance to Hypothesis)
         assert!(entry.is_deprecated);
-        assert!(matches!(entry.deprecation_reason, Some(DeprecationReason::LowSuccessRate)));
+        assert!(matches!(
+            entry.deprecation_reason,
+            Some(DeprecationReason::LowSuccessRate)
+        ));
     }
 
     #[test]
@@ -957,7 +970,10 @@ mod tests {
 
         let entry = pipeline.get_entry(entry_id).unwrap();
         assert_eq!(entry.stage, PipelineStage::Promoted);
-        assert!(entry.stage_history.iter().any(|t| t.to_stage == PipelineStage::Promoted));
+        assert!(entry
+            .stage_history
+            .iter()
+            .any(|t| t.to_stage == PipelineStage::Promoted));
     }
 
     #[test]
@@ -984,7 +1000,10 @@ mod tests {
         let entry = pipeline.get_entry(entry_id).unwrap();
         // Entry should be deprecated with LowSuccessRate (failed to advance from Pattern to Hypothesis)
         assert!(entry.is_deprecated);
-        assert!(matches!(entry.deprecation_reason, Some(DeprecationReason::LowSuccessRate)));
+        assert!(matches!(
+            entry.deprecation_reason,
+            Some(DeprecationReason::LowSuccessRate)
+        ));
     }
 
     #[test]
@@ -1055,9 +1074,27 @@ mod tests {
         let stats = pipeline.stats();
 
         assert_eq!(stats.total_entries, 2);
-        assert_eq!(*stats.stage_counts.get(&PipelineStage::Pattern).unwrap_or(&0), 1);
-        assert_eq!(*stats.stage_counts.get(&PipelineStage::Hypothesis).unwrap_or(&0), 1);
-        assert_eq!(*stats.stage_counts.get(&PipelineStage::Observation).unwrap_or(&0), 0);
+        assert_eq!(
+            *stats
+                .stage_counts
+                .get(&PipelineStage::Pattern)
+                .unwrap_or(&0),
+            1
+        );
+        assert_eq!(
+            *stats
+                .stage_counts
+                .get(&PipelineStage::Hypothesis)
+                .unwrap_or(&0),
+            1
+        );
+        assert_eq!(
+            *stats
+                .stage_counts
+                .get(&PipelineStage::Observation)
+                .unwrap_or(&0),
+            0
+        );
     }
 
     #[test]
@@ -1119,7 +1156,10 @@ mod tests {
         assert_eq!(entry.stage_history.len(), 2); // Observation->Pattern, Pattern->Hypothesis
 
         // Check stage names
-        assert_eq!(entry.stage_history[0].from_stage, PipelineStage::Observation);
+        assert_eq!(
+            entry.stage_history[0].from_stage,
+            PipelineStage::Observation
+        );
         assert_eq!(entry.stage_history[0].to_stage, PipelineStage::Pattern);
         assert_eq!(entry.stage_history[1].from_stage, PipelineStage::Pattern);
         assert_eq!(entry.stage_history[1].to_stage, PipelineStage::Hypothesis);
@@ -1139,7 +1179,10 @@ mod tests {
 
         let entry = pipeline.get_entry(entry_id).unwrap();
         assert!(entry.is_deprecated);
-        assert!(matches!(entry.deprecation_reason, Some(DeprecationReason::Manual)));
+        assert!(matches!(
+            entry.deprecation_reason,
+            Some(DeprecationReason::Manual)
+        ));
         assert_eq!(entry.stage, PipelineStage::Deprecated);
     }
 

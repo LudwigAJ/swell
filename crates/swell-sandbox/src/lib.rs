@@ -44,6 +44,6 @@ mod os_sandbox;
 pub use firecracker::{FirecrackerConfig, FirecrackerSandbox};
 pub use gvisor::{GvisorConfig, GvisorNetworkMode, GvisorSandbox};
 pub use os_sandbox::{
-    detect_available_sandbox, detect_available_sandbox_sync, OsSandboxConfig, NetworkPolicy,
-    FilesystemPermission, SandboxAvailability, SandboxType, SeatbeltSandbox,
+    detect_available_sandbox, detect_available_sandbox_sync, FilesystemPermission, NetworkPolicy,
+    OsSandboxConfig, SandboxAvailability, SandboxType, SeatbeltSandbox,
 };

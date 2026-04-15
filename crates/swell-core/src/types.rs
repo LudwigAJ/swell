@@ -1635,31 +1635,29 @@ mod tests {
         let task_id = Uuid::new_v4();
 
         // Test TaskList roundtrip
-        let tasks = vec![
-            Task {
-                id: Uuid::new_v4(),
-                description: "Test task 1".to_string(),
-                state: TaskState::Created,
-                source: TaskSource::UserRequest,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
-                assigned_agent: None,
-                plan: None,
-                dependencies: vec![],
-                dependents: vec![],
-                iteration_count: 0,
-                token_budget: 1000,
-                tokens_used: 0,
-                validation_result: None,
-                autonomy_level: AutonomyLevel::Guided,
-                paused_reason: None,
-                paused_from_state: None,
-                rejected_reason: None,
-                injected_instructions: vec![],
-                original_scope: None,
-                current_scope: TaskScope::default(),
-            },
-        ];
+        let tasks = vec![Task {
+            id: Uuid::new_v4(),
+            description: "Test task 1".to_string(),
+            state: TaskState::Created,
+            source: TaskSource::UserRequest,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            assigned_agent: None,
+            plan: None,
+            dependencies: vec![],
+            dependents: vec![],
+            iteration_count: 0,
+            token_budget: 1000,
+            tokens_used: 0,
+            validation_result: None,
+            autonomy_level: AutonomyLevel::Guided,
+            paused_reason: None,
+            paused_from_state: None,
+            rejected_reason: None,
+            injected_instructions: vec![],
+            original_scope: None,
+            current_scope: TaskScope::default(),
+        }];
         let task_list = DataResponse::TaskList {
             tasks: tasks.clone(),
             correlation_id,
@@ -1667,7 +1665,10 @@ mod tests {
         let json = serde_json::to_string(&task_list).expect("should serialize");
         let parsed: DataResponse = serde_json::from_str(&json).expect("should deserialize");
         match parsed {
-            DataResponse::TaskList { tasks: parsed_tasks, .. } => {
+            DataResponse::TaskList {
+                tasks: parsed_tasks,
+                ..
+            } => {
                 assert_eq!(parsed_tasks.len(), 1);
                 assert_eq!(parsed_tasks[0].description, "Test task 1");
             }
@@ -1705,7 +1706,9 @@ mod tests {
         let json = serde_json::to_string(&task_detail).expect("should serialize");
         let parsed: DataResponse = serde_json::from_str(&json).expect("should deserialize");
         match parsed {
-            DataResponse::TaskDetail { task: parsed_task, .. } => {
+            DataResponse::TaskDetail {
+                task: parsed_task, ..
+            } => {
                 assert_eq!(parsed_task.id, task_id);
                 assert_eq!(parsed_task.description, "Detail test");
             }
@@ -1866,7 +1869,10 @@ mod tests {
         let parsed: DaemonEvent = serde_json::from_str(&json).expect("should deserialize");
         match parsed {
             DaemonEvent::DataResponse(data) => match &*data {
-                DataResponse::TaskDetail { correlation_id: cid, .. } => {
+                DataResponse::TaskDetail {
+                    correlation_id: cid,
+                    ..
+                } => {
                     assert_eq!(*cid, correlation_id);
                 }
                 other => panic!("Expected DataResponse::TaskDetail, got: {:?}", other),

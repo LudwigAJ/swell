@@ -1019,7 +1019,12 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         let config = MaskingConfig::from_pattern_defs(
             serde_json::from_value(masking.get("patterns").unwrap().clone()).unwrap(),
             masking.get("enabled").unwrap().as_bool().unwrap(),
-            masking.get("default_replacement").unwrap().as_str().unwrap().to_string(),
+            masking
+                .get("default_replacement")
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string(),
         )
         .unwrap();
 
@@ -1053,7 +1058,8 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         }"#;
 
         let parsed: serde_json::Value = serde_json::from_str(json).unwrap();
-        let pattern_defs: Vec<PatternDef> = serde_json::from_value(parsed.get("patterns").unwrap().clone()).unwrap();
+        let pattern_defs: Vec<PatternDef> =
+            serde_json::from_value(parsed.get("patterns").unwrap().clone()).unwrap();
 
         assert_eq!(pattern_defs.len(), 1);
         assert_eq!(pattern_defs[0].min_length, 8);
@@ -1078,12 +1084,8 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
     #[test]
     fn test_from_pattern_defs_empty_patterns() {
         // Test with empty patterns list
-        let config = MaskingConfig::from_pattern_defs(
-            vec![],
-            true,
-            "[REDACTED]".to_string(),
-        )
-        .unwrap();
+        let config =
+            MaskingConfig::from_pattern_defs(vec![], true, "[REDACTED]".to_string()).unwrap();
 
         assert!(config.enabled);
         assert!(config.patterns.is_empty());

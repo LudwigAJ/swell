@@ -18,8 +18,9 @@ pub use swell_core::SwellError;
 
 // Golden sample testing exports
 pub use golden_sample_testing::{
-    GoldenSample, GoldenSampleConfig, GoldenSampleService, GoldenSampleSource, GoldenSampleStore,
-    GoldenSampleTester, GoldenSampleValidationResult, ProcedureValidation,
+    AutoApplicationEligibility, AutoApplicationReason, GoldenSample, GoldenSampleConfig,
+    GoldenSampleService, GoldenSampleSource, GoldenSampleStore, GoldenSampleTester,
+    GoldenSampleValidationResult, HIGH_CONFIDENCE_THRESHOLD, ProcedureValidation,
 };
 
 // Memory blocks module - Project/User/Task blocks with auto-loading and context assembly
@@ -33,7 +34,7 @@ pub mod knowledge_graph;
 
 pub use knowledge_graph::{
     CrossReferenceResult, DependencyResult, GraphStats, KnowledgeGraphEdge, KnowledgeGraphNode,
-    KnowledgeGraphQuery, PathResult, SqliteKnowledgeGraph,
+    KnowledgeGraphQuery, PathResult, ProvenanceReference, SqliteKnowledgeGraph,
 };
 
 // Recall module - BM25 keyword search and temporal queries for conversation logs
@@ -139,6 +140,19 @@ pub use decay::{
     apply_decay, bayesian_confidence_decay, bayesian_confidence_decay_with_time_unit,
     buffer_decay_rate, calculate_decay, days_since, decay_rate_for_block_type,
     environmental_decay_rate, procedural_decay_rate, DecayRate, DecayedScore,
+};
+
+// Learning pipeline module - 5-stage learning pipeline for memory entries:
+// 1. Observation - Raw event captured
+// 2. Pattern Detection - Recurring sequences identified (N≥3)
+// 3. Hypothesis - Proposed rule (N≥5, >60% success)
+// 4. Evidence Accumulation - Success/failure tracking (N≥10, >80% success)
+// 5. Promotion or Deprecation
+pub mod learning_pipeline;
+
+pub use learning_pipeline::{
+    LearningEntry, LearningPipeline, Observation, ObservationType, PipelineResult, PipelineStage,
+    PipelineStats, PipelineThresholds, StageTransition,
 };
 
 // Deprecation module - Mark memories with confidence <0.3 as deprecated with superseded_by link

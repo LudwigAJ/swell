@@ -129,7 +129,11 @@ impl SearchClient {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client, config, egress_filter: None }
+        Self {
+            client,
+            config,
+            egress_filter: None,
+        }
     }
 
     pub fn with_config(config: WebSearchConfig) -> Self {
@@ -144,7 +148,11 @@ impl SearchClient {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client, config, egress_filter: Some(egress_filter) }
+        Self {
+            client,
+            config,
+            egress_filter: Some(egress_filter),
+        }
     }
 
     /// Check if egress is allowed for a destination host
@@ -759,7 +767,10 @@ impl FetchPageTool {
 
         // Extract host and port for egress check
         let (host, port) = if let Ok(parsed) = url::Url::parse(url) {
-            (parsed.host_str().unwrap_or("").to_string(), parsed.port().unwrap_or(443))
+            (
+                parsed.host_str().unwrap_or("").to_string(),
+                parsed.port().unwrap_or(443),
+            )
         } else {
             return Err(SwellError::ToolExecutionFailed(format!(
                 "Invalid URL: {}",

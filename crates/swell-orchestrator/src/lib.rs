@@ -28,10 +28,10 @@ pub mod followup_generator;
 pub mod frozen_spec;
 pub mod gap_analyzer;
 pub mod hard_limits;
-pub mod killswitch;
 pub mod idempotent_actions;
-pub mod loop_detection;
+pub mod killswitch;
 pub mod langfuse_exporter;
+pub mod loop_detection;
 pub mod merge_queue;
 pub mod metrics;
 pub mod model_fallback;
@@ -110,7 +110,6 @@ pub use gap_analyzer::{
     CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
     RequirementCategory, RequirementPriority, SpecRequirement,
 };
-pub use killswitch::OrchestratorKillSwitch;
 pub use hard_limits::{
     create_hard_limits, create_hard_limits_with_config, HardLimitError, HardLimitWarning,
     HardLimits, HardLimitsCheck, HardLimitsConfig, SharedHardLimits,
@@ -120,6 +119,7 @@ pub use idempotent_actions::{
     ActionExecution, ActionKey, ActionStatus, DuplicateAction, IdempotentAction, IdempotentClosure,
     IdempotentResult, SharedDeduplicator, TrackedAction, MAX_ACTION_RETRIES,
 };
+pub use killswitch::OrchestratorKillSwitch;
 pub use langfuse_exporter::{LangfuseExporter, LangfuseExporterError};
 pub use merge_queue::{
     GitHubMergeMethod, GitHubMergeProvider, GitHubMergeQueueConfig, MergeProvider, MergeQueue,

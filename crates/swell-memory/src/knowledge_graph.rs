@@ -144,7 +144,9 @@ impl From<KgNode> for KnowledgeGraphNode {
                 if v == "null" || v.is_empty() {
                     None
                 } else {
-                    chrono::DateTime::parse_from_rfc3339(v).ok().map(|dt| dt.with_timezone(&chrono::Utc))
+                    chrono::DateTime::parse_from_rfc3339(v)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
                 }
             });
         let provenance: Vec<ProvenanceReference> = node
@@ -180,12 +182,27 @@ impl From<KnowledgeGraphNode> for KgNode {
         if let Some(obj) = properties.as_object_mut() {
             obj.insert("repository".to_string(), serde_json::json!(node.repository));
             obj.insert("confidence".to_string(), serde_json::json!(node.confidence));
-            obj.insert("evidence_count".to_string(), serde_json::json!(node.evidence_count));
-            obj.insert("created_at".to_string(), serde_json::json!(node.created_at.to_rfc3339()));
-            obj.insert("updated_at".to_string(), serde_json::json!(node.updated_at.to_rfc3339()));
-            obj.insert("valid_from".to_string(), serde_json::json!(node.valid_from.to_rfc3339()));
+            obj.insert(
+                "evidence_count".to_string(),
+                serde_json::json!(node.evidence_count),
+            );
+            obj.insert(
+                "created_at".to_string(),
+                serde_json::json!(node.created_at.to_rfc3339()),
+            );
+            obj.insert(
+                "updated_at".to_string(),
+                serde_json::json!(node.updated_at.to_rfc3339()),
+            );
+            obj.insert(
+                "valid_from".to_string(),
+                serde_json::json!(node.valid_from.to_rfc3339()),
+            );
             if let Some(valid_until) = node.valid_until {
-                obj.insert("valid_until".to_string(), serde_json::json!(valid_until.to_rfc3339()));
+                obj.insert(
+                    "valid_until".to_string(),
+                    serde_json::json!(valid_until.to_rfc3339()),
+                );
             }
             obj.insert("provenance".to_string(), serde_json::json!(node.provenance));
             if let Some(fp) = node.file_path {
@@ -467,10 +484,12 @@ impl SqliteKnowledgeGraph {
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         // Index on valid_from and valid_until for temporal queries
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_kg_node_validity ON kg_nodes(valid_from, valid_until)")
-            .execute(pool)
-            .await
-            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_kg_node_validity ON kg_nodes(valid_from, valid_until)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         // Knowledge graph edges table
         sqlx::query(
@@ -526,10 +545,12 @@ impl SqliteKnowledgeGraph {
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         // Index on valid_from and valid_until for temporal queries
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_kg_edge_validity ON kg_edges(valid_from, valid_until)")
-            .execute(pool)
-            .await
-            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_kg_edge_validity ON kg_edges(valid_from, valid_until)",
+        )
+        .execute(pool)
+        .await
+        .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
 
         Ok(())
     }
@@ -1882,10 +1903,8 @@ mod tests {
         let valid_from = chrono::Utc::now() - chrono::Duration::days(10);
         let valid_until = Some(chrono::Utc::now() + chrono::Duration::days(10));
 
-        let provenance = vec![
-            ProvenanceReference::new("llm_generation", "analysis-123")
-                .with_description("Inferred from call pattern"),
-        ];
+        let provenance = vec![ProvenanceReference::new("llm_generation", "analysis-123")
+            .with_description("Inferred from call pattern")];
 
         let edge = KnowledgeGraphEdge {
             id: Uuid::new_v4(),
@@ -1976,13 +1995,18 @@ mod tests {
             provenance: Vec::new(),
         };
 
-        kg.insert_node_with_metadata(high_confidence.clone()).await.unwrap();
-        kg.insert_node_with_metadata(medium_confidence.clone()).await.unwrap();
-        kg.insert_node_with_metadata(low_confidence.clone()).await.unwrap();
+        kg.insert_node_with_metadata(high_confidence.clone())
+            .await
+            .unwrap();
+        kg.insert_node_with_metadata(medium_confidence.clone())
+            .await
+            .unwrap();
+        kg.insert_node_with_metadata(low_confidence.clone())
+            .await
+            .unwrap();
 
         // Query with min_confidence = 0.8 should exclude medium and low
-        let query = KnowledgeGraphQuery::new(repo.to_string())
-            .with_min_confidence(0.8);
+        let query = KnowledgeGraphQuery::new(repo.to_string()).with_min_confidence(0.8);
         let results = kg.query_nodes_with_metadata(query).await.unwrap();
 
         assert_eq!(results.len(), 1);
@@ -1990,8 +2014,7 @@ mod tests {
         assert!(results[0].confidence >= 0.8);
 
         // Query with min_confidence = 0.5 should include high and medium
-        let query = KnowledgeGraphQuery::new(repo.to_string())
-            .with_min_confidence(0.5);
+        let query = KnowledgeGraphQuery::new(repo.to_string()).with_min_confidence(0.5);
         let results = kg.query_nodes_with_metadata(query).await.unwrap();
 
         assert_eq!(results.len(), 2);
@@ -2083,14 +2106,21 @@ mod tests {
             provenance: Vec::new(),
         };
 
-        kg.insert_node_with_metadata(past_valid.clone()).await.unwrap();
-        kg.insert_node_with_metadata(current_valid.clone()).await.unwrap();
-        kg.insert_node_with_metadata(future_valid.clone()).await.unwrap();
-        kg.insert_node_with_metadata(never_expires.clone()).await.unwrap();
+        kg.insert_node_with_metadata(past_valid.clone())
+            .await
+            .unwrap();
+        kg.insert_node_with_metadata(current_valid.clone())
+            .await
+            .unwrap();
+        kg.insert_node_with_metadata(future_valid.clone())
+            .await
+            .unwrap();
+        kg.insert_node_with_metadata(never_expires.clone())
+            .await
+            .unwrap();
 
         // Query for "now" should return current_valid and never_expires
-        let query = KnowledgeGraphQuery::new(repo.to_string())
-            .with_valid_at(now);
+        let query = KnowledgeGraphQuery::new(repo.to_string()).with_valid_at(now);
         let results = kg.query_nodes_with_metadata(query).await.unwrap();
 
         assert_eq!(results.len(), 2);
@@ -2107,8 +2137,8 @@ mod tests {
         assert!(pr.description.is_none());
         assert!(pr.timestamp <= chrono::Utc::now());
 
-        let pr2 = ProvenanceReference::new("file", "src/main.rs")
-            .with_description("Definition location");
+        let pr2 =
+            ProvenanceReference::new("file", "src/main.rs").with_description("Definition location");
         assert_eq!(pr2.source_type, "file");
         assert_eq!(pr2.source_id, "src/main.rs");
         assert_eq!(pr2.description, Some("Definition location".to_string()));
@@ -2178,9 +2208,15 @@ mod tests {
             provenance: Vec::new(),
         };
 
-        kg.insert_node_with_metadata(high_conf_valid.clone()).await.unwrap();
-        kg.insert_node_with_metadata(high_conf_expired.clone()).await.unwrap();
-        kg.insert_node_with_metadata(low_conf_valid.clone()).await.unwrap();
+        kg.insert_node_with_metadata(high_conf_valid.clone())
+            .await
+            .unwrap();
+        kg.insert_node_with_metadata(high_conf_expired.clone())
+            .await
+            .unwrap();
+        kg.insert_node_with_metadata(low_conf_valid.clone())
+            .await
+            .unwrap();
 
         // Query with both filters: min_confidence >= 0.8 AND valid at "now"
         let query = KnowledgeGraphQuery::new(repo.to_string())

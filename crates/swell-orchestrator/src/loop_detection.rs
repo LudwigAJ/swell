@@ -172,7 +172,10 @@ impl OrchestratorLoopDetector {
             return None;
         }
         let pattern = result.loop_pattern?;
-        Some(intervention_for_pattern(pattern.pattern_type, &pattern.description))
+        Some(intervention_for_pattern(
+            pattern.pattern_type,
+            &pattern.description,
+        ))
     }
 
     /// Reset all state for a task (e.g. after successful completion).
@@ -263,7 +266,13 @@ mod tests {
 
         // Pattern: read_file → edit_file → read_file → edit_file → read_file
         // produces 3 oscillation counts which equals the default threshold (3).
-        let tools = ["read_file", "edit_file", "read_file", "edit_file", "read_file"];
+        let tools = [
+            "read_file",
+            "edit_file",
+            "read_file",
+            "edit_file",
+            "read_file",
+        ];
         for tool in &tools {
             detector
                 .record_tool_call(task_id, *tool, false, serde_json::json!({}))
@@ -297,7 +306,10 @@ mod tests {
         }
 
         let result = detector.tracker.analyze(task_id).await;
-        assert_eq!(result.oscillation_count, 0, "repeated same tool is not oscillation");
+        assert_eq!(
+            result.oscillation_count, 0,
+            "repeated same tool is not oscillation"
+        );
     }
 
     // ------------------------------------------------------------------

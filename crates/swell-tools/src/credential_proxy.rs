@@ -560,8 +560,9 @@ impl CredentialProxy {
             || cred_lower.starts_with("git_");
 
         // Check if it's a cloud credential (AWS, Azure, GCP)
-        let is_cloud_credential =
-            cred_lower.starts_with("aws_") || cred_lower.starts_with("azure_") || cred_lower.starts_with("gcp_");
+        let is_cloud_credential = cred_lower.starts_with("aws_")
+            || cred_lower.starts_with("azure_")
+            || cred_lower.starts_with("gcp_");
 
         // Now match based on operation type and credential classification
         match operation_type {
@@ -578,9 +579,7 @@ impl CredentialProxy {
                 // but NOT LLM credentials (those are llm-specific)
                 // and NOT git credentials (those are git-specific)
                 is_cloud_credential
-                    || (cred_lower.contains("api_key")
-                        && !is_llm_credential
-                        && !is_git_credential)
+                    || (cred_lower.contains("api_key") && !is_llm_credential && !is_git_credential)
                     || cred_lower.contains("apikey") && !is_llm_credential
                     || cred_lower.contains("_api_") && !is_llm_credential && !is_git_credential
             }
@@ -971,18 +970,36 @@ mod tests {
     impl MockCredentialProvider {
         fn new() -> Self {
             let mut credentials = HashMap::new();
-            credentials.insert("GITHUB_TOKEN".to_string(), "raw_github_secret_12345".to_string());
-            credentials.insert("ANTHROPIC_API_KEY".to_string(), "sk-ant-raw-anthropic-key".to_string());
-            credentials.insert("OPENAI_API_KEY".to_string(), "sk-raw-openai-key".to_string());
-            credentials.insert("AWS_ACCESS_KEY_ID".to_string(), "AKIArawAWSaccessKey".to_string());
-            credentials.insert("MY_CUSTOM_API_KEY".to_string(), "raw_custom_api_key_12345".to_string());
+            credentials.insert(
+                "GITHUB_TOKEN".to_string(),
+                "raw_github_secret_12345".to_string(),
+            );
+            credentials.insert(
+                "ANTHROPIC_API_KEY".to_string(),
+                "sk-ant-raw-anthropic-key".to_string(),
+            );
+            credentials.insert(
+                "OPENAI_API_KEY".to_string(),
+                "sk-raw-openai-key".to_string(),
+            );
+            credentials.insert(
+                "AWS_ACCESS_KEY_ID".to_string(),
+                "AKIArawAWSaccessKey".to_string(),
+            );
+            credentials.insert(
+                "MY_CUSTOM_API_KEY".to_string(),
+                "raw_custom_api_key_12345".to_string(),
+            );
             Self { credentials }
         }
     }
 
     #[async_trait]
     impl CredentialProvider for MockCredentialProvider {
-        async fn get_credential(&self, key: &str) -> Result<Option<Credential>, CredentialProxyError> {
+        async fn get_credential(
+            &self,
+            key: &str,
+        ) -> Result<Option<Credential>, CredentialProxyError> {
             Ok(self.credentials.get(key).map(|value| {
                 let now = Utc::now();
                 Credential {
@@ -1014,15 +1031,17 @@ mod tests {
         // Test that the returned access token is NOT the raw credential value
         // This verifies that raw secrets never leave the proxy (VAL-SAFE-009)
 
-
         let provider = MockCredentialProvider::new();
         let proxy = CredentialProxy::new(provider);
 
         // Create a git scope
-        let scope_id = proxy.create_scope("git", vec!["push".to_string(), "pull".to_string()]).await;
+        let scope_id = proxy
+            .create_scope("git", vec!["push".to_string(), "pull".to_string()])
+            .await;
 
         // Request GITHUB_TOKEN credential through the proxy
-        let access_token = proxy.request_credential("GITHUB_TOKEN", &scope_id)
+        let access_token = proxy
+            .request_credential("GITHUB_TOKEN", &scope_id)
             .await
             .expect("Should get access token");
 
@@ -1052,15 +1071,18 @@ mod tests {
         // Test that an LLM credential (ANTHROPIC_API_KEY) is rejected when
         // requested through a git scope - this is out-of-scope (VAL-SAFE-009)
 
-
         let provider = MockCredentialProvider::new();
         let proxy = CredentialProxy::new(provider);
 
         // Create a git scope (only allows git operations)
-        let scope_id = proxy.create_scope("git", vec!["push".to_string(), "pull".to_string()]).await;
+        let scope_id = proxy
+            .create_scope("git", vec!["push".to_string(), "pull".to_string()])
+            .await;
 
         // Try to request an LLM credential (ANTHROPIC_API_KEY) through git scope
-        let result = proxy.request_credential("ANTHROPIC_API_KEY", &scope_id).await;
+        let result = proxy
+            .request_credential("ANTHROPIC_API_KEY", &scope_id)
+            .await;
 
         // This should be REJECTED because LLM credentials don't match git operations
         assert!(
@@ -1086,12 +1108,13 @@ mod tests {
         // Test that a git credential (GITHUB_TOKEN) is rejected when
         // requested through an LLM scope - this is out-of-scope (VAL-SAFE-009)
 
-
         let provider = MockCredentialProvider::new();
         let proxy = CredentialProxy::new(provider);
 
         // Create an LLM scope (only allows llm operations)
-        let scope_id = proxy.create_scope("llm", vec!["chat".to_string(), "embed".to_string()]).await;
+        let scope_id = proxy
+            .create_scope("llm", vec!["chat".to_string(), "embed".to_string()])
+            .await;
 
         // Try to request a git credential (GITHUB_TOKEN) through LLM scope
         let result = proxy.request_credential("GITHUB_TOKEN", &scope_id).await;
@@ -1119,12 +1142,13 @@ mod tests {
     async fn test_out_of_scope_credential_rejected_llm_credential_for_api_scope() {
         // Test that an LLM credential is rejected for API scope
 
-
         let provider = MockCredentialProvider::new();
         let proxy = CredentialProxy::new(provider);
 
         // Create an API scope
-        let scope_id = proxy.create_scope("api", vec!["read".to_string(), "write".to_string()]).await;
+        let scope_id = proxy
+            .create_scope("api", vec!["read".to_string(), "write".to_string()])
+            .await;
 
         // Try to request an LLM credential through API scope
         let result = proxy.request_credential("OPENAI_API_KEY", &scope_id).await;
@@ -1140,13 +1164,14 @@ mod tests {
     async fn test_correct_scope_allows_credential() {
         // Test that credentials ARE allowed when the scope matches the credential type
 
-
         let provider = MockCredentialProvider::new();
         let proxy = CredentialProxy::new(provider);
 
         // Git scope should allow GITHUB_TOKEN
         let git_scope_id = proxy.create_scope("git", vec!["push".to_string()]).await;
-        let result = proxy.request_credential("GITHUB_TOKEN", &git_scope_id).await;
+        let result = proxy
+            .request_credential("GITHUB_TOKEN", &git_scope_id)
+            .await;
         assert!(
             result.is_ok(),
             "GITHUB_TOKEN should be allowed for git scope, got: {:?}",
@@ -1155,7 +1180,9 @@ mod tests {
 
         // LLM scope should allow ANTHROPIC_API_KEY
         let llm_scope_id = proxy.create_scope("llm", vec!["chat".to_string()]).await;
-        let result = proxy.request_credential("ANTHROPIC_API_KEY", &llm_scope_id).await;
+        let result = proxy
+            .request_credential("ANTHROPIC_API_KEY", &llm_scope_id)
+            .await;
         assert!(
             result.is_ok(),
             "ANTHROPIC_API_KEY should be allowed for LLM scope, got: {:?}",
@@ -1164,7 +1191,9 @@ mod tests {
 
         // API scope should allow AWS credentials
         let api_scope_id = proxy.create_scope("api", vec!["read".to_string()]).await;
-        let result = proxy.request_credential("AWS_ACCESS_KEY_ID", &api_scope_id).await;
+        let result = proxy
+            .request_credential("AWS_ACCESS_KEY_ID", &api_scope_id)
+            .await;
         assert!(
             result.is_ok(),
             "AWS_ACCESS_KEY_ID should be allowed for API scope, got: {:?}",
@@ -1177,12 +1206,12 @@ mod tests {
         // Verify that the access token NEVER contains the raw secret value
         // This is critical for security (VAL-SAFE-009)
 
-
         let provider = MockCredentialProvider::new();
         let proxy = CredentialProxy::new(provider);
 
         let scope_id = proxy.create_scope("git", vec!["push".to_string()]).await;
-        let access_token = proxy.request_credential("GITHUB_TOKEN", &scope_id)
+        let access_token = proxy
+            .request_credential("GITHUB_TOKEN", &scope_id)
             .await
             .expect("Should get access token");
 
@@ -1197,7 +1226,8 @@ mod tests {
 
         // Similarly for other credential types
         let llm_scope_id = proxy.create_scope("llm", vec!["chat".to_string()]).await;
-        let llm_token = proxy.request_credential("ANTHROPIC_API_KEY", &llm_scope_id)
+        let llm_token = proxy
+            .request_credential("ANTHROPIC_API_KEY", &llm_scope_id)
             .await
             .expect("Should get LLM access token");
 
@@ -1212,13 +1242,14 @@ mod tests {
     async fn test_api_scope_allows_generic_api_keys() {
         // Test that generic API keys (containing "api_key") are allowed for API scope
 
-
         let provider = MockCredentialProvider::new();
         let proxy = CredentialProxy::new(provider);
 
         // API scope should allow generic API key
         let api_scope_id = proxy.create_scope("api", vec!["read".to_string()]).await;
-        let result = proxy.request_credential("MY_CUSTOM_API_KEY", &api_scope_id).await;
+        let result = proxy
+            .request_credential("MY_CUSTOM_API_KEY", &api_scope_id)
+            .await;
         assert!(
             result.is_ok(),
             "Generic API key should be allowed for API scope"
@@ -1229,12 +1260,12 @@ mod tests {
     async fn test_token_has_time_limitation() {
         // Verify that access tokens have TTL (time-limited) (VAL-SAFE-009)
 
-
         let provider = MockCredentialProvider::new();
         let proxy = CredentialProxy::new(provider);
 
         let scope_id = proxy.create_scope("git", vec!["push".to_string()]).await;
-        let access_token = proxy.request_credential("GITHUB_TOKEN", &scope_id)
+        let access_token = proxy
+            .request_credential("GITHUB_TOKEN", &scope_id)
             .await
             .expect("Should get access token");
 

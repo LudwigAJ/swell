@@ -902,7 +902,8 @@ impl ExecutionController {
             if let Some(last_summary) = all_summaries.last() {
                 if last_summary.outcome != TurnOutcome::Error
                     && last_summary.outcome != TurnOutcome::ResourceLimitExceeded
-                    && last_summary.outcome != TurnOutcome::KillSwitchTriggered {
+                    && last_summary.outcome != TurnOutcome::KillSwitchTriggered
+                {
                     self.resource_tracker.record_success();
                 }
             }
@@ -1934,10 +1935,14 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::with_response("claude-sonnet", "Hello world"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let mut controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let mut controller =
+            ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Trigger FullStop before calling execute_turn_loop
-        controller.kill_switch().trigger(KillLevel::FullStop, "Test FullStop", "test").await;
+        controller
+            .kill_switch()
+            .trigger(KillLevel::FullStop, "Test FullStop", "test")
+            .await;
 
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
@@ -1975,10 +1980,14 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let mut controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let mut controller =
+            ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Trigger FullStop
-        controller.kill_switch().trigger(KillLevel::FullStop, "Test FullStop", "test").await;
+        controller
+            .kill_switch()
+            .trigger(KillLevel::FullStop, "Test FullStop", "test")
+            .await;
 
         let result = controller
             .execute_tool("some_tool", serde_json::json!({}))
@@ -2020,11 +2029,18 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let mut controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let mut controller =
+            ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Even though we set a low level (Throttle), FullStop should take precedence
-        controller.kill_switch().trigger(KillLevel::Throttle, "Throttle", "test").await;
-        controller.kill_switch().trigger(KillLevel::FullStop, "FullStop overrides", "test").await;
+        controller
+            .kill_switch()
+            .trigger(KillLevel::Throttle, "Throttle", "test")
+            .await;
+        controller
+            .kill_switch()
+            .trigger(KillLevel::FullStop, "FullStop overrides", "test")
+            .await;
 
         let messages = vec![swell_llm::LlmMessage {
             role: swell_llm::LlmRole::User,
@@ -2053,10 +2069,14 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let mut controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let mut controller =
+            ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
 
         // Trigger NetworkKill
-        controller.kill_switch().trigger(KillLevel::NetworkKill, "Network blocked", "test").await;
+        controller
+            .kill_switch()
+            .trigger(KillLevel::NetworkKill, "Network blocked", "test")
+            .await;
 
         // Execute turn loop should still work (it's not a network operation)
         let messages = vec![swell_llm::LlmMessage {

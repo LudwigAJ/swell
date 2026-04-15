@@ -175,8 +175,12 @@ pub enum BinaryDetectionReason {
 impl std::fmt::Display for BinaryDetectionReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BinaryDetectionReason::NullBytes => write!(f, "content contains null bytes (binary indicator)"),
-            BinaryDetectionReason::MagicBytes { format } => write!(f, "content matches {} binary format magic bytes", format),
+            BinaryDetectionReason::NullBytes => {
+                write!(f, "content contains null bytes (binary indicator)")
+            }
+            BinaryDetectionReason::MagicBytes { format } => {
+                write!(f, "content matches {} binary format magic bytes", format)
+            }
             BinaryDetectionReason::InvalidUtf8 => write!(f, "content is not valid UTF-8"),
         }
     }
@@ -246,7 +250,10 @@ pub fn detect_binary_content(content: &[u8]) -> Result<(), BinaryDetectionReason
 ///
 /// Returns `Ok(())` if the content is safe to write as text,
 /// `Err(SwellError)` with a descriptive message if binary content is detected.
-pub fn validate_write_content(content: &[u8], config: &FileGuardrailConfig) -> Result<(), SwellError> {
+pub fn validate_write_content(
+    content: &[u8],
+    config: &FileGuardrailConfig,
+) -> Result<(), SwellError> {
     if !config.reject_binary {
         return Ok(());
     }
@@ -265,7 +272,10 @@ pub fn validate_write_content(content: &[u8], config: &FileGuardrailConfig) -> R
 ///
 /// Returns `Ok(())` if the content size is within limits,
 /// `Err(SwellError)` if the content exceeds the configured maximum.
-pub fn validate_file_size(content_size: usize, config: &FileGuardrailConfig) -> Result<(), SwellError> {
+pub fn validate_file_size(
+    content_size: usize,
+    config: &FileGuardrailConfig,
+) -> Result<(), SwellError> {
     if !config.enforce_size_limit {
         return Ok(());
     }
@@ -501,7 +511,10 @@ fn main() {}
         assert_eq!(calculate_path_depth(Path::new("file.txt")), 1);
         assert_eq!(calculate_path_depth(Path::new("dir/file.txt")), 2);
         assert_eq!(calculate_path_depth(Path::new("a/b/c/d.txt")), 4);
-        assert_eq!(calculate_path_depth(Path::new("/absolute/path/file.txt")), 4);
+        assert_eq!(
+            calculate_path_depth(Path::new("/absolute/path/file.txt")),
+            4
+        );
     }
 
     #[test]
@@ -562,7 +575,10 @@ fn main() {}
 
         let result = validate_write_operation(content, path, &config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Binary content detected"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Binary content detected"));
     }
 
     #[test]
@@ -573,7 +589,10 @@ fn main() {}
 
         let result = validate_write_operation(content, path, &config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("exceeds maximum allowed size"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum allowed size"));
     }
 
     #[test]
@@ -584,7 +603,10 @@ fn main() {}
 
         let result = validate_write_operation(content, path, &config);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("exceeds maximum allowed depth"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum allowed depth"));
     }
 
     #[test]
@@ -597,7 +619,10 @@ fn main() {}
         let result = validate_write_operation(content, path, &config);
         assert!(result.is_err());
         // Should fail on depth, not binary detection
-        assert!(result.unwrap_err().to_string().contains("exceeds maximum allowed depth"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds maximum allowed depth"));
     }
 
     // =====================================================================
@@ -656,7 +681,7 @@ fn main() {}
         // Content with binary marker in first 8KB
         let mut content = vec![b'a'; 8192];
         content.extend_from_slice(b"\x7FELF"); // Binary marker at position 8192
-        // This passes because we only check first 8192 bytes
+                                               // This passes because we only check first 8192 bytes
         assert!(detect_binary_content(&content).is_ok());
     }
 
