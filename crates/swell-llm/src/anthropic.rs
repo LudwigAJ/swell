@@ -782,9 +782,12 @@ impl AnthropicSseParser {
                     });
                 }
 
-                // Emit usage event if we have output tokens
+                // Emit usage event if we have any token data (output OR cache tokens)
                 if let Some(ref u) = self.usage {
-                    if u.output_tokens.is_some() {
+                    if u.output_tokens.is_some()
+                        || u.cache_creation_input_tokens.is_some()
+                        || u.cache_read_input_tokens.is_some()
+                    {
                         return Ok(Some(StreamEvent::Usage {
                             input_tokens: u.input_tokens.unwrap_or(0),
                             output_tokens: u.output_tokens.unwrap_or(0),
