@@ -329,14 +329,6 @@ impl Tool for WriteFileTool {
         validate_file_size(content_bytes.len(), &self.guardrail_config)?;
         validate_path_depth(path, &self.guardrail_config)?;
 
-        if args.content.len() > self.max_size {
-            return Err(SwellError::ToolExecutionFailed(format!(
-                "Content too large: {} bytes (max: {})",
-                args.content.len(),
-                self.max_size
-            )));
-        }
-
         // Use atomic write with temporary file and rename for atomicity
         // Validate path is within workspace
         self.validate_path(path)?;
