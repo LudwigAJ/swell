@@ -51,8 +51,7 @@ fn create_config_file(dir: &TempDir, filename: &str, content: &str) -> std::path
 /// successfully provide a max_iterations value, with higher layers overriding lower layers.
 #[tokio::test]
 async fn test_config_cascade_loads_correct_max_iterations() {
-    // Guard ensures env var is cleaned up even if test panics
-    let _env_guard = EnvGuard::new("SWELL_EXECUTION_MAX_ITERATIONS");
+    // This test doesn't use env vars - no guard needed
 
     let temp = TempDir::new().unwrap();
 
@@ -104,8 +103,7 @@ async fn test_config_cascade_loads_correct_max_iterations() {
 /// the highest-precedence layer wins.
 #[tokio::test]
 async fn test_higher_layer_overrides_lower_for_max_iterations() {
-    // Guard ensures env var is cleaned up even if test panics
-    let _env_guard = EnvGuard::new("SWELL_EXECUTION_MAX_ITERATIONS");
+    // This test doesn't use env vars - no guard needed
 
     let temp = TempDir::new().unwrap();
 
@@ -141,8 +139,9 @@ async fn test_higher_layer_overrides_lower_for_max_iterations() {
 /// override all file-based configuration.
 #[tokio::test]
 async fn test_env_var_overrides_file_layers() {
-    // Guard ensures env var is cleaned up even if test panics
-    let _env_guard = EnvGuard::new("SWELL_EXECUTION_MAX_ITERATIONS");
+    // Use unique env prefix to avoid collision with other tests
+    // Each test gets its own prefix (TEST_A_) so they can't interfere
+    let _env_guard = EnvGuard::new("TEST_A_EXECUTION_MAX_ITERATIONS");
 
     let temp = TempDir::new().unwrap();
 
@@ -168,11 +167,13 @@ async fn test_env_var_overrides_file_layers() {
         r#"{"execution": {"max_iterations": 50}}"#,
     );
 
-    // Set environment variable (layer 5)
-    std::env::set_var("SWELL_EXECUTION_MAX_ITERATIONS", "100");
+    // Set environment variable (layer 5) with unique prefix
+    std::env::set_var("TEST_A_EXECUTION_MAX_ITERATIONS", "100");
 
-    // Load config
-    let loader = ConfigLoader::new().with_project_path(temp.path());
+    // Load config with custom env prefix
+    let loader = ConfigLoader::new()
+        .with_project_path(temp.path())
+        .with_env_prefix("TEST_A_");
     let config = loader.load().unwrap();
 
     // Env var should win
@@ -194,8 +195,7 @@ async fn test_env_var_overrides_file_layers() {
 /// max_iterations value loaded from config, the controller actually uses it.
 #[tokio::test]
 async fn test_execution_controller_respects_loaded_max_iterations() {
-    // Guard ensures env var is cleaned up even if test panics
-    let _env_guard = EnvGuard::new("SWELL_EXECUTION_MAX_ITERATIONS");
+    // This test doesn't use env vars - no guard needed
 
     let temp = TempDir::new().unwrap();
 
@@ -247,8 +247,8 @@ async fn test_execution_controller_respects_loaded_max_iterations() {
 /// Expected: 50 (env var wins)
 #[tokio::test]
 async fn test_full_cascade_five_layers_highest_wins() {
-    // Guard ensures env var is cleaned up even if test panics
-    let _env_guard = EnvGuard::new("SWELL_EXECUTION_MAX_ITERATIONS");
+    // Use unique env prefix to avoid collision with other tests
+    let _env_guard = EnvGuard::new("TEST_B_EXECUTION_MAX_ITERATIONS");
 
     let temp = TempDir::new().unwrap();
 
@@ -281,10 +281,12 @@ async fn test_full_cascade_five_layers_highest_wins() {
     );
 
     // Layer 5: Environment variable
-    std::env::set_var("SWELL_EXECUTION_MAX_ITERATIONS", "50");
+    std::env::set_var("TEST_B_EXECUTION_MAX_ITERATIONS", "50");
 
-    // Load config
-    let loader = ConfigLoader::new().with_project_path(temp.path());
+    // Load config with custom env prefix
+    let loader = ConfigLoader::new()
+        .with_project_path(temp.path())
+        .with_env_prefix("TEST_B_");
     let config = loader.load().unwrap();
 
     // Env var (layer 5) should win
@@ -300,9 +302,11 @@ async fn test_full_cascade_five_layers_highest_wins() {
     );
 
     // Now remove env var and verify layer 4 wins
-    std::env::remove_var("SWELL_EXECUTION_MAX_ITERATIONS");
+    std::env::remove_var("TEST_B_EXECUTION_MAX_ITERATIONS");
 
-    let loader2 = ConfigLoader::new().with_project_path(temp.path());
+    let loader2 = ConfigLoader::new()
+        .with_project_path(temp.path())
+        .with_env_prefix("TEST_B_");
     let config2 = loader2.load().unwrap();
 
     let max_iterations2 = config2
@@ -324,8 +328,7 @@ async fn test_full_cascade_five_layers_highest_wins() {
 /// We verify this by checking that the controller's internal limit matches.
 #[tokio::test]
 async fn test_execution_controller_enforces_cascade_max_iterations() {
-    // Guard ensures env var is cleaned up even if test panics
-    let _env_guard = EnvGuard::new("SWELL_EXECUTION_MAX_ITERATIONS");
+    // This test doesn't use env vars - no guard needed
 
     let temp = TempDir::new().unwrap();
 
@@ -384,8 +387,7 @@ async fn test_execution_controller_enforces_cascade_max_iterations() {
 /// which layer provided the max_iterations value.
 #[tokio::test]
 async fn test_config_audit_trail_for_max_iterations() {
-    // Guard ensures env var is cleaned up even if test panics
-    let _env_guard = EnvGuard::new("SWELL_EXECUTION_MAX_ITERATIONS");
+    // This test doesn't use env vars - no guard needed
 
     let temp = TempDir::new().unwrap();
 
