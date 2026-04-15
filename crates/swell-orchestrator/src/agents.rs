@@ -1151,13 +1151,27 @@ impl Agent for GeneratorAgent {
             });
         }
 
-        // Add verification commands
-        handoff
-            .verification
-            .push("cargo clippy --workspace".to_string());
-        handoff
-            .verification
-            .push("cargo test --workspace".to_string());
+        // Add verification commands from .swell/validation.json (or built-in defaults).
+        // This keeps verification language-agnostic — any configured linter/test runner
+        // appears here rather than hardcoded Rust tools.
+        {
+            use swell_validation::ValidationConfig;
+            let val_cfg = ValidationConfig::load(workspace_path);
+            if let Some(lint) = &val_cfg.lint {
+                for cmd in &lint.commands {
+                    if !cmd.is_empty() {
+                        handoff.verification.push(cmd.join(" "));
+                    }
+                }
+            }
+            if let Some(test) = &val_cfg.test {
+                for cmd in &test.commands {
+                    if !cmd.is_empty() {
+                        handoff.verification.push(cmd.join(" "));
+                    }
+                }
+            }
+        }
 
         // Log handoff comment
         let handoff_comment = AgentComment::new(

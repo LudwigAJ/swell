@@ -157,9 +157,11 @@ Task transitions to `EXECUTING`. The GeneratorAgent reads the auth module, makes
 
 During `EXECUTING`, the EvaluatorAgent runs validation after each code change:
 
-1. **Lint Gate**: `cargo clippy` and `cargo fmt --check`
-2. **Test Gate**: `cargo test -p <crate>`
+1. **Lint Gate**: Commands defined in `.swell/validation.json` under `lint.commands` (default: `cargo clippy`)
+2. **Test Gate**: Commands defined in `.swell/validation.json` under `test.commands` (default: `cargo test`)
 3. **AI Review Gate**: Claude reviews the code changes for correctness and style
+
+> Configure `.swell/validation.json` to use any linter or test runner — `pytest`, `ruff`, `eslint`, `mypy`, or any other tool that fits your project's language.
 
 ### Step 5: Task Completion
 
@@ -185,7 +187,7 @@ SWELL is organized as a Rust workspace with 12 crates:
 | **swell-orchestrator** | `crates/swell-orchestrator` | Task orchestration, scheduling, policy engine, and autonomy controller. Coordinates the main execution loop with planner, generator, evaluator, reviewer, and refactorer agents. |
 | **swell-llm** | `crates/swell-llm` | LLM backend implementations. `AnthropicBackend` for Claude API, `OpenAIBackend` for GPT API, `MockLlm` for testing. Includes SSE streaming, token tracking, and retry logic. |
 | **swell-tools** | `crates/swell-tools` | Tool implementations: file operations, git operations, shell execution, search (grep/glob), MCP client, LSP tools, permission system, and tool registry. |
-| **swell-validation** | `crates/swell-validation` | Validation gates and pipelines. `LintGate` (clippy/format), `TestGate` (cargo test), `SecurityGate` (stub), `AiReviewGate` (LLM-based review), and `ValidationOrchestrator`. |
+| **swell-validation** | `crates/swell-validation` | Validation gates and pipelines. `LintGate` (configurable linter commands), `TestGate` (configurable test runner commands), `SecurityGate` (stub), `AiReviewGate` (LLM-based review), and `ValidationOrchestrator`. Commands are defined in `.swell/validation.json`. |
 | **swell-memory** | `crates/swell-memory` | Persistent memory system with SQLite store. Memory blocks for context assembly, recall for retrieval, skill extraction, and pattern learning from agent trajectories. |
 | **swell-state** | `crates/swell-state` | State management and checkpoint persistence. Task state machine transitions, checkpoint store for crash recovery, and file-based state observability (`.swell/task-state.json`). |
 | **swell-sandbox** | `crates/swell-sandbox` | Sandbox isolation for tool execution. Stub implementation for MVP with microVM-based isolation planned (Firecracker). |

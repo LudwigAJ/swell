@@ -5,8 +5,8 @@
 //!
 //! # Validation Gates
 //!
-//! - [`LintGate`] - Runs linters (clippy, rustfmt)
-//! - [`TestGate`] - Runs test suites
+//! - [`LintGate`] - Runs configurable linter commands (defined in `.swell/validation.json`)
+//! - [`TestGate`] - Runs configurable test runner commands (defined in `.swell/validation.json`)
 //! - [`SecurityGate`] - Runs security scans (Semgrep)
 //! - [`AiReviewGate`] - AI-powered code review with Evaluator agent
 //!
@@ -41,16 +41,16 @@ use swell_core::{
 use swell_llm::{LlmBackend, LlmConfig, LlmMessage, LlmRole};
 use tokio::task;
 
-/// Maximum bytes kept from cargo test output when storing error messages.
-/// Prevents huge allocations when test output is very verbose.
+/// Maximum bytes kept from test/lint output when storing error messages.
+/// Prevents huge allocations when command output is very verbose.
 const MAX_STORED_OUTPUT_BYTES: usize = 64 * 1024; // 64 KB
 
-/// Global semaphore that limits concurrent `cargo test` invocations to 1.
+/// Global semaphore that limits concurrent serial test invocations to 1.
 ///
-/// Running multiple `cargo test --workspace` processes simultaneously buffers
+/// Running multiple workspace-wide test processes simultaneously buffers
 /// their complete stdout/stderr in memory, which multiplies the memory footprint
-/// by the number of concurrent agents. This semaphore ensures only one
-/// `cargo test` runs at a time across all agents.
+/// by the number of concurrent agents. When a `TestConfig` specifies
+/// `"concurrency": "serial"`, this semaphore ensures only one runs at a time.
 static CARGO_TEST_SEMAPHORE: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> =
     std::sync::OnceLock::new();
 
@@ -77,6 +77,125 @@ fn truncate_output(s: &str) -> String {
 
 // Re-export calibrated confidence for calibrated validation confidence (V2)
 pub mod calibrated_confidence;
+
+// ============================================================================
+// Validation Config
+// ============================================================================
+
+/// Configuration loaded from `.swell/validation.json`.
+///
+/// Defines which commands to run for lint, format, and test gates. Commands are
+/// specified as arrays of strings (program + args) to avoid shell-quoting issues.
+///
+/// # Example (`validation.json` for a Python project)
+/// ```json
+/// {
+///   "version": "1.0.0",
+///   "lint": {
+///     "commands": [["ruff", "check", "."], ["mypy", "."]],
+///     "output_format": "generic"
+///   },
+///   "format": { "commands": [["ruff", "format", "--check", "."]] },
+///   "test": { "commands": [["pytest"]], "concurrency": "parallel" }
+/// }
+/// ```
+///
+/// When the file is absent, `rust_defaults()` is used — preserving backward
+/// compatibility for Swell's own Rust workspace.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ValidationConfig {
+    pub version: Option<String>,
+    pub lint: Option<LintConfig>,
+    pub format: Option<FormatConfig>,
+    pub test: Option<TestConfig>,
+}
+
+/// Lint gate configuration.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct LintConfig {
+    /// Each entry is a command: `[program, arg1, arg2, ...]`.
+    pub commands: Vec<Vec<String>>,
+    /// How to interpret command output.
+    /// - `"cargo-json"`: parse clippy JSON diagnostics for rich messages.
+    /// - `"generic"`: non-zero exit = failure; capture stdout/stderr as one message.
+    #[serde(default = "default_output_format")]
+    pub output_format: String,
+}
+
+/// Format check gate configuration.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FormatConfig {
+    /// Each entry is a command: `[program, arg1, arg2, ...]`.
+    pub commands: Vec<Vec<String>>,
+}
+
+/// Test gate configuration.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct TestConfig {
+    /// Each entry is a command: `[program, arg1, arg2, ...]`.
+    pub commands: Vec<Vec<String>>,
+    /// `"serial"` (global semaphore, one at a time) or `"parallel"`.
+    #[serde(default = "default_concurrency")]
+    pub concurrency: String,
+}
+
+fn default_output_format() -> String {
+    "generic".to_string()
+}
+fn default_concurrency() -> String {
+    "parallel".to_string()
+}
+
+impl ValidationConfig {
+    /// Load from `.swell/validation.json` relative to `workspace_path`.
+    /// Falls back to [`Self::rust_defaults`] when the file is absent or unparseable.
+    pub fn load(workspace_path: &str) -> Self {
+        let path = std::path::Path::new(workspace_path).join(".swell/validation.json");
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            serde_json::from_str(&content).unwrap_or_else(|_| Self::rust_defaults())
+        } else {
+            Self::rust_defaults()
+        }
+    }
+
+    /// Built-in Rust defaults — used when no `validation.json` exists.
+    /// Matches the previous hardcoded behaviour exactly so Swell's own CI is unaffected.
+    pub fn rust_defaults() -> Self {
+        Self {
+            version: Some("1.0.0".to_string()),
+            lint: Some(LintConfig {
+                commands: vec![vec![
+                    "cargo".to_string(),
+                    "clippy".to_string(),
+                    "--message-format".to_string(),
+                    "json".to_string(),
+                ]],
+                output_format: "cargo-json".to_string(),
+            }),
+            format: Some(FormatConfig {
+                commands: vec![vec![
+                    "cargo".to_string(),
+                    "fmt".to_string(),
+                    "--check".to_string(),
+                ]],
+            }),
+            test: Some(TestConfig {
+                commands: vec![vec![
+                    "cargo".to_string(),
+                    "test".to_string(),
+                    "--workspace".to_string(),
+                    "--test-threads=1".to_string(),
+                    "--jobs=1".to_string(),
+                    "--exclude".to_string(),
+                    "swell-integration-tests".to_string(),
+                    "--".to_string(),
+                    "--format=pretty".to_string(),
+                ]],
+                concurrency: "serial".to_string(),
+            }),
+        }
+    }
+}
 pub use calibrated_confidence::{
     CalibratedConfidence, CalibrationFeatures, CalibrationModel, CalibrationParams, DefectRecord,
     DefectTracker, Predictor, RiskLevel, TrainingResult, ValidationRecord,
@@ -197,11 +316,22 @@ pub use orchestrator::{
 // ============================================================================
 
 /// Gate that runs linters on changed files.
-pub struct LintGate;
+///
+/// Commands are loaded from `.swell/validation.json` at runtime. Falls back to
+/// `cargo clippy` defaults when the file is absent.
+pub struct LintGate {
+    config: Option<ValidationConfig>,
+}
 
 impl LintGate {
     pub fn new() -> Self {
-        Self
+        Self { config: None }
+    }
+
+    pub fn with_config(config: ValidationConfig) -> Self {
+        Self {
+            config: Some(config),
+        }
     }
 }
 
@@ -223,105 +353,145 @@ impl ValidationGate for LintGate {
 
     async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
         let workspace_path = context.workspace_path.clone();
+        let cfg = self
+            .config
+            .clone()
+            .unwrap_or_else(|| ValidationConfig::load(&workspace_path));
+        let lint_cfg = cfg.lint.unwrap_or_else(|| LintConfig {
+            commands: vec![vec![
+                "cargo".to_string(),
+                "clippy".to_string(),
+                "--message-format".to_string(),
+                "json".to_string(),
+            ]],
+            output_format: "cargo-json".to_string(),
+        });
 
-        let output = task::spawn_blocking(move || {
-            // Run clippy in check mode
-            Command::new("cargo")
-                .args(["clippy", "--message-format", "json"])
-                .current_dir(&workspace_path)
-                .output()
-        })
-        .await
-        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
-        .map_err(SwellError::IoError)?;
-
-        let passed = output.status.success();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
+        let use_cargo_json = lint_cfg.output_format == "cargo-json";
+        let mut all_passed = true;
         let mut messages = Vec::new();
 
-        if !passed {
-            // Parse clippy output for errors
-            for line in stdout.lines().chain(stderr.lines()) {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-                    // Clippy outputs `message` as an object with nested fields:
-                    // - message.message: the text message (string)
-                    // - message.level: "error", "warning", or "help" (string)
-                    // - message.spans: array of source locations
-                    // - message.rendered: rendered message (string, optional)
-                    //
-                    // Top-level `code` is an object with `code.code` and `code.explanation`
-                    //
-                    // For backwards compat, also handle when `message` is a plain string
+        for cmd_parts in &lint_cfg.commands {
+            if cmd_parts.is_empty() {
+                continue;
+            }
+            let program = cmd_parts[0].clone();
+            let args = cmd_parts[1..].to_vec();
+            let workspace_path_clone = workspace_path.clone();
 
-                    // Extract message text: try message.message first, then message.rendered, then message as string
-                    let message_text = json
-                        .get("message")
-                        .and_then(|m| m.get("message"))
-                        .and_then(|m| m.as_str())
-                        .or_else(|| {
-                            json.get("message")
-                                .and_then(|m| m.get("rendered"))
+            let output = task::spawn_blocking(move || {
+                Command::new(&program)
+                    .args(&args)
+                    .current_dir(&workspace_path_clone)
+                    .output()
+            })
+            .await
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
+            .map_err(SwellError::IoError)?;
+
+            let cmd_passed = output.status.success();
+            if !cmd_passed {
+                all_passed = false;
+            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            if !cmd_passed {
+                if use_cargo_json {
+                    // Parse clippy JSON diagnostics for rich messages
+                    for line in stdout.lines().chain(stderr.lines()) {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
+                            // Clippy outputs `message` as an object with nested fields:
+                            // - message.message: the text message (string)
+                            // - message.level: "error", "warning", or "help" (string)
+                            // - message.spans: array of source locations
+                            // - message.rendered: rendered message (string, optional)
+                            //
+                            // Top-level `code` is an object with `code.code` and `code.explanation`
+                            //
+                            // For backwards compat, also handle when `message` is a plain string
+
+                            // Extract message text: try message.message first, then message.rendered, then message as string
+                            let message_text = json
+                                .get("message")
+                                .and_then(|m| m.get("message"))
                                 .and_then(|m| m.as_str())
-                        })
-                        .or_else(|| json.get("message").and_then(|m| m.as_str()));
+                                .or_else(|| {
+                                    json.get("message")
+                                        .and_then(|m| m.get("rendered"))
+                                        .and_then(|m| m.as_str())
+                                })
+                                .or_else(|| json.get("message").and_then(|m| m.as_str()));
 
-                    if let Some(msg) = message_text {
-                        // Extract level: message.level (not top-level)
-                        let level = json
-                            .get("message")
-                            .and_then(|m| m.get("level"))
-                            .and_then(|l| l.as_str())
-                            .map(|l| {
-                                if l == "error" {
-                                    ValidationLevel::Error
-                                } else {
-                                    ValidationLevel::Warning
-                                }
-                            })
-                            .unwrap_or(ValidationLevel::Warning);
+                            if let Some(msg) = message_text {
+                                // Extract level: message.level (not top-level)
+                                let level = json
+                                    .get("message")
+                                    .and_then(|m| m.get("level"))
+                                    .and_then(|l| l.as_str())
+                                    .map(|l| {
+                                        if l == "error" {
+                                            ValidationLevel::Error
+                                        } else {
+                                            ValidationLevel::Warning
+                                        }
+                                    })
+                                    .unwrap_or(ValidationLevel::Warning);
 
-                        // Extract code: message.code.code
-                        let code = json
-                            .get("message")
-                            .and_then(|m| m.get("code"))
-                            .and_then(|c| c.get("code"))
-                            .and_then(|c| c.as_str())
-                            .map(String::from);
+                                // Extract code: message.code.code
+                                let code = json
+                                    .get("message")
+                                    .and_then(|m| m.get("code"))
+                                    .and_then(|c| c.get("code"))
+                                    .and_then(|c| c.as_str())
+                                    .map(String::from);
 
-                        // Extract file: message.spans[0].file_name
-                        let file = json
-                            .get("message")
-                            .and_then(|m| m.get("spans"))
-                            .and_then(|s| s.get(0))
-                            .and_then(|sp| sp.get("file_name"))
-                            .and_then(|f| f.as_str())
-                            .map(String::from);
+                                // Extract file: message.spans[0].file_name
+                                let file = json
+                                    .get("message")
+                                    .and_then(|m| m.get("spans"))
+                                    .and_then(|s| s.get(0))
+                                    .and_then(|sp| sp.get("file_name"))
+                                    .and_then(|f| f.as_str())
+                                    .map(String::from);
 
-                        // Extract line: message.spans[0].line_start
-                        let line = json
-                            .get("message")
-                            .and_then(|m| m.get("spans"))
-                            .and_then(|s| s.get(0))
-                            .and_then(|sp| sp.get("line_start"))
-                            .and_then(|l| l.as_u64())
-                            .map(|l| l as u32);
+                                // Extract line: message.spans[0].line_start
+                                let line = json
+                                    .get("message")
+                                    .and_then(|m| m.get("spans"))
+                                    .and_then(|s| s.get(0))
+                                    .and_then(|sp| sp.get("line_start"))
+                                    .and_then(|l| l.as_u64())
+                                    .map(|l| l as u32);
 
-                        messages.push(ValidationMessage {
-                            level,
-                            code,
-                            message: msg.to_string(),
-                            file,
-                            line,
-                        });
+                                messages.push(ValidationMessage {
+                                    level,
+                                    code,
+                                    message: msg.to_string(),
+                                    file,
+                                    line,
+                                });
+                            }
+                        }
                     }
+                } else {
+                    // Generic: capture combined stdout/stderr as a single error message
+                    let combined = format!("{}{}", stdout, stderr);
+                    messages.push(ValidationMessage {
+                        level: ValidationLevel::Error,
+                        code: None,
+                        message: truncate_output(&combined),
+                        file: None,
+                        line: None,
+                    });
                 }
             }
         }
 
         Ok(ValidationOutcome {
-            passed,
+            passed: all_passed,
             messages,
             artifacts: vec![],
         })
@@ -439,11 +609,22 @@ impl TestFailureClassification {
 }
 
 /// Gate that runs tests for the workspace.
-pub struct TestGate;
+///
+/// Commands are loaded from `.swell/validation.json` at runtime. Falls back to
+/// `cargo test` defaults when the file is absent.
+pub struct TestGate {
+    config: Option<ValidationConfig>,
+}
 
 impl TestGate {
     pub fn new() -> Self {
-        Self
+        Self { config: None }
+    }
+
+    pub fn with_config(config: ValidationConfig) -> Self {
+        Self {
+            config: Some(config),
+        }
     }
 
     /// Parse cargo test output and classify failures
@@ -638,226 +819,230 @@ impl ValidationGate for TestGate {
 
     async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
         let workspace_path = context.workspace_path.clone();
+        let cfg = self
+            .config
+            .clone()
+            .unwrap_or_else(|| ValidationConfig::load(&workspace_path));
+        let test_cfg = cfg.test.unwrap_or_else(|| ValidationConfig::rust_defaults().test.unwrap());
+        let serial = test_cfg.concurrency == "serial";
 
-        // Serialize concurrent `cargo test` invocations: running multiple
-        // workspace-wide test commands at once buffers large output Vec<u8>
-        // for each concurrent agent, causing memory spikes proportional to
-        // the number of agents (up to MAX_CONCURRENT_AGENTS = 6).
-        let permit = cargo_test_semaphore()
-            .acquire_owned()
-            .await
-            .map_err(|_| SwellError::IoError(std::io::Error::other("Semaphore closed")))?;
+        // When concurrency is "serial", acquire a global semaphore so multiple
+        // concurrent agents don't run memory-intensive test suites simultaneously.
+        let permit = if serial {
+            Some(
+                cargo_test_semaphore()
+                    .acquire_owned()
+                    .await
+                    .map_err(|_| SwellError::IoError(std::io::Error::other("Semaphore closed")))?,
+            )
+        } else {
+            None
+        };
 
-        // Run cargo test with memory-limiting options:
-        // - --test-threads=1: Limit test parallelism to reduce memory usage
-        // - --jobs=1: Limit compilation parallelism to reduce memory usage
-        // - --workspace --exclude swell-integration-tests: Run workspace tests but exclude
-        //   integration tests to avoid recursion when validation is called from those tests
-        let output = task::spawn_blocking(move || {
-            // Hold the permit for the duration of the blocking call so that no
-            // other agent can start a `cargo test` while this one is running.
-            let _permit = permit;
-
-            // First try with --workspace --exclude (requires Rust 1.64+)
-            let result = Command::new("cargo")
-                .args([
-                    "test",
-                    "--workspace",
-                    "--test-threads=1",
-                    "--jobs=1",
-                    "--exclude",
-                    "swell-integration-tests",
-                    "--",
-                    "--format=pretty",
-                ])
-                .current_dir(&workspace_path)
-                .output();
-
-            match result {
-                Ok(output) => output,
-                Err(_) => {
-                    // Fall back to running tests in current directory without --workspace
-                    // This happens when not in a workspace or cargo version is old
-                    Command::new("cargo")
-                        .args([
-                            "test",
-                            "--test-threads=1",
-                            "--jobs=1",
-                            "--",
-                            "--format=pretty",
-                        ])
-                        .current_dir(&workspace_path)
-                        .output()
-                        .unwrap_or_else(|_| {
-                            // Last resort: just run tests with defaults
-                            Command::new("cargo")
-                                .args(["test"])
-                                .current_dir(&workspace_path)
-                                .output()
-                                .expect("Failed to run cargo test")
-                        })
-                }
-            }
-        })
-        .await
-        .map_err(|e| {
-            SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
-        })?;
-
-        let passed = output.status.success();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        let parsed = Self::parse_test_output(&stdout, &stderr);
-        // Drop the raw output buffers as soon as we're done reading them to
-        // free the large Vec<u8> allocations promptly.
-        drop(stdout);
-        drop(stderr);
-        drop(output);
-
+        let mut all_passed = true;
         let mut messages = Vec::new();
 
-        if !passed {
-            // Group failures by classification
-            let impl_defects: Vec<_> = parsed
-                .failures
-                .iter()
-                .filter(|f| f.classification == TestFailureClassification::ImplementationDefect)
-                .collect();
-            let test_defects: Vec<_> = parsed
-                .failures
-                .iter()
-                .filter(|f| f.classification == TestFailureClassification::TestDefect)
-                .collect();
-            let env_defects: Vec<_> = parsed
-                .failures
-                .iter()
-                .filter(|f| f.classification == TestFailureClassification::EnvironmentDefect)
-                .collect();
-            let unknown: Vec<_> = parsed
-                .failures
-                .iter()
-                .filter(|f| f.classification == TestFailureClassification::Unknown)
-                .collect();
-
-            if !impl_defects.is_empty() {
-                messages.push(ValidationMessage {
-                    level: ValidationLevel::Error,
-                    code: None,
-                    message: format!(
-                        "Implementation defects ({} test{}):\n{}",
-                        impl_defects.len(),
-                        if impl_defects.len() == 1 { "" } else { "s" },
-                        impl_defects
-                            .iter()
-                            .map(|f| format!(
-                                "  - {}: {}",
-                                f.name,
-                                f.message.lines().next().unwrap_or("")
-                            ))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ),
-                    file: None,
-                    line: None,
-                });
+        for cmd_parts in &test_cfg.commands {
+            if cmd_parts.is_empty() {
+                continue;
             }
+            let program = cmd_parts[0].clone();
+            let args = cmd_parts[1..].to_vec();
+            let workspace_path_clone = workspace_path.clone();
+            // Keep permit alive until the end of all commands when serial
+            let _permit_ref = permit.as_ref();
 
-            if !test_defects.is_empty() {
-                messages.push(ValidationMessage {
-                    level: ValidationLevel::Error,
-                    code: None,
-                    message: format!(
-                        "Test defects ({} test{}):\n{}",
-                        test_defects.len(),
-                        if test_defects.len() == 1 { "" } else { "s" },
-                        test_defects
-                            .iter()
-                            .map(|f| format!(
-                                "  - {}: {}",
-                                f.name,
-                                f.message.lines().next().unwrap_or("")
-                            ))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ),
-                    file: None,
-                    line: None,
-                });
+            let output = task::spawn_blocking(move || {
+                Command::new(&program)
+                    .args(&args)
+                    .current_dir(&workspace_path_clone)
+                    .output()
+            })
+            .await
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
+            .map_err(SwellError::IoError)?;
+
+            let cmd_passed = output.status.success();
+            if !cmd_passed {
+                all_passed = false;
             }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let is_cargo_cmd = cmd_parts.first().map(|p| p == "cargo").unwrap_or(false);
 
-            if !env_defects.is_empty() {
-                messages.push(ValidationMessage {
-                    level: ValidationLevel::Error,
-                    code: None,
-                    message: format!(
-                        "Environment defects ({} test{}):\n{}",
-                        env_defects.len(),
-                        if env_defects.len() == 1 { "" } else { "s" },
-                        env_defects
-                            .iter()
-                            .map(|f| format!(
-                                "  - {}: {}",
-                                f.name,
-                                f.message.lines().next().unwrap_or("")
-                            ))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ),
-                    file: None,
-                    line: None,
-                });
+            if is_cargo_cmd {
+                // Use rich cargo test output parsing
+                let parsed = Self::parse_test_output(&stdout, &stderr);
+                drop(stdout);
+                drop(stderr);
+                drop(output);
+
+                if !cmd_passed {
+                    let impl_defects: Vec<_> = parsed
+                        .failures
+                        .iter()
+                        .filter(|f| {
+                            f.classification == TestFailureClassification::ImplementationDefect
+                        })
+                        .collect();
+                    let test_defects: Vec<_> = parsed
+                        .failures
+                        .iter()
+                        .filter(|f| f.classification == TestFailureClassification::TestDefect)
+                        .collect();
+                    let env_defects: Vec<_> = parsed
+                        .failures
+                        .iter()
+                        .filter(|f| {
+                            f.classification == TestFailureClassification::EnvironmentDefect
+                        })
+                        .collect();
+                    let unknown: Vec<_> = parsed
+                        .failures
+                        .iter()
+                        .filter(|f| f.classification == TestFailureClassification::Unknown)
+                        .collect();
+
+                    if !impl_defects.is_empty() {
+                        messages.push(ValidationMessage {
+                            level: ValidationLevel::Error,
+                            code: None,
+                            message: format!(
+                                "Implementation defects ({} test{}):\n{}",
+                                impl_defects.len(),
+                                if impl_defects.len() == 1 { "" } else { "s" },
+                                impl_defects
+                                    .iter()
+                                    .map(|f| format!(
+                                        "  - {}: {}",
+                                        f.name,
+                                        f.message.lines().next().unwrap_or("")
+                                    ))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            ),
+                            file: None,
+                            line: None,
+                        });
+                    }
+
+                    if !test_defects.is_empty() {
+                        messages.push(ValidationMessage {
+                            level: ValidationLevel::Error,
+                            code: None,
+                            message: format!(
+                                "Test defects ({} test{}):\n{}",
+                                test_defects.len(),
+                                if test_defects.len() == 1 { "" } else { "s" },
+                                test_defects
+                                    .iter()
+                                    .map(|f| format!(
+                                        "  - {}: {}",
+                                        f.name,
+                                        f.message.lines().next().unwrap_or("")
+                                    ))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            ),
+                            file: None,
+                            line: None,
+                        });
+                    }
+
+                    if !env_defects.is_empty() {
+                        messages.push(ValidationMessage {
+                            level: ValidationLevel::Error,
+                            code: None,
+                            message: format!(
+                                "Environment defects ({} test{}):\n{}",
+                                env_defects.len(),
+                                if env_defects.len() == 1 { "" } else { "s" },
+                                env_defects
+                                    .iter()
+                                    .map(|f| format!(
+                                        "  - {}: {}",
+                                        f.name,
+                                        f.message.lines().next().unwrap_or("")
+                                    ))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            ),
+                            file: None,
+                            line: None,
+                        });
+                    }
+
+                    if !unknown.is_empty() {
+                        messages.push(ValidationMessage {
+                            level: ValidationLevel::Warning,
+                            code: None,
+                            message: format!(
+                                "Unclassified failures ({} test{}):\n{}",
+                                unknown.len(),
+                                if unknown.len() == 1 { "" } else { "s" },
+                                unknown
+                                    .iter()
+                                    .map(|f| format!(
+                                        "  - {}: {}",
+                                        f.name,
+                                        f.message.lines().next().unwrap_or("")
+                                    ))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            ),
+                            file: None,
+                            line: None,
+                        });
+                    }
+
+                    messages.push(ValidationMessage {
+                        level: ValidationLevel::Info,
+                        code: None,
+                        message: format!(
+                            "Test summary: {} total, {} passed, {} failed, {} skipped ({}ms)",
+                            parsed.total,
+                            parsed.passed,
+                            parsed.failed,
+                            parsed.skipped,
+                            parsed.duration_ms
+                        ),
+                        file: None,
+                        line: None,
+                    });
+                } else {
+                    messages.push(ValidationMessage {
+                        level: ValidationLevel::Info,
+                        code: None,
+                        message: format!(
+                            "All tests passed ({} total, {}ms)",
+                            parsed.total, parsed.duration_ms
+                        ),
+                        file: None,
+                        line: None,
+                    });
+                }
+            } else {
+                // Generic: non-zero exit = failure; capture combined output as one message
+                if !cmd_passed {
+                    let combined = format!("{}{}", stdout, stderr);
+                    messages.push(ValidationMessage {
+                        level: ValidationLevel::Error,
+                        code: None,
+                        message: truncate_output(&combined),
+                        file: None,
+                        line: None,
+                    });
+                }
+                drop(stdout);
+                drop(stderr);
+                drop(output);
             }
-
-            if !unknown.is_empty() {
-                messages.push(ValidationMessage {
-                    level: ValidationLevel::Warning,
-                    code: None,
-                    message: format!(
-                        "Unclassified failures ({} test{}):\n{}",
-                        unknown.len(),
-                        if unknown.len() == 1 { "" } else { "s" },
-                        unknown
-                            .iter()
-                            .map(|f| format!(
-                                "  - {}: {}",
-                                f.name,
-                                f.message.lines().next().unwrap_or("")
-                            ))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ),
-                    file: None,
-                    line: None,
-                });
-            }
-
-            // Add summary
-            messages.push(ValidationMessage {
-                level: ValidationLevel::Info,
-                code: None,
-                message: format!(
-                    "Test summary: {} total, {} passed, {} failed, {} skipped ({}ms)",
-                    parsed.total, parsed.passed, parsed.failed, parsed.skipped, parsed.duration_ms
-                ),
-                file: None,
-                line: None,
-            });
-        } else {
-            messages.push(ValidationMessage {
-                level: ValidationLevel::Info,
-                code: None,
-                message: format!(
-                    "All tests passed ({} total, {}ms)",
-                    parsed.total, parsed.duration_ms
-                ),
-                file: None,
-                line: None,
-            });
         }
 
         Ok(ValidationOutcome {
-            passed,
+            passed: all_passed,
             messages,
             artifacts: vec![],
         })

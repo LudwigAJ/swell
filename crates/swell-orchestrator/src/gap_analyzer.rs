@@ -473,7 +473,7 @@ impl GapAnalyzer {
             // ============================================
             SpecRequirement {
                 id: "VALID-001".to_string(),
-                description: "LintGate for clippy/format checks".to_string(),
+                description: "LintGate for configurable lint/format checks (see .swell/validation.json)".to_string(),
                 category: RequirementCategory::Validation,
                 priority: RequirementPriority::MustHave,
                 expected_location: Some("swell-validation".to_string()),
@@ -483,7 +483,7 @@ impl GapAnalyzer {
             },
             SpecRequirement {
                 id: "VALID-002".to_string(),
-                description: "TestGate for cargo test execution".to_string(),
+                description: "TestGate for configurable test runner (see .swell/validation.json)".to_string(),
                 category: RequirementCategory::Validation,
                 priority: RequirementPriority::MustHave,
                 expected_location: Some("swell-validation".to_string()),

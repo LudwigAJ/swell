@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "lint": {
+    "commands": [["cargo", "clippy", "--message-format", "json"]],
+    "output_format": "cargo-json"
+  },
+  "format": {
+    "commands": [["cargo", "fmt", "--check"]]
+  },
+  "test": {
+    "commands": [
+      [
+        "cargo",
+        "test",
+        "--workspace",
+        "--test-threads=1",
+        "--jobs=1",
+        "--exclude",
+        "swell-integration-tests",
+        "--",
+        "--format=pretty"
+      ]
+    ],
+    "concurrency": "serial"
+  }
+}
