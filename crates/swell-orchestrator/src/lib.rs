@@ -40,6 +40,7 @@ pub mod scheduler;
 pub mod search_router;
 pub mod session_hygiene;
 pub mod soft_limits;
+pub mod sprint_contracts;
 pub mod stacked_prs;
 pub mod state_machine;
 pub mod stopping_conditions;
@@ -150,6 +151,10 @@ pub use session_hygiene::{
 pub use soft_limits::{
     create_soft_limits, create_soft_limits_with_config, ProgressTracker, SharedSoftLimits,
     SoftLimitType, SoftLimitWarning, SoftLimits, SoftLimitsConfig,
+};
+pub use sprint_contracts::{
+    ContractNegotiator, ContractStatus, EvaluatorContext, GeneratorContext, SprintContract,
+    ValidationGate,
 };
 pub use stacked_prs::{
     FileChangeRisk, Pr, PrFileChange, PrStack, PrStackManager, StackedPrConfig, StackedPrError,
