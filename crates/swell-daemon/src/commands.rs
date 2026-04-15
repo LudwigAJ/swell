@@ -2148,8 +2148,11 @@ mod tests {
                 // Cost tracking should be initialized (tokens is u64 so always >= 0)
                 let _ = total_tokens;
                 assert!(!last_model.is_empty() || last_model.is_empty()); // Model may or may not be set
-                                                                          // MCP health is empty map (no MCP manager in test)
-                assert!(mcp_health.is_empty());
+                // MCP health contains a placeholder entry since swell-daemon doesn't have direct
+                // access to MCP manager (which lives in swell-tools). Real MCP health would be
+                // wired through the orchestrator or a shared McpHealthTracker.
+                assert!(mcp_health.contains_key("_status"));
+                assert!(mcp_health.get("_status").unwrap().contains("pending"));
                 // Verify uptime, version, and budget fields
                 assert!(!version.is_empty());
                 assert!(total_budget >= total_spent);

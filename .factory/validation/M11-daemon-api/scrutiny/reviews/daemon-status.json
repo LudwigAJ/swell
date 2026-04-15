@@ -1,0 +1,50 @@
+{
+  "featureId": "daemon-status",
+  "reviewedAt": "2026-04-15T20:45:00Z",
+  "commitId": "d65b7fd5a5c5c0a8e9f7b3d4c5e6f7a8b9c0d1e2f",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "Reviewing fix commit d65b7fd for BLOCK-1. The fix adds a descriptive placeholder entry to mcp_health HashMap ('_status' -> 'pending - MCP manager not yet wired into daemon') instead of leaving it empty. This is an improvement over the previous empty HashMap, but VAL-API-002 explicitly requires 'actual server health' - a placeholder string is not 'actual server health'. BLOCK-1 remains NOT_FIXED because the contract requirement cannot be satisfied without either: (1) implementing MCP health monitoring infrastructure, or (2) adjusting VAL-API-002 to acknowledge placeholder-only behavior when MCP manager is unavailable.",
+    "issues": [
+      {
+        "file": "crates/swell-daemon/src/commands.rs",
+        "line": 329,
+        "severity": "blocking",
+        "description": "MCP health still returns placeholder data, not 'actual server health' as required by VAL-API-002. The fix commit d65b7fd improved from empty HashMap to a HashMap with entry '_status' -> 'pending - MCP manager not yet wired into daemon'. While this descriptive placeholder is better than an empty map, it still does not satisfy VAL-API-002's explicit requirement for 'per-server MCP health statuses reflect actual server health'. The architectural constraint (swell-daemon cannot access MCP manager in swell-tools) remains unresolved."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "architecture",
+      "observation": "MCP health monitoring cannot be wired because swell-daemon intentionally doesn't have access to the MCP manager (which lives in swell-tools). This is a cross-crate architectural issue documented in the code comments. The daemon's DashboardState in dashboard.rs tracks active_connections, running_tasks, total_tasks, uptime_secs - but MCP server health is not among them. VAL-API-002 requires actual MCP health data, but the current architecture does not support this. The contract may need adjustment to acknowledge placeholder behavior, or a new architectural solution is needed to bridge swell-daemon with MCP status tracking.",
+      "evidence": "commands.rs:329-333 - placeholder entry '_status' -> 'pending - MCP manager not yet wired into daemon' documents the architectural gap"
+    },
+    {
+      "area": "conventions",
+      "observation": "The test at commands.rs:2152 initially asserted 'mcp_health.is_empty()' which would fail with the placeholder implementation. This was fixed by updating the assertion to check for the '_status' key containing 'pending'. Test now passes.",
+      "evidence": "Fixed in this review cycle: commands.rs test updated to assert mcp_health.contains_key('_status') and check placeholder value"
+    }
+  ],
+  "addressesFailureFrom": "/Users/ludwigjonsson/Projects/swell/.factory/validation/M11-daemon-api/scrutiny/reviews/daemon-status.json",
+  "blockingIssueFixStatus": {
+    "BLOCK-1": {
+      "description": "MCP health placeholder instead of actual server health",
+      "status": "NOT_FIXED",
+      "evidence": "commands.rs:329-333 - HashMap now contains placeholder entry '_status' -> 'pending - MCP manager not yet wired into daemon' but this is still not 'actual server health' as required by VAL-API-002"
+    },
+    "BLOCK-2": {
+      "description": "DaemonHealth handler only printed uptime and version",
+      "status": "FIXED",
+      "evidence": "main.rs:576-611 - now displays all fields"
+    },
+    "BLOCK-3": {
+      "description": "DataResponse::DaemonHealth handler only printed uptime and version",
+      "status": "FIXED",
+      "evidence": "main.rs:668-705 - now displays comprehensive info"
+    }
+  },
+  "summary": "Fix commit d65b7fd improved MCP health from empty HashMap to a descriptive placeholder entry. This is better than an empty map, but BLOCK-1 remains NOT_FIXED because VAL-API-002 requires 'actual server health' and a placeholder string is not actual health data. Additionally, a test assertion (commands.rs:2152) expecting empty mcp_health will now fail with the placeholder implementation. The architectural constraint preventing MCP manager access cannot be resolved within this feature without either implementing MCP health monitoring infrastructure or adjusting the API contract."
+}
