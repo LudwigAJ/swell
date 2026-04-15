@@ -2133,10 +2133,11 @@ mod tests {
                 // Cost tracking should be initialized (tokens is u64 so always >= 0)
                 let _ = total_tokens;
                 assert!(!last_model.is_empty() || last_model.is_empty()); // Model may or may not be set
-                // MCP health is now obtained from the orchestrator's McpConfigManager.
-                // With no servers configured, this will be an empty map (not a placeholder).
-                // This tests the real wiring path for MCP health reporting.
-                assert!(mcp_health.is_empty() || !mcp_health.is_empty()); // Real data from orchestrator
+                // MCP health is obtained from the orchestrator's McpConfigManager.
+                // With no servers configured in test, this should be empty.
+                // This assertion verifies the real wiring path — mcp_health is non-None
+                // and the call to orch.get_mcp_health() succeeded.
+                assert!(mcp_health.is_empty(), "MCP health should be empty with no servers configured, confirming real orchestrator data is returned");
                 // Verify uptime, version, and budget fields
                 assert!(!version.is_empty());
                 assert!(total_budget >= total_spent);
