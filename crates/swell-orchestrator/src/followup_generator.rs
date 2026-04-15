@@ -111,6 +111,7 @@ impl FollowUpProposal {
             injected_instructions: Vec::new(),
             original_scope: None,
             current_scope: Default::default(),
+            enrichment: Default::default(),
         }
     }
 

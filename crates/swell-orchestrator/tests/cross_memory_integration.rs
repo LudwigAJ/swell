@@ -246,6 +246,7 @@ async fn test_generator_agent_receives_memory_context_in_prompt() {
         injected_instructions: vec![],
         original_scope: None,
         current_scope: swell_core::TaskScope::default(),
+        enrichment: swell_core::TaskEnrichment::default(),
     };
 
     let session_id = Uuid::new_v4();
@@ -524,6 +525,7 @@ async fn test_memory_context_preserved_across_turns() {
         injected_instructions: vec![],
         original_scope: None,
         current_scope: swell_core::TaskScope::default(),
+        enrichment: swell_core::TaskEnrichment::default(),
     };
 
     let session_id = Uuid::new_v4();

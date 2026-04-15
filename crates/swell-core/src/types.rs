@@ -129,6 +129,10 @@ pub struct Task {
     /// Current scope boundaries
     #[serde(default)]
     pub current_scope: TaskScope,
+    /// Enrichment metadata (populated during enrich_task transition).
+    /// Contains discovered file paths, related tests, constraints, and prior attempts.
+    #[serde(default)]
+    pub enrichment: TaskEnrichment,
 }
 
 /// Scope defining task boundaries for modification
@@ -140,6 +144,47 @@ pub struct TaskScope {
     pub directories: Vec<String>,
     /// Allowed operations
     pub allowed_operations: Vec<String>,
+}
+
+/// Prior attempt history for retry scenarios
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PriorAttempt {
+    /// Iteration number (1-indexed)
+    pub iteration: u32,
+    /// When this attempt was made
+    pub timestamp: DateTime<Utc>,
+    /// Final task state after this attempt
+    #[serde(default)]
+    pub outcome: Option<TaskState>,
+    /// Reason for rejection (if outcome is Rejected)
+    #[serde(default)]
+    pub rejected_reason: Option<String>,
+    /// Files that were modified during this attempt
+    #[serde(default)]
+    pub modified_files: Vec<String>,
+}
+
+/// Enrichment metadata populated deterministically before tasks enter the ready queue.
+/// This data is attached to tasks during the enrich_task transition and must be
+/// present before a task can transition to Ready state.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TaskEnrichment {
+    /// Relevant source file paths discovered via AST indexing or file-path heuristics.
+    /// These are the files the task is expected to modify.
+    #[serde(default)]
+    pub enriched_files: Vec<String>,
+    /// Related test files matching naming conventions or import graphs.
+    #[serde(default)]
+    pub related_tests: Vec<String>,
+    /// Architectural constraints from project configuration.
+    #[serde(default)]
+    pub constraints: Vec<String>,
+    /// Prior attempt history if this is a retry (iteration_count > 0).
+    #[serde(default)]
+    pub prior_attempts: Vec<PriorAttempt>,
+    /// Whether enrichment has been applied (should be true for Enriched state)
+    #[serde(default)]
+    pub is_enriched: bool,
 }
 
 /// Specification for task execution policies and validation requirements
@@ -324,6 +369,7 @@ impl Task {
             injected_instructions: Vec::new(),
             original_scope: None,
             current_scope: TaskScope::default(),
+            enrichment: TaskEnrichment::default(),
         }
     }
 
@@ -352,6 +398,7 @@ impl Task {
             injected_instructions: Vec::new(),
             original_scope: None,
             current_scope: TaskScope::default(),
+            enrichment: TaskEnrichment::default(),
         }
     }
 

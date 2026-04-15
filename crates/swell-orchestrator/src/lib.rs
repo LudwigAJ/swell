@@ -49,6 +49,7 @@ pub mod state_machine;
 pub mod stopping_conditions;
 pub mod subagent;
 pub mod task_board;
+pub mod task_enrichment;
 pub mod task_graph;
 pub mod team_registry;
 pub mod tiered_merge;
@@ -173,6 +174,10 @@ pub use stopping_conditions::{
 pub use subagent::{
     AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
     MAX_SUBAGENT_DEPTH,
+};
+pub use task_enrichment::{
+    discover_constraints, discover_enriched_files, discover_related_tests, enrich_task,
+    build_prior_attempts, TaskEnrichmentExt,
 };
 pub use task_board::{
     create_task_board, CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry,
