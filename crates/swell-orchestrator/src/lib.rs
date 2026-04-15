@@ -106,7 +106,7 @@ pub use followup_generator::{
     FollowUpContext, FollowUpGenerator, FollowUpGeneratorConfig, FollowUpOpportunity,
     FollowUpOpportunityType, FollowUpProposal,
 };
-pub use frozen_spec::{FrozenSpec, FrozenSpecRef};
+pub use frozen_spec::{FrozenSpec, FrozenSpecRef, FrozenRequirementRegistry, TraceabilityResult};
 pub use gap_analyzer::{
     CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
     RequirementCategory, RequirementPriority, SpecRequirement,
