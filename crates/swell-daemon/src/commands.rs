@@ -47,11 +47,12 @@ pub async fn handle_command(
         }
         CliCommand::TaskApprove { task_id } => {
             let orch = orchestrator.lock().await;
-            // Verify task exists before attempting to start
+            // Verify task exists before attempting to approve
             match orch.get_task(task_id).await {
                 Ok(task) => {
-                    info!(task_id = %task_id, state = ?task.state, "Task approved, starting execution");
-                    match orch.start_task(task_id).await {
+                    info!(task_id = %task_id, state = ?task.state, "Task approved, proceeding to execution");
+                    // Call approve_task which transitions AwaitingApproval → Ready → Assigned → Executing
+                    match orch.approve_task(task_id).await {
                         Ok(()) => {
                             let correlation_id = EventEmitter::new_correlation_id();
                             let event = event_emitter
@@ -60,10 +61,10 @@ pub async fn handle_command(
                             event
                         }
                         Err(e) => {
-                            warn!(task_id = %task_id, error = %e, "Failed to start task");
+                            warn!(task_id = %task_id, error = %e, "Failed to approve task");
                             let correlation_id = EventEmitter::new_correlation_id();
                             event_emitter
-                                .emit_error(format!("Failed to start task: {}", e), None, correlation_id)
+                                .emit_error(format!("Failed to approve task: {}", e), None, correlation_id)
                                 .await
                         }
                     }
@@ -83,10 +84,22 @@ pub async fn handle_command(
             match orch.get_task(task_id).await {
                 Ok(task) => {
                     warn!(task_id = %task_id, reason = %reason, state = ?task.state, "Task rejected");
-                    let correlation_id = EventEmitter::new_correlation_id();
-                    event_emitter
-                        .emit_task_state_changed(task_id, TaskState::Rejected, correlation_id)
-                        .await
+                    // Actually transition the task to Rejected state
+                    match orch.reject_task(task_id).await {
+                        Ok(()) => {
+                            let correlation_id = EventEmitter::new_correlation_id();
+                            event_emitter
+                                .emit_task_state_changed(task_id, TaskState::Rejected, correlation_id)
+                                .await
+                        }
+                        Err(e) => {
+                            warn!(task_id = %task_id, error = %e, "Failed to reject task");
+                            let correlation_id = EventEmitter::new_correlation_id();
+                            event_emitter
+                                .emit_error(format!("Failed to reject task: {}", e), None, correlation_id)
+                                .await
+                        }
+                    }
                 }
                 Err(e) => {
                     warn!(task_id = %task_id, error = %e, "Task not found for rejection");
@@ -361,13 +374,17 @@ mod tests {
         let plan = create_test_plan(task.id);
         orch.lock().await.set_plan(task.id, plan).await.unwrap();
 
+        // Call start_task to transition to AwaitingApproval (or Executing if autonomy doesn't need approval)
+        // Default autonomy level is Guided, which needs plan approval
+        orch.lock().await.start_task(task.id).await.unwrap();
+
         let command = CliCommand::TaskApprove { task_id: task.id };
         let event = handle_command(command, Arc::clone(&orch), Arc::clone(&emitter)).await;
 
         match event {
             DaemonEvent::TaskStateChanged { id, state, .. } => {
                 assert_eq!(id, task.id);
-                // Task should transition to Ready after approval
+                // Task should transition to Ready after approval (and then to Executing)
                 assert!(matches!(state, TaskState::Ready | TaskState::Executing));
             }
             DaemonEvent::Error { message, .. } => {
@@ -405,8 +422,14 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
 
-        // Create a task
+        // Create a task and set it up for rejection
         let task = orch.lock().await.create_task("Test task".to_string()).await;
+        let plan = create_test_plan(task.id);
+        orch.lock().await.set_plan(task.id, plan).await.unwrap();
+
+        // Call start_task to transition to AwaitingApproval
+        orch.lock().await.start_task(task.id).await.unwrap();
+
         let command = CliCommand::TaskReject {
             task_id: task.id,
             reason: "Test rejection reason".to_string(),

@@ -281,6 +281,22 @@ impl Orchestrator {
         task
     }
 
+    /// Create a new task with a specific autonomy level
+    pub async fn create_task_with_autonomy(
+        &self,
+        description: String,
+        autonomy_level: swell_core::AutonomyLevel,
+    ) -> Task {
+        let task = {
+            let sm = self.state_machine.write().await;
+            sm.create_task_with_autonomy(description, autonomy_level)
+        };
+        let _ = self
+            .event_sender
+            .send(OrchestratorEvent::TaskCreated(task.id));
+        task
+    }
+
     /// Get a task by ID
     pub async fn get_task(&self, id: Uuid) -> Result<Task, SwellError> {
         let sm = self.state_machine.read().await;
@@ -355,7 +371,14 @@ impl Orchestrator {
         sm.set_plan(task_id, plan)
     }
 
-    /// Transition task through planning -> ready -> executing
+    /// Transition task through planning -> executing
+    ///
+    /// If the task's autonomy level requires plan approval (L1 or L2),
+    /// this will transition to AwaitingApproval and return early.
+    /// Call `approve_task` to proceed with execution after approval.
+    ///
+    /// If the task is already in AwaitingApproval (after approval was granted),
+    /// this will continue with the execution flow.
     pub async fn start_task(&self, task_id: Uuid) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
 
@@ -372,8 +395,32 @@ impl Orchestrator {
             ));
         }
 
-        if task.state == TaskState::Enriched {
-            sm.ready_task(task_id)?;
+        // Handle state-specific transitions
+        match task.state {
+            TaskState::AwaitingApproval => {
+                // Task is awaiting approval, continue with execution
+                // (will be called again after approval via approve_task)
+            }
+            TaskState::Enriched => {
+                // Check autonomy level for plan approval requirement
+                if task.autonomy_level.needs_plan_approval() {
+                    // Transition to AwaitingApproval and wait for user approval
+                    sm.awaiting_approval_task(task_id)?;
+                    info!(task_id = %task_id, autonomy_level = ?task.autonomy_level, "Task awaiting approval");
+                    return Ok(());
+                }
+                // Autonomy level doesn't need approval, proceed to Ready
+                sm.ready_task(task_id)?;
+            }
+            TaskState::Ready | TaskState::Assigned => {
+                // Already past approval gate, continue
+            }
+            _ => {
+                return Err(SwellError::InvalidStateTransition(format!(
+                    "Cannot start task in state {}",
+                    task.state
+                )));
+            }
         }
 
         let task = sm.get_task(task_id)?;
@@ -383,6 +430,56 @@ impl Orchestrator {
 
         sm.start_execution(task_id)?;
 
+        Ok(())
+    }
+
+    /// Approve a task and proceed with execution
+    ///
+    /// This is called by the daemon when user approves via `swell approve <id>`.
+    /// Transitions: AwaitingApproval → Ready → Assigned → Executing
+    pub async fn approve_task(&self, task_id: Uuid) -> Result<(), SwellError> {
+        let sm = self.state_machine.write().await;
+
+        let task = sm.get_task(task_id)?;
+
+        // Validate task is in a state that can be approved
+        match task.state {
+            TaskState::AwaitingApproval => {
+                // First approval transition
+                sm.approve_task(task_id)?;
+            }
+            TaskState::Ready => {
+                // Already approved, just continue
+            }
+            _ => {
+                return Err(SwellError::InvalidStateTransition(format!(
+                    "Cannot approve task in state {}",
+                    task.state
+                )));
+            }
+        }
+
+        // Now proceed with execution
+        let task = sm.get_task(task_id)?;
+        if task.state == TaskState::Ready {
+            sm.assign_task(task_id, Uuid::nil())?; // Will be reassigned when agent picks it up
+        }
+
+        sm.start_execution(task_id)?;
+
+        info!(task_id = %task_id, "Task approved and executing");
+        Ok(())
+    }
+
+    /// Reject a task (user rejected via `swell reject <id>`)
+    ///
+    /// Can be called from:
+    /// - AwaitingApproval: user explicitly rejected the plan
+    /// - Validating: validation gate rejected the task
+    pub async fn reject_task(&self, task_id: Uuid) -> Result<(), SwellError> {
+        let sm = self.state_machine.write().await;
+        sm.reject_task(task_id)?;
+        info!(task_id = %task_id, "Task rejected");
         Ok(())
     }
 
@@ -644,7 +741,7 @@ impl Default for Orchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swell_core::{Plan, PlanStep, RiskLevel, StepStatus, ValidationResult};
+    use swell_core::{AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, ValidationResult};
 
     fn create_test_plan(task_id: Uuid) -> Plan {
         Plan {
@@ -888,7 +985,10 @@ mod tests {
     async fn test_start_task_transitions_through_states() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        // Use FullAuto to bypass approval gate for this lifecycle test
+        let task = orchestrator
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
+            .await;
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
 
@@ -915,7 +1015,10 @@ mod tests {
     async fn test_start_validation_transitions_to_validating() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        // Use FullAuto to bypass approval gate for this lifecycle test
+        let task = orchestrator
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
+            .await;
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         orchestrator.start_task(task.id).await.unwrap();
@@ -943,7 +1046,10 @@ mod tests {
     async fn test_complete_task_with_passed_validation_accepts_task() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        // Use FullAuto to bypass approval gate for this lifecycle test
+        let task = orchestrator
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
+            .await;
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         orchestrator.start_task(task.id).await.unwrap();
@@ -970,7 +1076,10 @@ mod tests {
     async fn test_complete_task_with_failed_validation_rejects_task() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        // Use FullAuto to bypass approval gate for this lifecycle test
+        let task = orchestrator
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
+            .await;
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         orchestrator.start_task(task.id).await.unwrap();
@@ -997,7 +1106,10 @@ mod tests {
     async fn test_complete_task_escalates_after_4_failures() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string()).await;
+        // Use FullAuto to bypass approval gate for this escalation test
+        let task = orchestrator
+            .create_task_with_autonomy("Test".to_string(), AutonomyLevel::FullAuto)
+            .await;
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
 
@@ -1091,9 +1203,12 @@ mod tests {
     async fn test_full_task_lifecycle() {
         let orchestrator = Orchestrator::new();
 
-        // 1. Create task
+        // 1. Create task with FullAuto to bypass approval gate
         let task = orchestrator
-            .create_task("Implement feature X".to_string())
+            .create_task_with_autonomy(
+                "Implement feature X".to_string(),
+                AutonomyLevel::FullAuto,
+            )
             .await;
         assert_eq!(task.state, TaskState::Created);
 

@@ -38,6 +38,20 @@ impl TaskStateMachine {
         task
     }
 
+    /// Create a new task with a specific autonomy level
+    pub fn create_task_with_autonomy(
+        &self,
+        description: String,
+        autonomy_level: swell_core::AutonomyLevel,
+    ) -> Task {
+        let task = Task::with_autonomy_level(description, autonomy_level);
+        let id = task.id;
+        info!(task_id = %id, autonomy_level = ?autonomy_level, "Creating new task with autonomy level");
+        let task_arc = Arc::new(RwLock::new(task.clone()));
+        self.tasks.insert(id, task_arc);
+        task
+    }
+
     /// Get a task by ID (read-only clone)
     pub fn get_task(&self, id: uuid::Uuid) -> Result<Task, SwellError> {
         self.tasks
@@ -77,6 +91,50 @@ impl TaskStateMachine {
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
                 "Cannot enrich task in state {}",
+                task.state
+            ))),
+        })
+    }
+
+    /// Transition task to AWAITING_APPROVAL state (plan completed, waiting for user approval)
+    ///
+    /// This state is entered when:
+    /// - Planning has completed ( Enriched state)
+    /// - The task's autonomy level requires plan approval (L1 Supervised or L2 Guided)
+    pub fn awaiting_approval_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::Enriched => {
+                if task.plan.is_none() {
+                    return Err(SwellError::InvalidStateTransition(
+                        "Cannot await approval without a plan".to_string(),
+                    ));
+                }
+                task.transition_to(TaskState::AwaitingApproval);
+                Ok(())
+            }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot await approval for task in state {}",
+                task.state
+            ))),
+        })
+    }
+
+    /// Transition task to READY state (plan approved for execution)
+    ///
+    /// This is called after user approval via `swell approve`.
+    /// Transitions AwaitingApproval → Ready → Assigned → Executing in one atomic operation.
+    pub fn approve_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+        self.with_task_mut(id, |task| match task.state {
+            TaskState::AwaitingApproval => {
+                task.transition_to(TaskState::Ready);
+                Ok(())
+            }
+            TaskState::Ready => {
+                // Already approved, just ensure assigned
+                Ok(())
+            }
+            _ => Err(SwellError::InvalidStateTransition(format!(
+                "Cannot approve task in state {}",
                 task.state
             ))),
         })
@@ -158,12 +216,20 @@ impl TaskStateMachine {
         })
     }
 
-    /// Mark task as rejected (validation failed)
+    /// Mark task as rejected (validation failed or user rejected)
+    ///
+    /// Can be called from:
+    /// - Validating: validation gate rejected the task
+    /// - AwaitingApproval: user explicitly rejected via `swell reject`
     pub fn reject_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Validating => {
                 task.transition_to(TaskState::Rejected);
                 task.iteration_count += 1;
+                Ok(())
+            }
+            TaskState::AwaitingApproval => {
+                task.transition_to(TaskState::Rejected);
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
@@ -974,5 +1040,116 @@ mod tests {
         assert_eq!(sm.get_task(task.id).unwrap().state, TaskState::Created);
         // But plan should be set
         assert!(sm.get_task(task.id).unwrap().plan.is_some());
+    }
+
+    // --- AwaitingApproval Tests ---
+
+    #[test]
+    fn test_enriched_to_awaiting_approval() {
+        let sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&sm);
+
+        // Transition to Enriched
+        sm.enrich_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Enriched);
+
+        // Transition to AwaitingApproval
+        sm.awaiting_approval_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::AwaitingApproval);
+    }
+
+    #[test]
+    fn test_awaiting_approval_to_ready_via_approve() {
+        let sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&sm);
+
+        // Setup: Enriched -> AwaitingApproval
+        sm.enrich_task(task_id).unwrap();
+        sm.awaiting_approval_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::AwaitingApproval);
+
+        // Approve: AwaitingApproval -> Ready
+        sm.approve_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Ready);
+    }
+
+    #[test]
+    fn test_awaiting_approval_to_rejected() {
+        let sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&sm);
+
+        // Setup: Enriched -> AwaitingApproval
+        sm.enrich_task(task_id).unwrap();
+        sm.awaiting_approval_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::AwaitingApproval);
+
+        // Reject: AwaitingApproval -> Rejected
+        sm.reject_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Rejected);
+    }
+
+    #[test]
+    fn test_cannot_await_approval_without_plan() {
+        let sm = TaskStateMachine::new();
+        let task_id = sm.create_task("Test".to_string()).id;
+
+        // Enrich the task (without a plan)
+        sm.enrich_task(task_id).unwrap();
+
+        // Try to await approval - should fail because no plan
+        let result = sm.awaiting_approval_task(task_id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cannot_approve_non_awaiting_approval_task() {
+        let sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&sm);
+
+        // Enrich but don't go to AwaitingApproval
+        sm.enrich_task(task_id).unwrap();
+
+        // Try to approve - should fail because not in AwaitingApproval
+        let result = sm.approve_task(task_id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_cannot_reject_non_awaiting_approval_non_validating_task() {
+        let sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&sm);
+
+        // Enrich but don't go to AwaitingApproval
+        sm.enrich_task(task_id).unwrap();
+
+        // Try to reject - should fail because not in AwaitingApproval or Validating
+        let result = sm.reject_task(task_id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_full_awaiting_approval_workflow() {
+        let sm = TaskStateMachine::new();
+        let (task_id, _) = create_test_task_and_plan(&sm);
+
+        // Created -> Enriched
+        sm.enrich_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Enriched);
+
+        // Enriched -> AwaitingApproval
+        sm.awaiting_approval_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::AwaitingApproval);
+
+        // AwaitingApproval -> Ready (via approve)
+        sm.approve_task(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Ready);
+
+        // Ready -> Assigned
+        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Assigned);
+
+        // Assigned -> Executing
+        sm.start_execution(task_id).unwrap();
+        assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Executing);
     }
 }

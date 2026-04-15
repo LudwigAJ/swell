@@ -8,6 +8,7 @@ use uuid::Uuid;
 pub enum TaskState {
     Created,
     Enriched,
+    AwaitingApproval, // Waiting for user approval before execution
     Ready,
     Assigned,
     Executing,
@@ -73,6 +74,7 @@ impl std::fmt::Display for TaskState {
         match self {
             TaskState::Created => write!(f, "CREATED"),
             TaskState::Enriched => write!(f, "ENRICHED"),
+            TaskState::AwaitingApproval => write!(f, "AWAITING_APPROVAL"),
             TaskState::Ready => write!(f, "READY"),
             TaskState::Assigned => write!(f, "ASSIGNED"),
             TaskState::Executing => write!(f, "EXECUTING"),
