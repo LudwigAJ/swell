@@ -150,7 +150,10 @@ async fn test_rejection_moves_to_rejected_state() {
 
     // Reject the task via the orchestrator's reject_task method
     // This simulates what `swell reject <id>` does
-    orchestrator.reject_task(task_id).await.unwrap();
+    orchestrator
+        .reject_task(task_id, "Test rejection".to_string())
+        .await
+        .unwrap();
 
     // Verify task has moved to Rejected state
     let task = orchestrator.get_task(task_id).await.unwrap();
@@ -213,7 +216,10 @@ async fn test_cannot_approve_rejected_task() {
     let plan = create_test_plan(task_id);
     orchestrator.set_plan(task_id, plan).await.unwrap();
     orchestrator.start_task(task_id).await.unwrap();
-    orchestrator.reject_task(task_id).await.unwrap();
+    orchestrator
+        .reject_task(task_id, "Test rejection".to_string())
+        .await
+        .unwrap();
 
     // Verify task is Rejected
     let task = orchestrator.get_task(task_id).await.unwrap();
@@ -314,7 +320,10 @@ async fn test_rejection_during_validation() {
     );
 
     // Reject the task during validation
-    orchestrator.reject_task(task_id).await.unwrap();
+    orchestrator
+        .reject_task(task_id, "Validation failed".to_string())
+        .await
+        .unwrap();
 
     // Task should be Rejected
     let task = orchestrator.get_task(task_id).await.unwrap();

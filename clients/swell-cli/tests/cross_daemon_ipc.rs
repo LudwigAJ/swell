@@ -638,3 +638,105 @@ async fn test_concurrent_connections() {
     // Clean up
     daemon_handle.abort();
 }
+
+// ============================================================================
+// Test: TaskReject for task in wrong state returns error
+// ============================================================================
+
+#[tokio::test]
+async fn test_task_reject_wrong_state_returns_error() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let socket_path = temp_dir.path().join("swell-daemon.sock");
+    let socket_str = socket_path.to_string_lossy().to_string();
+
+    // Start daemon in background
+    let daemon = swell_daemon::Daemon::new(socket_str.clone());
+    let daemon_handle = tokio::spawn(async move { daemon.run().await });
+
+    // Wait for daemon to start
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Create a task (will be in Created state)
+    let create_cmd = CliCommand::TaskCreate {
+        description: "Task to reject".to_string(),
+    };
+
+    let create_response = send_command(&socket_str, create_cmd)
+        .await
+        .expect("TaskCreate should succeed");
+
+    let task_id = match create_response {
+        DaemonEvent::TaskCreated { id, .. } => id,
+        other => panic!("Expected TaskCreated, got: {:?}", other),
+    };
+
+    // Try to reject the task (should fail - can only reject from AwaitingApproval or Validating)
+    let reject_cmd = CliCommand::TaskReject {
+        task_id,
+        reason: "Test reason".to_string(),
+    };
+
+    let reject_response = send_command(&socket_str, reject_cmd)
+        .await
+        .expect("Command should succeed (daemon handles state error)");
+
+    match reject_response {
+        DaemonEvent::Error { message, .. } => {
+            assert!(
+                message.contains("Cannot reject task"),
+                "Error should mention invalid state transition: {}",
+                message
+            );
+        }
+        other => panic!("Expected Error event, got: {:?}", other),
+    }
+
+    // Clean up
+    daemon_handle.abort();
+}
+
+// ============================================================================
+// Test: TaskReject for nonexistent task returns error
+// ============================================================================
+
+#[tokio::test]
+async fn test_task_reject_nonexistent_returns_error() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let socket_path = temp_dir.path().join("swell-daemon.sock");
+    let socket_str = socket_path.to_string_lossy().to_string();
+
+    // Start daemon in background
+    let daemon = swell_daemon::Daemon::new(socket_str.clone());
+    let daemon_handle = tokio::spawn(async move { daemon.run().await });
+
+    // Wait for daemon to start
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // Try to reject a non-existent task
+    let fake_task_id = Uuid::new_v4();
+    let reject_cmd = CliCommand::TaskReject {
+        task_id: fake_task_id,
+        reason: "Test reason".to_string(),
+    };
+
+    let result = send_command(&socket_str, reject_cmd).await;
+
+    assert!(
+        result.is_ok(),
+        "Command should succeed (daemon handles task not found)"
+    );
+
+    match result.unwrap() {
+        DaemonEvent::Error { message, .. } => {
+            assert!(
+                message.contains("not found") || message.contains("TaskNotFound"),
+                "Error should mention task not found: {}",
+                message
+            );
+        }
+        other => panic!("Expected Error event, got: {:?}", other),
+    }
+
+    // Clean up
+    daemon_handle.abort();
+}

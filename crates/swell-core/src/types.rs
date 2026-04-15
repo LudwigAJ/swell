@@ -117,6 +117,9 @@ pub struct Task {
     /// State before pause (for resume restoration)
     #[serde(default)]
     pub paused_from_state: Option<TaskState>,
+    /// Reason for rejection (set when state is Rejected)
+    #[serde(default)]
+    pub rejected_reason: Option<String>,
     /// Instructions injected by operator mid-task
     #[serde(default)]
     pub injected_instructions: Vec<String>,
@@ -317,6 +320,7 @@ impl Task {
             autonomy_level: AutonomyLevel::default(),
             paused_reason: None,
             paused_from_state: None,
+            rejected_reason: None,
             injected_instructions: Vec::new(),
             original_scope: None,
             current_scope: TaskScope::default(),
@@ -344,6 +348,7 @@ impl Task {
             autonomy_level,
             paused_reason: None,
             paused_from_state: None,
+            rejected_reason: None,
             injected_instructions: Vec::new(),
             original_scope: None,
             current_scope: TaskScope::default(),

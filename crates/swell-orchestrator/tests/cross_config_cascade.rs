@@ -372,7 +372,7 @@ async fn test_execution_controller_enforces_cascade_max_iterations() {
         swell_validation::ValidationPipeline::new(),
         max_iterations,
         100_000, // context_compaction_threshold
-        10,       // tail_message_count
+        10,      // tail_message_count
     );
 
     assert_eq!(controller2.max_iterations(), 7);

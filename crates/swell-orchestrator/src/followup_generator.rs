@@ -107,6 +107,7 @@ impl FollowUpProposal {
             autonomy_level: Default::default(),
             paused_reason: None,
             paused_from_state: None,
+            rejected_reason: None,
             injected_instructions: Vec::new(),
             original_scope: None,
             current_scope: Default::default(),

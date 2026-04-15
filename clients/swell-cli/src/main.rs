@@ -562,6 +562,74 @@ fn handle_event(event: &DaemonEvent) {
                 id, step_name, status, duration_ms
             );
         }
+        DaemonEvent::TaskDetails {
+            id,
+            task_json,
+            correlation_id: _,
+        } => {
+            println!("[{}] Task details:\n{}", id, task_json);
+        }
+        DaemonEvent::DaemonHealth {
+            active_connections: _,
+            total_tasks: _,
+            tasks_by_state: _,
+            total_tokens: _,
+            last_model: _,
+            mcp_health: _,
+            uptime_seconds,
+            version,
+            total_budget: _,
+            total_spent: _,
+            remaining_budget: _,
+            correlation_id: _,
+        } => {
+            println!(
+                "Daemon status: uptime={}s, version={}",
+                uptime_seconds, version
+            );
+        }
+        DaemonEvent::ConfigValue {
+            key,
+            value,
+            source_file: _,
+            correlation_id: _,
+        } => {
+            println!("Config {} = {}", key, value);
+        }
+        DaemonEvent::MemoryResults {
+            results,
+            count,
+            correlation_id: _,
+        } => {
+            println!("Memory results: {} items", count);
+            println!("{}", results);
+        }
+        DaemonEvent::CostQueryResult {
+            task_id,
+            total_input_tokens,
+            total_output_tokens,
+            total_cost_usd,
+            model_breakdown,
+            correlation_id: _,
+        } => {
+            if let Some(tid) = task_id {
+                println!("Cost for task {}:", tid);
+            } else {
+                println!("Aggregate cost:");
+            }
+            println!("  Input tokens: {}", total_input_tokens);
+            println!("  Output tokens: {}", total_output_tokens);
+            println!("  Total cost: ${:.4}", total_cost_usd);
+            for info in model_breakdown {
+                println!(
+                    "  {}: {} in, {} out, ${:.4}",
+                    info.model,
+                    info.total_input_tokens,
+                    info.total_output_tokens,
+                    info.total_cost_usd
+                );
+            }
+        }
     }
 }
 

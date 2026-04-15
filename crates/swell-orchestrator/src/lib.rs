@@ -483,9 +483,9 @@ impl Orchestrator {
     /// Can be called from:
     /// - AwaitingApproval: user explicitly rejected the plan
     /// - Validating: validation gate rejected the task
-    pub async fn reject_task(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub async fn reject_task(&self, task_id: Uuid, reason: String) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
-        sm.reject_task(task_id)?;
+        sm.reject_task(task_id, reason)?;
         info!(task_id = %task_id, "Task rejected");
         Ok(())
     }
@@ -518,7 +518,7 @@ impl Orchestrator {
         } else {
             drop(sm); // Release read lock before acquiring write lock
             let sm = self.state_machine.write().await;
-            sm.reject_task(task_id)?;
+            sm.reject_task(task_id, "Validation failed".to_string())?;
             info!(task_id = %task_id, "Task rejected");
 
             // Evaluate retry policy for escalation decision

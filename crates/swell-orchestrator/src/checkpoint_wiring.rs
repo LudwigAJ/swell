@@ -192,8 +192,8 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Mark task as rejected and checkpoint.
-    pub async fn reject_task(&self, id: Uuid) -> Result<(), SwellError> {
-        self.inner.reject_task(id)?;
+    pub async fn reject_task(&self, id: Uuid, reason: String) -> Result<(), SwellError> {
+        self.inner.reject_task(id, reason)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "reject").await?;
         Ok(())
@@ -473,7 +473,9 @@ mod tests {
         sm.assign_task(task.id, Uuid::new_v4()).await.unwrap();
         sm.start_execution(task.id).await.unwrap();
         sm.start_validation(task.id).await.unwrap();
-        sm.reject_task(task.id).await.unwrap();
+        sm.reject_task(task.id, "Test rejection".to_string())
+            .await
+            .unwrap();
 
         // Verify checkpoints: 7 transitions
         let checkpoints = sm.list_checkpoints(task.id).await.unwrap();

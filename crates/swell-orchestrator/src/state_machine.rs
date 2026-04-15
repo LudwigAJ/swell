@@ -221,15 +221,17 @@ impl TaskStateMachine {
     /// Can be called from:
     /// - Validating: validation gate rejected the task
     /// - AwaitingApproval: user explicitly rejected via `swell reject`
-    pub fn reject_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn reject_task(&self, id: uuid::Uuid, reason: String) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Validating => {
                 task.transition_to(TaskState::Rejected);
                 task.iteration_count += 1;
+                task.rejected_reason = Some(reason);
                 Ok(())
             }
             TaskState::AwaitingApproval => {
                 task.transition_to(TaskState::Rejected);
+                task.rejected_reason = Some(reason);
                 Ok(())
             }
             _ => Err(SwellError::InvalidStateTransition(format!(
@@ -745,7 +747,8 @@ mod tests {
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
-        sm.reject_task(task_id).unwrap();
+        sm.reject_task(task_id, "Test rejection".to_string())
+            .unwrap();
 
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Rejected);
@@ -762,7 +765,8 @@ mod tests {
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
-        sm.reject_task(task_id).unwrap();
+        sm.reject_task(task_id, "Test rejection".to_string())
+            .unwrap();
 
         let task = sm.get_task(task_id).unwrap();
         assert_eq!(task.state, TaskState::Rejected);
@@ -788,7 +792,8 @@ mod tests {
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
-        sm.reject_task(task_id).unwrap();
+        sm.reject_task(task_id, "Test rejection".to_string())
+            .unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().iteration_count, 1);
 
         // Retry: Rejected → Ready → Assigned → Executing → Validating → Rejected
@@ -796,7 +801,8 @@ mod tests {
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
-        sm.reject_task(task_id).unwrap();
+        sm.reject_task(task_id, "Test rejection".to_string())
+            .unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().iteration_count, 2);
 
         // Second retry
@@ -804,7 +810,8 @@ mod tests {
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
-        sm.reject_task(task_id).unwrap();
+        sm.reject_task(task_id, "Test rejection".to_string())
+            .unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().iteration_count, 3);
 
         // After 3 rejections, escalate instead of retrying
@@ -919,7 +926,7 @@ mod tests {
         sm.ready_task(task_id).unwrap();
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
 
-        let result = sm.reject_task(task_id);
+        let result = sm.reject_task(task_id, "Test rejection".to_string());
         assert!(result.is_err());
     }
 
@@ -1093,7 +1100,8 @@ mod tests {
         );
 
         // Reject: AwaitingApproval -> Rejected
-        sm.reject_task(task_id).unwrap();
+        sm.reject_task(task_id, "Test rejection".to_string())
+            .unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Rejected);
     }
 
@@ -1132,7 +1140,7 @@ mod tests {
         sm.enrich_task(task_id).unwrap();
 
         // Try to reject - should fail because not in AwaitingApproval or Validating
-        let result = sm.reject_task(task_id);
+        let result = sm.reject_task(task_id, "Test rejection".to_string());
         assert!(result.is_err());
     }
 

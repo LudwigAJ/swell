@@ -99,7 +99,7 @@ pub async fn handle_command(
                 Ok(task) => {
                     warn!(task_id = %task_id, reason = %reason, state = ?task.state, "Task rejected");
                     // Actually transition the task to Rejected state
-                    match orch.reject_task(task_id).await {
+                    match orch.reject_task(task_id, reason.clone()).await {
                         Ok(()) => {
                             let correlation_id = EventEmitter::new_correlation_id();
                             event_emitter
@@ -487,7 +487,11 @@ pub async fn handle_command(
                 correlation_id,
             }
         }
-        CliCommand::MemoryQuery { query, scope, limit } => {
+        CliCommand::MemoryQuery {
+            query,
+            scope,
+            limit,
+        } => {
             info!(query = %query, limit = limit, "MemoryQuery requested");
             let correlation_id = EventEmitter::new_correlation_id();
 
@@ -496,10 +500,8 @@ pub async fn handle_command(
             match guard.as_ref() {
                 Some(recall) => {
                     // Parse keywords from query string
-                    let keywords: Vec<String> = query
-                        .split_whitespace()
-                        .map(|s| s.to_string())
-                        .collect();
+                    let keywords: Vec<String> =
+                        query.split_whitespace().map(|s| s.to_string()).collect();
 
                     // Build recall query
                     let recall_query = RecallQuery {
@@ -519,9 +521,8 @@ pub async fn handle_command(
                     match recall.search(recall_query).await {
                         Ok(results) => {
                             let count = results.len();
-                            let results_json =
-                                serde_json::to_string(&results)
-                                    .unwrap_or_else(|_| "[]".to_string());
+                            let results_json = serde_json::to_string(&results)
+                                .unwrap_or_else(|_| "[]".to_string());
                             info!(count = count, "MemoryQuery returned {} results", count);
                             DaemonEvent::MemoryResults {
                                 results: results_json,
@@ -571,18 +572,9 @@ pub async fn handle_command(
             let model_breakdown = get_global_model_breakdown();
 
             // Calculate totals from model breakdown
-            let total_input_tokens: u64 = model_breakdown
-                .iter()
-                .map(|m| m.input_tokens)
-                .sum();
-            let total_output_tokens: u64 = model_breakdown
-                .iter()
-                .map(|m| m.output_tokens)
-                .sum();
-            let total_cost_usd: f64 = model_breakdown
-                .iter()
-                .map(|m| m.cost_usd)
-                .sum();
+            let total_input_tokens: u64 = model_breakdown.iter().map(|m| m.input_tokens).sum();
+            let total_output_tokens: u64 = model_breakdown.iter().map(|m| m.output_tokens).sum();
+            let total_cost_usd: f64 = model_breakdown.iter().map(|m| m.cost_usd).sum();
 
             // Convert to ModelCostInfo for the response
             let breakdown: Vec<swell_core::ModelCostInfo> = model_breakdown
@@ -2252,7 +2244,10 @@ mod tests {
     #[tokio::test]
     async fn test_parse_cost_query_with_task_id() {
         let task_id = Uuid::new_v4();
-        let json = format!(r#"{{"type":"CostQuery","payload":{{"task_id":"{}"}}}}"#, task_id);
+        let json = format!(
+            r#"{{"type":"CostQuery","payload":{{"task_id":"{}"}}}}"#,
+            task_id
+        );
         let command = parse_command(&json).unwrap();
 
         match command {

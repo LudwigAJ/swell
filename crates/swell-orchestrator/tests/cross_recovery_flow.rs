@@ -113,17 +113,11 @@ fn classify_tool_failure(error: &SwellError, _tool_name: Option<&str>) -> Failur
             let msg = error.to_string().to_lowercase();
             if msg.contains("timeout") {
                 FailureClass::Timeout
-            } else if msg.contains("rate limit")
-                || msg.contains("quota")
-                || msg.contains("429")
-            {
+            } else if msg.contains("rate limit") || msg.contains("quota") || msg.contains("429") {
                 FailureClass::RateLimited
             } else if msg.contains("permission") || msg.contains("denied") {
                 FailureClass::PermissionDenied
-            } else if msg.contains("network")
-                || msg.contains("connection")
-                || msg.contains("dns")
-            {
+            } else if msg.contains("network") || msg.contains("connection") || msg.contains("dns") {
                 FailureClass::NetworkError
             } else if msg.contains("not found") || msg.contains("invalid") {
                 FailureClass::ToolError
@@ -358,8 +352,7 @@ fn test_recovery_recipe_pattern_match() {
     assert!(!steps.is_empty());
 
     // Non-matching pattern should return default (empty)
-    let steps =
-        recipe.get_matching(FailureClass::LlmError, Some("Rate limit exceeded"), None);
+    let steps = recipe.get_matching(FailureClass::LlmError, Some("Rate limit exceeded"), None);
     assert!(steps.is_empty()); // Default is empty
 }
 
@@ -376,10 +369,7 @@ fn test_recovery_recipe_tool_specific_match() {
     // Matching tool
     let steps = recipe.get_matching(FailureClass::ToolError, None, Some("git_commit"));
     assert!(!steps.is_empty());
-    assert!(matches!(
-        steps.first(),
-        Some(RecoveryStep::Rollback { .. })
-    ));
+    assert!(matches!(steps.first(), Some(RecoveryStep::Rollback { .. })));
 
     // Non-matching tool should return default (empty)
     let steps = recipe.get_matching(FailureClass::ToolError, None, Some("file_read"));
@@ -700,7 +690,9 @@ async fn test_git_commit_network_failure_recovery() {
             false,
         ),
         // Turn 2: Continue after recovery
-        ScenarioStep::text("The git push failed due to network issues, but I've saved the changes locally."),
+        ScenarioStep::text(
+            "The git push failed due to network issues, but I've saved the changes locally.",
+        ),
     ];
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
@@ -773,7 +765,11 @@ async fn test_git_commit_network_failure_recovery() {
     let result = controller.execute_turn_loop(messages, None).await;
 
     // Should complete without crashing
-    assert!(result.is_ok(), "Recovery flow should complete: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Recovery flow should complete: {:?}",
+        result.err()
+    );
 
     let (summaries, _) = result.unwrap();
 
@@ -944,7 +940,11 @@ async fn test_full_recovery_flow() {
     assert_eq!(class, FailureClass::RateLimited);
 
     // Step 5: Verify recipe selection
-    let steps = recipe.get_matching(class, Some("Rate limit exceeded"), Some("rate_limited_tool"));
+    let steps = recipe.get_matching(
+        class,
+        Some("Rate limit exceeded"),
+        Some("rate_limited_tool"),
+    );
     assert!(!steps.is_empty());
     assert!(matches!(
         steps.first(),
@@ -957,12 +957,8 @@ async fn test_full_recovery_flow() {
 
     // Step 6: Execute with the tool and verify continuation
     let orchestrator = Arc::new(Orchestrator::new());
-    let controller = ExecutionController::with_max_iterations(
-        orchestrator,
-        mock_llm,
-        tool_registry,
-        10,
-    );
+    let controller =
+        ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,
@@ -973,7 +969,11 @@ async fn test_full_recovery_flow() {
     let result = controller.execute_turn_loop(messages, None).await;
 
     // Step 7: Verify execution completed without crash
-    assert!(result.is_ok(), "Full recovery flow should complete: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Full recovery flow should complete: {:?}",
+        result.err()
+    );
 
     let (summaries, final_text) = result.unwrap();
 
@@ -1033,12 +1033,8 @@ async fn test_recovery_flow_permission_denied() {
         )
         .await;
 
-    let controller = ExecutionController::with_max_iterations(
-        orchestrator,
-        mock_llm,
-        tool_registry,
-        10,
-    );
+    let controller =
+        ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,
@@ -1049,7 +1045,11 @@ async fn test_recovery_flow_permission_denied() {
     let result = controller.execute_turn_loop(messages, None).await;
 
     // Should complete without crash
-    assert!(result.is_ok(), "Permission denial should not crash: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Permission denial should not crash: {:?}",
+        result.err()
+    );
 
     let (summaries, final_text) = result.unwrap();
 
@@ -1119,12 +1119,8 @@ async fn test_recovery_flow_timeout() {
         })
     ));
 
-    let controller = ExecutionController::with_max_iterations(
-        orchestrator,
-        mock_llm,
-        tool_registry,
-        10,
-    );
+    let controller =
+        ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,
@@ -1135,7 +1131,11 @@ async fn test_recovery_flow_timeout() {
     let result = controller.execute_turn_loop(messages, None).await;
 
     // Should complete without crash
-    assert!(result.is_ok(), "Timeout should not crash: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Timeout should not crash: {:?}",
+        result.err()
+    );
 
     let (summaries, _) = result.unwrap();
 
@@ -1145,5 +1145,8 @@ async fn test_recovery_flow_timeout() {
         .flat_map(|s| s.tool_calls.iter())
         .filter(|tc| tc.name == "slow_tool" && !tc.success)
         .collect();
-    assert!(!timeout_calls.is_empty(), "Should have recorded timeout failure");
+    assert!(
+        !timeout_calls.is_empty(),
+        "Should have recorded timeout failure"
+    );
 }

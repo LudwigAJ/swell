@@ -385,7 +385,10 @@ impl From<DaemonEvent> for DashboardEvent {
                 ..
             } => DashboardEvent::TaskProgress {
                 id: Uuid::nil(),
-                message: format!("Daemon health: {} tasks, {}s uptime", total_tasks, uptime_seconds),
+                message: format!(
+                    "Daemon health: {} tasks, {}s uptime",
+                    total_tasks, uptime_seconds
+                ),
                 correlation_id: Uuid::nil(),
             },
             // ConfigValue - emit as progress with config key and value
@@ -411,7 +414,11 @@ impl From<DaemonEvent> for DashboardEvent {
                 correlation_id,
             } => DashboardEvent::TaskProgress {
                 id: Uuid::nil(),
-                message: format!("Memory query returned {} results ({} bytes)", count, results.len()),
+                message: format!(
+                    "Memory query returned {} results ({} bytes)",
+                    count,
+                    results.len()
+                ),
                 correlation_id,
             },
             // CostQueryResult - emit as progress with cost summary

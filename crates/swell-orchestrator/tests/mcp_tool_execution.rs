@@ -8,12 +8,12 @@
 //!
 //! This validates VAL-MCP-001: MCP tool execution through agent execution path.
 
-use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use serde_json::json;
+use std::sync::{Arc, Mutex};
 use swell_core::{
-    AgentContext, RiskLevel, SwellError, ToolOutput, ToolResultContent,
     traits::{Agent, Tool},
+    AgentContext, RiskLevel, SwellError, ToolOutput, ToolResultContent,
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::agents::GeneratorAgent;
@@ -69,7 +69,10 @@ impl Tool for TestInvokeTool {
     }
 
     fn description(&self) -> String {
-        format!("Test tool '{}' for validating MCP execution flow", self.name)
+        format!(
+            "Test tool '{}' for validating MCP execution flow",
+            self.name
+        )
     }
 
     fn risk_level(&self) -> swell_core::ToolRiskLevel {
@@ -165,7 +168,9 @@ impl Tool for MockMcpTool {
 
         Ok(ToolOutput {
             is_error: false,
-            content: vec![ToolResultContent::Text(serde_json::to_string(&response).unwrap())],
+            content: vec![ToolResultContent::Text(
+                serde_json::to_string(&response).unwrap(),
+            )],
         })
     }
 }
@@ -177,13 +182,13 @@ async fn test_tool_registry_discovers_mcp_tools() {
 
     // Register a mock MCP tool directly (not Arc-wrapped)
     let result = registry
-        .register(
-            MockMcpTool::new(),
-            ToolCategory::Mcp,
-            ToolLayer::Runtime,
-        )
+        .register(MockMcpTool::new(), ToolCategory::Mcp, ToolLayer::Runtime)
         .await;
-    assert!(result.success, "Register should succeed: {:?}", result.warning);
+    assert!(
+        result.success,
+        "Register should succeed: {:?}",
+        result.warning
+    );
 
     // Verify the tool is discoverable
     let tool = registry.get("mock_mcp_tool").await;
@@ -204,7 +209,10 @@ async fn test_tool_registry_discovers_mcp_tools() {
     assert_eq!(info.category, ToolCategory::Mcp);
     assert_eq!(info.layer, ToolLayer::Runtime);
 
-    println!("MCP tool discovered: {} (category: {:?})", info.name, info.category);
+    println!(
+        "MCP tool discovered: {} (category: {:?})",
+        info.name, info.category
+    );
 }
 
 /// Test: ToolRegistry list_names returns MCP tools for LLM notification.
@@ -223,11 +231,7 @@ async fn test_tool_registry_list_names_includes_mcp_tools() {
     assert!(result1.success);
 
     let result2 = registry
-        .register(
-            MockMcpTool::new(),
-            ToolCategory::Mcp,
-            ToolLayer::Runtime,
-        )
+        .register(MockMcpTool::new(), ToolCategory::Mcp, ToolLayer::Runtime)
         .await;
     assert!(result2.success);
 
@@ -259,19 +263,21 @@ async fn test_generator_agent_executes_tool_via_react_loop() {
     // Clone before registering since register takes ownership
     let invoke_tool_clone = invoke_tool.clone();
     let result = registry
-        .register(
-            invoke_tool_clone,
-            ToolCategory::Misc,
-            ToolLayer::Runtime,
-        )
+        .register(invoke_tool_clone, ToolCategory::Misc, ToolLayer::Runtime)
         .await;
-    assert!(result.success, "Register should succeed: {:?}", result.warning);
+    assert!(
+        result.success,
+        "Register should succeed: {:?}",
+        result.warning
+    );
 
     // Create scenario where LLM decides to use the test_invoke tool
     // The ReAct loop should parse this JSON action and execute it
     let scenario = vec![
         // Step 1: LLM responds with action JSON
-        ScenarioStep::Text(r#"{"action": "test_invoke", "args": {"input": "test data"}}"#.to_string()),
+        ScenarioStep::Text(
+            r#"{"action": "test_invoke", "args": {"input": "test data"}}"#.to_string(),
+        ),
     ];
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
@@ -312,10 +318,7 @@ async fn test_generator_agent_executes_tool_via_react_loop() {
 
     // Execute the agent
     let result = agent.execute(context).await;
-    assert!(
-        result.is_ok(),
-        "GeneratorAgent should execute successfully"
-    );
+    assert!(result.is_ok(), "GeneratorAgent should execute successfully");
 
     let result = result.unwrap();
 
@@ -335,9 +338,7 @@ async fn test_generator_agent_executes_tool_via_react_loop() {
 
     println!(
         "GeneratorAgent executed {} step(s), tool call count: {}, result: {:?}",
-        1,
-        call_count,
-        result.success
+        1, call_count, result.success
     );
 }
 
@@ -353,10 +354,7 @@ async fn test_generator_agent_handles_missing_tool() {
     // For this test, we use the heuristic fallback mode to avoid
     // needing complex ReAct loop scenarios. The GeneratorAgent will
     // detect no tools are available and return gracefully.
-    let agent = GeneratorAgent::with_tools(
-        "claude-sonnet".to_string(),
-        registry,
-    );
+    let agent = GeneratorAgent::with_tools("claude-sonnet".to_string(), registry);
 
     let plan = swell_core::Plan {
         id: Uuid::new_v4(),
@@ -392,9 +390,7 @@ async fn test_generator_agent_handles_missing_tool() {
         "GeneratorAgent should handle no tools gracefully"
     );
 
-    println!(
-        "GeneratorAgent gracefully handled missing tool scenario"
-    );
+    println!("GeneratorAgent gracefully handled missing tool scenario");
 }
 
 /// Test: Multiple tool calls in sequence work correctly.
@@ -411,20 +407,12 @@ async fn test_generator_agent_multiple_tool_calls() {
 
     // Clone the tools before registering (ownership moves into registry)
     let result1 = registry
-        .register(
-            tool1.clone(),
-            ToolCategory::Misc,
-            ToolLayer::Runtime,
-        )
+        .register(tool1.clone(), ToolCategory::Misc, ToolLayer::Runtime)
         .await;
     assert!(result1.success);
 
     let result2 = registry
-        .register(
-            tool2.clone(),
-            ToolCategory::Misc,
-            ToolLayer::Runtime,
-        )
+        .register(tool2.clone(), ToolCategory::Misc, ToolLayer::Runtime)
         .await;
     assert!(result2.success);
 
@@ -508,19 +496,12 @@ async fn test_generator_agent_heuristic_fallback() {
     // Register a simple test tool
     let tool = TestInvokeTool::new("simple_tool");
     let result = registry
-        .register(
-            tool.clone(),
-            ToolCategory::Misc,
-            ToolLayer::Runtime,
-        )
+        .register(tool.clone(), ToolCategory::Misc, ToolLayer::Runtime)
         .await;
     assert!(result.success);
 
     // Create agent WITHOUT LLM (uses heuristic)
-    let agent = GeneratorAgent::with_tools(
-        "claude-sonnet".to_string(),
-        registry.clone(),
-    );
+    let agent = GeneratorAgent::with_tools("claude-sonnet".to_string(), registry.clone());
 
     let plan = swell_core::Plan {
         id: Uuid::new_v4(),
@@ -574,10 +555,7 @@ async fn test_mcp_tool_result_structure() {
     let output = result.unwrap();
 
     assert!(!output.is_error, "MCP tool result should not be an error");
-    assert!(
-        !output.content.is_empty(),
-        "MCP tool should return content"
-    );
+    assert!(!output.content.is_empty(), "MCP tool should return content");
 
     // Parse the JSON content
     if let ToolResultContent::Text(text) = &output.content[0] {
