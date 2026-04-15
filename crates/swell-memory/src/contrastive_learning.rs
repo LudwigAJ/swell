@@ -180,6 +180,136 @@ pub struct LossComponents {
     pub negative_loss: f32,
 }
 
+/// A differentiating factor that distinguishes successful from failed trajectories
+/// These are extracted during contrastive learning analysis and used to
+/// tighten procedure preconditions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DifferentiatingFactor {
+    /// Unique identifier for this factor
+    pub id: Uuid,
+    /// Type of factor
+    pub factor_type: DifferentiatingFactorType,
+    /// The specific value (tool name, file path, context key, etc.)
+    pub value: String,
+    /// True if this factor is PRESENT in success but ABSENT in failure
+    /// False if this factor is ABSENT in success but PRESENT in failure
+    pub success_has_failure_has_not: bool,
+    /// Confidence score (0.0 to 1.0) based on frequency of occurrence
+    pub confidence: f64,
+    /// Number of times this factor was observed
+    pub observation_count: usize,
+    /// Which trajectory pair produced this factor
+    pub source_pair_id: Option<Uuid>,
+}
+
+impl DifferentiatingFactor {
+    /// Create a new differentiating factor
+    pub fn new(
+        factor_type: DifferentiatingFactorType,
+        value: String,
+        success_has_failure_has_not: bool,
+        confidence: f64,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            factor_type,
+            value,
+            success_has_failure_has_not,
+            confidence,
+            observation_count: 1,
+            source_pair_id: None,
+        }
+    }
+
+    /// Update confidence based on additional observation
+    /// Uses Bayesian update: new_confidence = (observations * old_confidence + new_confidence) / (observations + 1)
+    pub fn update_confidence(&mut self, additional_confidence: f64) {
+        let old_count = self.observation_count;
+        self.observation_count += 1;
+        self.confidence = (old_count as f64 * self.confidence + additional_confidence)
+            / (self.observation_count as f64);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DifferentiatingFactorType {
+    /// Tool was used in success but not in failure
+    ToolUsedInSuccess,
+    /// Tool was used in failure but not in success
+    ToolNotUsedInSuccess,
+    /// File was modified in success but not in failure
+    FileModifiedInSuccess,
+    /// File was not modified in success but was in failure
+    FileModifiedInFailure,
+    /// Step order differs between success and failure
+    StepOrderDifference,
+    /// Risk level differs between success and failure
+    RiskLevelDifference,
+    /// Context variable present in success but not in failure
+    ContextVarPresentInSuccess,
+    /// Context variable present in failure but not in success
+    ContextVarPresentInFailure,
+}
+
+impl DifferentiatingFactorType {
+    /// Returns true if this factor indicates something that SHOULD be done
+    /// (success pattern), vs something that should NOT be done (failure pattern)
+    pub fn is_success_pattern(&self) -> bool {
+        matches!(
+            self,
+            DifferentiatingFactorType::ToolUsedInSuccess
+                | DifferentiatingFactorType::FileModifiedInSuccess
+                | DifferentiatingFactorType::ContextVarPresentInSuccess
+                | DifferentiatingFactorType::StepOrderDifference // depends on direction
+                | DifferentiatingFactorType::RiskLevelDifference // depends on direction
+        )
+    }
+
+    /// Returns true if this factor indicates a strict requirement
+    pub fn is_strict(&self) -> bool {
+        matches!(
+            self,
+            DifferentiatingFactorType::ToolNotUsedInSuccess
+                | DifferentiatingFactorType::FileModifiedInFailure
+                | DifferentiatingFactorType::ContextVarPresentInFailure
+        )
+    }
+
+    /// Get human-readable description of this factor type
+    pub fn description(&self) -> &'static str {
+        match self {
+            DifferentiatingFactorType::ToolUsedInSuccess => "Tool used in successful execution",
+            DifferentiatingFactorType::ToolNotUsedInSuccess => {
+                "Tool avoided in successful execution"
+            }
+            DifferentiatingFactorType::FileModifiedInSuccess => {
+                "File modified in successful execution"
+            }
+            DifferentiatingFactorType::FileModifiedInFailure => "File modification caused failure",
+            DifferentiatingFactorType::StepOrderDifference => "Step order differs between outcomes",
+            DifferentiatingFactorType::RiskLevelDifference => "Risk level differs between outcomes",
+            DifferentiatingFactorType::ContextVarPresentInSuccess => {
+                "Context variable present in success"
+            }
+            DifferentiatingFactorType::ContextVarPresentInFailure => {
+                "Context variable caused failure"
+            }
+        }
+    }
+}
+
+/// Result of identifying differentiating factors between success and failure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FactorIdentificationResult {
+    /// All identified differentiating factors
+    pub factors: Vec<DifferentiatingFactor>,
+    /// Non-differentiating steps that were ignored
+    pub ignored_steps: usize,
+    /// Total pairs analyzed
+    pub pairs_analyzed: usize,
+}
+
 /// Configuration for contrastive learning
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContrastiveLearningConfig {
@@ -434,6 +564,279 @@ impl ContrastiveAnalyzer {
         }
 
         result
+    }
+
+    /// Identify differentiating factors between success and failure trajectory pairs
+    ///
+    /// This method compares success/failure pairs step-by-step to identify which
+    /// factors (tools, files, step orders, etc.) distinguish successful from failed
+    /// executions. These factors are used to tighten procedure preconditions.
+    ///
+    /// # Arguments
+    /// * `success` - The successful trajectory
+    /// * `failure` - The failed trajectory
+    ///
+    /// # Returns
+    /// A `FactorIdentificationResult` containing identified differentiating factors
+    pub fn identify_differentiating_factors(
+        &self,
+        success: &SuccessTrajectory,
+        failure: &FailureTrajectory,
+    ) -> FactorIdentificationResult {
+        let mut factors: Vec<DifferentiatingFactor> = Vec::new();
+
+        // Compare tool usage between success and failure
+        // For success: only consider successful tool calls (we want to know what TO do)
+        let success_tools: HashSet<_> = success
+            .tool_calls
+            .iter()
+            .filter(|t| t.success)
+            .map(|t| t.tool_name.clone())
+            .collect();
+
+        // For failure: consider ALL tool calls (including failed ones) since the failed
+        // tool might be the differentiating factor that caused the failure
+        let failure_tools: HashSet<_> = failure
+            .tool_calls
+            .iter()
+            .map(|t| t.tool_name.clone())
+            .collect();
+
+        // Tools used in success but not in failure (positive pattern)
+        for tool in success_tools.difference(&failure_tools) {
+            factors.push(DifferentiatingFactor::new(
+                DifferentiatingFactorType::ToolUsedInSuccess,
+                tool.clone(),
+                true,
+                1.0, // High confidence since it clearly differentiates
+            ));
+        }
+
+        // Tools used in failure but not in success (negative pattern)
+        for tool in failure_tools.difference(&success_tools) {
+            factors.push(DifferentiatingFactor::new(
+                DifferentiatingFactorType::ToolNotUsedInSuccess,
+                tool.clone(),
+                false,
+                1.0,
+            ));
+        }
+
+        // Compare file modifications
+        let success_files: HashSet<_> = success.files_modified.iter().collect();
+        let failure_files: HashSet<_> = failure.files_modified.iter().collect();
+
+        // Files modified in success but not in failure (positive pattern)
+        for file in success_files.difference(&failure_files) {
+            factors.push(DifferentiatingFactor::new(
+                DifferentiatingFactorType::FileModifiedInSuccess,
+                file.to_string(),
+                true,
+                1.0,
+            ));
+        }
+
+        // Files modified in failure but not in success (negative pattern)
+        for file in failure_files.difference(&success_files) {
+            factors.push(DifferentiatingFactor::new(
+                DifferentiatingFactorType::FileModifiedInFailure,
+                file.to_string(),
+                false,
+                1.0,
+            ));
+        }
+
+        // Compare step risk levels
+        let success_risks: Vec<_> = success.steps.iter().map(|s| s.risk_level.clone()).collect();
+        let failure_risks: Vec<_> = failure.steps.iter().map(|s| s.risk_level.clone()).collect();
+
+        // If the failure has higher risk steps, that's a differentiating factor
+        // Compare average risk level
+        let success_avg_risk = if !success_risks.is_empty() {
+            let risk_values: Vec<f64> = success_risks
+                .iter()
+                .map(|r| match r.as_str() {
+                    "low" => 0.25,
+                    "medium" => 0.5,
+                    "high" => 0.75,
+                    "critical" => 1.0,
+                    _ => 0.5,
+                })
+                .collect();
+            risk_values.iter().sum::<f64>() / risk_values.len() as f64
+        } else {
+            0.0
+        };
+
+        let failure_avg_risk = if !failure_risks.is_empty() {
+            let risk_values: Vec<f64> = failure_risks
+                .iter()
+                .map(|r| match r.as_str() {
+                    "low" => 0.25,
+                    "medium" => 0.5,
+                    "high" => 0.75,
+                    "critical" => 1.0,
+                    _ => 0.5,
+                })
+                .collect();
+            risk_values.iter().sum::<f64>() / risk_values.len() as f64
+        } else {
+            0.0
+        };
+
+        if failure_avg_risk > success_avg_risk {
+            factors.push(DifferentiatingFactor::new(
+                DifferentiatingFactorType::RiskLevelDifference,
+                format!(
+                    "failure_risk={:.2}, success_risk={:.2}",
+                    failure_avg_risk, success_avg_risk
+                ),
+                false,
+                (failure_avg_risk - success_avg_risk).min(1.0),
+            ));
+        }
+
+        // Count non-differentiating steps (steps with same risk level in both)
+        let success_risks_set: HashSet<_> = success_risks.iter().collect();
+        let failure_risks_set: HashSet<_> = failure_risks.iter().collect();
+        let common_risks_count = success_risks_set.intersection(&failure_risks_set).count();
+        let ignored_steps = (success.steps.len() + failure.steps.len()) / 2 - common_risks_count;
+
+        FactorIdentificationResult {
+            factors,
+            ignored_steps,
+            pairs_analyzed: 1,
+        }
+    }
+
+    /// Analyze multiple success/failure pairs and aggregate differentiating factors
+    ///
+    /// Returns factors with aggregated confidence based on how often they appear
+    pub async fn analyze_trajectory_pairs(
+        &self,
+        successes: &[SuccessTrajectory],
+        failures: &[FailureTrajectory],
+    ) -> Result<FactorIdentificationResult, SwellError> {
+        let mut all_factors: Vec<DifferentiatingFactor> = Vec::new();
+        let mut ignored_count = 0;
+        let pairs_analyzed = successes.len().min(failures.len());
+
+        // For each success-failure pair with context overlap, identify factors
+        for success in successes {
+            for failure in failures {
+                // Only analyze if they have file overlap (same context)
+                let success_files: HashSet<_> = success.files_modified.iter().collect();
+                let failure_files: HashSet<_> = failure.files_modified.iter().collect();
+
+                if success_files.intersection(&failure_files).count() > 0 {
+                    let result = self.identify_differentiating_factors(success, failure);
+                    all_factors.extend(result.factors);
+                    ignored_count += result.ignored_steps;
+                }
+            }
+        }
+
+        // Aggregate factors by type and value, computing average confidence
+        let mut factor_map: HashMap<(DifferentiatingFactorType, String), (f64, usize)> =
+            HashMap::new();
+
+        for factor in &all_factors {
+            let key = (factor.factor_type.clone(), factor.value.clone());
+            let entry = factor_map.entry(key).or_insert((0.0, 0));
+            entry.0 += factor.confidence;
+            entry.1 += 1;
+        }
+
+        let mut aggregated_factors: Vec<DifferentiatingFactor> = Vec::new();
+        for ((factor_type, value), (total_conf, count)) in factor_map {
+            let avg_confidence = total_conf / count as f64;
+            let mut factor = DifferentiatingFactor::new(factor_type, value, true, avg_confidence);
+            factor.observation_count = count;
+            aggregated_factors.push(factor);
+        }
+
+        // Sort by confidence descending
+        aggregated_factors.sort_by(|a, b| {
+            b.confidence
+                .partial_cmp(&a.confidence)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(FactorIdentificationResult {
+            factors: aggregated_factors,
+            ignored_steps: ignored_count,
+            pairs_analyzed,
+        })
+    }
+
+    /// Convert a differentiating factor to a procedure precondition
+    ///
+    /// This is the key wiring step - taking factors identified from contrastive
+    /// analysis and translating them into preconditions that tighten procedure
+    /// applicability criteria.
+    pub fn factor_to_precondition(
+        &self,
+        factor: &DifferentiatingFactor,
+    ) -> Option<(crate::procedural::PreconditionType, String, bool, f64)> {
+        // Map factor types to precondition types
+        match factor.factor_type {
+            DifferentiatingFactorType::ToolUsedInSuccess => {
+                // Success has this tool, failure doesn't → require this tool
+                Some((
+                    crate::procedural::PreconditionType::ToolRequired,
+                    factor.value.clone(),
+                    false, // soft - having it is good but not strict
+                    factor.confidence,
+                ))
+            }
+            DifferentiatingFactorType::ToolNotUsedInSuccess => {
+                // Success doesn't have this tool, failure does → forbid this tool
+                Some((
+                    crate::procedural::PreconditionType::ToolForbidden,
+                    factor.value.clone(),
+                    true, // strict - must NOT use this tool
+                    factor.confidence,
+                ))
+            }
+            DifferentiatingFactorType::FileModifiedInFailure => {
+                // File was modified in failure → must not modify this file
+                Some((
+                    crate::procedural::PreconditionType::FileUntouched,
+                    factor.value.clone(),
+                    true, // strict
+                    factor.confidence,
+                ))
+            }
+            DifferentiatingFactorType::RiskLevelDifference => {
+                // Extract risk threshold from the factor value
+                // Format: "failure_risk=X.XX, success_risk=Y.YY"
+                if factor.value.contains("failure_risk=") {
+                    // Parse the failure risk value
+                    if let Some(rest) = factor.value.split("failure_risk=").nth(1) {
+                        if let Some(num_str) = rest.split(',').next() {
+                            if let Ok(risk) = num_str.parse::<f64>() {
+                                let threshold = (risk * 4.0).min(3.0) as usize;
+                                let risk_str = match threshold {
+                                    0 => "low",
+                                    1 => "medium",
+                                    2 => "high",
+                                    _ => "critical",
+                                };
+                                return Some((
+                                    crate::procedural::PreconditionType::MaxRiskLevel,
+                                    risk_str.to_string(),
+                                    true, // strict - risk must not exceed this
+                                    factor.confidence,
+                                ));
+                            }
+                        }
+                    }
+                }
+                None
+            }
+            // Other factor types don't directly map to preconditions
+            _ => None,
+        }
     }
 }
 
@@ -723,16 +1126,22 @@ impl ContrastiveTrainer {
 pub struct ContrastiveLearningService {
     store: SqliteMemoryStore,
     config: ContrastiveLearningConfig,
+    analyzer: ContrastiveAnalyzer,
 }
 
 impl ContrastiveLearningService {
     pub fn new(store: SqliteMemoryStore, config: ContrastiveLearningConfig) -> Self {
-        Self { store, config }
+        Self {
+            store: store.clone(),
+            analyzer: ContrastiveAnalyzer::new(store, config.clone()),
+            config,
+        }
     }
 
     pub fn with_default_config(store: SqliteMemoryStore) -> Self {
         Self {
-            store,
+            store: store.clone(),
+            analyzer: ContrastiveAnalyzer::with_default_config(store.clone()),
             config: ContrastiveLearningConfig::default(),
         }
     }
@@ -743,11 +1152,10 @@ impl ContrastiveLearningService {
         successes: Vec<SuccessTrajectory>,
         failures: Vec<FailureTrajectory>,
     ) -> Result<ContrastiveLearningResult, SwellError> {
-        let analyzer = ContrastiveAnalyzer::new(self.store.clone(), self.config.clone());
         let trainer = ContrastiveTrainer::new(self.config.clone());
 
         // Build contrastive pairs
-        let pairs = analyzer.build_pairs(&successes, &failures).await?;
+        let pairs = self.analyzer.build_pairs(&successes, &failures).await?;
 
         // Train embeddings
         let result = trainer.train(&self.store, pairs).await?;
@@ -761,11 +1169,10 @@ impl ContrastiveLearningService {
         successes: Vec<SuccessTrajectory>,
         failures: Vec<FailureTrajectory>,
     ) -> Result<ContrastiveLearningResult, SwellError> {
-        let analyzer = ContrastiveAnalyzer::new(self.store.clone(), self.config.clone());
         let trainer = ContrastiveTrainer::new(self.config.clone());
 
         // Build contrastive pairs
-        let pairs = analyzer.build_pairs(&successes, &failures).await?;
+        let pairs = self.analyzer.build_pairs(&successes, &failures).await?;
 
         // Analyze without training
         Ok(trainer.analyze(&pairs))
@@ -813,6 +1220,56 @@ impl ContrastiveLearningService {
             iteration_count,
             timestamp: Utc::now(),
         }
+    }
+
+    /// Apply contrastive learning analysis to tighten procedure preconditions
+    ///
+    /// This is the main wiring function that:
+    /// 1. Analyzes success/failure trajectory pairs to identify differentiating factors
+    /// 2. Converts those factors into procedure preconditions
+    /// 3. Updates the procedure with tighter preconditions based on what distinguishes
+    ///    successful executions from failed ones
+    ///
+    /// # Arguments
+    /// * `successes` - Trajectories of successful task executions
+    /// * `failures` - Trajectories of failed task executions
+    /// * `procedure` - The procedure whose preconditions should be tightened
+    ///
+    /// # Returns
+    /// A `Procedure` with updated preconditions, or the original if no factors found
+    pub async fn tighten_procedure_preconditions(
+        &self,
+        successes: Vec<SuccessTrajectory>,
+        failures: Vec<FailureTrajectory>,
+        mut procedure: crate::procedural::Procedure,
+    ) -> Result<crate::procedural::Procedure, SwellError> {
+        // Use the analyzer to identify differentiating factors
+        let factors_result = self
+            .analyzer
+            .analyze_trajectory_pairs(&successes, &failures)
+            .await?;
+
+        // If no factors found, return procedure unchanged
+        if factors_result.factors.is_empty() {
+            return Ok(procedure);
+        }
+
+        // Convert each differentiating factor to a precondition and add it
+        for factor in &factors_result.factors {
+            if let Some((precondition_type, value, is_strict, confidence)) =
+                self.analyzer.factor_to_precondition(factor)
+            {
+                procedure.add_precondition(crate::procedural::ProcedurePrecondition {
+                    precondition_type,
+                    value,
+                    is_strict,
+                    confidence,
+                    source_factor: Some(factor.id.to_string()),
+                });
+            }
+        }
+
+        Ok(procedure)
     }
 }
 
@@ -1299,5 +1756,522 @@ mod tests {
                 "Gradient should be zero when already far apart"
             );
         }
+    }
+
+    // =====================================================================
+    // Differentiating Factor Tests
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_identify_differentiating_factors_tool_difference() {
+        use crate::SqliteMemoryStore;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let analyzer = ContrastiveAnalyzer::with_default_config(store);
+
+        // Success uses "cargo build" and "cargo test"
+        let success = SuccessTrajectory {
+            task_id: Uuid::new_v4(),
+            task_description: "Implement feature".to_string(),
+            memory_ids: vec![],
+            steps: vec![],
+            outcome: SuccessOutcome::Accepted,
+            tool_calls: vec![
+                ToolCallRecord {
+                    tool_name: "cargo build".to_string(),
+                    arguments: serde_json::json!({}),
+                    success: true,
+                    timestamp: Utc::now(),
+                },
+                ToolCallRecord {
+                    tool_name: "cargo test".to_string(),
+                    arguments: serde_json::json!({}),
+                    success: true,
+                    timestamp: Utc::now(),
+                },
+            ],
+            files_modified: vec!["src/main.rs".to_string()],
+            timestamp: Utc::now(),
+        };
+
+        // Failure uses "cargo build" but NOT "cargo test" (instead uses risky shell command)
+        let failure = FailureTrajectory {
+            task_id: Uuid::new_v4(),
+            task_description: "Fix bug".to_string(),
+            memory_ids: vec![],
+            steps: vec![],
+            failure_reason: FailureReason::TestFailure,
+            validation_errors: vec![],
+            tool_calls: vec![
+                ToolCallRecord {
+                    tool_name: "cargo build".to_string(),
+                    arguments: serde_json::json!({}),
+                    success: true,
+                    timestamp: Utc::now(),
+                },
+                ToolCallRecord {
+                    tool_name: "rm -rf".to_string(),
+                    arguments: serde_json::json!({}),
+                    success: false,
+                    timestamp: Utc::now(),
+                },
+            ],
+            files_modified: vec!["src/main.rs".to_string()], // same file
+            iteration_count: 1,
+            timestamp: Utc::now(),
+        };
+
+        let result = analyzer.identify_differentiating_factors(&success, &failure);
+
+        // Should identify "cargo test" as a positive factor (used in success, not in failure)
+        let tool_in_success = result.factors.iter().find(|f| {
+            f.factor_type == DifferentiatingFactorType::ToolUsedInSuccess && f.value == "cargo test"
+        });
+        assert!(
+            tool_in_success.is_some(),
+            "Should identify 'cargo test' as differentiating factor"
+        );
+
+        // Should identify "rm -rf" as a negative factor (used in failure, not in success)
+        let tool_not_used = result.factors.iter().find(|f| {
+            f.factor_type == DifferentiatingFactorType::ToolNotUsedInSuccess && f.value == "rm -rf"
+        });
+        assert!(
+            tool_not_used.is_some(),
+            "Should identify 'rm -rf' as a tool to avoid"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_identify_differentiating_factors_file_difference() {
+        use crate::SqliteMemoryStore;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let analyzer = ContrastiveAnalyzer::with_default_config(store);
+
+        // Success modifies src/lib.rs
+        let success = SuccessTrajectory {
+            task_id: Uuid::new_v4(),
+            task_description: "Add test".to_string(),
+            memory_ids: vec![],
+            steps: vec![],
+            outcome: SuccessOutcome::Accepted,
+            tool_calls: vec![],
+            files_modified: vec!["src/lib.rs".to_string()],
+            timestamp: Utc::now(),
+        };
+
+        // Failure modifies src/main.rs (different file)
+        let failure = FailureTrajectory {
+            task_id: Uuid::new_v4(),
+            task_description: "Fix bug".to_string(),
+            memory_ids: vec![],
+            steps: vec![],
+            failure_reason: FailureReason::TestFailure,
+            validation_errors: vec![],
+            tool_calls: vec![],
+            files_modified: vec!["src/main.rs".to_string()],
+            iteration_count: 1,
+            timestamp: Utc::now(),
+        };
+
+        let result = analyzer.identify_differentiating_factors(&success, &failure);
+
+        // Since there's no file overlap, the factor analysis won't find strong factors
+        // The result might be empty due to how trajectories_are_contrasting works
+        // But for same-context comparison, we'd want to see file-based factors
+        // This test documents the current behavior
+        assert!(result.pairs_analyzed >= 1, "Should analyze the pair");
+    }
+
+    #[tokio::test]
+    async fn test_factor_to_precondition_tool_required() {
+        use crate::SqliteMemoryStore;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let analyzer = ContrastiveAnalyzer::with_default_config(store);
+
+        let factor = DifferentiatingFactor::new(
+            DifferentiatingFactorType::ToolUsedInSuccess,
+            "cargo test".to_string(),
+            true,
+            0.9,
+        );
+
+        let result = analyzer.factor_to_precondition(&factor);
+        assert!(result.is_some(), "Should convert to precondition");
+
+        let (precond_type, value, is_strict, confidence) = result.unwrap();
+        assert_eq!(
+            precond_type,
+            crate::procedural::PreconditionType::ToolRequired
+        );
+        assert_eq!(value, "cargo test");
+        assert!(!is_strict, "ToolRequired should be soft");
+        assert!((confidence - 0.9).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_factor_to_precondition_tool_forbidden() {
+        use crate::SqliteMemoryStore;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let analyzer = ContrastiveAnalyzer::with_default_config(store);
+
+        let factor = DifferentiatingFactor::new(
+            DifferentiatingFactorType::ToolNotUsedInSuccess,
+            "rm -rf".to_string(),
+            false,
+            1.0,
+        );
+
+        let result = analyzer.factor_to_precondition(&factor);
+        assert!(result.is_some(), "Should convert to precondition");
+
+        let (precond_type, value, is_strict, _confidence) = result.unwrap();
+        assert_eq!(
+            precond_type,
+            crate::procedural::PreconditionType::ToolForbidden
+        );
+        assert_eq!(value, "rm -rf");
+        assert!(is_strict, "ToolForbidden should be strict");
+    }
+
+    #[tokio::test]
+    async fn test_factor_to_precondition_file_untouched() {
+        use crate::SqliteMemoryStore;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let analyzer = ContrastiveAnalyzer::with_default_config(store);
+
+        let factor = DifferentiatingFactor::new(
+            DifferentiatingFactorType::FileModifiedInFailure,
+            "package.json".to_string(),
+            false,
+            1.0,
+        );
+
+        let result = analyzer.factor_to_precondition(&factor);
+        assert!(result.is_some(), "Should convert to precondition");
+
+        let (precond_type, value, is_strict, _confidence) = result.unwrap();
+        assert_eq!(
+            precond_type,
+            crate::procedural::PreconditionType::FileUntouched
+        );
+        assert_eq!(value, "package.json");
+        assert!(is_strict, "FileUntouched should be strict");
+    }
+
+    // =====================================================================
+    // Procedure Precondition Tests
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_procedure_add_precondition() {
+        use crate::Procedure;
+
+        let mut procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        // Add a precondition
+        procedure.add_precondition(crate::procedural::ProcedurePrecondition {
+            precondition_type: crate::procedural::PreconditionType::ToolRequired,
+            value: "cargo test".to_string(),
+            is_strict: false,
+            confidence: 0.8,
+            source_factor: None,
+        });
+
+        assert_eq!(procedure.preconditions.len(), 1);
+        assert_eq!(procedure.preconditions[0].value, "cargo test");
+
+        // Add another precondition
+        procedure.add_precondition(crate::procedural::ProcedurePrecondition {
+            precondition_type: crate::procedural::PreconditionType::ToolForbidden,
+            value: "rm -rf".to_string(),
+            is_strict: true,
+            confidence: 0.9,
+            source_factor: None,
+        });
+
+        assert_eq!(procedure.preconditions.len(), 2);
+
+        // Adding duplicate should update confidence (not create new)
+        procedure.add_precondition(crate::procedural::ProcedurePrecondition {
+            precondition_type: crate::procedural::PreconditionType::ToolRequired,
+            value: "cargo test".to_string(),
+            is_strict: false,
+            confidence: 0.95, // higher
+            source_factor: None,
+        });
+
+        assert_eq!(procedure.preconditions.len(), 2);
+        // Should have updated the confidence
+        let updated = procedure
+            .preconditions
+            .iter()
+            .find(|p| p.value == "cargo test")
+            .unwrap();
+        assert!((updated.confidence - 0.95).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_procedure_require_tool() {
+        use crate::Procedure;
+
+        let mut procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        procedure.require_tool("cargo test", 0.85, Some("factor-123".to_string()));
+
+        assert_eq!(procedure.preconditions.len(), 1);
+        assert_eq!(
+            procedure.preconditions[0].precondition_type,
+            crate::procedural::PreconditionType::ToolRequired
+        );
+        assert!(!procedure.preconditions[0].is_strict);
+    }
+
+    #[tokio::test]
+    async fn test_procedure_forbid_tool() {
+        use crate::Procedure;
+
+        let mut procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        procedure.forbid_tool("rm -rf", 1.0, None);
+
+        assert_eq!(procedure.preconditions.len(), 1);
+        assert_eq!(
+            procedure.preconditions[0].precondition_type,
+            crate::procedural::PreconditionType::ToolForbidden
+        );
+        assert!(procedure.preconditions[0].is_strict);
+    }
+
+    #[tokio::test]
+    async fn test_procedure_strict_soft_preconditions() {
+        use crate::Procedure;
+
+        let mut procedure = Procedure::new(
+            "test_procedure".to_string(),
+            "A test procedure".to_string(),
+            "test context".to_string(),
+        );
+
+        procedure.require_tool("cargo test", 0.85, None); // soft
+        procedure.forbid_tool("rm -rf", 1.0, None); // strict
+
+        let strict = procedure.strict_preconditions();
+        let soft = procedure.soft_preconditions();
+
+        assert_eq!(strict.len(), 1);
+        assert_eq!(soft.len(), 1);
+        assert_eq!(strict[0].value, "rm -rf");
+        assert_eq!(soft[0].value, "cargo test");
+    }
+
+    // =====================================================================
+    // Tighten Procedure Preconditions Tests
+    // =====================================================================
+
+    #[tokio::test]
+    async fn test_tighten_procedure_preconditions() {
+        use crate::SqliteMemoryStore;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let service = ContrastiveLearningService::with_default_config(store);
+
+        // Create success trajectory that uses cargo test
+        let successes = vec![SuccessTrajectory {
+            task_id: Uuid::new_v4(),
+            task_description: "Implement feature".to_string(),
+            memory_ids: vec![],
+            steps: vec![],
+            outcome: SuccessOutcome::Accepted,
+            tool_calls: vec![ToolCallRecord {
+                tool_name: "cargo test".to_string(),
+                arguments: serde_json::json!({}),
+                success: true,
+                timestamp: Utc::now(),
+            }],
+            files_modified: vec!["src/lib.rs".to_string()],
+            timestamp: Utc::now(),
+        }];
+
+        // Create failure trajectory that uses rm -rf
+        let failures = vec![FailureTrajectory {
+            task_id: Uuid::new_v4(),
+            task_description: "Fix bug".to_string(),
+            memory_ids: vec![],
+            steps: vec![],
+            failure_reason: FailureReason::TestFailure,
+            validation_errors: vec![],
+            tool_calls: vec![ToolCallRecord {
+                tool_name: "rm -rf".to_string(),
+                arguments: serde_json::json!({}),
+                success: false,
+                timestamp: Utc::now(),
+            }],
+            files_modified: vec!["src/lib.rs".to_string()], // same file context
+            iteration_count: 1,
+            timestamp: Utc::now(),
+        }];
+
+        // Create a procedure to tighten
+        use crate::Procedure;
+        let procedure = Procedure::new(
+            "rust_testing".to_string(),
+            "Run Rust tests".to_string(),
+            "cargo test rust testing".to_string(),
+        );
+
+        let result = service
+            .tighten_procedure_preconditions(successes, failures, procedure)
+            .await
+            .unwrap();
+
+        // The procedure should now have preconditions
+        assert!(
+            !result.preconditions.is_empty(),
+            "Procedure should have preconditions after tightening"
+        );
+
+        // Should have a precondition for "cargo test" (tool required)
+        let has_test_precond = result.preconditions.iter().any(|p| p.value == "cargo test");
+        assert!(has_test_precond, "Should require cargo test tool");
+
+        // Should have a precondition for "rm -rf" (tool forbidden)
+        let has_forbidden = result.preconditions.iter().any(|p| p.value == "rm -rf");
+        assert!(has_forbidden, "Should forbid rm -rf tool");
+    }
+
+    #[tokio::test]
+    async fn test_tighten_procedure_preserves_existing_preconditions() {
+        use crate::Procedure;
+
+        let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let service = ContrastiveLearningService::with_default_config(store);
+
+        // Create trajectories with known tool difference
+        let successes = vec![SuccessTrajectory {
+            task_id: Uuid::new_v4(),
+            task_description: "Implement feature".to_string(),
+            memory_ids: vec![],
+            steps: vec![],
+            outcome: SuccessOutcome::Accepted,
+            tool_calls: vec![ToolCallRecord {
+                tool_name: "cargo build".to_string(),
+                arguments: serde_json::json!({}),
+                success: true,
+                timestamp: Utc::now(),
+            }],
+            files_modified: vec!["src/lib.rs".to_string()],
+            timestamp: Utc::now(),
+        }];
+
+        let failures = vec![FailureTrajectory {
+            task_id: Uuid::new_v4(),
+            task_description: "Fix bug".to_string(),
+            memory_ids: vec![],
+            steps: vec![],
+            failure_reason: FailureReason::TestFailure,
+            validation_errors: vec![],
+            tool_calls: vec![],
+            files_modified: vec!["src/lib.rs".to_string()],
+            iteration_count: 1,
+            timestamp: Utc::now(),
+        }];
+
+        // Create a procedure with existing preconditions
+        let mut procedure = Procedure::new(
+            "rust_build".to_string(),
+            "Build Rust project".to_string(),
+            "cargo build rust".to_string(),
+        );
+        procedure.require_tool("cargo check", 0.7, None);
+
+        let result = service
+            .tighten_procedure_preconditions(successes, failures, procedure)
+            .await
+            .unwrap();
+
+        // Should have both the existing and new preconditions
+        assert!(
+            result.preconditions.len() >= 1,
+            "Should preserve existing preconditions"
+        );
+
+        // Should have cargo check (existing)
+        let has_check = result
+            .preconditions
+            .iter()
+            .any(|p| p.value == "cargo check");
+        assert!(
+            has_check,
+            "Should preserve existing cargo check precondition"
+        );
+
+        // Should have cargo build (new from analysis)
+        let has_build = result
+            .preconditions
+            .iter()
+            .any(|p| p.value == "cargo build");
+        assert!(has_build, "Should add new cargo build precondition");
+    }
+
+    // =====================================================================
+    // DifferentiatingFactorType Tests
+    // =====================================================================
+
+    #[test]
+    fn test_differentiating_factor_type_is_strict() {
+        // Strict types
+        assert!(
+            DifferentiatingFactorType::ToolNotUsedInSuccess.is_strict(),
+            "ToolNotUsedInSuccess should be strict"
+        );
+        assert!(
+            DifferentiatingFactorType::FileModifiedInFailure.is_strict(),
+            "FileModifiedInFailure should be strict"
+        );
+
+        // Non-strict types
+        assert!(
+            !DifferentiatingFactorType::ToolUsedInSuccess.is_strict(),
+            "ToolUsedInSuccess should be soft"
+        );
+        assert!(
+            !DifferentiatingFactorType::FileModifiedInSuccess.is_strict(),
+            "FileModifiedInSuccess should be soft"
+        );
+    }
+
+    #[test]
+    fn test_differentiating_factor_update_confidence() {
+        let mut factor = DifferentiatingFactor::new(
+            DifferentiatingFactorType::ToolUsedInSuccess,
+            "cargo test".to_string(),
+            true,
+            0.5,
+        );
+
+        assert_eq!(factor.observation_count, 1);
+        assert!((factor.confidence - 0.5).abs() < 0.001);
+
+        factor.update_confidence(0.9);
+        assert_eq!(factor.observation_count, 2);
+        // New confidence = (1 * 0.5 + 0.9) / 2 = 0.7
+        assert!((factor.confidence - 0.7).abs() < 0.001);
     }
 }

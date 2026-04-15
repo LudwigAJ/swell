@@ -17,6 +17,16 @@ sqlx.workspace = true
 async-trait.workspace = true
 reqwest.workspace = true
 
+# Vector database
+lancedb.workspace = true
+
+# Arrow for data manipulation (from lancedb dependency)
+arrow-array = "57"
+arrow-schema = "57"
+
+# Async stream utilities
+futures = "0.3"
+
 # Tree-sitter for AST parsing
 tree-sitter = "0.24"
 tree-sitter-rust = "0.23"
@@ -24,3 +34,4 @@ tree-sitter-rust = "0.23"
 [dev-dependencies]
 tempfile.workspace = true
 mockito.workspace = true
+rand = "0.8"
