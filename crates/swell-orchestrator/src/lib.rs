@@ -14,6 +14,12 @@ pub mod agents;
 pub mod alerts;
 pub mod autonomy;
 pub mod backlog;
+
+/// Test-support builder for [`Orchestrator`].
+/// This module is only compiled when running tests or when the `test-support` feature is enabled.
+#[cfg(any(test, feature = "test-support"))]
+pub mod builder;
+
 pub mod checkpoint_wiring;
 pub mod context_chunking;
 pub mod context_pipeline;
@@ -59,6 +65,10 @@ pub mod value_scorer;
 pub mod work_graph;
 pub mod worker_boot;
 pub mod worker_pool;
+
+/// Test-gated re-export of [`OrchestratorBuilder`][builder::OrchestratorBuilder].
+#[cfg(any(test, feature = "test-support"))]
+pub use builder::OrchestratorBuilder;
 
 pub use agents::{
     AgentComment, AgentCommentType, AgentHandle, AgentHandoff, AgentPool, ChangeOperation,

@@ -24,6 +24,9 @@ regex.workspace = true
 dashmap.workspace = true
 croner.workspace = true
 
+[features]
+test-support = []
+
 [dev-dependencies]
 tokio-test.workspace = true
 mockall.workspace = true
