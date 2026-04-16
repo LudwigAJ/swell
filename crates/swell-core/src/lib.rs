@@ -11,6 +11,7 @@ pub mod opentelemetry;
 pub mod trace_waterfall;
 pub mod tracing_json;
 pub mod traits;
+pub mod transcript;
 pub mod treesitter;
 pub mod types;
 
@@ -29,6 +30,11 @@ pub use error::SwellError;
 pub use events::{
     AgentSessionId, CrossTaskCorrelationId, EventStore, ObservableEvent, Outcome, RequestId,
     SpanId, ToolInvocation, TraceId, TurnSummaryEvent,
+};
+pub use transcript::{
+    EntityType, ErrorKind, ErrorPayload, LlmResponsePayload, StateTransitionPayload,
+    TokenUsage, ToolCallPayload, TranscriptEvent, TranscriptEventPayload, TranscriptEventType,
+    TranscriptLog, TranscriptSubscriber,
 };
 pub use kill_switch::{
     EnvVarVerifier, FileVerifier, KillLevel, KillSwitchError, KillSwitchGuard, KillSwitchState,
