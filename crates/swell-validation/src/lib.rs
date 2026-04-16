@@ -288,6 +288,12 @@ pub use autonomous_coverage::{
     CoverageThresholds, GapSeverity, GapType, MutationResult, MutationType, SurvivingMutation,
 };
 
+// Mutation testing gate using cargo-mutants
+pub mod mutation_test_gate;
+pub use mutation_test_gate::{
+    MutationTestConfig, MutationTestGate, MutationTestResult, SurvivingMutant,
+};
+
 // Re-export multi-agent test roles for collaborative testing
 pub mod multi_agent_test_roles;
 pub use multi_agent_test_roles::{
