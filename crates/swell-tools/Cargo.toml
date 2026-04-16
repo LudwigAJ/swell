@@ -30,6 +30,9 @@ cedar-policy-core = "4"
 # Command line parsing for sandbox integration
 shell-words = "1.0"
 
+# Base64 encoding for binary file reads
+base64.workspace = true
+
 [dev-dependencies]
 tokio-test.workspace = true
 mockall.workspace = true

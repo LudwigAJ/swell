@@ -1,6 +1,7 @@
 //! Built-in tools for SWELL.
 
 use async_trait::async_trait;
+use base64::Engine;
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -13,7 +14,8 @@ use tokio::time::{timeout, Duration};
 use tracing::{info, warn};
 
 use crate::file_guardrails::{
-    validate_file_size, validate_path_depth, validate_write_content, FileGuardrailConfig,
+    detect_binary_content, validate_file_size, validate_path_depth, validate_write_content,
+    FileGuardrailConfig,
 };
 use crate::secret_scanning::SecretScanner;
 
@@ -22,6 +24,7 @@ use crate::secret_scanning::SecretScanner;
 pub struct ReadFileTool {
     max_size: usize,
     workspace_path: Option<PathBuf>,
+    allow_binary: bool,
 }
 
 impl ReadFileTool {
@@ -29,6 +32,7 @@ impl ReadFileTool {
         Self {
             max_size: 1_000_000, // 1MB default
             workspace_path: None,
+            allow_binary: false,
         }
     }
 
@@ -39,6 +43,14 @@ impl ReadFileTool {
 
     pub fn with_workspace_path(mut self, path: impl Into<PathBuf>) -> Self {
         self.workspace_path = Some(path.into());
+        self
+    }
+
+    /// Set whether to allow reading binary files.
+    /// When false (default), binary files are rejected with an error.
+    /// When true, binary files are read and returned as base64-encoded text.
+    pub fn with_allow_binary(mut self, allow: bool) -> Self {
+        self.allow_binary = allow;
         self
     }
 
@@ -113,7 +125,12 @@ impl Tool for ReadFileTool {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "path": { "type": "string", "description": "Path to the file to read" }
+                "path": { "type": "string", "description": "Path to the file to read" },
+                "allow_binary": {
+                    "type": "boolean",
+                    "description": "If true, allow reading binary files (returned as base64-encoded text). If false (default), binary files are rejected.",
+                    "default": false
+                }
             },
             "required": ["path"]
         })
@@ -123,6 +140,8 @@ impl Tool for ReadFileTool {
         #[derive(Deserialize)]
         struct Args {
             path: String,
+            #[serde(default)]
+            allow_binary: bool,
         }
 
         let args: Args = serde_json::from_value(arguments)
@@ -152,9 +171,42 @@ impl Tool for ReadFileTool {
             )));
         }
 
-        let content = tokio_fs::read_to_string(path)
+        // Read file as bytes to check for binary content
+        let content_bytes = tokio_fs::read(path)
             .await
             .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
+
+        // Check if content is binary
+        if let Err(reason) = detect_binary_content(&content_bytes) {
+            // Binary content detected - check if allow_binary is set
+            if !args.allow_binary {
+                return Err(SwellError::ToolExecutionFailed(format!(
+                    "Cannot read binary file '{}': {}. \
+                     Set allow_binary=true to read binary files as base64-encoded text.",
+                    args.path,
+                    reason
+                )));
+            }
+            // allow_binary is true - encode as base64 and return
+            let base64_content = base64::engine::general_purpose::STANDARD.encode(&content_bytes);
+            info!(path = %args.path, "Binary file read successfully (base64-encoded)");
+            return Ok(ToolOutput {
+                is_error: false,
+                content: vec![ToolResultContent::Text(format!(
+                    "[Binary file '{}' - base64 encoded ({} bytes)]\n{}",
+                    args.path,
+                    content_bytes.len(),
+                    base64_content
+                ))],
+            });
+        }
+
+        // Content is not binary - convert to string and return
+        let content = String::from_utf8(content_bytes)
+            .map_err(|e| SwellError::ToolExecutionFailed(format!(
+                "File content is not valid UTF-8: {}",
+                e
+            )))?;
 
         info!(path = %args.path, "File read successfully");
         Ok(ToolOutput {
@@ -1560,6 +1612,214 @@ mod tests {
 
         // Should fail because path is outside workspace
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_binary_file_rejected_without_flag() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.png");
+
+        // Write PNG magic bytes followed by valid UTF-8 text (no null bytes)
+        // PNG header: 8-byte magic followed by ASCII text
+        let png_magic: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        let text_content = b"PNG header followed by ASCII text content";
+        let mut file_content = Vec::new();
+        file_content.extend_from_slice(&png_magic);
+        file_content.extend_from_slice(text_content);
+        tokio::fs::write(&file_path, &file_content).await.unwrap();
+
+        let tool = ReadFileTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file_path.to_str().unwrap()
+            }))
+            .await;
+
+        // Should fail because binary content is detected
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.to_lowercase().contains("binary"),
+            "Error should mention 'binary': {}",
+            err_msg
+        );
+        // PNG magic bytes should be detected
+        assert!(
+            err_msg.contains("PNG"),
+            "Error should mention PNG format: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_binary_file_allowed_with_flag() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.png");
+
+        // Write PNG magic bytes (binary file content)
+        let png_content = b"\x89PNG\r\n\x1A\n\x00\x00\x00\rIHDR\x00\x00\x00\x10";
+        tokio::fs::write(&file_path, png_content).await.unwrap();
+
+        let tool = ReadFileTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file_path.to_str().unwrap(),
+                "allow_binary": true
+            }))
+            .await;
+
+        // Should succeed with base64-encoded content
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(!output.is_error);
+        let content = match output.content.first() {
+            Some(ToolResultContent::Text(text)) => text.clone(),
+            _ => String::new(),
+        };
+        assert!(
+            content.contains("Binary file"),
+            "Should indicate binary file: {}",
+            content
+        );
+        assert!(
+            content.contains("base64 encoded"),
+            "Should be base64 encoded: {}",
+            content
+        );
+    }
+
+    // Note: Binary write rejection is tested via file_guardrails tests
+    // since JSON strings cannot contain raw binary bytes
+
+    #[tokio::test]
+    async fn test_write_text_file_allowed() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("output.txt");
+
+        let tool = WriteFileTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file_path.to_str().unwrap(),
+                "content": "Hello, World! This is a text file."
+            }))
+            .await;
+
+        // Should succeed
+        assert!(result.is_ok());
+        assert!(!result.as_ref().unwrap().is_error);
+
+        // Verify file was written
+        let content = tokio::fs::read_to_string(&file_path).await.unwrap();
+        assert_eq!(content, "Hello, World! This is a text file.");
+    }
+
+    #[tokio::test]
+    async fn test_read_elf_binary_rejected() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.bin");
+
+        // Write ELF magic bytes (binary file content)
+        let elf_content = b"\x7FELF\x02\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+        tokio::fs::write(&file_path, elf_content).await.unwrap();
+
+        let tool = ReadFileTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file_path.to_str().unwrap()
+            }))
+            .await;
+
+        // Should fail because binary content is detected
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.to_lowercase().contains("binary"),
+            "Error should mention 'binary': {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_pdf_binary_rejected() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.pdf");
+
+        // Write PDF magic bytes (binary file content)
+        let pdf_content = b"%PDF-1.4\n%\xb5\xb6\xb7\xb8";
+        tokio::fs::write(&file_path, pdf_content).await.unwrap();
+
+        let tool = ReadFileTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file_path.to_str().unwrap()
+            }))
+            .await;
+
+        // Should fail because binary content is detected
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.to_lowercase().contains("binary"),
+            "Error should mention 'binary': {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("PDF"),
+            "Error should mention PDF format: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_zip_binary_rejected() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.zip");
+
+        // Write ZIP magic bytes (binary file content)
+        let zip_content = b"PK\x03\x04\x00\x00\x00\x00\x00\x00";
+        tokio::fs::write(&file_path, zip_content).await.unwrap();
+
+        let tool = ReadFileTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file_path.to_str().unwrap()
+            }))
+            .await;
+
+        // Should fail because binary content is detected
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.to_lowercase().contains("binary"),
+            "Error should mention 'binary': {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_read_null_bytes_binary_rejected() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test.bin");
+
+        // Write content with null bytes
+        let content = b"Text with \x00 null \x00 bytes";
+        tokio::fs::write(&file_path, content).await.unwrap();
+
+        let tool = ReadFileTool::new();
+        let result = tool
+            .execute(serde_json::json!({
+                "path": file_path.to_str().unwrap()
+            }))
+            .await;
+
+        // Should fail because null bytes indicate binary
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.to_lowercase().contains("binary"),
+            "Error should mention 'binary': {}",
+            err_msg
+        );
     }
 
     #[tokio::test]
