@@ -122,6 +122,43 @@ pub struct AcceptanceCriterion {
     pub criticality: CriterionCriticality,
     /// Related test patterns
     pub test_hints: Vec<String>,
+    /// Parsed Given/When/Then format if applicable
+    pub format: Option<GherkinFormat>,
+}
+
+/// Given/When/Then format for acceptance criteria
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GherkinFormat {
+    /// Given clauses (preconditions)
+    pub given: Vec<String>,
+    /// When clause (action/trigger)
+    pub when: Vec<String>,
+    /// Then clauses (expected outcomes)
+    pub then: Vec<String>,
+}
+
+impl GherkinFormat {
+    /// Create a new Gherkin format
+    pub fn new(given: Vec<String>, when: Vec<String>, then: Vec<String>) -> Self {
+        Self { given, when, then }
+    }
+
+    /// Get the complete scenario text
+    pub fn scenario_text(&self) -> String {
+        let mut parts = Vec::new();
+
+        if !self.given.is_empty() {
+            parts.push(format!("Given {}", self.given.join(" And ")));
+        }
+        if !self.when.is_empty() {
+            parts.push(format!("When {}", self.when.join(" And ")));
+        }
+        if !self.then.is_empty() {
+            parts.push(format!("Then {}", self.then.join(" And ")));
+        }
+
+        parts.join("\n")
+    }
 }
 
 /// Criticality level for acceptance criteria
@@ -341,13 +378,114 @@ impl AcceptanceCriteriaParser {
         // Generate test hints from keywords
         let test_hints = self.generate_test_hints(trimmed);
 
+        // Try to parse Given/When/Then format
+        let format = self.parse_gherkin_format(trimmed);
+
         Some(AcceptanceCriterion {
             id: format!("AC-{}-{}", line_num, Self::hash_string(trimmed)),
             text: trimmed.to_string(),
             category,
             criticality,
             test_hints,
+            format,
         })
+    }
+
+    /// Parse Given/When/Then (Gherkin) format from criterion text
+    fn parse_gherkin_format(&self, text: &str) -> Option<GherkinFormat> {
+        let lower = text.to_lowercase();
+
+        // Check if text contains Gherkin keywords
+        if !lower.contains("given") && !lower.contains("when") && !lower.contains("then") {
+            return None;
+        }
+
+        let mut given = Vec::new();
+        let mut when = Vec::new();
+        let mut then = Vec::new();
+
+        // Track current section and accumulate content
+        let mut current_section: Option<&str> = None;
+        let mut current_content = String::new();
+
+        // Split text into words while preserving positions
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let mut i = 0;
+
+        while i < words.len() {
+            let word_lower = words[i].to_lowercase();
+
+            // Determine keyword type
+            let is_given = word_lower == "given";
+            let is_when = word_lower == "when";
+            let is_then = word_lower == "then";
+            let is_and_but = word_lower == "and" || word_lower == "but";
+
+            if is_given || is_when || is_then {
+                // First, save accumulated content to current section
+                if !current_content.is_empty() && current_section.is_some() {
+                    match current_section {
+                        Some("given") => given.push(current_content.trim().to_string()),
+                        Some("when") => when.push(current_content.trim().to_string()),
+                        Some("then") => then.push(current_content.trim().to_string()),
+                        _ => {}
+                    }
+                    current_content.clear();
+                }
+
+                // Update section to the new keyword
+                if is_given {
+                    current_section = Some("given");
+                } else if is_when {
+                    current_section = Some("when");
+                } else if is_then {
+                    current_section = Some("then");
+                }
+            } else if is_and_but {
+                // And/But - save accumulated content to current section if it exists
+                // then continue (don't change section)
+                if !current_content.is_empty() && current_section.is_some() {
+                    match current_section {
+                        Some("given") => given.push(current_content.trim().to_string()),
+                        Some("when") => when.push(current_content.trim().to_string()),
+                        Some("then") => then.push(current_content.trim().to_string()),
+                        _ => {}
+                    }
+                    current_content.clear();
+                }
+                // Don't change current_section - And/But continues the same section
+            } else {
+                // Regular word - accumulate
+                if !current_content.is_empty() {
+                    current_content.push(' ');
+                }
+                current_content.push_str(words[i]);
+            }
+
+            i += 1;
+        }
+
+        // Don't forget the last accumulated content
+        if !current_content.is_empty() && current_section.is_some() {
+            match current_section {
+                Some("given") => given.push(current_content.trim().to_string()),
+                Some("when") => when.push(current_content.trim().to_string()),
+                Some("then") => then.push(current_content.trim().to_string()),
+                _ => {}
+            }
+        }
+
+        // Clean up - remove empty strings
+        given.retain(|s| !s.is_empty());
+        when.retain(|s| !s.is_empty());
+        then.retain(|s| !s.is_empty());
+
+        // Only return if we have at least some clauses
+        if given.is_empty() && when.is_empty() && then.is_empty() {
+            return None;
+        }
+
+        Some(GherkinFormat::new(given, when, then))
     }
 
     /// Generate test hint patterns from criterion text
@@ -955,6 +1093,7 @@ impl TestPlanningEngine {
                 category: "functional".to_string(),
                 criticality: CriterionCriticality::ShouldHave,
                 test_hints: vec!["test_functional".to_string()],
+                format: None,
             }]
         } else {
             criteria
@@ -1508,6 +1647,7 @@ mod risk_scorer_tests {
             category: "security".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["authentication".to_string()],
+            format: None,
         }];
 
         scorer.score_test(&mut test_case, &context, &criteria);
@@ -1678,6 +1818,131 @@ diff --git a/src/auth.rs b/src/auth.rs
         assert_eq!(TestRiskLevel::Medium.weight(), 0.5);
         assert_eq!(TestRiskLevel::High.weight(), 0.75);
         assert_eq!(TestRiskLevel::Critical.weight(), 1.0);
+    }
+}
+
+#[cfg(test)]
+mod gherkin_criterion_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_given_when_then_simple() {
+        let parser = AcceptanceCriteriaParser::new();
+        let spec = "Given a user is logged in When they attempt to access protected resource Then they should be granted access";
+
+        let criteria = parser.parse(spec);
+        assert!(!criteria.is_empty(), "Should parse Given/When/Then criterion");
+
+        let criterion = &criteria[0];
+        assert!(
+            criterion.format.is_some(),
+            "Criterion should have Gherkin format parsed. Text: {}, format: {:?}",
+            criterion.text,
+            criterion.format
+        );
+
+        let format = criterion.format.as_ref().unwrap();
+        assert!(
+            format.given.len() >= 1,
+            "Should have at least one Given clause, got {}: {:?}",
+            format.given.len(),
+            format.given
+        );
+        assert_eq!(format.when.len(), 1, "Should have exactly one When clause, got {:?}", format.when);
+        assert_eq!(format.then.len(), 1, "Should have exactly one Then clause");
+    }
+
+    #[test]
+    fn test_parse_multiple_givens() {
+        let parser = AcceptanceCriteriaParser::new();
+        let spec = "Given the user is authenticated And the session is valid And the account is not suspended When they submit the request Then the request should be processed successfully";
+
+        let criteria = parser.parse(spec);
+        assert!(!criteria.is_empty(), "Empty criteria for: {}", spec);
+
+        let criterion = &criteria[0];
+        let format = criterion.format.as_ref().unwrap();
+        assert_eq!(format.given.len(), 3, "Should have 3 Given clauses (2 AND), got: {:?}", format.given);
+        assert_eq!(format.when.len(), 1);
+        assert_eq!(format.then.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_multiple_thens() {
+        let parser = AcceptanceCriteriaParser::new();
+        let spec = "Given a new user account When the user signs up Then they should receive a confirmation email And their account should be created in the database And they should be logged in automatically";
+
+        let criteria = parser.parse(spec);
+        assert!(!criteria.is_empty());
+
+        let criterion = &criteria[0];
+        let format = criterion.format.as_ref().unwrap();
+        assert_eq!(format.given.len(), 1);
+        assert_eq!(format.when.len(), 1);
+        assert_eq!(format.then.len(), 3, "Should have 3 Then clauses (2 AND), got: {:?}", format.then);
+    }
+
+    #[test]
+    fn test_parse_mixed_bdd_and_regular() {
+        let parser = AcceptanceCriteriaParser::new();
+        let spec = r#"
+        Feature: User Authentication
+
+        Scenario: Successful login
+        Given a registered user with email "user@example.com"
+        When they enter valid credentials
+        Then they should be logged in successfully
+
+        Additional requirement: The system shall encrypt all passwords.
+        "#;
+
+        let criteria = parser.parse(spec);
+        // Should have both the BDD scenario and the regular criterion
+        assert!(
+            criteria.len() >= 2,
+            "Should parse both BDD and regular criteria"
+        );
+    }
+
+    #[test]
+    fn test_criterion_preserves_original_text() {
+        let parser = AcceptanceCriteriaParser::new();
+        let spec = r#"
+        Given the database is connected
+        When a query is executed
+        Then the result should be returned within 100ms
+        "#;
+
+        let criteria = parser.parse(spec);
+        let criterion = &criteria[0];
+
+        // Original text should be preserved
+        assert!(
+            criterion.text.contains("Given") || criterion.text.contains("database"),
+            "Original text should be preserved"
+        );
+    }
+
+    #[test]
+    fn test_scenario_outline_parsing() {
+        let parser = AcceptanceCriteriaParser::new();
+        let spec = r#"
+        Scenario Outline: User login attempts
+        Given a user with email "<email>" and password "<password>"
+        When they attempt to log in
+        Then the login should <result>
+
+        Examples:
+        | email | password | result |
+        | user@test.com | valid123 | succeed |
+        | user@test.com | wrong | fail |
+        "#;
+
+        let criteria = parser.parse(spec);
+        // Should recognize this as a BDD format
+        assert!(!criteria.is_empty());
+        let criterion = &criteria[0];
+        assert!(criterion.format.is_some());
     }
 }
 

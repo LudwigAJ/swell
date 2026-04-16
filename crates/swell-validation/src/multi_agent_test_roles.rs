@@ -1183,6 +1183,7 @@ mod test_generator_agent_tests {
             category: "authentication".to_string(),
             criticality: crate::test_planning::CriterionCriticality::MustHave,
             test_hints: vec!["auth".to_string()],
+            format: None,
         }];
 
         let output = generator
@@ -1203,6 +1204,7 @@ mod test_generator_agent_tests {
             category: "api".to_string(),
             criticality: crate::test_planning::CriterionCriticality::ShouldHave,
             test_hints: vec!["api".to_string()],
+            format: None,
         }];
 
         let output = generator
@@ -1464,6 +1466,7 @@ mod multi_agent_collaboration_tests {
             category: "authentication".to_string(),
             criticality: crate::test_planning::CriterionCriticality::MustHave,
             test_hints: vec!["auth".to_string()],
+            format: None,
         }];
 
         let failed_tests = HashMap::new();

@@ -1386,6 +1386,7 @@ mod test_generator_tests {
             category: "authentication".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["auth".to_string()],
+            format: None,
         };
 
         let name = generator.generate_test_name(&criterion);
@@ -1414,6 +1415,7 @@ mod test_generator_tests {
             category: "authentication".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec![],
+            format: None,
         };
 
         let pattern = generator.find_matching_pattern(&criterion);
@@ -1430,6 +1432,7 @@ mod test_generator_tests {
             category: "validation".to_string(),
             criticality: CriterionCriticality::ShouldHave,
             test_hints: vec![],
+            format: None,
         };
 
         let pattern = generator.find_matching_pattern(&criterion);
@@ -1446,6 +1449,7 @@ mod test_generator_tests {
             category: "api".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec![],
+            format: None,
         };
 
         let pattern = generator.find_matching_pattern(&criterion);
@@ -1463,6 +1467,7 @@ mod test_generator_tests {
             category: "authentication".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["auth".to_string()],
+            format: None,
         }];
 
         let tests = generator.generate_unit_tests(&criteria, "src/auth.rs");
@@ -1481,6 +1486,7 @@ mod test_generator_tests {
             category: "auth".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec![],
+            format: None,
         }];
 
         let tests = generator.generate_unit_tests(&criteria, "src/auth.rs");
@@ -1497,6 +1503,7 @@ mod test_generator_tests {
             category: "api".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["api".to_string()],
+            format: None,
         }];
 
         let tests = generator.generate_integration_tests(&criteria);
@@ -1513,6 +1520,7 @@ mod test_generator_tests {
             category: "data".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["database".to_string()],
+            format: None,
         }];
 
         let tests = generator.generate_integration_tests(&criteria);
@@ -1528,6 +1536,7 @@ mod test_generator_tests {
             category: "concurrency".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["concurrent".to_string()],
+            format: None,
         }];
 
         let tests = generator.generate_property_tests(&criteria);
@@ -1544,6 +1553,7 @@ mod test_generator_tests {
             category: "performance".to_string(),
             criticality: CriterionCriticality::ShouldHave,
             test_hints: vec!["performance".to_string()],
+            format: None,
         }];
 
         let tests = generator.generate_property_tests(&criteria);
@@ -1560,6 +1570,7 @@ mod test_generator_tests {
                 category: "auth".to_string(),
                 criticality: CriterionCriticality::MustHave,
                 test_hints: vec![],
+                format: None,
             },
             AcceptanceCriterion {
                 id: "AC-2".to_string(),
@@ -1567,6 +1578,7 @@ mod test_generator_tests {
                 category: "api".to_string(),
                 criticality: CriterionCriticality::MustHave,
                 test_hints: vec![],
+                format: None,
             },
             AcceptanceCriterion {
                 id: "AC-3".to_string(),
@@ -1574,6 +1586,7 @@ mod test_generator_tests {
                 category: "concurrency".to_string(),
                 criticality: CriterionCriticality::MustHave,
                 test_hints: vec![],
+                format: None,
             },
         ];
 
@@ -1704,6 +1717,7 @@ mod test_generator_tests {
                 category: "test".to_string(),
                 criticality: CriterionCriticality::MustHave,
                 test_hints: vec!["auth".to_string()],
+                format: None,
             },
             AcceptanceCriterion {
                 id: "AC-2".to_string(),
@@ -1711,6 +1725,7 @@ mod test_generator_tests {
                 category: "test".to_string(),
                 criticality: CriterionCriticality::ShouldHave,
                 test_hints: vec!["auth".to_string()],
+                format: None,
             },
             AcceptanceCriterion {
                 id: "AC-3".to_string(),
@@ -1718,6 +1733,7 @@ mod test_generator_tests {
                 category: "test".to_string(),
                 criticality: CriterionCriticality::NiceToHave,
                 test_hints: vec!["auth".to_string()],
+                format: None,
             },
         ];
 
@@ -1737,6 +1753,7 @@ mod test_generator_tests {
             category: "api".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec![],
+            format: None,
         }];
 
         let tests = generator.generate_integration_tests(&criteria);
@@ -1754,6 +1771,7 @@ mod test_generator_tests {
             category: "concurrency".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec![],
+            format: None,
         }];
 
         let tests = generator.generate_property_tests(&criteria);
