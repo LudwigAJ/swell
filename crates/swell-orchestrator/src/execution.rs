@@ -3,9 +3,11 @@
 
 use crate::{
     drift_detector::{DriftDetector, DriftReport},
-    file_locks::LockAcquisitionResult, frozen_spec::FrozenSpecRef,
-    killswitch::OrchestratorKillSwitch, EvaluatorAgent, FeatureLead, FeatureLeadSpawner,
-    GeneratorAgent, Orchestrator, PlannerAgent, MAX_CONCURRENT_AGENTS,
+    file_locks::LockAcquisitionResult,
+    frozen_spec::FrozenSpecRef,
+    killswitch::OrchestratorKillSwitch,
+    EvaluatorAgent, FeatureLead, FeatureLeadSpawner, GeneratorAgent, Orchestrator, PlannerAgent,
+    MAX_CONCURRENT_AGENTS,
 };
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -509,9 +511,15 @@ impl ExecutionController {
     /// # Returns
     /// * `Some(DriftReport)` if drift exceeds the threshold
     /// * `None` if drift is within acceptable limits
-    pub fn check_drift(&self, task_id: uuid::Uuid, estimated_files: &[String]) -> Option<DriftReport> {
+    pub fn check_drift(
+        &self,
+        task_id: uuid::Uuid,
+        estimated_files: &[String],
+    ) -> Option<DriftReport> {
         let actual_files = self.get_modified_files();
-        let report = self.drift_detector.detect_drift(task_id, estimated_files, &actual_files);
+        let report = self
+            .drift_detector
+            .detect_drift(task_id, estimated_files, &actual_files);
 
         if report.exceeds_threshold {
             debug!(
@@ -650,7 +658,9 @@ impl ExecutionController {
                 info!(task_id = %task_id, "PlannerAgent completed successfully, plan set on task");
             } else {
                 // Planner failed - release locks and return failure
-                let released_count = file_lock_manager.release_all_for_task(task_id_for_cleanup).await;
+                let released_count = file_lock_manager
+                    .release_all_for_task(task_id_for_cleanup)
+                    .await;
                 info!(
                     task_id = %task_id,
                     locks_released = released_count,
@@ -793,7 +803,9 @@ impl ExecutionController {
         }
 
         // Release file locks when task completes (success or failure)
-        let released_count = file_lock_manager.release_all_for_task(task_id_for_cleanup).await;
+        let released_count = file_lock_manager
+            .release_all_for_task(task_id_for_cleanup)
+            .await;
         if released_count > 0 {
             info!(
                 task_id = %task_id,

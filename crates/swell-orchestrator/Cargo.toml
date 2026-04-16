@@ -28,3 +28,4 @@ croner.workspace = true
 tokio-test.workspace = true
 mockall.workspace = true
 tempfile.workspace = true
+serde_json = "1"

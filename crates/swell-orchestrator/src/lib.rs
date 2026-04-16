@@ -54,6 +54,7 @@ pub mod task_graph;
 pub mod team_registry;
 pub mod tiered_merge;
 pub mod value_scorer;
+pub mod work_graph;
 pub mod worker_boot;
 pub mod worker_pool;
 
@@ -109,7 +110,7 @@ pub use followup_generator::{
     FollowUpContext, FollowUpGenerator, FollowUpGeneratorConfig, FollowUpOpportunity,
     FollowUpOpportunityType, FollowUpProposal,
 };
-pub use frozen_spec::{FrozenSpec, FrozenSpecRef, FrozenRequirementRegistry, TraceabilityResult};
+pub use frozen_spec::{FrozenRequirementRegistry, FrozenSpec, FrozenSpecRef, TraceabilityResult};
 pub use gap_analyzer::{
     CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
     RequirementCategory, RequirementPriority, SpecRequirement,
@@ -179,13 +180,13 @@ pub use subagent::{
     AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
     MAX_SUBAGENT_DEPTH,
 };
-pub use task_enrichment::{
-    discover_constraints, discover_enriched_files, discover_related_tests, enrich_task,
-    build_prior_attempts, TaskEnrichmentExt,
-};
 pub use task_board::{
     create_task_board, CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry,
     TaskBoardStats,
+};
+pub use task_enrichment::{
+    build_prior_attempts, discover_constraints, discover_enriched_files, discover_related_tests,
+    enrich_task, TaskEnrichmentExt,
 };
 pub use task_graph::TaskGraph;
 pub use team_registry::{Team, TeamEvent, TeamRegistry, TeamTaskFailed};
@@ -193,6 +194,10 @@ pub use tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
 pub use value_scorer::{
     BlockingImpactScore, ComplexityScore, SpecAlignmentScore, TaskDependency, TaskScore,
     ValueScorer, ValueScorerConfig,
+};
+pub use work_graph::{
+    CodeChangeRef, GraphMetadata, NodeMetadata, NodeStatus, SpecLink, TestResultRef, WorkGraph,
+    WorkGraphError, WorkGraphNode,
 };
 pub use worker_boot::{WorkerBoot, WorkerBootError, WorkerBootState};
 pub use worker_pool::{
@@ -379,7 +384,10 @@ impl Orchestrator {
             if !result.is_novel {
                 if let Some(duplicate_of) = result.duplicate_of {
                     if result.max_similarity > 0.85 {
-                        return Err(SwellError::DuplicateTask(result.max_similarity, duplicate_of));
+                        return Err(SwellError::DuplicateTask(
+                            result.max_similarity,
+                            duplicate_of,
+                        ));
                     } else {
                         return Err(SwellError::DuplicateTaskByFileOverlap(
                             result.max_file_overlap * 100.0,
@@ -430,7 +438,10 @@ impl Orchestrator {
             if !result.is_novel {
                 if let Some(duplicate_of) = result.duplicate_of {
                     if result.max_similarity > 0.85 {
-                        return Err(SwellError::DuplicateTask(result.max_similarity, duplicate_of));
+                        return Err(SwellError::DuplicateTask(
+                            result.max_similarity,
+                            duplicate_of,
+                        ));
                     } else {
                         return Err(SwellError::DuplicateTaskByFileOverlap(
                             result.max_file_overlap * 100.0,
@@ -911,11 +922,18 @@ impl Orchestrator {
         let mut acquired_locks = Vec::new();
 
         for file_path in files {
-            match self.file_lock_manager.acquire(file_path, task_id, agent_id).await {
+            match self
+                .file_lock_manager
+                .acquire(file_path, task_id, agent_id)
+                .await
+            {
                 LockAcquisitionResult::Acquired(lock) => {
                     acquired_locks.push(lock);
                 }
-                LockAcquisitionResult::Conflict { existing_lock, requested_by } => {
+                LockAcquisitionResult::Conflict {
+                    existing_lock,
+                    requested_by,
+                } => {
                     // Release any locks we already acquired before failing
                     for lock in &acquired_locks {
                         let _ = self.file_lock_manager.release(&lock.path, task_id).await;
@@ -967,7 +985,11 @@ impl Orchestrator {
         files: Vec<String>,
     ) -> Option<FileLock> {
         for file_path in files {
-            if let Some(conflict) = self.file_lock_manager.would_conflict(&file_path, task_id).await {
+            if let Some(conflict) = self
+                .file_lock_manager
+                .would_conflict(&file_path, task_id)
+                .await
+            {
                 return Some(conflict);
             }
         }
@@ -1096,7 +1118,10 @@ mod tests {
     async fn test_create_task_returns_task_with_created_state() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test task".to_string(), vec![]).await.unwrap();
+        let task = orchestrator
+            .create_task("Test task".to_string(), vec![])
+            .await
+            .unwrap();
 
         assert_eq!(task.state, TaskState::Created);
         assert_eq!(task.description, "Test task");
@@ -1107,8 +1132,14 @@ mod tests {
     async fn test_create_task_assigns_unique_id() {
         let orchestrator = Orchestrator::new();
 
-        let task1 = orchestrator.create_task("Task 1".to_string(), vec![]).await.unwrap();
-        let task2 = orchestrator.create_task("Task 2".to_string(), vec![]).await.unwrap();
+        let task1 = orchestrator
+            .create_task("Task 1".to_string(), vec![])
+            .await
+            .unwrap();
+        let task2 = orchestrator
+            .create_task("Task 2".to_string(), vec![])
+            .await
+            .unwrap();
 
         assert_ne!(task1.id, task2.id);
     }
@@ -1118,7 +1149,10 @@ mod tests {
     #[tokio::test]
     async fn test_get_task_returns_task() {
         let orchestrator = Orchestrator::new();
-        let created = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let created = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
 
         let retrieved = orchestrator.get_task(created.id).await.unwrap();
 
@@ -1185,7 +1219,10 @@ mod tests {
         let agent_id = orchestrator
             .register_agent(AgentRole::Generator, "claude-sonnet".to_string())
             .await;
-        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
 
         // Set plan and transition to Ready first
         let plan = create_test_plan(task.id);
@@ -1210,7 +1247,10 @@ mod tests {
     async fn test_assign_task_returns_error_when_no_agent_available() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         {
@@ -1236,7 +1276,10 @@ mod tests {
         let agent_id = orchestrator
             .register_agent(AgentRole::Generator, "claude-sonnet".to_string())
             .await;
-        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
         {
@@ -1263,8 +1306,14 @@ mod tests {
     async fn test_get_all_tasks_returns_all_tasks() {
         let orchestrator = Orchestrator::new();
 
-        orchestrator.create_task("Task 1".to_string(), vec![]).await.unwrap();
-        orchestrator.create_task("Task 2".to_string(), vec![]).await.unwrap();
+        orchestrator
+            .create_task("Task 1".to_string(), vec![])
+            .await
+            .unwrap();
+        orchestrator
+            .create_task("Task 2".to_string(), vec![])
+            .await
+            .unwrap();
 
         let all = orchestrator.get_all_tasks().await;
 
@@ -1275,8 +1324,14 @@ mod tests {
     async fn test_get_tasks_by_state_filters_correctly() {
         let orchestrator = Orchestrator::new();
 
-        let task1 = orchestrator.create_task("Task 1".to_string(), vec![]).await.unwrap();
-        let _task2 = orchestrator.create_task("Task 2".to_string(), vec![]).await.unwrap();
+        let task1 = orchestrator
+            .create_task("Task 1".to_string(), vec![])
+            .await
+            .unwrap();
+        let _task2 = orchestrator
+            .create_task("Task 2".to_string(), vec![])
+            .await
+            .unwrap();
 
         // Transition task1 to Enriched
         {
@@ -1298,7 +1353,10 @@ mod tests {
     async fn test_set_plan_attaches_plan_to_task() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
 
         orchestrator.set_plan(task.id, plan.clone()).await.unwrap();
@@ -1332,7 +1390,10 @@ mod tests {
     async fn test_start_task_fails_without_plan() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
 
         let result = orchestrator.start_task(task.id).await;
 
@@ -1364,7 +1425,10 @@ mod tests {
     async fn test_start_validation_fails_if_not_executing() {
         let orchestrator = Orchestrator::new();
 
-        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
 
         let result = orchestrator.start_validation(task.id).await;
 
@@ -1539,7 +1603,11 @@ mod tests {
 
         // 1. Create task with FullAuto to bypass approval gate
         let task = orchestrator
-            .create_task_with_autonomy("Implement feature X".to_string(), AutonomyLevel::FullAuto, vec![])
+            .create_task_with_autonomy(
+                "Implement feature X".to_string(),
+                AutonomyLevel::FullAuto,
+                vec![],
+            )
             .await
             .unwrap();
         assert_eq!(task.state, TaskState::Created);
@@ -1610,7 +1678,10 @@ mod tests {
         let orchestrator = Orchestrator::new();
 
         // Try to assign a task that hasn't been made ready
-        let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orchestrator.set_plan(task.id, plan).await.unwrap();
 
@@ -1633,7 +1704,9 @@ mod tests {
         let task_id = Uuid::new_v4();
         let files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
 
-        let result = orchestrator.acquire_task_locks(task_id, None, files.clone()).await;
+        let result = orchestrator
+            .acquire_task_locks(task_id, None, files.clone())
+            .await;
 
         assert!(result.is_ok());
         let locks = result.unwrap();
@@ -1652,11 +1725,15 @@ mod tests {
         let files = vec!["file1.rs".to_string()];
 
         // Task1 acquires the lock
-        let result1 = orchestrator.acquire_task_locks(task1, None, files.clone()).await;
+        let result1 = orchestrator
+            .acquire_task_locks(task1, None, files.clone())
+            .await;
         assert!(result1.is_ok());
 
         // Task2 tries to acquire the same lock - should conflict
-        let result2 = orchestrator.acquire_task_locks(task2, None, files.clone()).await;
+        let result2 = orchestrator
+            .acquire_task_locks(task2, None, files.clone())
+            .await;
         assert!(result2.is_err());
         let err = result2.unwrap_err();
         assert!(matches!(err, LockAcquisitionResult::Conflict { .. }));
@@ -1669,7 +1746,10 @@ mod tests {
         let files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
 
         // Acquire locks
-        orchestrator.acquire_task_locks(task_id, None, files.clone()).await.unwrap();
+        orchestrator
+            .acquire_task_locks(task_id, None, files.clone())
+            .await
+            .unwrap();
         assert!(orchestrator.is_file_locked("file1.rs").await);
         assert!(orchestrator.is_file_locked("file2.rs").await);
 
@@ -1713,7 +1793,11 @@ mod tests {
         // Verify file1 is still locked by task1
         assert!(orchestrator.is_file_locked("file1.rs").await);
         assert_eq!(
-            orchestrator.get_file_lock("file1.rs").await.unwrap().task_id,
+            orchestrator
+                .get_file_lock("file1.rs")
+                .await
+                .unwrap()
+                .task_id,
             task1
         );
     }
@@ -1789,13 +1873,17 @@ mod tests {
         let files = vec!["file1.rs".to_string()];
 
         // First acquisition
-        let result1 = orchestrator.acquire_task_locks(task_id, None, files.clone()).await;
+        let result1 = orchestrator
+            .acquire_task_locks(task_id, None, files.clone())
+            .await;
         assert!(result1.is_ok());
         let locks1 = result1.unwrap();
         let first_lock_id = locks1[0].id;
 
         // Same task re-acquires - should succeed (AlreadyHeld)
-        let result2 = orchestrator.acquire_task_locks(task_id, None, files.clone()).await;
+        let result2 = orchestrator
+            .acquire_task_locks(task_id, None, files.clone())
+            .await;
         assert!(result2.is_ok());
         let locks2 = result2.unwrap();
 

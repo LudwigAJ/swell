@@ -32,7 +32,11 @@ pub struct SpecRequirement {
 
 impl SpecRequirement {
     /// Create a new spec requirement with keywords for traceability matching
-    pub fn new(id: impl Into<String>, description: impl Into<String>, keywords: Vec<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        description: impl Into<String>,
+        keywords: Vec<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             description: description.into(),
@@ -226,17 +230,32 @@ impl FrozenRequirementRegistry {
             SpecRequirement::new(
                 "REQ-001",
                 "Implement core task state machine",
-                vec!["state machine".to_string(), "task state".to_string(), "created".to_string(), "executing".to_string()],
+                vec![
+                    "state machine".to_string(),
+                    "task state".to_string(),
+                    "created".to_string(),
+                    "executing".to_string(),
+                ],
             ),
             SpecRequirement::new(
                 "REQ-002",
                 "Implement task planning and scheduling",
-                vec!["planning".to_string(), "scheduler".to_string(), "plan".to_string(), "schedule".to_string()],
+                vec![
+                    "planning".to_string(),
+                    "scheduler".to_string(),
+                    "plan".to_string(),
+                    "schedule".to_string(),
+                ],
             ),
             SpecRequirement::new(
                 "REQ-003",
                 "Implement task validation and acceptance",
-                vec!["validation".to_string(), "acceptance".to_string(), "test".to_string(), "lint".to_string()],
+                vec![
+                    "validation".to_string(),
+                    "acceptance".to_string(),
+                    "test".to_string(),
+                    "lint".to_string(),
+                ],
             ),
         ];
         Self::new(requirements)
@@ -271,8 +290,7 @@ impl FrozenRequirementRegistry {
 
     /// Get a requirement by its ID, if it exists
     pub fn get_requirement(&self, id: &str) -> Option<&SpecRequirement> {
-        self.requirements
-            .get(*self.requirement_ids.get(id)?)
+        self.requirements.get(*self.requirement_ids.get(id)?)
     }
 
     /// Get all requirements
@@ -530,8 +548,16 @@ mod tests {
     fn test_frozen_registry_with_custom_requirements() {
         // Test creating a registry with custom requirements
         let requirements = vec![
-            SpecRequirement::new("CUSTOM-1", "Custom requirement 1", vec!["custom".to_string()]),
-            SpecRequirement::new("CUSTOM-2", "Custom requirement 2", vec!["special".to_string()]),
+            SpecRequirement::new(
+                "CUSTOM-1",
+                "Custom requirement 1",
+                vec!["custom".to_string()],
+            ),
+            SpecRequirement::new(
+                "CUSTOM-2",
+                "Custom requirement 2",
+                vec!["special".to_string()],
+            ),
         ];
         let registry = FrozenRequirementRegistry::new(requirements);
 

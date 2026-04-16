@@ -177,7 +177,11 @@ async fn test_autonomous_levels_skip_approval_gate() {
     // Test L3 Autonomous - should skip approval gate
     // Use unique descriptions to avoid false positive novelty detection
     let task_l3 = orchestrator
-        .create_task_with_autonomy("Build user authentication".to_string(), AutonomyLevel::Autonomous, vec![])
+        .create_task_with_autonomy(
+            "Build user authentication".to_string(),
+            AutonomyLevel::Autonomous,
+            vec![],
+        )
         .await
         .unwrap();
     let plan_l3 = create_test_plan(task_l3.id);
@@ -194,7 +198,11 @@ async fn test_autonomous_levels_skip_approval_gate() {
     // Test L4 FullAuto - should also skip approval gate
     // Use a different unique description
     let task_l4 = orchestrator
-        .create_task_with_autonomy("Process payment gateway".to_string(), AutonomyLevel::FullAuto, vec![])
+        .create_task_with_autonomy(
+            "Process payment gateway".to_string(),
+            AutonomyLevel::FullAuto,
+            vec![],
+        )
         .await
         .unwrap();
     let plan_l4 = create_test_plan(task_l4.id);
@@ -249,7 +257,11 @@ async fn test_full_approval_workflow() {
 
     // 1. Create task with L1 Supervised (requires approval)
     let task = orchestrator
-        .create_task_with_autonomy("Implement feature".to_string(), AutonomyLevel::Supervised, vec![])
+        .create_task_with_autonomy(
+            "Implement feature".to_string(),
+            AutonomyLevel::Supervised,
+            vec![],
+        )
         .await
         .unwrap();
     let task_id = task.id;

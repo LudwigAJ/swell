@@ -49,9 +49,7 @@ impl TaskType {
     pub fn is_strategic(&self) -> bool {
         matches!(
             self,
-            TaskType::Planning
-                | TaskType::Refactoring
-                | TaskType::CodeGeneration // Can be strategic if complex
+            TaskType::Planning | TaskType::Refactoring | TaskType::CodeGeneration // Can be strategic if complex
         )
     }
 
@@ -125,7 +123,8 @@ impl AutonomyOverrideMatrix {
         override_config: AutonomyOverride,
     ) -> Self {
         let agent_key = format!("{:?}", agent_role);
-        self.overrides.insert((agent_key, task_type), override_config);
+        self.overrides
+            .insert((agent_key, task_type), override_config);
         self
     }
 
@@ -145,7 +144,11 @@ impl AutonomyOverrideMatrix {
     /// Add an override for a specific task type (applies to all agent types).
     /// This is used when you want code-gen tasks to always use Supervised mode
     /// even if the agent is configured for Autonomous.
-    pub fn add_task_override(mut self, task_type: TaskType, override_config: AutonomyOverride) -> Self {
+    pub fn add_task_override(
+        mut self,
+        task_type: TaskType,
+        override_config: AutonomyOverride,
+    ) -> Self {
         self.task_defaults.insert(task_type, override_config);
         self
     }
@@ -169,22 +172,34 @@ impl AutonomyOverrideMatrix {
 
         // Priority 1: Specific (agent_role, task_type) override
         if let Some(override_config) = self.overrides.get(&(agent_key.clone(), task_type)) {
-            return (override_config.level, override_config.strategic_requires_approval);
+            return (
+                override_config.level,
+                override_config.strategic_requires_approval,
+            );
         }
 
         // Priority 2: Agent-specific override (ignores task type)
         if let Some(override_config) = self.agent_defaults.get(&agent_key) {
-            return (override_config.level, override_config.strategic_requires_approval);
+            return (
+                override_config.level,
+                override_config.strategic_requires_approval,
+            );
         }
 
         // Priority 3: Task-specific override (ignores agent type)
         if let Some(override_config) = self.task_defaults.get(&task_type) {
-            return (override_config.level, override_config.strategic_requires_approval);
+            return (
+                override_config.level,
+                override_config.strategic_requires_approval,
+            );
         }
 
         // Priority 4: Global fallback
         if let Some(override_config) = &self.global_fallback {
-            return (override_config.level, override_config.strategic_requires_approval);
+            return (
+                override_config.level,
+                override_config.strategic_requires_approval,
+            );
         }
 
         // Default: use base level
@@ -355,7 +370,11 @@ impl ApprovalRequest {
 
     /// Returns true if this action is classified as strategic
     pub fn is_strategic(&self) -> bool {
-        classify_action_strategic(&self.action_description, &self.affected_files, self.task_type)
+        classify_action_strategic(
+            &self.action_description,
+            &self.affected_files,
+            self.task_type,
+        )
     }
 }
 
@@ -413,7 +432,9 @@ impl AutonomyController {
     ) {
         let mut matrix = self.override_matrix.write().await;
         let agent_key = format!("{:?}", agent_role);
-        matrix.overrides.insert((agent_key, task_type), override_config);
+        matrix
+            .overrides
+            .insert((agent_key, task_type), override_config);
     }
 
     /// Check if an approval is needed based on task autonomy level, risk, agent role, and task type.
@@ -751,11 +772,10 @@ mod tests {
     async fn test_autonomous_strategic_with_override() {
         // Test that strategic actions with strategic_requires_approval flag
         // require approval even at Autonomous level
-        let matrix = AutonomyOverrideMatrix::new()
-            .add_agent_override(
-                swell_core::AgentRole::Generator,
-                AutonomyOverride::with_strategic_approval(swell_core::AutonomyLevel::Autonomous),
-            );
+        let matrix = AutonomyOverrideMatrix::new().add_agent_override(
+            swell_core::AgentRole::Generator,
+            AutonomyOverride::with_strategic_approval(swell_core::AutonomyLevel::Autonomous),
+        );
         let controller = AutonomyController::with_override_matrix(matrix);
 
         // Strategic action at Autonomous with override requires approval
@@ -790,11 +810,10 @@ mod tests {
     #[tokio::test]
     async fn test_per_task_type_override() {
         // Test: set code-gen tasks to Supervised even for Autonomous agent
-        let matrix = AutonomyOverrideMatrix::new()
-            .add_task_override(
-                TaskType::CodeGeneration,
-                AutonomyOverride::with_level(swell_core::AutonomyLevel::Supervised),
-            );
+        let matrix = AutonomyOverrideMatrix::new().add_task_override(
+            TaskType::CodeGeneration,
+            AutonomyOverride::with_level(swell_core::AutonomyLevel::Supervised),
+        );
         let controller = AutonomyController::with_override_matrix(matrix);
 
         // Agent is Autonomous but task type is CodeGeneration which is Supervised
@@ -815,11 +834,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_effective_level_with_override() {
-        let matrix = AutonomyOverrideMatrix::new()
-            .add_agent_override(
-                swell_core::AgentRole::Evaluator,
-                AutonomyOverride::with_level(swell_core::AutonomyLevel::Supervised),
-            );
+        let matrix = AutonomyOverrideMatrix::new().add_agent_override(
+            swell_core::AgentRole::Evaluator,
+            AutonomyOverride::with_level(swell_core::AutonomyLevel::Supervised),
+        );
         let controller = AutonomyController::with_override_matrix(matrix);
 
         // Base level is Guided but Evaluator agent is overridden to Supervised
@@ -1069,7 +1087,11 @@ mod tests {
             .into_iter()
             .map(String::from)
             .collect();
-        assert!(classify_action_strategic("Refactor core module", &files, TaskType::General));
+        assert!(classify_action_strategic(
+            "Refactor core module",
+            &files,
+            TaskType::General
+        ));
 
         // Not strategic: routine doc task
         assert!(!classify_action_strategic(

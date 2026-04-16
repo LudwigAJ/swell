@@ -410,7 +410,10 @@ async fn test_modify_and_restore_scope() {
 #[tokio::test]
 async fn test_cannot_pause_created_task() {
     let orchestrator = Orchestrator::new();
-    let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+    let task = orchestrator
+        .create_task("Test".to_string(), vec![])
+        .await
+        .unwrap();
 
     let result = orchestrator
         .pause_task(task.id, "Attempted pause".to_string())
@@ -438,7 +441,11 @@ async fn test_full_interruption_workflow() {
 
     // 1. Create and start task
     let task = orchestrator
-        .create_task_with_autonomy("Implement feature".to_string(), AutonomyLevel::FullAuto, vec![])
+        .create_task_with_autonomy(
+            "Implement feature".to_string(),
+            AutonomyLevel::FullAuto,
+            vec![],
+        )
         .await
         .unwrap();
     let task_id = task.id;

@@ -710,7 +710,10 @@ impl SessionHygiene {
 
     /// Get the acceptance count for a session
     pub fn get_acceptance_count(&self, session_id: Uuid) -> usize {
-        self.acceptance_counts.get(&session_id).copied().unwrap_or(0)
+        self.acceptance_counts
+            .get(&session_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Get the current acceptance ratio for a session
@@ -727,7 +730,10 @@ impl SessionHygiene {
     /// Evaluate the acceptance ratio and determine if intervention is needed
     /// Returns Some(AcceptanceRatioEvaluation) if evaluation should be performed,
     /// None if not enough attempts have been made or tracking is disabled
-    pub fn evaluate_acceptance_ratio(&mut self, session_id: Uuid) -> Option<AcceptanceRatioEvaluation> {
+    pub fn evaluate_acceptance_ratio(
+        &mut self,
+        session_id: Uuid,
+    ) -> Option<AcceptanceRatioEvaluation> {
         if !self.config.acceptance_tracking_enabled {
             return None;
         }
@@ -828,7 +834,10 @@ impl SessionHygiene {
 
     /// Get the evaluation cycle count for a session
     pub fn get_evaluation_cycle(&self, session_id: Uuid) -> usize {
-        self.evaluation_cycles.get(&session_id).copied().unwrap_or(0)
+        self.evaluation_cycles
+            .get(&session_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Reset the evaluation cycle (e.g., after successful progress)
@@ -1397,9 +1406,9 @@ mod tests {
 
         // 2 acceptances out of 4 attempts = 0.5 ratio
         hygiene.record_attempt_with_acceptance(session_id, false); // 1 attempt, 0 accept
-        hygiene.record_attempt_with_acceptance(session_id, true);  // 2 attempts, 1 accept
+        hygiene.record_attempt_with_acceptance(session_id, true); // 2 attempts, 1 accept
         hygiene.record_attempt_with_acceptance(session_id, false); // 3 attempts, 1 accept
-        hygiene.record_attempt_with_acceptance(session_id, true);  // 4 attempts, 2 accepts
+        hygiene.record_attempt_with_acceptance(session_id, true); // 4 attempts, 2 accepts
 
         let ratio = hygiene.get_acceptance_ratio(session_id);
         assert!(ratio.is_some());

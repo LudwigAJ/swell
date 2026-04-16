@@ -38,8 +38,12 @@ async fn test_drift_flagged_when_modifications_exceed_threshold() {
     controller.track_file_modification("src/d.rs"); // unexpected
     controller.track_file_modification("src/e.rs"); // unexpected
     controller.track_file_modification("src/f.rs"); // unexpected
-    // Plan had only A, B, C
-    let estimated = vec!["src/a.rs".to_string(), "src/b.rs".to_string(), "src/c.rs".to_string()];
+                                                    // Plan had only A, B, C
+    let estimated = vec![
+        "src/a.rs".to_string(),
+        "src/b.rs".to_string(),
+        "src/c.rs".to_string(),
+    ];
     let task_id = Uuid::new_v4();
 
     // Check drift - should detect >30% drift
@@ -75,7 +79,11 @@ async fn test_no_drift_flag_when_modifications_within_plan() {
     controller.track_file_modification("src/b.rs");
 
     // Plan had A, B, C
-    let estimated = vec!["src/a.rs".to_string(), "src/b.rs".to_string(), "src/c.rs".to_string()];
+    let estimated = vec![
+        "src/a.rs".to_string(),
+        "src/b.rs".to_string(),
+        "src/c.rs".to_string(),
+    ];
     let task_id = Uuid::new_v4();
 
     // Check drift - returns None when drift is within limits
@@ -144,10 +152,7 @@ async fn test_drift_flagged_just_over_threshold() {
     let task_id = Uuid::new_v4();
     let report = controller.check_drift(task_id, &estimated);
 
-    assert!(
-        report.is_some(),
-        "Drift at 40% should be flagged"
-    );
+    assert!(report.is_some(), "Drift at 40% should be flagged");
 
     let report = report.unwrap();
     assert!((report.drift_percentage - 40.0).abs() < 0.1);
@@ -253,10 +258,15 @@ async fn test_drift_report_lists_missing_files() {
 
     // Get drift report directly from drift detector (negative drift = under-implementation)
     let actual_files = controller.get_modified_files();
-    let report = controller.drift_detector().detect_drift(task_id, &estimated, &actual_files);
+    let report = controller
+        .drift_detector()
+        .detect_drift(task_id, &estimated, &actual_files);
 
     // Negative drift case - report exists but doesn't exceed threshold
-    assert!(!report.exceeds_threshold, "Negative drift should not trigger warning");
+    assert!(
+        !report.exceeds_threshold,
+        "Negative drift should not trigger warning"
+    );
     assert_eq!(report.missing_files.len(), 2);
     assert!(report.missing_files.contains(&"src/d.rs".to_string()));
     assert!(report.missing_files.contains(&"src/e.rs".to_string()));
@@ -277,11 +287,8 @@ async fn test_orchestrator_emits_drift_warning_event() {
     // Setup controller with the same orchestrator
     let mock_llm = Arc::new(swell_llm::MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(swell_tools::ToolRegistry::new());
-    let controller = swell_orchestrator::ExecutionController::new(
-        orchestrator.clone(),
-        mock_llm,
-        tool_registry,
-    );
+    let controller =
+        swell_orchestrator::ExecutionController::new(orchestrator.clone(), mock_llm, tool_registry);
 
     // Track files with 60% drift (5 actual vs 3 planned)
     controller.track_file_modification("src/a.rs");
@@ -354,9 +361,15 @@ async fn test_drift_with_empty_plan() {
     let report = controller.check_drift(task_id, &estimated);
     // With empty plan, drift percentage is infinite, so exceeds_threshold is true
     // We check that report exists (drift was calculated)
-    assert!(report.is_some(), "Empty plan should still generate drift report");
+    assert!(
+        report.is_some(),
+        "Empty plan should still generate drift report"
+    );
     let report = report.unwrap();
-    assert!(report.exceeds_threshold, "Infinite drift should trigger flag");
+    assert!(
+        report.exceeds_threshold,
+        "Infinite drift should trigger flag"
+    );
 }
 
 /// Test with no modifications (planned files only).
@@ -374,7 +387,10 @@ async fn test_no_drift_when_no_files_modified() {
 
     // No modifications - should not trigger drift warning
     let report = controller.check_drift(task_id, &estimated);
-    assert!(report.is_none(), "No modifications should not trigger drift warning");
+    assert!(
+        report.is_none(),
+        "No modifications should not trigger drift warning"
+    );
 }
 
 /// Test with exact same files as plan.

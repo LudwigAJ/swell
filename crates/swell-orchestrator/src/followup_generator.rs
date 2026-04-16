@@ -1021,17 +1021,15 @@ mod tests {
         let plan = Plan {
             id: Uuid::new_v4(),
             task_id: task.id,
-            steps: vec![
-                PlanStep {
-                    id: Uuid::new_v4(),
-                    description: "Add public function to API".to_string(),
-                    affected_files: vec!["src/lib.rs".to_string()],
-                    expected_tests: vec![],
-                    risk_level: RiskLevel::Low,
-                    dependencies: vec![],
-                    status: StepStatus::Completed,
-                },
-            ],
+            steps: vec![PlanStep {
+                id: Uuid::new_v4(),
+                description: "Add public function to API".to_string(),
+                affected_files: vec!["src/lib.rs".to_string()],
+                expected_tests: vec![],
+                risk_level: RiskLevel::Low,
+                dependencies: vec![],
+                status: StepStatus::Completed,
+            }],
             total_estimated_tokens: 1000,
             risk_assessment: "Low risk".to_string(),
         };

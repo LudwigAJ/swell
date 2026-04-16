@@ -508,7 +508,10 @@ mod tests {
 
         // 100% file overlap - exceeds 80% threshold even for failure-derived
         assert!(!result_above.is_novel);
-        assert!(result_above.rejection_reason.unwrap().contains("file overlap"));
+        assert!(result_above
+            .rejection_reason
+            .unwrap()
+            .contains("file overlap"));
     }
 
     #[test]

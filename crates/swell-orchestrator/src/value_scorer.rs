@@ -436,7 +436,14 @@ impl ValueScorer {
         let blocks = self.get_blocked_tasks(task_id);
         let depends_on = self.get_blocking_tasks(task_id);
 
-        TaskScore::new(task_id, spec_alignment, blocking_impact, complexity, blocks, depends_on)
+        TaskScore::new(
+            task_id,
+            spec_alignment,
+            blocking_impact,
+            complexity,
+            blocks,
+            depends_on,
+        )
     }
 
     /// Score multiple tasks
@@ -704,8 +711,8 @@ mod tests {
         let score = TaskScore::new(
             task_id,
             SpecAlignmentScore::implements(), // 4
-            BlockingImpactScore::multiple(),   // 4
-            ComplexityScore::moderate(),       // 3 (inverted to 3)
+            BlockingImpactScore::multiple(),  // 4
+            ComplexityScore::moderate(),      // 3 (inverted to 3)
             vec![],
             vec![],
         );
@@ -987,11 +994,12 @@ mod tests {
     #[test]
     fn test_complexity_inverted() {
         // Lower complexity = higher inverted score
-        assert!((ComplexityScore::trivial().inverted() - 5.0).abs() < 0.001);  // 6-1=5
-        assert!((ComplexityScore::low().inverted() - 4.0).abs() < 0.001);       // 6-2=4
+        assert!((ComplexityScore::trivial().inverted() - 5.0).abs() < 0.001); // 6-1=5
+        assert!((ComplexityScore::low().inverted() - 4.0).abs() < 0.001); // 6-2=4
         assert!((ComplexityScore::moderate().inverted() - 3.0).abs() < 0.001); // 6-3=3
-        assert!((ComplexityScore::complex().inverted() - 2.0).abs() < 0.001);  // 6-4=2
-        assert!((ComplexityScore::very_complex().inverted() - 1.0).abs() < 0.001); // 6-5=1
+        assert!((ComplexityScore::complex().inverted() - 2.0).abs() < 0.001); // 6-4=2
+        assert!((ComplexityScore::very_complex().inverted() - 1.0).abs() < 0.001);
+        // 6-5=1
     }
 
     // --- Complexity in Priority Computation Tests ---
@@ -1000,7 +1008,7 @@ mod tests {
     fn test_complexity_affects_priority() {
         let task_id = Uuid::new_v4();
         let spec = SpecAlignmentScore::implements(); // 4
-        let blocking = BlockingImpactScore::some();  // 3
+        let blocking = BlockingImpactScore::some(); // 3
 
         // Trivial complexity (1) -> inverted is 5
         let score_trivial = TaskScore::new(
@@ -1054,9 +1062,9 @@ mod tests {
         let task_id = Uuid::new_v4();
         let score = TaskScore::new(
             task_id,
-            SpecAlignmentScore::required(),    // 5
+            SpecAlignmentScore::required(),       // 5
             BlockingImpactScore::critical_path(), // 5
-            ComplexityScore::trivial(),        // 1, inverted = 5
+            ComplexityScore::trivial(),           // 1, inverted = 5
             vec![],
             vec![],
         );
@@ -1181,11 +1189,7 @@ mod tests {
         let blocker = Uuid::new_v4();
         let blocked = Uuid::new_v4();
 
-        scorer.register_dependency_with_complexity(
-            blocker,
-            blocked,
-            ComplexityScore::complex(),
-        );
+        scorer.register_dependency_with_complexity(blocker, blocked, ComplexityScore::complex());
 
         let score = scorer.score_task(blocker);
         assert_eq!(score.complexity.value(), 4);
@@ -1202,7 +1206,7 @@ mod tests {
         scorer.register_spec_link(task2, Uuid::new_v4());
 
         // But different complexity
-        scorer.set_complexity(task1, ComplexityScore::trivial());  // High priority
+        scorer.set_complexity(task1, ComplexityScore::trivial()); // High priority
         scorer.set_complexity(task2, ComplexityScore::very_complex()); // Low priority
 
         let (kept, discarded) = scorer.score_and_filter(&[task1, task2]);

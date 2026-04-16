@@ -96,7 +96,11 @@ async fn test_execution_controller_full_pipeline_with_scenario_mock_llm() {
     // Create a task with FullAuto autonomy to bypass approval gate
     // (PlannerAgent will still run since task doesn't have a plan)
     let task = orchestrator
-        .create_task_with_autonomy("Create a test file".to_string(), AutonomyLevel::FullAuto, vec![])
+        .create_task_with_autonomy(
+            "Create a test file".to_string(),
+            AutonomyLevel::FullAuto,
+            vec![],
+        )
         .await
         .unwrap();
     let task_id = task.id;
@@ -152,7 +156,11 @@ async fn test_execution_controller_skips_planner_when_plan_exists() {
 
     // Create a task with FullAuto autonomy and a pre-existing plan
     let task = orchestrator
-        .create_task_with_autonomy("Create a test file".to_string(), AutonomyLevel::FullAuto, vec![])
+        .create_task_with_autonomy(
+            "Create a test file".to_string(),
+            AutonomyLevel::FullAuto,
+            vec![],
+        )
         .await
         .unwrap();
     let task_id = task.id;

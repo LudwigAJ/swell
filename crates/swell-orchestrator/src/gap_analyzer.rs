@@ -248,7 +248,8 @@ impl GapAnalyzer {
                 ));
             } else {
                 requirement.status = ImplementationStatus::Implemented;
-                requirement.gap_notes = Some(format!("Implementation verified. Found in: {:?}", evidence));
+                requirement.gap_notes =
+                    Some(format!("Implementation verified. Found in: {:?}", evidence));
             }
         }
     }
@@ -1383,7 +1384,10 @@ mod tests {
                 category: RequirementCategory::Orchestration,
                 priority: RequirementPriority::MustHave,
                 expected_location: Some("swell-orchestrator::nonexistent_a".to_string()),
-                expected_symbols: vec!["NonExistentModuleA".to_string(), "SomeFunction".to_string()],
+                expected_symbols: vec![
+                    "NonExistentModuleA".to_string(),
+                    "SomeFunction".to_string(),
+                ],
                 status: ImplementationStatus::Missing,
                 gap_notes: Some("Expected but not found".to_string()),
             },
@@ -1418,9 +1422,19 @@ mod tests {
             .filter(|r| r.status == ImplementationStatus::Missing)
             .collect();
 
-        assert_eq!(missing_mock.len(), 2, "Should have exactly 2 missing mock requirements");
-        assert!(missing_mock.iter().any(|r| r.id == "MOCK-004"), "MOCK-004 should be missing");
-        assert!(missing_mock.iter().any(|r| r.id == "MOCK-005"), "MOCK-005 should be missing");
+        assert_eq!(
+            missing_mock.len(),
+            2,
+            "Should have exactly 2 missing mock requirements"
+        );
+        assert!(
+            missing_mock.iter().any(|r| r.id == "MOCK-004"),
+            "MOCK-004 should be missing"
+        );
+        assert!(
+            missing_mock.iter().any(|r| r.id == "MOCK-005"),
+            "MOCK-005 should be missing"
+        );
     }
 
     /// Test that verification correctly updates status based on codebase evidence.
@@ -1472,7 +1486,10 @@ mod tests {
         let evidence = GapAnalyzer::query_codebase_for_evidence(&req, workspace);
 
         // Should find evidence since TaskStateMachine exists
-        assert!(!evidence.is_empty(), "Should find evidence for TaskStateMachine");
+        assert!(
+            !evidence.is_empty(),
+            "Should find evidence for TaskStateMachine"
+        );
     }
 
     /// Test query_codebase_for_evidence returns empty for non-existent symbols.
@@ -1495,6 +1512,9 @@ mod tests {
         let evidence = GapAnalyzer::query_codebase_for_evidence(&req, workspace);
 
         // Should not find evidence for non-existent symbol
-        assert!(evidence.is_empty(), "Should not find evidence for NonExistentSymbolXYZ123");
+        assert!(
+            evidence.is_empty(),
+            "Should not find evidence for NonExistentSymbolXYZ123"
+        );
     }
 }

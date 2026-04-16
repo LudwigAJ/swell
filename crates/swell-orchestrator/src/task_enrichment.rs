@@ -16,9 +16,9 @@
 //! - Task missing enrichment metadata must not enter ready queue
 
 use std::path::Path;
-use swell_core::{PriorAttempt, Task, TaskEnrichment};
 #[cfg(test)]
 use swell_core::TaskState;
+use swell_core::{PriorAttempt, Task, TaskEnrichment};
 
 /// Discovers relevant source files from task description and plan.
 /// Uses heuristics based on file path patterns and naming conventions.
@@ -63,11 +63,15 @@ pub fn discover_enriched_files(task: &Task) -> Vec<String> {
     // Test file patterns from description keywords
     if desc_lower.contains("test") || desc_lower.contains("spec") {
         // Common test file patterns
-        if !files.iter().any(|f| f.contains("_test")) && !files.iter().any(|f| f.contains("/tests/")) {
+        if !files.iter().any(|f| f.contains("_test"))
+            && !files.iter().any(|f| f.contains("/tests/"))
+        {
             // Suggest adding tests - collect in a separate vector to avoid borrow conflict
             let test_paths: Vec<String> = files
                 .iter()
-                .filter(|file| file.ends_with(".rs") && !file.contains("test") && !file.contains("tests"))
+                .filter(|file| {
+                    file.ends_with(".rs") && !file.contains("test") && !file.contains("tests")
+                })
                 .map(|file| file.replace(".rs", "_test.rs"))
                 .filter(|test_path| !files.contains(test_path))
                 .collect();
@@ -265,20 +269,18 @@ mod tests {
         Plan {
             id: Uuid::new_v4(),
             task_id,
-            steps: vec![
-                PlanStep {
-                    id: Uuid::new_v4(),
-                    description: "Modify state machine".to_string(),
-                    affected_files: vec![
-                        "crates/swell-orchestrator/src/state_machine.rs".to_string(),
-                        "crates/swell-orchestrator/src/lib.rs".to_string(),
-                    ],
-                    expected_tests: vec!["test_state_transitions".to_string()],
-                    risk_level: RiskLevel::Medium,
-                    dependencies: vec![],
-                    status: StepStatus::Pending,
-                },
-            ],
+            steps: vec![PlanStep {
+                id: Uuid::new_v4(),
+                description: "Modify state machine".to_string(),
+                affected_files: vec![
+                    "crates/swell-orchestrator/src/state_machine.rs".to_string(),
+                    "crates/swell-orchestrator/src/lib.rs".to_string(),
+                ],
+                expected_tests: vec!["test_state_transitions".to_string()],
+                risk_level: RiskLevel::Medium,
+                dependencies: vec![],
+                status: StepStatus::Pending,
+            }],
             total_estimated_tokens: 5000,
             risk_assessment: "Medium risk - modifies core state machine".to_string(),
         }

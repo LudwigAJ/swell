@@ -310,10 +310,11 @@ impl SqliteMemoryStore {
             .await
             .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
 
-        let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN workspace TEXT NOT NULL DEFAULT ''")
-            .execute(pool)
-            .await
-            .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
+        let _ =
+            sqlx::query("ALTER TABLE memory_entries ADD COLUMN workspace TEXT NOT NULL DEFAULT ''")
+                .execute(pool)
+                .await
+                .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()));
 
         let _ = sqlx::query("ALTER TABLE memory_entries ADD COLUMN framework TEXT")
             .execute(pool)
@@ -578,10 +579,10 @@ impl SqliteMemoryStore {
         &self,
         entry: &ConflictResolutionLogEntry,
     ) -> Result<(), SwellError> {
-        let memory_ids_json =
-            serde_json::to_string(&entry.memory_ids).map_err(|e| SwellError::DatabaseError(e.to_string()))?;
-        let loser_ids_json =
-            serde_json::to_string(&entry.loser_ids).map_err(|e| SwellError::DatabaseError(e.to_string()))?;
+        let memory_ids_json = serde_json::to_string(&entry.memory_ids)
+            .map_err(|e| SwellError::DatabaseError(e.to_string()))?;
+        let loser_ids_json = serde_json::to_string(&entry.loser_ids)
+            .map_err(|e| SwellError::DatabaseError(e.to_string()))?;
 
         sqlx::query(
             r#"
@@ -800,7 +801,8 @@ impl MemoryStore for SqliteMemoryStore {
 
             for result in resolution_results {
                 // Log the conflict resolution decision
-                let log_entry = ConflictResolutionLogEntry::from_result(&result, entry.repository.clone());
+                let log_entry =
+                    ConflictResolutionLogEntry::from_result(&result, entry.repository.clone());
 
                 // Persist the log entry to the database
                 self.persist_conflict_log_entry(&log_entry).await?;
@@ -888,7 +890,10 @@ impl MemoryStore for SqliteMemoryStore {
             .await?;
 
         // Filter out the entry being updated itself
-        let other_memories: Vec<_> = existing_memories.into_iter().filter(|m| m.id != entry.id).collect();
+        let other_memories: Vec<_> = existing_memories
+            .into_iter()
+            .filter(|m| m.id != entry.id)
+            .collect();
 
         if !other_memories.is_empty() {
             // Build ConflictMemoryInfo for the updated entry
@@ -899,7 +904,7 @@ impl MemoryStore for SqliteMemoryStore {
                 embedding: entry.embedding.clone(),
                 created_at: entry.created_at,
                 updated_at: chrono::Utc::now(), // Use current time for update
-                confidence: 1.0, // Full confidence for updated entry
+                confidence: 1.0,                // Full confidence for updated entry
                 source: MemorySource::Unknown,
                 repository: entry.repository.clone(),
                 metadata: entry.metadata.clone(),
@@ -930,7 +935,8 @@ impl MemoryStore for SqliteMemoryStore {
 
             for result in resolution_results {
                 // Log the conflict resolution decision
-                let log_entry = ConflictResolutionLogEntry::from_result(&result, entry.repository.clone());
+                let log_entry =
+                    ConflictResolutionLogEntry::from_result(&result, entry.repository.clone());
 
                 // Persist the log entry to the database
                 self.persist_conflict_log_entry(&log_entry).await?;
@@ -1167,7 +1173,8 @@ impl MemoryStore for SqliteMemoryStore {
                 if !query.org.is_empty() && entry.org != query.org {
                     tracing::debug!(
                         "Blocking cross-scope access: entry org='{}' vs query org='{}'",
-                        entry.org, query.org
+                        entry.org,
+                        query.org
                     );
                     continue; // Skip this entry - cross-scope access denied
                 }
@@ -1175,7 +1182,8 @@ impl MemoryStore for SqliteMemoryStore {
                 if !query.workspace.is_empty() && entry.workspace != query.workspace {
                     tracing::debug!(
                         "Blocking cross-scope access: entry workspace='{}' vs query workspace='{}'",
-                        entry.workspace, query.workspace
+                        entry.workspace,
+                        query.workspace
                     );
                     continue; // Skip this entry - cross-scope access denied
                 }
@@ -1207,12 +1215,8 @@ impl MemoryStore for SqliteMemoryStore {
                 let decay_rate = decay::decay_rate_for_block_type(entry.block_type);
                 // Use bayesian confidence decay: c(t) = c₀ × e^(-λt)
                 // Start with base confidence of 1.0, decay based on time since last reinforcement
-                let decayed_confidence = decay::bayesian_confidence_decay(
-                    1.0,
-                    decay_rate,
-                    last_reinforcement,
-                    now,
-                );
+                let decayed_confidence =
+                    decay::bayesian_confidence_decay(1.0, decay_rate, last_reinforcement, now);
                 // Apply decay factor to the base score
                 // If no time has passed, decayed_confidence ≈ 1.0, so score is unchanged
                 // If time has passed, decayed_confidence < 1.0, so score is reduced
@@ -1233,7 +1237,11 @@ impl MemoryStore for SqliteMemoryStore {
         }
 
         // Sort by decayed score (highest first)
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Reinforce all accessed memories (reset their decay timers)
         for id in ids_to_reinforce {
@@ -2725,7 +2733,11 @@ mod tests {
         // With no time elapsed, decay factor ≈ 1.0, so final score ≈ 0.7
         // Label "procedural-project" does NOT contain "Rust" (label match = 0.9)
         // But content "Procedural content about Rust" DOES contain "Rust" (content match = 0.7)
-        assert!(results[0].score > 0.6, "Recent memory should have score > 0.6 after decay. Got {:.4}", results[0].score);
+        assert!(
+            results[0].score > 0.6,
+            "Recent memory should have score > 0.6 after decay. Got {:.4}",
+            results[0].score
+        );
     }
 
     #[tokio::test]
@@ -2902,8 +2914,14 @@ mod tests {
         // After 2 days with λ=0.01: procedural ≈ 0.9802 (0.5 * 0.9802 = 0.4901)
         // After 2 days with λ=1.0: task ≈ 0.1353 (0.5 * 0.1353 = 0.0677)
         // So procedural should have higher score
-        let procedural_result = results.iter().find(|r| r.entry.id == procedural.id).unwrap();
-        let task_result = results.iter().find(|r| r.entry.id == task_entry.id).unwrap();
+        let procedural_result = results
+            .iter()
+            .find(|r| r.entry.id == procedural.id)
+            .unwrap();
+        let task_result = results
+            .iter()
+            .find(|r| r.entry.id == task_entry.id)
+            .unwrap();
 
         assert!(
             procedural_result.score > task_result.score,
@@ -3016,8 +3034,14 @@ mod tests {
         // Should be rejected with descriptive error
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("repository"), "Error should mention repository requirement");
-        assert!(err.to_string().contains("scope"), "Error should mention scope requirement");
+        assert!(
+            err.to_string().contains("repository"),
+            "Error should mention repository requirement"
+        );
+        assert!(
+            err.to_string().contains("scope"),
+            "Error should mention scope requirement"
+        );
     }
 
     #[tokio::test]
@@ -3074,7 +3098,10 @@ mod tests {
             .unwrap();
 
         // Should not find the entry because org-b != org-a
-        assert!(results.is_empty(), "Cross-scope access should be denied without override");
+        assert!(
+            results.is_empty(),
+            "Cross-scope access should be denied without override"
+        );
     }
 
     #[tokio::test]
@@ -3131,7 +3158,11 @@ mod tests {
             .unwrap();
 
         // Should find the entry because override is enabled
-        assert_eq!(results.len(), 1, "Cross-scope access should be allowed with override");
+        assert_eq!(
+            results.len(),
+            1,
+            "Cross-scope access should be allowed with override"
+        );
         assert_eq!(results[0].entry.id, entry.id);
     }
 
@@ -3173,7 +3204,7 @@ mod tests {
                 labels: None,
                 limit: 10,
                 offset: 0,
-                org: "my-org".to_string(), // Same org
+                org: "my-org".to_string(),            // Same org
                 workspace: "workspace-b".to_string(), // Different workspace
                 repository: "repo-a".to_string(),
                 language: None,
@@ -3188,7 +3219,10 @@ mod tests {
             .unwrap();
 
         // Should not find the entry because workspace-b != workspace-a
-        assert!(results.is_empty(), "Cross-workspace access should be denied without override");
+        assert!(
+            results.is_empty(),
+            "Cross-workspace access should be denied without override"
+        );
     }
 
     #[tokio::test]

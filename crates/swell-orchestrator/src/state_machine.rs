@@ -1,11 +1,11 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
-use swell_core::{Plan, SwellError, Task, TaskState, PriorAttempt};
+use swell_core::{Plan, PriorAttempt, SwellError, Task, TaskState};
 use tracing::{info, warn};
 
 use crate::task_enrichment::{
-    discover_enriched_files, discover_related_tests, discover_constraints,
+    discover_constraints, discover_enriched_files, discover_related_tests,
 };
 
 /// Task state machine implementing the 8-state lifecycle from the spec
@@ -1223,7 +1223,10 @@ mod tests {
         let task = sm.get_task(task_id).unwrap();
 
         // Verify enrichment is populated
-        assert!(task.enrichment.is_enriched, "enrichment.is_enriched should be true");
+        assert!(
+            task.enrichment.is_enriched,
+            "enrichment.is_enriched should be true"
+        );
         assert!(
             !task.enrichment.enriched_files.is_empty(),
             "enriched_files should be populated"
@@ -1388,8 +1391,7 @@ mod tests {
         sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
-        sm.reject_task(task_id, "Test failure".to_string())
-            .unwrap();
+        sm.reject_task(task_id, "Test failure".to_string()).unwrap();
 
         // Get the task and manually increment iteration_count and set rejected_reason
         // For a real retry, the task would be retried with iteration_count=1
@@ -1417,8 +1419,7 @@ mod tests {
         // Verify related_tests contains test file patterns
         // The test files should match naming conventions like source_test.rs
         assert!(
-            !task.enrichment.related_tests.is_empty()
-                || task.enrichment.enriched_files.is_empty(),
+            !task.enrichment.related_tests.is_empty() || task.enrichment.enriched_files.is_empty(),
             // If enriched_files is empty, there would be no related tests
             // But we expect some test files to be discovered
         );

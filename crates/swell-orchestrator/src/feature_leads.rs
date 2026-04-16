@@ -554,7 +554,10 @@ mod tests {
     #[tokio::test]
     async fn test_feature_lead_creation() {
         let orchestrator = Orchestrator::new();
-        let parent_task = orchestrator.create_task("Complex task".to_string(), vec![]).await.unwrap();
+        let parent_task = orchestrator
+            .create_task("Complex task".to_string(), vec![])
+            .await
+            .unwrap();
 
         let plan = create_test_plan_with_steps(20);
         orchestrator.set_plan(parent_task.id, plan).await.unwrap();
@@ -575,7 +578,10 @@ mod tests {
     #[tokio::test]
     async fn test_feature_lead_execution() {
         let orchestrator = Orchestrator::new();
-        let parent_task = orchestrator.create_task("Complex task".to_string(), vec![]).await.unwrap();
+        let parent_task = orchestrator
+            .create_task("Complex task".to_string(), vec![])
+            .await
+            .unwrap();
 
         // Create plan and set it
         let plan = create_test_plan_with_steps(20);
@@ -600,7 +606,10 @@ mod tests {
     #[tokio::test]
     async fn test_feature_lead_escalation_trigger() {
         let orchestrator = Orchestrator::new();
-        let parent_task = orchestrator.create_task("Complex task".to_string(), vec![]).await.unwrap();
+        let parent_task = orchestrator
+            .create_task("Complex task".to_string(), vec![])
+            .await
+            .unwrap();
 
         let plan = create_test_plan_with_steps(20);
         let step_ids: Vec<Uuid> = plan.steps.iter().take(10).map(|s| s.id).collect();
@@ -793,7 +802,10 @@ mod tests {
     #[tokio::test]
     async fn test_feature_lead_assigned_steps_tracking() {
         let orchestrator = Orchestrator::new();
-        let parent_task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let parent_task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
 
         let plan = create_large_plan(20);
         let step_ids: Vec<Uuid> = plan.steps.iter().take(10).map(|s| s.id).collect();
@@ -816,7 +828,10 @@ mod tests {
     #[tokio::test]
     async fn test_feature_lead_completion_tracking() {
         let orchestrator = Orchestrator::new();
-        let parent_task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
+        let parent_task = orchestrator
+            .create_task("Test".to_string(), vec![])
+            .await
+            .unwrap();
 
         let plan = create_large_plan(5);
         let step_ids: Vec<Uuid> = plan.steps.iter().map(|s| s.id).collect();

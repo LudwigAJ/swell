@@ -1045,9 +1045,10 @@ mod tests {
         use crate::golden_sample_testing::GoldenSampleService;
 
         let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        let golden_store = crate::golden_sample_testing::SqliteGoldenSampleStore::create("sqlite::memory:")
-            .await
-            .unwrap();
+        let golden_store =
+            crate::golden_sample_testing::SqliteGoldenSampleStore::create("sqlite::memory:")
+                .await
+                .unwrap();
         let golden_service = GoldenSampleService::new(golden_store);
 
         // Create extractor with golden sample service - should not panic
@@ -1060,7 +1061,10 @@ mod tests {
 
         // find_matching_skills should work (return empty since no skills match)
         let matched = extractor.find_matching_skills("any task").await.unwrap();
-        assert!(matched.is_empty(), "Should return empty when no skills exist");
+        assert!(
+            matched.is_empty(),
+            "Should return empty when no skills exist"
+        );
 
         // Verify golden_sample_service is set
         // We can't directly check private field, but the test passing means it works
@@ -1070,17 +1074,17 @@ mod tests {
     async fn test_find_matching_skills_without_golden_sample_service() {
         // Test that without golden sample service, skills are returned without validation
         let store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
-        let extractor = SkillExtractor::new(
-            store,
-            ExtractionConfig::default(),
-            std::env::temp_dir(),
-        );
+        let extractor =
+            SkillExtractor::new(store, ExtractionConfig::default(), std::env::temp_dir());
 
         // When golden_sample_service is None, find_matching_skills should return
         // skills without validation (backward compatibility)
         // This test verifies the backward compatibility path works
         let matched = extractor.find_matching_skills("any task").await.unwrap();
         // No skills in temp dir, so empty result is expected
-        assert!(matched.is_empty(), "Should return empty when no skills match");
+        assert!(
+            matched.is_empty(),
+            "Should return empty when no skills match"
+        );
     }
 }
