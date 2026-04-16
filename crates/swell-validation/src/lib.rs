@@ -266,12 +266,11 @@ pub use result_interpreter::{
 pub mod traceability;
 pub use traceability::sqlite_store::SqliteTraceabilityStore;
 pub use traceability::{
-    AcceptanceCriteria as TraceAcceptanceCriteria, ChainCounts, CriteriaCriticality,
-    CriteriaStatus, CriteriaEvidence, Evidence, EvidenceArtifact,
-    EvidenceType, Goal, GoalStatus, InMemoryTraceabilityStore,
-    MissingLink, MissingLinkType, TestCase as TraceTestCase, TestCaseEvidence,
-    TestCaseStatus, TestCaseType, TestResult as TraceTestResult, TraceabilityChain,
-    TraceabilityError, TraceabilityEvidencePack, TraceabilityStore, CodeLocation,
+    AcceptanceCriteria as TraceAcceptanceCriteria, ChainCounts, CodeLocation, CriteriaCriticality,
+    CriteriaEvidence, CriteriaStatus, Evidence, EvidenceArtifact, EvidenceType, Goal, GoalStatus,
+    InMemoryTraceabilityStore, MissingLink, MissingLinkType, TestCase as TraceTestCase,
+    TestCaseEvidence, TestCaseStatus, TestCaseType, TestResult as TraceTestResult,
+    TraceabilityChain, TraceabilityError, TraceabilityEvidencePack, TraceabilityStore,
 };
 
 // Re-export predictive test selection for ML-based intelligent test prioritization
@@ -286,8 +285,10 @@ pub use predictive_selection::{
 // Re-export autonomous coverage for mutation testing and coverage gap detection
 pub mod autonomous_coverage;
 pub use autonomous_coverage::{
-    AutonomousCoverageConfig, AutonomousCoverageEngine, CoverageGap, CoverageReport, CoverageTest,
-    CoverageThresholds, GapSeverity, GapType, MutationResult, MutationType, SurvivingMutation,
+    AutonomousCoverageConfig, AutonomousCoverageEngine, AutonomousCoverageLoop,
+    AutonomousCoverageLoopConfig, CoverageGap, CoverageLoopIteration, CoverageLoopResult,
+    CoverageReport, CoverageTest, CoverageThresholds, GapSeverity, GapType, MutationResult,
+    MutationType, SurvivingMutation,
 };
 
 // Mutation testing gate using cargo-mutants

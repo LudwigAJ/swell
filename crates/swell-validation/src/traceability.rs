@@ -1132,14 +1132,17 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
                 }
 
                 // Collect code location from test case
-                let code_location = test_in_chain.test_case.file_path.as_ref().map(|path| {
-                    CodeLocation {
-                        file_path: path.clone(),
-                        line_start: 0,
-                        line_end: 0,
-                        description: Some(test_in_chain.test_case.name.clone()),
-                    }
-                });
+                let code_location =
+                    test_in_chain
+                        .test_case
+                        .file_path
+                        .as_ref()
+                        .map(|path| CodeLocation {
+                            file_path: path.clone(),
+                            line_start: 0,
+                            line_end: 0,
+                            description: Some(test_in_chain.test_case.name.clone()),
+                        });
 
                 // Collect artifacts from evidence
                 for ev in &test_in_chain.evidence {
@@ -1245,7 +1248,8 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
 
                 // Check each result for missing evidence
                 for result in &test_in_chain.results {
-                    if test_in_chain.evidence.is_empty() {
+                    let result_evidence = self.get_evidence_for_result(result.id).await?;
+                    if result_evidence.is_empty() {
                         missing.push(MissingLink {
                             link_type: MissingLinkType::ResultHasNoEvidence,
                             parent_id: result.id,
@@ -2249,14 +2253,17 @@ pub mod sqlite_store {
                     }
 
                     // Collect code location from test case
-                    let code_location = test_in_chain.test_case.file_path.as_ref().map(|path| {
-                        CodeLocation {
-                            file_path: path.clone(),
-                            line_start: 0,
-                            line_end: 0,
-                            description: Some(test_in_chain.test_case.name.clone()),
-                        }
-                    });
+                    let code_location =
+                        test_in_chain
+                            .test_case
+                            .file_path
+                            .as_ref()
+                            .map(|path| CodeLocation {
+                                file_path: path.clone(),
+                                line_start: 0,
+                                line_end: 0,
+                                description: Some(test_in_chain.test_case.name.clone()),
+                            });
 
                     // Collect artifacts from evidence
                     for ev in &test_in_chain.evidence {
@@ -2362,7 +2369,8 @@ pub mod sqlite_store {
 
                     // Check each result for missing evidence
                     for result in &test_in_chain.results {
-                        if test_in_chain.evidence.is_empty() {
+                        let result_evidence = self.get_evidence_for_result(result.id).await?;
+                        if result_evidence.is_empty() {
                             missing.push(MissingLink {
                                 link_type: MissingLinkType::ResultHasNoEvidence,
                                 parent_id: result.id,
@@ -2822,6 +2830,79 @@ mod sqlite_traceability_tests {
     }
 
     #[tokio::test]
+    async fn test_sqlite_detect_missing_links_per_result_evidence() {
+        // Test that ResultHasNoEvidence is detected per-result in SQLite store.
+        // When a test has multiple results and only the OLDER result lacks evidence
+        // (while the NEWER result HAS evidence), ONLY the older result should be flagged.
+        let store = SqliteTraceabilityStore::from_connection_string("sqlite::memory:")
+            .await
+            .unwrap();
+
+        let task_id = Uuid::new_v4();
+        let goal = create_test_goal(task_id);
+        let goal_id = store.create_goal(goal).await.unwrap();
+
+        let criteria = create_test_criteria(goal_id);
+        let criteria_id = store.add_criteria(criteria).await.unwrap();
+
+        let test = create_test_case(criteria_id)
+            .with_file_path("src/lib.rs")
+            .with_test_type(TestCaseType::Unit);
+        let test_id = store.add_test_case(test).await.unwrap();
+
+        // Create OLDER result (no evidence)
+        let old_result = create_test_result(test_id).with_duration(100);
+        let old_result_id = store.add_result(old_result).await.unwrap();
+        // OLD result has NO evidence linked
+
+        // Create NEWER result (with evidence)
+        let new_result = TestResult::new(test_id, false)
+            .with_duration(50)
+            .with_failure_message("failed");
+        let new_result_id = store.add_result(new_result).await.unwrap();
+        // NEW result HAS evidence
+        let evidence = Evidence::new(
+            new_result_id,
+            EvidenceType::TestOutput,
+            "/tmp/sqlite_output.log",
+        );
+        store.add_evidence(evidence).await.unwrap();
+
+        // Detect missing links
+        let missing = store.detect_missing_links(goal_id).await.unwrap();
+
+        // Should find exactly ONE ResultHasNoEvidence - for the OLD result only
+        let result_missing: Vec<_> = missing
+            .iter()
+            .filter(|m| matches!(m.link_type, MissingLinkType::ResultHasNoEvidence))
+            .collect();
+
+        assert_eq!(
+            result_missing.len(),
+            1,
+            "Expected exactly 1 result missing evidence (old one), got {}: {:?}",
+            result_missing.len(),
+            result_missing
+        );
+
+        // The missing link should be for the OLD result (which has no evidence)
+        assert_eq!(
+            result_missing[0].parent_id, old_result_id,
+            "Missing link should be for old result (no evidence), got different result"
+        );
+
+        // Should NOT flag the new result as missing evidence (it has evidence!)
+        let new_result_missing = missing.iter().any(|m| {
+            matches!(m.link_type, MissingLinkType::ResultHasNoEvidence)
+                && m.parent_id == new_result_id
+        });
+        assert!(
+            !new_result_missing,
+            "New result should NOT be flagged as missing evidence (it has evidence)"
+        );
+    }
+
+    #[tokio::test]
     async fn test_evidence_pack_assembly_full_chain() {
         // Test VAL-VPIPE-005: evidence pack contains all links and bidirectional traversal works
         // Note: This test uses InMemoryTraceabilityStore from traceability_tests scope,
@@ -2849,7 +2930,9 @@ mod sqlite_traceability_tests {
         let result1 = TestResult::new(test_id1, true).with_duration(100);
         store.add_result(result1).await.unwrap();
 
-        let result2 = TestResult::new(test_id2, false).with_duration(50).with_failure_message("failed");
+        let result2 = TestResult::new(test_id2, false)
+            .with_duration(50)
+            .with_failure_message("failed");
         let result2_id = store.add_result(result2).await.unwrap();
 
         // Link evidence to results
@@ -2873,7 +2956,11 @@ mod sqlite_traceability_tests {
 
         // Verify tests have code locations (from create_test_case which has file_path)
         let code_locs = pack.code_locations.len();
-        assert!(code_locs >= 2, "Expected at least 2 code locations, got {}", code_locs);
+        assert!(
+            code_locs >= 2,
+            "Expected at least 2 code locations, got {}",
+            code_locs
+        );
 
         // Verify artifacts are present
         assert_eq!(pack.artifacts.len(), 1, "Expected 1 artifact from evidence");
@@ -2895,7 +2982,9 @@ mod sqlite_traceability_tests {
         let missing = store.detect_missing_links(goal_id).await.unwrap();
 
         assert!(!missing.is_empty(), "Expected missing links to be detected");
-        let has_criteria_no_tests = missing.iter().any(|m| matches!(m.link_type, MissingLinkType::CriteriaHasNoTests));
+        let has_criteria_no_tests = missing
+            .iter()
+            .any(|m| matches!(m.link_type, MissingLinkType::CriteriaHasNoTests));
         assert!(has_criteria_no_tests, "Should detect criteria has no tests");
     }
 
@@ -2931,7 +3020,11 @@ mod sqlite_traceability_tests {
         // Goal has criteria, so no GoalHasNoCriteria
         // The only potential missing: result has evidence (1 found), tests have results (1 found)
         // So missing should be empty
-        assert!(missing.is_empty(), "Expected no missing links for complete chain, got {:?}", missing);
+        assert!(
+            missing.is_empty(),
+            "Expected no missing links for complete chain, got {:?}",
+            missing
+        );
     }
 
     #[tokio::test]
@@ -2954,7 +3047,11 @@ mod sqlite_traceability_tests {
         let result = TestResult::new(test_id, true);
         let result_id = store.add_result(result).await.unwrap();
 
-        let evidence = Evidence::new(result_id, EvidenceType::CoverageReport, "/tmp/coverage.json");
+        let evidence = Evidence::new(
+            result_id,
+            EvidenceType::CoverageReport,
+            "/tmp/coverage.json",
+        );
         store.add_evidence(evidence).await.unwrap();
 
         let pack = store.assemble_evidence_pack(goal_id).await.unwrap();
@@ -2964,7 +3061,10 @@ mod sqlite_traceability_tests {
         assert_eq!(pack.code_locations[0].file_path, "src/lib.rs");
 
         // Verify artifacts include coverage report
-        let has_coverage = pack.artifacts.iter().any(|a| matches!(a.evidence_type, EvidenceType::CoverageReport));
+        let has_coverage = pack
+            .artifacts
+            .iter()
+            .any(|a| matches!(a.evidence_type, EvidenceType::CoverageReport));
         assert!(has_coverage);
     }
 
@@ -3002,5 +3102,77 @@ mod sqlite_traceability_tests {
         // Both directions should lead to same goal
         let pack = store.assemble_evidence_pack(goal_id).await.unwrap();
         assert_eq!(pack.requirement_id, goal_id);
+    }
+
+    #[tokio::test]
+    async fn test_detect_missing_links_per_result_evidence() {
+        // Test that ResultHasNoEvidence is detected per-result, not from parent test-level evidence.
+        // When a test has multiple results and only the OLDER result lacks evidence
+        // (while the NEWER result HAS evidence), ONLY the older result should be flagged.
+        // This verifies the fix: we check each result's evidence individually, not test-level.
+        let store = InMemoryTraceabilityStore::new();
+        let task_id = Uuid::new_v4();
+
+        let goal = Goal::new("Per-result evidence test", task_id);
+        let goal_id = store.create_goal(goal).await.unwrap();
+
+        let criteria = AcceptanceCriteria::new("Per-result criteria", goal_id);
+        let criteria_id = store.add_criteria(criteria).await.unwrap();
+
+        let test = TestCase::new("test_per_result", criteria_id)
+            .with_file_path("src/lib.rs")
+            .with_test_type(TestCaseType::Unit);
+        let test_id = store.add_test_case(test).await.unwrap();
+
+        // Create OLDER result (simulated by inserting it first, then newer)
+        let old_result = TestResult::new(test_id, true).with_duration(100);
+        let old_result_id = store.add_result(old_result).await.unwrap();
+        // OLD result has NO evidence linked
+
+        // Create NEWER result
+        let new_result = TestResult::new(test_id, false)
+            .with_duration(50)
+            .with_failure_message("new failure");
+        let new_result_id = store.add_result(new_result).await.unwrap();
+        // NEW result HAS evidence
+        let evidence = Evidence::new(
+            new_result_id,
+            EvidenceType::TestOutput,
+            "/tmp/new_output.log",
+        );
+        store.add_evidence(evidence).await.unwrap();
+
+        // Detect missing links
+        let missing = store.detect_missing_links(goal_id).await.unwrap();
+
+        // Should find exactly ONE ResultHasNoEvidence - for the OLD result only
+        let result_missing: Vec<_> = missing
+            .iter()
+            .filter(|m| matches!(m.link_type, MissingLinkType::ResultHasNoEvidence))
+            .collect();
+
+        assert_eq!(
+            result_missing.len(),
+            1,
+            "Expected exactly 1 result missing evidence (old one), got {}: {:?}",
+            result_missing.len(),
+            result_missing
+        );
+
+        // The missing link should be for the OLD result (which has no evidence)
+        assert_eq!(
+            result_missing[0].parent_id, old_result_id,
+            "Missing link should be for old result (no evidence), got different result"
+        );
+
+        // Should NOT flag the new result as missing evidence (it has evidence!)
+        let new_result_missing = missing.iter().any(|m| {
+            matches!(m.link_type, MissingLinkType::ResultHasNoEvidence)
+                && m.parent_id == new_result_id
+        });
+        assert!(
+            !new_result_missing,
+            "New result should NOT be flagged as missing evidence (it has evidence)"
+        );
     }
 }
