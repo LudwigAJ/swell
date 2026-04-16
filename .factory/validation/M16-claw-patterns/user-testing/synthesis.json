@@ -1,0 +1,67 @@
+{
+  "milestone": "M16-claw-patterns",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-CLAW-001",
+    "VAL-CLAW-002",
+    "VAL-CLAW-003",
+    "VAL-CLAW-004"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "validationDetails": {
+    "VAL-CLAW-001": {
+      "feature": "claw-transcript-events",
+      "testingSurface": "cargo test",
+      "crate": "swell-core",
+      "testPattern": "transcript",
+      "testsPassed": 26,
+      "commands": [
+        "cargo test --package swell-core transcript -- --nocapture"
+      ],
+      "summary": "Transcript typed event log with 4 event types (ToolCall, LlmResponse, StateTransition, Error), append-only invariant verified, async subscriber filtering works correctly."
+    },
+    "VAL-CLAW-002": {
+      "feature": "claw-session-compaction",
+      "testingSurface": "cargo test",
+      "crate": "swell-core",
+      "testPattern": "val_claw",
+      "testsPassed": 1,
+      "commands": [
+        "cargo test --package swell-core val_claw -- --nocapture"
+      ],
+      "summary": "Session compaction triggers at 50-turn threshold, ResumePacket preserves decisions, active files, pending actions, constraints, and tail turns. New sessions can resume from packet."
+    },
+    "VAL-CLAW-003": {
+      "feature": "claw-binary-detection",
+      "testingSurface": "cargo test",
+      "crate": "swell-tools",
+      "testPattern": "binary",
+      "testsPassed": 18,
+      "commands": [
+        "cargo test --package swell-tools binary -- --nocapture"
+      ],
+      "summary": "Binary detection via magic bytes (ELF, PNG, JPEG, PDF, ZIP, etc.) and null byte detection. Binary files rejected by default, allowed with allow_binary=true returning base64-encoded content. Write operations properly rejected."
+    },
+    "VAL-CLAW-004": {
+      "feature": "claw-approval-decay",
+      "testingSurface": "cargo test",
+      "crate": "swell-orchestrator",
+      "testPattern": "approval_decay",
+      "testsPassed": 7,
+      "commands": [
+        "cargo test --package swell-orchestrator approval_decay -- --nocapture"
+      ],
+      "summary": "ApprovalDecayConfig with configurable decay parameters, 80% completion threshold, failure-derived out-of-scope tasks requiring approval. Standard threshold below 80%, elevated threshold above 80%."
+    }
+  },
+  "previousRound": null
+}

@@ -246,6 +246,26 @@
       "status": "passed",
       "validatedAtMilestone": "mcp",
       "notes": "User testing validation: MCP protocol full implementation verified via 72 tests in swell-tools -- mcp. Tool annotations (readOnlyHint, destructiveHint, idempotentHint), outputSchema support, and dynamic tool discovery all verified working."
+    },
+    "VAL-CLAW-001": {
+      "status": "passed",
+      "validatedAtMilestone": "M16-claw-patterns",
+      "notes": "User testing validation: Transcript typed event log via cargo test (swell-core, 26 tests). 4 event types (ToolCall, LlmResponse, StateTransition, Error), append-only invariant verified, async subscriber filtering works correctly."
+    },
+    "VAL-CLAW-002": {
+      "status": "passed",
+      "validatedAtMilestone": "M16-claw-patterns",
+      "notes": "User testing validation: Session compaction via cargo test (swell-core, val_claw test). Compaction triggers at 50-turn threshold, ResumePacket preserves decisions, active files, pending actions, constraints, and tail turns."
+    },
+    "VAL-CLAW-003": {
+      "status": "passed",
+      "validatedAtMilestone": "M16-claw-patterns",
+      "notes": "User testing validation: Binary detection via cargo test (swell-tools, 18 tests). Magic bytes (ELF, PNG, JPEG, PDF, ZIP, etc.) and null byte detection. Binary files rejected by default, allowed with allow_binary=true returning base64-encoded content."
+    },
+    "VAL-CLAW-004": {
+      "status": "passed",
+      "validatedAtMilestone": "M16-claw-patterns",
+      "notes": "User testing validation: Approval decay via cargo test (swell-orchestrator, 7 tests). ApprovalDecayConfig with configurable decay, 80% completion threshold, failure-derived out-of-scope tasks requiring approval."
     }
   }
 }
