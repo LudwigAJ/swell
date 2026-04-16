@@ -192,6 +192,7 @@ pub fn build_prior_attempts(task: &Task) -> Vec<PriorAttempt> {
                 outcome: Some(task.state),
                 rejected_reason: Some(rejection_reason.clone()),
                 modified_files: Vec::new(), // Would be populated from execution
+                diff: None,                  // Diff recorded during execution via record_attempt_diff
             });
         }
     }

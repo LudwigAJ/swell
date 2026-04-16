@@ -162,6 +162,9 @@ pub struct PriorAttempt {
     /// Files that were modified during this attempt
     #[serde(default)]
     pub modified_files: Vec<String>,
+    /// Unified diff of changes made during this attempt (for non-novel retry detection)
+    #[serde(default)]
+    pub diff: Option<String>,
 }
 
 /// Enrichment metadata populated deterministically before tasks enter the ready queue.

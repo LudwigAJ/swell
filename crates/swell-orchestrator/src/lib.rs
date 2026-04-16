@@ -35,6 +35,7 @@ pub mod loop_detection;
 pub mod merge_queue;
 pub mod metrics;
 pub mod model_fallback;
+pub mod non_novel_retry;
 pub mod novelty_check;
 pub mod policy;
 pub mod recovery_recipe;
@@ -137,6 +138,10 @@ pub use metrics::{
     AlertSeverity, AlertThresholds, AlertType, MetricSample, MetricsAlert, MetricsCollector,
     MetricsWindow, OrchestratorMetrics, SharedMetricsCollector,
 };
+pub use non_novel_retry::{
+    ForcedStrategyChange, NonNovelRetryConfig, NonNovelRetryDetector, NonNovelRetryResult,
+    PriorAttemptDiffs,
+};
 pub use novelty_check::{
     levenshtein_distance, NoveltyCheckResult, NoveltyChecker, NoveltyCheckerConfig, TrackedTask,
 };
@@ -220,7 +225,7 @@ use swell_core::{
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
 use swell_tools::mcp_config::{McpConfigManager, McpServerHealth};
 use tokio::sync::{broadcast, RwLock};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 /// Maximum concurrent agents
@@ -303,6 +308,20 @@ pub enum OrchestratorEvent {
         /// Threshold the score needed to be above
         confidence_threshold: f64,
     },
+    /// Non-novel retry rejection emitted when a retry is too similar to prior failed attempts.
+    /// This forces a strategy change (model switch, approach change, or escalation).
+    NonNovelRetryRejection {
+        /// Task that was rejected
+        task_id: Uuid,
+        /// Similarity score to the most similar prior attempt (0.0-1.0)
+        similarity: f32,
+        /// Iteration number of the most similar prior attempt
+        similar_to_iteration: u32,
+        /// The forced action to take
+        forced_action: ForcedStrategyChange,
+        /// Reason for the forced action
+        reason: String,
+    },
 }
 
 /// The main orchestrator that coordinates agents and tasks
@@ -319,6 +338,8 @@ pub struct Orchestrator {
     novelty_checker: Arc<RwLock<NoveltyChecker>>,
     /// File lock manager for preventing concurrent edits to the same file
     file_lock_manager: Arc<FileLockManager>,
+    /// Non-novel retry detector for preventing repetitive failed attempts
+    non_novel_detector: Arc<RwLock<NonNovelRetryDetector>>,
 }
 
 impl Orchestrator {
@@ -338,6 +359,7 @@ impl Orchestrator {
             mcp_manager,
             novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
             file_lock_manager: Arc::new(FileLockManager::new()),
+            non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
         }
     }
 
@@ -355,6 +377,7 @@ impl Orchestrator {
             mcp_manager,
             novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
             file_lock_manager: Arc::new(FileLockManager::new()),
+            non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
         }
     }
 
@@ -753,8 +776,62 @@ impl Orchestrator {
         } else {
             drop(sm); // Release read lock before acquiring write lock
             let sm = self.state_machine.write().await;
-            sm.reject_task(task_id, "Validation failed".to_string())?;
-            info!(task_id = %task_id, "Task rejected");
+
+            // Get task state before rejecting
+            let task = sm.get_task(task_id)?;
+            let iteration_count = task.iteration_count;
+            let rejection_reason = "Validation failed".to_string();
+
+            sm.reject_task(task_id, rejection_reason.clone())?;
+            info!(task_id = %task_id, iteration_count = %iteration_count, "Task rejected");
+
+            // Evaluate non-novel retry detection
+            let non_novel_result = self
+                .check_non_novel_retry(task_id, iteration_count)
+                .await;
+
+            if let Some(non_novel) = non_novel_result {
+                if !non_novel.is_novel {
+                    // Non-novel retry detected - force strategy change
+                    warn!(
+                        task_id = %task_id,
+                        similarity = %non_novel.max_similarity,
+                        forced_action = %non_novel.forced_action.as_ref().unwrap(),
+                        "Non-novel retry detected, forcing strategy change"
+                    );
+
+                    // Emit event for observability
+                    let _ = self.event_sender.send(OrchestratorEvent::NonNovelRetryRejection {
+                        task_id,
+                        similarity: non_novel.max_similarity,
+                        similar_to_iteration: non_novel.most_similar_iteration.unwrap_or(0),
+                        forced_action: non_novel.forced_action.unwrap(),
+                        reason: non_novel.reason.unwrap_or_default(),
+                    });
+
+                    // Handle forced action based on type
+                    match non_novel.forced_action {
+                        Some(ForcedStrategyChange::Escalate) => {
+                            // Immediate escalation
+                            sm.escalate_task(task_id)?;
+                            info!(task_id = %task_id, "Task escalated due to non-novel retry");
+                        }
+                        Some(ForcedStrategyChange::SwitchModel) | Some(ForcedStrategyChange::ChangeApproach) => {
+                            // The retry will use a different model/approach - this is handled
+                            // by the retry policy which will see iteration_count and decide
+                            // to switch model on next retry
+                            info!(
+                                task_id = %task_id,
+                                forced_action = ?non_novel.forced_action,
+                                "Strategy change forced for next retry"
+                            );
+                        }
+                        None => {}
+                    }
+
+                    return Ok(());
+                }
+            }
 
             // Evaluate retry policy for escalation decision
             let retry_policy = RetryPolicy::new();
@@ -767,6 +844,101 @@ impl Orchestrator {
             }
         }
 
+        Ok(())
+    }
+
+    /// Check if a retry is non-novel compared to prior failed attempts.
+    /// Returns the result if non-novel detection is applicable.
+    async fn check_non_novel_retry(
+        &self,
+        task_id: Uuid,
+        current_iteration: u32,
+    ) -> Option<NonNovelRetryResult> {
+        // Only check for retries (not initial attempt)
+        if current_iteration == 0 {
+            return None;
+        }
+
+        let sm = self.state_machine.read().await;
+        let task = sm.get_task(task_id).ok()?;
+
+        // Get the current attempt's diff from enrichment
+        let current_diff = task
+            .enrichment
+            .prior_attempts
+            .iter()
+            .find(|a| a.iteration == current_iteration)
+            .and_then(|a| a.diff.clone());
+
+        // If no diff recorded, cannot check for non-novelty
+        let current_diff = match current_diff {
+            Some(diff) => diff,
+            None => return None,
+        };
+
+        drop(sm);
+
+        // Build prior attempt diffs (excluding current)
+        let prior_diffs: Vec<(u32, String)> = {
+            let sm = self.state_machine.read().await;
+            let task = sm.get_task(task_id).ok()?;
+            task.enrichment
+                .prior_attempts
+                .iter()
+                .filter(|a| a.iteration < current_iteration)
+                .filter_map(|a| a.diff.clone().map(|diff| (a.iteration, diff)))
+                .collect()
+        };
+
+        if prior_diffs.is_empty() {
+            return None;
+        }
+
+        let prior_attempt_diffs = PriorAttemptDiffs::new(prior_diffs);
+        let detector = self.non_novel_detector.read().await;
+        let result = detector.check(&current_diff, &prior_attempt_diffs);
+
+        Some(result)
+    }
+
+    /// Record the diff for the current task attempt.
+    /// This should be called after task execution completes but before validation.
+    pub async fn record_attempt_diff(
+        &self,
+        task_id: Uuid,
+        diff: String,
+    ) -> Result<(), SwellError> {
+        let sm = self.state_machine.write().await;
+
+        sm.with_task_mut(task_id, |task| {
+            let iteration = task.iteration_count + 1; // Next attempt number
+
+            // Find or create prior attempt for this iteration
+            let prior_attempt = task
+                .enrichment
+                .prior_attempts
+                .iter_mut()
+                .find(|a| a.iteration == iteration);
+
+            if let Some(attempt) = prior_attempt {
+                // Update existing
+                attempt.diff = Some(diff);
+            } else {
+                // Create new prior attempt record
+                task.enrichment.prior_attempts.push(swell_core::PriorAttempt {
+                    iteration,
+                    timestamp: chrono::Utc::now(),
+                    outcome: None,
+                    rejected_reason: None,
+                    modified_files: Vec::new(),
+                    diff: Some(diff),
+                });
+            }
+
+            Ok(())
+        })?;
+
+        debug!(task_id = %task_id, "Recorded attempt diff");
         Ok(())
     }
 

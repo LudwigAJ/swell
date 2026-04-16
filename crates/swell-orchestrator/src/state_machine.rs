@@ -103,6 +103,7 @@ impl TaskStateMachine {
                         outcome: Some(task.state),
                         rejected_reason: task.rejected_reason.clone(),
                         modified_files: Vec::new(),
+                        diff: None,
                     }]
                 } else {
                     Vec::new()
