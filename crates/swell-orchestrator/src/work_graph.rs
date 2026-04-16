@@ -1517,7 +1517,7 @@ mod tests {
 
         // 0.2 + 0.5 + 0.3 + 0.4 + 0.3 = 1.7
         let total = graph.total_complexity();
-        assert!((total - 1.7).abs() < f64::EPSILON);
+        assert!((total - 1.7).abs() < f64::EPSILON, "Expected 1.7, got {}", total);
     }
 
     // ========================================================================
