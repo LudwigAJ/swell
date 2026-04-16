@@ -223,7 +223,7 @@ use swell_core::{
     AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult,
 };
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
-use swell_tools::mcp_config::{McpConfigManager, McpServerHealth};
+use swell_tools::{mcp_config::{McpConfigManager, McpServerHealth}, ToolRegistry};
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -365,6 +365,10 @@ pub struct Orchestrator {
     /// LLM backend for agent execution - injected from daemon at construction time.
     /// This is the production LLM backend (Anthropic, OpenAI, etc.) that agents use.
     llm_backend: Option<Arc<dyn swell_llm::LlmBackend>>,
+    /// Execution controller that runs the Planner → Generator → Evaluator pipeline.
+    /// Constructed with the injected LLM backend and tool registry for production use.
+    /// Wrapped in RwLock for interior mutability during initialization.
+    execution_controller: Arc<RwLock<Option<Arc<ExecutionController>>>>,
 }
 
 impl Orchestrator {
@@ -388,6 +392,7 @@ impl Orchestrator {
             non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
             frozen_registry: FrozenRequirementRegistry::new(vec![]),
             llm_backend: None,
+            execution_controller: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -396,6 +401,10 @@ impl Orchestrator {
     /// This is the production constructor that injects the LLM backend from the daemon.
     /// The backend is stored in the orchestrator and accessible via [`Self::llm_backend()`].
     ///
+    /// An [`ExecutionController`] is constructed with the injected LLM backend and a
+    /// default [`ToolRegistry`], making the production execution path reachable from
+    /// the daemon.
+    ///
     /// # Arguments
     /// * `llm` - The LLM backend to use for agent execution
     pub fn with_llm(llm: Arc<dyn swell_llm::LlmBackend>) -> Self {
@@ -403,19 +412,64 @@ impl Orchestrator {
         let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
         let checkpoint_manager = Arc::new(CheckpointManager::new(checkpoint_store));
         let mcp_manager = Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap());
+        let tool_registry = Arc::new(ToolRegistry::new());
 
-        Self {
-            state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
-            agent_pool: Arc::new(RwLock::new(AgentPool::new())),
-            checkpoint_manager,
+        // Build shared components before creating ExecutionController
+        let state_machine = Arc::new(RwLock::new(TaskStateMachine::new()));
+        let agent_pool = Arc::new(RwLock::new(AgentPool::new()));
+        let feature_lead_manager = Arc::new(RwLock::new(FeatureLeadManager::new()));
+        let novelty_checker = Arc::new(RwLock::new(NoveltyChecker::new()));
+        let file_lock_manager = Arc::new(FileLockManager::new());
+        let non_novel_detector = Arc::new(RwLock::new(NonNovelRetryDetector::new()));
+        let frozen_registry = FrozenRequirementRegistry::new(vec![]);
+        let execution_controller_placeholder = Arc::new(RwLock::new(None));
+
+        // Build the orchestrator struct first (before creating ExecutionController)
+        let orchestrator = Self {
+            state_machine: Arc::clone(&state_machine),
+            agent_pool: Arc::clone(&agent_pool),
+            checkpoint_manager: Arc::clone(&checkpoint_manager),
             event_sender: tx,
-            feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
+            feature_lead_manager: Arc::clone(&feature_lead_manager),
             mcp_manager,
-            novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
-            file_lock_manager: Arc::new(FileLockManager::new()),
-            non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
+            novelty_checker: Arc::clone(&novelty_checker),
+            file_lock_manager: Arc::clone(&file_lock_manager),
+            non_novel_detector: Arc::clone(&non_novel_detector),
+            frozen_registry,
+            llm_backend: Some(llm.clone()),
+            execution_controller: Arc::clone(&execution_controller_placeholder),
+        };
+
+        // Create the ExecutionController with the fully-initialized orchestrator and
+        // injected LLM backend and tool registry. This wires the production path:
+        // Daemon -> Orchestrator -> ExecutionController -> agents.
+        let orchestrator_arc: Arc<Orchestrator> = Arc::new(orchestrator);
+        let execution_controller = Arc::new(ExecutionController::new(
+            Arc::clone(&orchestrator_arc),
+            llm.clone(),
+            tool_registry,
+        ));
+
+        // Set the execution controller in the placeholder
+        if let Ok(mut guard) = execution_controller_placeholder.try_write() {
+            *guard = Some(execution_controller);
+        }
+
+        // Construct the final orchestrator with all components
+        // Clone the Arc values from the working copy for the return value
+        Self {
+            state_machine,
+            agent_pool,
+            checkpoint_manager,
+            event_sender: orchestrator_arc.event_sender.clone(),
+            feature_lead_manager,
+            mcp_manager: Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap()),
+            novelty_checker,
+            file_lock_manager,
+            non_novel_detector,
             frozen_registry: FrozenRequirementRegistry::new(vec![]),
-            llm_backend: Some(llm),
+            llm_backend: Some(llm.clone()),
+            execution_controller: execution_controller_placeholder,
         }
     }
 
@@ -437,6 +491,7 @@ impl Orchestrator {
             non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
             frozen_registry: FrozenRequirementRegistry::new(vec![]),
             llm_backend: None,
+            execution_controller: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -446,6 +501,20 @@ impl Orchestrator {
     /// with [`Self::with_llm`], or `None` if constructed with [`Self::new`].
     pub fn llm_backend(&self) -> Option<Arc<dyn swell_llm::LlmBackend>> {
         self.llm_backend.clone()
+    }
+
+    /// Get the execution controller if one was constructed.
+    ///
+    /// Returns `Some(Arc<ExecutionController>)` if the orchestrator was constructed
+    /// with [`Self::with_llm`], or `None` if constructed with [`Self::new`].
+    ///
+    /// The execution controller runs the Planner → Generator → Evaluator pipeline
+    /// for tasks that reach the Ready state.
+    pub fn execution_controller(&self) -> Option<Arc<ExecutionController>> {
+        self.execution_controller
+            .try_read()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 
     /// Subscribe to orchestrator events.
