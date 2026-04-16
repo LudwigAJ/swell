@@ -31,7 +31,7 @@ use crate::confidence::{FlakinessHistory, TestRun};
 const MIN_RUNS_FOR_FLAKINESS: usize = 3;
 
 /// Default flakiness score threshold for quarantine (0.0 to 1.0)
-const DEFAULT_FLAKINESS_THRESHOLD: f64 = 0.4;
+const DEFAULT_FLAKINESS_THRESHOLD: f64 = 0.1;
 
 /// Minimum failure rate to consider a test potentially flaky (10%)
 const MIN_FAILURE_RATE: f64 = 0.1;
@@ -582,15 +582,18 @@ pub struct QuarantineConfig {
     pub max_quarantine_days: u32,
     /// Number of consecutive clean runs to exit quarantine
     pub consecutive_passes_to_exit: usize,
+    /// Number of runs in stability loop (10 consecutive passes to exit)
+    pub stability_loop_runs: usize,
 }
 
 impl Default for QuarantineConfig {
     fn default() -> Self {
         Self {
             enter_threshold: DEFAULT_FLAKINESS_THRESHOLD,
-            exit_threshold: 0.25,
+            exit_threshold: 0.1,
             max_quarantine_days: 7,
             consecutive_passes_to_exit: 3,
+            stability_loop_runs: 10,
         }
     }
 }
@@ -677,8 +680,10 @@ impl QuarantinePool {
 
     /// Record a run result for a quarantined test
     ///
-    /// Returns true if the test should remain in quarantine
-    /// Returns false if the test should be released
+    /// Quarantined tests run stability loops - a failure resets the consecutive pass count.
+    /// Only after `stability_loop_runs` (default 10) consecutive passes is a test restored.
+    ///
+    /// Returns true if the test should remain in quarantine.
     pub fn record_result(&mut self, test_name: &str, passed: bool) -> bool {
         let Some(test) = self.quarantined.get_mut(test_name) else {
             return false;
@@ -691,14 +696,12 @@ impl QuarantinePool {
             test.consecutive_passes += 1;
             test.failures_since_quarantine = 0;
 
-            // Check if we should exit quarantine
-            if test.consecutive_passes >= self.config.consecutive_passes_to_exit {
-                // Score must also be below exit threshold
-                // We don't have current score here, caller should check
-                test.exit_attempts += 1;
-                return false; // Request evaluation
+            // Check if we've passed the stability loop
+            if test.consecutive_passes >= self.config.stability_loop_runs {
+                return false; // Passed stability loop - should be released
             }
         } else {
+            // Failure in stability loop - reset and stay quarantined
             test.consecutive_passes = 0;
             test.failures_since_quarantine += 1;
             test.exit_attempts = 0;
@@ -708,7 +711,11 @@ impl QuarantinePool {
     }
 
     /// Check if a test should be released from quarantine
-    pub fn should_release(&self, test_name: &str, current_score: f64) -> bool {
+    ///
+    /// A test is released from quarantine if:
+    /// 1. It has passed `stability_loop_runs` consecutive times (default 10), OR
+    /// 2. Max time in quarantine has been reached (for manual review)
+    pub fn should_release(&self, test_name: &str, _current_score: f64) -> bool {
         let Some(test) = self.quarantined.get(test_name) else {
             return false;
         };
@@ -719,19 +726,11 @@ impl QuarantinePool {
             return true; // Max time reached, release for manual review
         }
 
-        // Release if we have sufficient consecutive passes indicating stability
-        // Even if score hasn't fully recovered, consecutive passes are a strong signal
-        if test.consecutive_passes >= self.config.consecutive_passes_to_exit * 2 {
-            return true; // Double threshold gives confidence even with imperfect score
-        }
-
-        // Also release if we have enough consecutive passes AND score shows significant improvement
-        // (score must drop below the enter threshold to show it's no longer flaky)
-        if test.consecutive_passes >= self.config.consecutive_passes_to_exit
-            && current_score < self.config.enter_threshold
-        {
-            // Score has dropped below the threshold at which it would be quarantined
-            return true;
+        // Primary release mechanism: stability loop - 10 consecutive passes
+        // After quarantining a flaky test, we run it stability_loop_runs times.
+        // Only if ALL passes do we restore it. If ANY fail, it stays quarantined.
+        if test.consecutive_passes >= self.config.stability_loop_runs {
+            return true; // Passed stability loop - test is stable
         }
 
         false
@@ -1454,18 +1453,23 @@ mod quarantine_pool_tests {
         assert_eq!(test.consecutive_passes, 0);
         assert_eq!(test.failures_since_quarantine, 1);
 
-        // Record passes - after 3 consecutive passes, record_result returns false to signal evaluation
+        // Record passes - stability loop requires 10 consecutive passes
+        // After each pass, it should return true (remain in quarantine)
+        // until we reach 10 passes
         pool.record_result("test_record", true);
         pool.record_result("test_record", true);
         let test = pool.get_quarantined_test("test_record").unwrap();
         assert_eq!(test.consecutive_passes, 2);
 
-        // After 3rd pass, record_result signals evaluation is needed
-        let should_evaluate = pool.record_result("test_record", true);
-        assert!(
-            !should_evaluate,
-            "Should signal that evaluation is needed after 3 passes"
-        );
+        // After 10th pass, record_result signals exit from stability loop
+        for i in 3..=10 {
+            let should_remain = pool.record_result("test_record", true);
+            if i < 10 {
+                assert!(should_remain, "Should remain in quarantine during stability loop");
+            } else {
+                assert!(!should_remain, "Should signal exit after 10 passes");
+            }
+        }
 
         // But test is still quarantined until update() is called
         assert!(pool.is_quarantined("test_record"));
@@ -1511,22 +1515,92 @@ mod quarantine_pool_tests {
         // Add test to quarantine
         pool.quarantine("test_release".to_string(), 0.6);
 
-        // Record enough passes to exit
-        for _ in 0..3 {
+        // Record passes to exit - stability loop requires 10 consecutive passes
+        for _ in 0..10 {
             pool.record_result("test_release", true);
         }
 
-        // The test should now be eligible for release (check with current score)
-        // Since consecutive_passes >= consecutive_passes_to_exit
-        // But the score might still be high, so we need to update
-
-        // First make the test stable (record passes in detector)
-        for _ in 0..5 {
-            detector.record("test_release".to_string(), true, 100);
-        }
-
+        // After 10 consecutive passes in stability loop, test should be released
         let released = pool.update(&detector);
         assert!(released.contains(&"test_release".to_string()));
+    }
+
+    #[test]
+    fn test_quarantine_stability_loop_resets_on_failure() {
+        // Test that a single failure in stability loop resets consecutive passes
+        let mut pool = QuarantinePool::with_defaults();
+        let detector = FlakinessDetector::with_defaults();
+
+        pool.quarantine("test_stability".to_string(), 0.6);
+
+        // Pass 5 times
+        for _ in 0..5 {
+            pool.record_result("test_stability", true);
+        }
+
+        // Fail - resets consecutive passes
+        pool.record_result("test_stability", false);
+
+        // Check that consecutive_passes is reset
+        let test = pool.get_quarantined_test("test_stability").unwrap();
+        assert_eq!(test.consecutive_passes, 0, "Consecutive passes should reset to 0 after failure");
+
+        // Pass 10 more times to exit
+        for _ in 0..10 {
+            pool.record_result("test_stability", true);
+        }
+
+        // Now should be released
+        let released = pool.update(&detector);
+        assert!(released.contains(&"test_stability".to_string()));
+    }
+
+    #[test]
+    fn test_quarantine_stability_loop_all_passes() {
+        // Test that 10 consecutive passes releases from quarantine
+        let mut pool = QuarantinePool::with_defaults();
+        let detector = FlakinessDetector::with_defaults();
+
+        pool.quarantine("test_10_passes".to_string(), 0.6);
+
+        // First 9 passes should remain in quarantine
+        for i in 0..9 {
+            let should_remain = pool.record_result("test_10_passes", true);
+            assert!(should_remain, "Should remain in quarantine during stability loop (pass {})", i + 1);
+        }
+
+        // 10th pass should signal exit (consecutive_passes >= stability_loop_runs)
+        let should_remain = pool.record_result("test_10_passes", true);
+        assert!(!should_remain, "Should signal exit after 10 passes");
+
+        // Update pool to release
+        let released = pool.update(&detector);
+        assert!(released.contains(&"test_10_passes".to_string()));
+        assert!(!pool.is_quarantined("test_10_passes"));
+    }
+
+    #[test]
+    fn test_quarantine_remains_after_9_passes() {
+        // Test that 9 passes is not enough - need exactly 10
+        let mut pool = QuarantinePool::with_defaults();
+
+        pool.quarantine("test_9_passes".to_string(), 0.6);
+
+        // Pass 9 times
+        for i in 0..9 {
+            let should_remain = pool.record_result("test_9_passes", true);
+            if i < 8 {
+                assert!(should_remain, "Should remain in quarantine during stability loop");
+            }
+            // After 9 passes, still in quarantine
+        }
+
+        // Should still be quarantined (9 < 10)
+        assert!(pool.is_quarantined("test_9_passes"));
+
+        // One more pass should release
+        pool.record_result("test_9_passes", true);
+        assert!(!pool.record_result("test_9_passes", true)); // Signal exit
     }
 }
 
@@ -1634,13 +1708,17 @@ mod integration_tests {
 
     #[test]
     fn test_full_flakiness_workflow() {
-        // Simulate a full workflow: detect -> quarantine -> monitor -> release
-        // This test uses a more forgiving configuration for the flakiness detector
-        let config = FlakinessConfig::new().with_quarantine_threshold(0.7); // Higher threshold so score of ~0.6 triggers release
+        // Simulate a full workflow: detect -> quarantine -> stability loop -> release
+        // Uses default threshold of 0.1 and stability_loop_runs of 10
+
+        // Higher threshold for detector so we can actually test the flow
+        let config = FlakinessConfig::new().with_quarantine_threshold(0.3);
         let mut detector = FlakinessDetector::new(config);
         let mut pool = QuarantinePool::with_defaults();
 
-        // Phase 1: Initial flaky detection
+        // Phase 1: Initial flaky detection - record mixed results to trigger flakiness
+        // Results: true, false, true, false, true = 2 failures / 5 runs = 0.4 failure rate
+        // This should trigger flakiness with the higher threshold (0.3)
         for (i, passed) in [true, false, true, false, true].iter().enumerate() {
             detector.record_with_retry("workflow_test".to_string(), *passed, 100, i > 2);
         }
@@ -1656,28 +1734,143 @@ mod integration_tests {
             "Should be quarantined"
         );
 
-        // Phase 2: Test improves - record many passes to stabilize the score
-        // Add enough passes to drive the score below threshold
+        // Phase 2: Stability loop - pass 10 consecutive times to exit quarantine
         for _ in 0..10 {
             detector.record("workflow_test".to_string(), true, 100);
             pool.record_result("workflow_test", true);
         }
 
-        // Phase 3: Update pool - test should be released due to sufficient consecutive passes
-        // even if score hasn't dropped below threshold
+        // Phase 3: Update pool - test should be released after 10 consecutive passes
         let released = pool.update(&detector);
-
-        // After enough consecutive passes (10 > default 3), the test should be released
         assert!(
             released.contains(&"workflow_test".to_string()),
-            "Test should be released after {} consecutive passes (threshold is 3)",
-            pool.get_quarantined_test("workflow_test")
-                .map(|t| t.consecutive_passes)
-                .unwrap_or(0)
+            "Test should be released after 10 consecutive passes (stability loop)"
         );
 
         // Phase 4: Verify test is no longer flagged
         assert!(!pool.is_quarantined("workflow_test"));
+    }
+
+    #[test]
+    fn test_flakiness_score_2_failures_out_of_10() {
+        // Verify: 2 failures / 10 total runs = 0.2 failure rate
+        // With threshold 0.1, a score of 0.2 should trigger quarantine
+        let config = FlakinessConfig::new().with_quarantine_threshold(0.1);
+        let mut detector = FlakinessDetector::new(config);
+
+        // Record 10 runs: 8 passes, 2 failures
+        // This gives failure rate of 0.2 (20%)
+        for i in 0..10 {
+            let passed = i != 2 && i != 7; // Fail at runs 2 and 7 (0-indexed)
+            detector.record("test_20_percent".to_string(), passed, 100);
+        }
+
+        let score = detector.flakiness_score("test_20_percent");
+        assert!(
+            score > 0.1,
+            "Score {} should be > 0.1 threshold for quarantine",
+            score
+        );
+        assert!(
+            detector.is_flaky("test_20_percent"),
+            "Test with 20% failure rate should be flagged as flaky"
+        );
+    }
+
+    #[test]
+    fn test_default_threshold_is_01() {
+        // Verify that the default flakiness threshold is 0.1
+        let detector = FlakinessDetector::with_defaults();
+        assert_eq!(
+            detector.generate_report().quarantined_threshold,
+            0.1,
+            "Default quarantine threshold should be 0.1 (10%)"
+        );
+    }
+
+    #[test]
+    fn test_quarantine_after_2_failures_10_runs() {
+        // Verification step: "Test records 10 runs with 2 failures (score 0.2) — assert quarantined"
+        let config = FlakinessConfig::new().with_quarantine_threshold(0.1);
+        let mut detector = FlakinessDetector::new(config);
+        let mut pool = QuarantinePool::with_defaults();
+
+        // 10 runs with 2 failures
+        let results = [true, true, true, false, true, true, true, false, true, true];
+        for passed in results {
+            detector.record("test_quarantine".to_string(), passed, 100);
+        }
+
+        // Sync with quarantine pool
+        pool.sync_with_detector(&detector);
+
+        // Verify quarantined
+        assert!(
+            pool.is_quarantined("test_quarantine"),
+            "Test with 2 failures in 10 runs (20%) should be quarantined with threshold 0.1"
+        );
+    }
+
+    #[test]
+    fn test_stability_loop_10_passes_restores() {
+        // Verification step: "Stability loop with 10 passes — assert restored"
+        let mut pool = QuarantinePool::with_defaults();
+        let detector = FlakinessDetector::with_defaults();
+
+        // Manually quarantine a test
+        pool.quarantine("test_restore".to_string(), 0.2);
+
+        // Run 10 consecutive passes (stability loop)
+        for _ in 0..10 {
+            pool.record_result("test_restore", true);
+        }
+
+        // Update to release
+        let released = pool.update(&detector);
+        assert!(
+            released.contains(&"test_restore".to_string()),
+            "Test should be restored after 10 consecutive passes in stability loop"
+        );
+        assert!(!pool.is_quarantined("test_restore"));
+    }
+
+    #[test]
+    fn test_stability_loop_failure_keeps_quarantined() {
+        // Verification step: "Stability loop with failures — assert remains quarantined"
+        let mut pool = QuarantinePool::with_defaults();
+        let detector = FlakinessDetector::with_defaults();
+
+        // Manually quarantine a test
+        pool.quarantine("test_fail_stability".to_string(), 0.2);
+
+        // Pass 5 times
+        for _ in 0..5 {
+            pool.record_result("test_fail_stability", true);
+        }
+
+        // FAIL - this resets consecutive passes
+        pool.record_result("test_fail_stability", false);
+
+        // Verify still quarantined
+        assert!(
+            pool.is_quarantined("test_fail_stability"),
+            "Test should remain quarantined after failure in stability loop"
+        );
+
+        // Pass 9 more times (not 10 more - the failure reset count)
+        for _ in 0..9 {
+            pool.record_result("test_fail_stability", true);
+        }
+
+        // After 9 passes (from reset), still need one more
+        pool.record_result("test_fail_stability", true);
+
+        // Now update to release
+        let released = pool.update(&detector);
+        assert!(
+            released.contains(&"test_fail_stability".to_string()),
+            "Test should be restored after total of 10 passes (with reset in middle)"
+        );
     }
 }
 
