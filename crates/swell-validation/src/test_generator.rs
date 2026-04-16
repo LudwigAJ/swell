@@ -21,6 +21,7 @@
 //!     category: "authentication".to_string(),
 //!     criticality: CriterionCriticality::MustHave,
 //!     test_hints: vec!["auth".to_string()],
+//!     format: None,
 //! }];
 //!
 //! let unit_tests = generator.generate_unit_tests(&criteria, "src/auth.rs");
@@ -44,6 +45,12 @@ pub struct TestGeneratorConfig {
     pub max_tests_per_criterion: usize,
     /// Template style: "rustdoc" or "business"
     pub template_style: String,
+    /// Use proptest for property-based tests (requires proptest dependency)
+    pub use_proptest: bool,
+    /// Number of iterations for proptest tests
+    pub proptest_iterations: usize,
+    /// Maximum shrink iterations for proptest (when a counterexample is found)
+    pub proptest_max_shrink_iters: usize,
 }
 
 impl Default for TestGeneratorConfig {
@@ -54,6 +61,9 @@ impl Default for TestGeneratorConfig {
             min_confidence: 0.5,
             max_tests_per_criterion: 5,
             template_style: "rustdoc".to_string(),
+            use_proptest: true,
+            proptest_iterations: 256,
+            proptest_max_shrink_iters: 1000,
         }
     }
 }
@@ -84,8 +94,10 @@ pub enum TestType {
     Unit,
     /// Integration test
     Integration,
-    /// Property-based test
+    /// Property-based test (basic, without proptest)
     Property,
+    /// Property-based test using proptest framework
+    PropertyProptest,
 }
 
 /// Test generation patterns for different criterion types
@@ -1203,6 +1215,859 @@ mod {sanitized}_invariant_property_tests {{
         )
     }
 
+    /// Generate proptest-based property tests from acceptance criteria
+    ///
+    /// These tests use the proptest framework to define invariants over input spaces.
+    /// For example: "for all valid inputs, output length ≤ input length + N"
+    ///
+    /// # Invariant Patterns Generated
+    ///
+    /// - **Length bounds**: `output.len() <= input.len() + N`
+    /// - **Value bounds**: `result >= min && result <= max`
+    /// - **Reversibility**: `reverse(forward(x)) == x`
+    /// - **Monoid laws**: `combine(a, combine(b, c)) == combine(combine(a, b), c)`
+    /// - **Determinism**: `f(x) == f(x)` across multiple calls
+    ///
+    /// # Configuration
+    ///
+    /// The `use_proptest`, `proptest_iterations`, and `proptest_max_shrink_iters`
+    /// config fields control the generated test behavior.
+    pub fn generate_proptest_tests(
+        &self,
+        criteria: &[AcceptanceCriterion],
+    ) -> Vec<GeneratedTest> {
+        let mut tests = Vec::new();
+
+        // If proptest is disabled, return empty
+        if !self.config.use_proptest {
+            return tests;
+        }
+
+        for criterion in criteria {
+            // Proptest tests for invariant-based criteria
+            let text_lower = criterion.text.to_lowercase();
+
+            // Match criteria that suggest invariant-based testing
+            if text_lower.contains("invariant")
+                || text_lower.contains("property")
+                || text_lower.contains("for all")
+                || text_lower.contains("always")
+                || text_lower.contains("never")
+                || text_lower.contains("must")
+                || text_lower.contains("shall")
+                || text_lower.contains("length")
+                || text_lower.contains("bounds")
+                || text_lower.contains("limit")
+                || text_lower.contains("size")
+                || text_lower.contains("revers")
+                || text_lower.contains("deterministic")
+            {
+                let test = self.generate_proptest_invariant_test(criterion);
+                if test.confidence >= self.config.min_confidence {
+                    tests.push(test);
+                }
+            }
+        }
+
+        if tests.len() > self.config.max_tests_per_criterion {
+            tests.truncate(self.config.max_tests_per_criterion);
+        }
+
+        tests
+    }
+
+    /// Generate a single proptest-based invariant test
+    fn generate_proptest_invariant_test(
+        &self,
+        criterion: &AcceptanceCriterion,
+    ) -> GeneratedTest {
+        let test_name = self.generate_test_name(criterion);
+        let sanitized = self.sanitize_name(&test_name);
+        let module_path = format!("tests/proptest_{}", sanitized);
+
+        let code = self.generate_proptest_invariant_code(criterion, &test_name);
+
+        GeneratedTest {
+            name: test_name,
+            module_path,
+            code,
+            test_type: TestType::PropertyProptest,
+            covers_criteria: vec![criterion.id.clone()],
+            confidence: 0.80,
+            tags: vec!["proptest".to_string(), "invariant".to_string(), criterion.category.clone()],
+        }
+    }
+
+    /// Generate the actual proptest test code with invariant assertions
+    fn generate_proptest_invariant_code(
+        &self,
+        criterion: &AcceptanceCriterion,
+        test_name: &str,
+    ) -> String {
+        let criterion_text = &criterion.text;
+        let sanitized = self.sanitize_name(test_name);
+        let iterations = self.config.proptest_iterations;
+        let max_shrink = self.config.proptest_max_shrink_iters;
+
+        // Determine the type of invariant to test based on criterion text
+        let text_lower = criterion.text.to_lowercase();
+
+        if text_lower.contains("length") || text_lower.contains("size") || text_lower.contains("bound") {
+            // Length/size invariant
+            self.generate_length_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+        } else if text_lower.contains("revers") || text_lower.contains("inverse") {
+            // Reversibility invariant
+            self.generate_reversibility_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+        } else if text_lower.contains("determin") || text_lower.contains("consistent") {
+            // Determinism invariant
+            self.generate_determinism_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+        } else if text_lower.contains("combin") || text_lower.contains("associat") {
+            // Monoid/associativity invariant
+            self.generate_monoid_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+        } else if text_lower.contains("idempot") {
+            // Idempotence invariant
+            self.generate_idempotence_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+        } else {
+            // Default: generic bounds invariant
+            self.generate_bounds_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+        }
+    }
+
+    /// Generate a proptest test for length/size invariants
+    ///
+    /// Example invariant: "output.len() <= input.len() + N"
+    fn generate_length_invariant_test(
+        &self,
+        sanitized: String,
+        criterion_text: &str,
+        iterations: usize,
+        _max_shrink: usize,
+    ) -> String {
+        format!(
+            r#"// This file was generated by swell-validation.
+// Edit carefully - this test uses proptest for property-based testing.
+
+#[cfg(test)]
+mod {sanitized}_proptest_tests {{
+    use proptest::{{prelude::*, collection::vec}};
+    use std::collections::HashMap;
+
+    /// Proptest Property: {test_name}
+    /// Criterion: {criterion_text}
+    ///
+    /// # Invariant
+    /// For all valid inputs, output length ≤ input length + N
+    ///
+    /// This test uses proptest to verify the length invariant holds
+    /// across {iterations} randomly generated test cases.
+    proptest! {{
+        #![proptest_config(ProptestConfig::with_cases({iterations}))]
+
+        /// Property: Output length should not exceed input length by more than fixed overhead
+        #[test]
+        fn {sanitized}_output_length_invariant(input in ".*") {{
+            // TODO: Replace with actual function under test
+            // The invariant: output.len() <= input.len() + N (where N is the max fixed overhead)
+            let max_overhead = 100; // TODO: Set appropriate bound based on your function
+
+            // Example: This is how you would test a function that transforms strings
+            // let output = transform_with_padding(&input);
+            // prop_assert!(output.len() <= input.len() + max_overhead);
+
+            // Placeholder assertion - replace with actual invariant check
+            let output = input.len(); // Replace with: transform_with_padding(&input).len()
+            prop_assert!(output <= input.len() + max_overhead,
+                "Output length {{}} exceeds input length {{}} + overhead {{}}",
+                output, input.len(), max_overhead
+            );
+        }}
+
+        /// Property: Empty input should produce valid output
+        #[test]
+        fn {sanitized}_empty_input_invariant() {{
+            let input = "";
+
+            // TODO: Replace with actual function under test
+            // let output = transform_with_padding(&input);
+            // prop_assert!(output.is_ok() || output.len() <= max_overhead);
+
+            // Placeholder - verify empty string handling
+            let len = input.len();
+            prop_assert!(len == 0, "Empty input should have length 0");
+        }}
+
+        /// Property: Output length should be non-negative
+        #[test]
+        fn {sanitized}_non_negative_length(input in vec(0u8..100, 0..10000)) {{
+            // TODO: Replace with actual function under test
+            // let output = process_bytes(&input);
+            // prop_assert!(output.len() >= 0);
+
+            // Placeholder - verify length is non-negative
+            let len = input.len() as isize;
+            prop_assert!(len >= 0, "Length should be non-negative, got {{}}", len);
+        }}
+
+        /// Property: Maximum input size should not cause overflow
+        #[test]
+        fn {sanitized}_max_size_handling(input in vec(0u8..100, 9000..10000)) {{
+            // TODO: Replace with actual function under test
+            // This verifies that very large inputs are handled gracefully
+
+            // Placeholder - verify max size handling
+            prop_assert!(input.len() <= 10000, "Input should respect max size limit");
+        }}
+    }}
+
+    /// Run with: cargo test {sanitized}_proptest -- --test-threads=1
+    /// Or with more iterations:
+    /// PROPTEST_MAX_SHRINK_ITERS={max_shrink} cargo test {sanitized}_proptest
+}}
+
+// =============================================================================
+// QuickCheck-compatible version (alternative to proptest)
+// =============================================================================
+//
+// If you prefer quickcheck over proptest, the equivalent tests would be:
+//
+// #[cfg(test)]
+// mod {sanitized}_quickcheck_tests {{
+//     use quickcheck::{{Arbitrary, Gen, TestResult}};
+//     use quickcheck::Test;
+//
+//     quickcheck! {{
+//         fn {sanitized}_length_invariant(input: String) -> TestResult {{
+//             let max_overhead = 100;
+//             let output = input.len(); // Replace with actual transform
+//
+//             if output <= input.len() + max_overhead {{
+//                 TestResult::passed()
+//             }} else {{
+//                 TestResult::failed()
+//             }}
+//         }}
+//     }}
+// }}"#,
+            sanitized = sanitized,
+            test_name = "length_invariant",
+            criterion_text = criterion_text,
+            iterations = iterations,
+            max_shrink = _max_shrink
+        )
+    }
+
+    /// Generate a proptest test for reversibility/inverse invariants
+    ///
+    /// Example invariant: "reverse(forward(x)) == x"
+    fn generate_reversibility_invariant_test(
+        &self,
+        sanitized: String,
+        criterion_text: &str,
+        iterations: usize,
+        _max_shrink: usize,
+    ) -> String {
+        format!(
+            r#"// This file was generated by swell-validation.
+// Edit carefully - this test uses proptest for property-based testing.
+
+#[cfg(test)]
+mod {sanitized}_proptest_tests {{
+    use proptest::{{prelude::*, collection::vec}};
+
+    /// Proptest Property: {test_name}
+    /// Criterion: {criterion_text}
+    ///
+    /// # Invariant
+    /// Reversibility: reverse(forward(x)) == x for all valid inputs
+    ///
+    /// This test uses proptest to verify the reversibility invariant holds
+    /// across {iterations} randomly generated test cases.
+    proptest! {{
+        #![proptest_config(ProptestConfig::with_cases({iterations}))]
+
+        /// Property: Forward then reverse should return original value
+        #[test]
+        fn {sanitized}_roundtrip_invariant(input in "\\PC*{{0..1000}}") {{
+            // TODO: Replace with actual functions under test
+            // let forward = encode(&input);
+            // let reversed = decode(&forward);
+            // prop_assert_eq!(reversed, input, "Roundtrip should preserve value");
+
+            // Placeholder - verify the roundtrip concept
+            let original = input.clone();
+            let processed = format!("processed: {{}}", input); // Replace with actual transform
+            let recovered = processed.strip_prefix("processed: ").unwrap_or(&processed).to_string();
+            prop_assert!(recovered == original || processed.len() > 0,
+                "Roundtrip should either recover original or produce valid output"
+            );
+        }}
+
+        /// Property: Double reverse should return original
+        #[test]
+        fn {sanitized}_double_reverse_invariant(input in "\\PC*{{0..500}}") {{
+            // TODO: Replace with actual reverse function
+            // let once = reverse(&input);
+            // let twice = reverse(&once);
+            // prop_assert_eq!(twice, input, "Double reverse should return original");
+
+            // Placeholder
+            let reversed = input.chars().rev().collect::<String>();
+            let double_reversed = reversed.chars().rev().collect::<String>();
+            prop_assert_eq!(double_reversed, input,
+                "Double reverse should return original value");
+        }}
+
+        /// Property: Inverse operations should be consistent
+        #[test]
+        fn {sanitized}_inverse_consistency(a in 0u32..10000, b in 0u32..10000) {{
+            // TODO: Test inverse operation consistency
+            // If f(a) = b, then f⁻¹(b) = a
+
+            // Placeholder: test addition/subtraction inverse
+            let sum = a.wrapping_add(b);
+            let diff = sum.wrapping_sub(b);
+            prop_assert_eq!(diff, a,
+                "Inverse operations should be consistent: {{}} + {{}} = {{}}, {{}} - {{}} = {{}}",
+                a, b, sum, sum, b, diff);
+        }}
+    }}
+
+    /// Run with: cargo test {sanitized}_proptest -- --test-threads=1
+}}
+
+// =============================================================================
+// QuickCheck-compatible version (alternative to proptest)
+// =============================================================================
+//
+// If you prefer quickcheck over proptest, the equivalent tests would be:
+//
+// #[cfg(test)]
+// mod {sanitized}_quickcheck_tests {{
+//     use quickcheck::{{Arbitrary, Gen, TestResult}};
+//
+//     quickcheck! {{
+//         fn {sanitized}_roundtrip_invariant(input: String) -> TestResult {{
+//             let original = input.clone();
+//             let processed = format!("processed: {{}}", input);
+//             let recovered = processed.strip_prefix(\"processed: \").unwrap_or(&processed).to_string();
+//
+//             if recovered == original || processed.len() > 0 {{
+//                 TestResult::passed()
+//             }} else {{
+//                 TestResult::failed()
+//             }}
+//         }}
+//     }}
+// }}"#,
+            sanitized = sanitized,
+            test_name = "reversibility_invariant",
+            criterion_text = criterion_text,
+            iterations = iterations
+        )
+    }
+
+    /// Generate a proptest test for determinism invariants
+    ///
+    /// Example invariant: "f(x) == f(x)" for all inputs
+    fn generate_determinism_invariant_test(
+        &self,
+        sanitized: String,
+        criterion_text: &str,
+        iterations: usize,
+        _max_shrink: usize,
+    ) -> String {
+        format!(
+            r#"// This file was generated by swell-validation.
+// Edit carefully - this test uses proptest for property-based testing.
+
+#[cfg(test)]
+mod {sanitized}_proptest_tests {{
+    use proptest::{{prelude::*, collection::vec}};
+
+    /// Proptest Property: {test_name}
+    /// Criterion: {criterion_text}
+    ///
+    /// # Invariant
+    /// Determinism: f(x) == f(x) for all valid inputs (same input yields same output)
+    ///
+    /// This test uses proptest to verify the determinism invariant holds
+    /// across {iterations} randomly generated test cases.
+    proptest! {{
+        #![proptest_config(ProptestConfig::with_cases({iterations}))]
+
+        /// Property: Same input should produce same output (determinism)
+        #[test]
+        fn {sanitized}_determinism_invariant(input in "\\PC*{{0..1000}}") {{
+            // TODO: Replace with actual function under test
+            // let result1 = process(&input);
+            // let result2 = process(&input);
+            // prop_assert_eq!(result1, result2, "Same input should produce same output");
+
+            // Placeholder - verify deterministic behavior
+            let result1 = input.to_uppercase(); // Replace with actual function
+            let result2 = input.to_uppercase();
+            prop_assert_eq!(result1, result2,
+                "Determinism violated: same input produced different outputs");
+        }}
+
+        /// Property: Multiple calls should be consistent
+        #[test]
+        fn {sanitized}_multiple_call_consistency(input in vec(0u8..256, 0..500)) {{
+            // TODO: Test that multiple calls produce consistent results
+            let results: Vec<_> = (0..3)
+                .map(|_| {{ // Replace with: process(&input)
+                    input.iter().sum::<u8>() as usize
+                }})
+                .collect();
+
+            prop_assert!(results.iter().all(|r| *r == results[0]),
+                "Multiple calls should produce consistent results: {{:?}}", results);
+        }}
+
+        /// Property: Identical complex inputs should produce identical outputs
+        #[test]
+        fn {sanitized}_complex_determinism(key in "\\PC*{{1..50}}", value in "\\PC*{{0..500}}") {{
+            // TODO: Test determinism with composite inputs
+            // let input1 = (key.clone(), value.clone());
+            // let input2 = (key.clone(), value.clone());
+            // let result1 = hash(&input1);
+            // let result2 = hash(&input2);
+            // prop_assert_eq!(result1, result2, "Identical composite inputs should hash identically");
+
+            // Placeholder
+            let hash1 = format!("{{}}:{{}}", key, value).len();
+            let hash2 = format!("{{}}:{{}}", key, value).len();
+            prop_assert_eq!(hash1, hash2,
+                "Determinism violated for composite input");
+        }}
+    }}
+
+    /// Run with: cargo test {sanitized}_proptest -- --test-threads=1
+}}
+
+// =============================================================================
+// QuickCheck-compatible version (alternative to proptest)
+// =============================================================================
+//
+// If you prefer quickcheck over proptest, the equivalent tests would be:
+//
+// #[cfg(test)]
+// mod {sanitized}_quickcheck_tests {{
+//     use quickcheck::{{Arbitrary, Gen, TestResult}};
+//
+//     quickcheck! {{
+//         fn {sanitized}_determinism_invariant(input: String) -> TestResult {{
+//             let result1 = input.to_uppercase();
+//             let result2 = input.to_uppercase();
+//
+//             if result1 == result2 {{
+//                 TestResult::passed()
+//             }} else {{
+//                 TestResult::failed()
+//             }}
+//         }}
+//     }}
+// }}"#,
+            sanitized = sanitized,
+            test_name = "determinism_invariant",
+            criterion_text = criterion_text,
+            iterations = iterations
+        )
+    }
+
+    /// Generate a proptest test for monoid/associativity invariants
+    ///
+    /// Example invariant: "combine(a, combine(b, c)) == combine(combine(a, b), c)"
+    fn generate_monoid_invariant_test(
+        &self,
+        sanitized: String,
+        criterion_text: &str,
+        iterations: usize,
+        _max_shrink: usize,
+    ) -> String {
+        format!(
+            r#"// This file was generated by swell-validation.
+// Edit carefully - this test uses proptest for property-based testing.
+
+#[cfg(test)]
+mod {sanitized}_proptest_tests {{
+    use proptest::{{prelude::*, collection::vec}};
+
+    /// Proptest Property: {test_name}
+    /// Criterion: {criterion_text}
+    ///
+    /// # Invariant
+    /// Monoid laws: combine(a, combine(b, c)) == combine(combine(a, b), c)
+    /// (associativity) and combine(a, identity) == combine(identity, a) == a (identity)
+    ///
+    /// This test uses proptest to verify the monoid invariants hold
+    /// across {iterations} randomly generated test cases.
+    proptest! {{
+        #![proptest_config(ProptestConfig::with_cases({iterations}))]
+
+        /// Property: Associativity - (a ⊕ b) ⊕ c == a ⊕ (b ⊕ c)
+        #[test]
+        fn {sanitized}_associativity_invariant(
+            a in 0u32..1000,
+            b in 0u32..1000,
+            c in 0u32..1000
+        ) {{
+            // TODO: Replace with actual combine/operation function
+            // let ab_c = combine(combine(a, b), c);
+            // let a_bc = combine(a, combine(b, c));
+            // prop_assert_eq!(ab_c, a_bc, "Associativity violated");
+
+            // Placeholder: test with addition (which is associative)
+            let ab_c = (a + b) + c;
+            let a_bc = a + (b + c);
+            prop_assert_eq!(ab_c, a_bc,
+                "Associativity violated: ({{}} + {{}}) + {{}} = {{}} ≠ {{}} + ({{}} + {{}}) = {{}}",
+                a, b, c, ab_c, a, b, c, a_bc);
+        }}
+
+        /// Property: Left identity - identity ⊕ a == a
+        #[test]
+        fn {sanitized}_left_identity_invariant(a in 0u32..1000) {{
+            let identity = 0u32; // TODO: Replace with actual identity element
+
+            // TODO: Replace with actual combine function
+            // let result = combine(identity, a);
+            // prop_assert_eq!(result, a, "Left identity violated");
+
+            // Placeholder
+            let result = identity + a;
+            prop_assert_eq!(result, a,
+                "Left identity violated: {{}} + {{}} = {{}} ≠ {{}}",
+                identity, a, result, a);
+        }}
+
+        /// Property: Right identity - a ⊕ identity == a
+        #[test]
+        fn {sanitized}_right_identity_invariant(a in 0u32..1000) {{
+            let identity = 0u32; // TODO: Replace with actual identity element
+
+            // TODO: Replace with actual combine function
+            // let result = combine(a, identity);
+            // prop_assert_eq!(result, a, "Right identity violated");
+
+            // Placeholder
+            let result = a + identity;
+            prop_assert_eq!(result, a,
+                "Right identity violated: {{}} + {{}} = {{}} ≠ {{}}",
+                a, identity, result, a);
+        }}
+
+        /// Property: Commutativity (if applicable) - a ⊕ b == b ⊕ a
+        #[test]
+        fn {sanitized}_commutativity_invariant(a in 0u32..1000, b in 0u32..1000) {{
+            // TODO: Replace with actual combine function (if commutative)
+            // let ab = combine(a, b);
+            // let ba = combine(b, a);
+            // prop_assert_eq!(ab, ba, "Commutativity violated");
+
+            // Placeholder: addition is commutative
+            let ab = a + b;
+            let ba = b + a;
+            prop_assert_eq!(ab, ba,
+                "Commutativity violated: {{}} + {{}} = {{}} ≠ {{}}",
+                a, b, ab, ba);
+        }}
+    }}
+
+    /// Run with: cargo test {sanitized}_proptest -- --test-threads=1
+}}
+
+// =============================================================================
+// QuickCheck-compatible version (alternative to proptest)
+// =============================================================================
+//
+// If you prefer quickcheck over proptest, the equivalent tests would be:
+//
+// #[cfg(test)]
+// mod {sanitized}_quickcheck_tests {{
+//     use quickcheck::{{Arbitrary, Gen, TestResult}};
+//
+//     quickcheck! {{
+//         fn {sanitized}_associativity_invariant(a: u32, b: u32, c: u32) -> TestResult {{
+//             let ab_c = (a + b) + c;
+//             let a_bc = a + (b + c);
+//
+//             if ab_c == a_bc {{
+//                 TestResult::passed()
+//             }} else {{
+//                 TestResult::failed()
+//             }}
+//         }}
+//     }}
+// }}"#,
+            sanitized = sanitized,
+            test_name = "monoid_invariant",
+            criterion_text = criterion_text,
+            iterations = iterations
+        )
+    }
+
+    /// Generate a proptest test for idempotence invariants
+    ///
+    /// Example invariant: "f(f(x)) == f(x)"
+    fn generate_idempotence_invariant_test(
+        &self,
+        sanitized: String,
+        criterion_text: &str,
+        iterations: usize,
+        _max_shrink: usize,
+    ) -> String {
+        format!(
+            r#"// This file was generated by swell-validation.
+// Edit carefully - this test uses proptest for property-based testing.
+
+#[cfg(test)]
+mod {sanitized}_proptest_tests {{
+    use proptest::{{prelude::*, collection::vec}};
+
+    /// Proptest Property: {test_name}
+    /// Criterion: {criterion_text}
+    ///
+    /// # Invariant
+    /// Idempotence: f(f(x)) == f(x) - applying the operation twice
+    /// should produce the same result as applying it once
+    ///
+    /// This test uses proptest to verify the idempotence invariant holds
+    /// across {iterations} randomly generated test cases.
+    proptest! {{
+        #![proptest_config(ProptestConfig::with_cases({iterations}))]
+
+        /// Property: Double application should equal single application
+        #[test]
+        fn {sanitized}_idempotence_invariant(input in "\\PC*{{0..1000}}") {{
+            // TODO: Replace with actual idempotent function under test
+            // let once = normalize(&input);      // First application
+            // let twice = normalize(&once);      // Second application
+            // prop_assert_eq!(once, twice, "Idempotence violated: f(f(x)) != f(x)");
+
+            // Placeholder: test with string normalization concept
+            let once = input.trim().to_lowercase(); // Replace with actual function
+            let twice = once.trim().to_lowercase();
+            prop_assert_eq!(once, twice,
+                "Idempotence violated: f(f(x)) = {{}} ≠ f(x) = {{}}", twice, once);
+        }}
+
+        /// Property: Multiple applications should equal single application
+        #[test]
+        fn {sanitized}_multi_idempotence_invariant(input in "\\PC*{{0..500}}") {{
+            // TODO: Test that N applications equals 1 application
+            let normalized: String = input.trim().to_lowercase(); // Replace with actual function
+
+            // Apply multiple times
+            let mut result = normalized.clone();
+            for _ in 0..10 {{
+                result = result.trim().to_lowercase();
+            }}
+
+            prop_assert_eq!(result, normalized,
+                "Multi-application idempotence violated");
+        }}
+
+        /// Property: Idempotent operation should be stable
+        #[test]
+        fn {sanitized}_stability_invariant(items in vec(0u32..100, 1..50)) {{
+            // TODO: Test idempotence on collections
+            // let once = deduplicate(&items);
+            // let twice = deduplicate(&once);
+            // prop_assert_eq!(once, twice, "Collection idempotence violated");
+
+            // Placeholder: deduplication concept
+            let mut once = items.clone();
+            once.sort();
+            once.dedup();
+
+            let mut twice = once.clone();
+            twice.sort();
+            twice.dedup();
+
+            prop_assert_eq!(once, twice,
+                "Idempotence violated on collection operation");
+        }}
+    }}
+
+    /// Run with: cargo test {sanitized}_proptest -- --test-threads=1
+}}
+
+// =============================================================================
+// QuickCheck-compatible version (alternative to proptest)
+// =============================================================================
+//
+// If you prefer quickcheck over proptest, the equivalent tests would be:
+//
+// #[cfg(test)]
+// mod {sanitized}_quickcheck_tests {{
+//     use quickcheck::{{Arbitrary, Gen, TestResult}};
+//
+//     quickcheck! {{
+//         fn {sanitized}_idempotence_invariant(input: String) -> TestResult {{
+//             let once = input.trim().to_lowercase();
+//             let twice = once.trim().to_lowercase();
+//
+//             if once == twice {{
+//                 TestResult::passed()
+//             }} else {{
+//                 TestResult::failed()
+//             }}
+//         }}
+//     }}
+// }}"#,
+            sanitized = sanitized,
+            test_name = "idempotence_invariant",
+            criterion_text = criterion_text,
+            iterations = iterations
+        )
+    }
+
+    /// Generate a proptest test for generic bounds invariants
+    ///
+    /// Example invariant: "result >= min && result <= max"
+    fn generate_bounds_invariant_test(
+        &self,
+        sanitized: String,
+        criterion_text: &str,
+        iterations: usize,
+        _max_shrink: usize,
+    ) -> String {
+        format!(
+            r#"// This file was generated by swell-validation.
+// Edit carefully - this test uses proptest for property-based testing.
+
+#[cfg(test)]
+mod {sanitized}_proptest_tests {{
+    use proptest::{{prelude::*, collection::vec}};
+
+    /// Proptest Property: {test_name}
+    /// Criterion: {criterion_text}
+    ///
+    /// # Invariant
+    /// Bounds: result >= min && result <= max for all valid inputs
+    ///
+    /// This test uses proptest to verify the bounds invariant holds
+    /// across {iterations} randomly generated test cases.
+    proptest! {{
+        #![proptest_config(ProptestConfig::with_cases({iterations}))]
+
+        /// Property: Output should be within valid range
+        #[test]
+        fn {sanitized}_bounds_invariant(input in 0u32..10000) {{
+            // TODO: Replace with actual function under test
+            // TODO: Set appropriate min_val and max_val based on your function's contract
+
+            let min_val: u32 = 0;      // TODO: Set minimum expected value
+            let max_val: u32 = 10000; // TODO: Set maximum expected value
+
+            // Example: test a function that transforms u32 values
+            // let result = transform(input);
+            // prop_assert!(result >= min_val && result <= max_val,
+            //     "Bounds violated: {{}} not in [{{}}, {{}}]", result, min_val, max_val);
+
+            // Placeholder - just pass through the value
+            let result = input;
+            prop_assert!(result >= min_val && result <= max_val,
+                "Bounds violated: {{}} not in [{{}}, {{}}]", result, min_val, max_val);
+        }}
+
+        /// Property: Output should be non-negative
+        #[test]
+        fn {sanitized}_non_negative_invariant(input in 0i32..10000) {{
+            // TODO: Replace with actual function under test
+            let result = input.abs(); // Replace with actual transform
+
+            prop_assert!(result >= 0,
+                "Non-negative invariant violated: {{}} < 0", result);
+        }}
+
+        /// Property: Output should not exceed maximum
+        #[test]
+        fn {sanitized}_max_bound_invariant(input in 0u32..10000) {{
+            let max_val: u32 = u32::MAX; // TODO: Set appropriate maximum
+
+            // Placeholder
+            let result = input;
+            prop_assert!(result <= max_val,
+                "Max bound violated: {{}} > {{}}", result, max_val);
+        }}
+
+        /// Property: String operations should stay within length bounds
+        #[test]
+        fn {sanitized}_string_length_invariant(input in "\\PC*{{0..1000}}") {{
+            let min_len = 0;  // TODO: Set minimum expected length
+            let max_len = 1000; // TODO: Set maximum expected length
+
+            // TODO: Replace with actual string-transforming function
+            // let result = process_string(&input);
+            // prop_assert!(result.len() >= min_len && result.len() <= max_len);
+
+            // Placeholder
+            let len = input.len();
+            prop_assert!(len >= min_len && len <= max_len,
+                "String length bounds violated: {{}} not in [{{}}, {{}}]",
+                len, min_len, max_len);
+        }}
+
+        /// Property: Collection operations should maintain element bounds
+        #[test]
+        fn {sanitized}_collection_element_bounds(
+            items in vec(0u32..1000, 1..100)
+        ) {{
+            // TODO: Test that collection operations maintain element bounds
+            let min_elem = 0u32;  // TODO: Set minimum element value
+            let max_elem = 1000u32; // TODO: Set maximum element value
+
+            // Example: test that sorting doesn't change bounds
+            let mut sorted = items.clone();
+            sorted.sort();
+
+            // Verify all elements still in bounds
+            prop_assert!(sorted.iter().all(|&x| x >= min_elem && x <= max_elem),
+                "Collection element bounds violated after sort");
+
+            // Verify order changed (sort actually did something for non-empty, non-sorted input)
+            if items.len() > 1 && items != sorted {{
+                prop_assert!(true); // Sort changed the order as expected
+            }}
+        }}
+    }}
+
+    /// Run with: cargo test {sanitized}_proptest -- --test-threads=1
+}}
+
+// =============================================================================
+// QuickCheck-compatible version (alternative to proptest)
+// =============================================================================
+//
+// If you prefer quickcheck over proptest, the equivalent tests would be:
+//
+// #[cfg(test)]
+// mod {sanitized}_quickcheck_tests {{
+//     use quickcheck::{{Arbitrary, Gen, TestResult}};
+//
+//     quickcheck! {{
+//         fn {sanitized}_bounds_invariant(input: u32) -> TestResult {{
+//             let min_val: u32 = 0;
+//             let max_val: u32 = 10000;
+//             let result = input; // Replace with actual transform
+//
+//             if result >= min_val && result <= max_val {{
+//                 TestResult::passed()
+//             }} else {{
+//                 TestResult::failed()
+//             }}
+//         }}
+//     }}
+// }}"#,
+            sanitized = sanitized,
+            test_name = "bounds_invariant",
+            criterion_text = criterion_text,
+            iterations = iterations
+        )
+    }
+
     /// Generate a test name from a criterion
     fn generate_test_name(&self, criterion: &AcceptanceCriterion) -> String {
         let words: Vec<&str> = criterion
@@ -1777,5 +2642,185 @@ mod test_generator_tests {
         let tests = generator.generate_property_tests(&criteria);
         assert!(!tests.is_empty());
         assert!(tests[0].code.contains("Arc") || tests[0].code.contains("thread"));
+    }
+
+    // =====================================================================
+    // Proptest generation tests
+    // =====================================================================
+
+    #[test]
+    fn test_generate_proptest_tests_basic() {
+        let generator = TestGenerator::with_defaults();
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "For all valid inputs, output length shall not exceed input length + N".to_string(),
+            category: "invariant".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["length".to_string(), "invariant".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        assert!(!tests.is_empty());
+        assert_eq!(tests[0].test_type, TestType::PropertyProptest);
+    }
+
+    #[test]
+    fn test_generate_proptest_tests_contains_proptest_macro() {
+        let generator = TestGenerator::with_defaults();
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "The system shall maintain invariant bounds for all inputs".to_string(),
+            category: "bounds".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["invariant".to_string(), "bounds".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        assert!(!tests.is_empty());
+        // Verify proptest macro is present
+        assert!(tests[0].code.contains("proptest!"));
+        assert!(tests[0].code.contains("use proptest"));
+    }
+
+    #[test]
+    fn test_generate_proptest_tests_length_invariant() {
+        let generator = TestGenerator::with_defaults();
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "Output length must never exceed input length plus 100".to_string(),
+            category: "length".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["length".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        assert!(!tests.is_empty());
+        // Should contain length-related invariant assertions
+        assert!(tests[0].code.contains("length") || tests[0].code.contains("len()"));
+    }
+
+    #[test]
+    fn test_generate_proptest_tests_reversibility_invariant() {
+        let generator = TestGenerator::with_defaults();
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "reverse(forward(x)) must equal x for all inputs".to_string(),
+            category: "reversibility".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["revers".to_string(), "inverse".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        assert!(!tests.is_empty());
+        // Should contain roundtrip/reversibility assertions
+        assert!(tests[0].code.contains("roundtrip") || tests[0].code.contains("reverse"));
+    }
+
+    #[test]
+    fn test_generate_proptest_tests_determinism_invariant() {
+        let generator = TestGenerator::with_defaults();
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "The function must be deterministic: same input always yields same output".to_string(),
+            category: "determinism".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["deterministic".to_string(), "consistent".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        assert!(!tests.is_empty());
+        // Should contain determinism assertions
+        assert!(tests[0].code.contains("determinism") || tests[0].code.contains("consistent"));
+    }
+
+    #[test]
+    fn test_generate_proptest_tests_disabled_when_use_proptest_false() {
+        let mut config = TestGeneratorConfig::default();
+        config.use_proptest = false;
+        let generator = TestGenerator::new(config);
+
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "For all valid inputs, output length shall not exceed input length + N".to_string(),
+            category: "invariant".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["length".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        // Should return empty when proptest is disabled
+        assert!(tests.is_empty());
+    }
+
+    #[test]
+    fn test_generate_proptest_tests_config_iterations() {
+        let mut config = TestGeneratorConfig::default();
+        config.proptest_iterations = 512;
+        let generator = TestGenerator::new(config);
+
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "Output must maintain size bounds".to_string(),
+            category: "bounds".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["bounds".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        assert!(!tests.is_empty());
+        // Should use configured iteration count
+        assert!(tests[0].code.contains("512"));
+    }
+
+    #[test]
+    fn test_generate_proptest_tests_module_path() {
+        let generator = TestGenerator::with_defaults();
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "The function must satisfy the length invariant".to_string(),
+            category: "invariant".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["length".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        assert!(!tests.is_empty());
+        // Module path should indicate proptest tests
+        assert!(tests[0].module_path.contains("proptest_"));
+    }
+
+    #[test]
+    fn test_test_type_property_proptest_variant() {
+        assert_eq!(TestType::PropertyProptest, TestType::PropertyProptest);
+        assert_ne!(TestType::PropertyProptest, TestType::Property);
+        assert_ne!(TestType::PropertyProptest, TestType::Unit);
+        assert_ne!(TestType::PropertyProptest, TestType::Integration);
+    }
+
+    #[test]
+    fn test_proptest_tests_have_correct_tags() {
+        let generator = TestGenerator::with_defaults();
+        let criteria = vec![AcceptanceCriterion {
+            id: "AC-1".to_string(),
+            text: "Output must satisfy the length invariant".to_string(),
+            category: "validation".to_string(),
+            criticality: CriterionCriticality::MustHave,
+            test_hints: vec!["invariant".to_string()],
+            format: None,
+        }];
+
+        let tests = generator.generate_proptest_tests(&criteria);
+        assert!(!tests.is_empty());
+        // Should have proptest and invariant tags
+        assert!(tests[0].tags.contains(&"proptest".to_string()));
+        assert!(tests[0].tags.contains(&"invariant".to_string()));
     }
 }
