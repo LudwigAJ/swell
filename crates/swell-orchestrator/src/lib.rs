@@ -1528,7 +1528,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_task_returns_task_with_created_state() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let task = orchestrator
             .create_task("Test task".to_string(), vec![])
@@ -1542,7 +1542,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_task_assigns_unique_id() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let task1 = orchestrator
             .create_task("Task 1".to_string(), vec![])
@@ -1560,7 +1560,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_task_returns_task() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let created = orchestrator
             .create_task("Test".to_string(), vec![])
             .await
@@ -1574,7 +1574,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_task_returns_error_for_nonexistent() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let fake_id = Uuid::new_v4();
 
         let result = orchestrator.get_task(fake_id).await;
@@ -1586,7 +1586,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_agent_returns_agent_id() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let agent_id = orchestrator
             .register_agent(AgentRole::Planner, "claude-sonnet".to_string())
@@ -1597,7 +1597,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_multiple_agents() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let planner_id = orchestrator
             .register_agent(AgentRole::Planner, "claude-sonnet".to_string())
@@ -1611,7 +1611,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_available_agents_returns_count() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         assert_eq!(orchestrator.available_agents(AgentRole::Planner).await, 0);
 
@@ -1626,7 +1626,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_task_reserves_agent_and_assigns_to_task() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let agent_id = orchestrator
             .register_agent(AgentRole::Generator, "claude-sonnet".to_string())
@@ -1657,7 +1657,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_task_returns_error_when_no_agent_available() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let task = orchestrator
             .create_task("Test".to_string(), vec![])
@@ -1683,7 +1683,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_release_agent_returns_agent_to_pool() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let agent_id = orchestrator
             .register_agent(AgentRole::Generator, "claude-sonnet".to_string())
@@ -1716,7 +1716,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_all_tasks_returns_all_tasks() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         orchestrator
             .create_task("Task 1".to_string(), vec![])
@@ -1734,7 +1734,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_tasks_by_state_filters_correctly() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let task1 = orchestrator
             .create_task("Task 1".to_string(), vec![])
@@ -1763,7 +1763,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_plan_attaches_plan_to_task() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let task = orchestrator
             .create_task("Test".to_string(), vec![])
@@ -1782,7 +1782,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_task_transitions_through_states() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         // Use FullAuto to bypass approval gate for this lifecycle test
         let task = orchestrator
@@ -1800,7 +1800,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_task_fails_without_plan() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let task = orchestrator
             .create_task("Test".to_string(), vec![])
@@ -1816,7 +1816,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_validation_transitions_to_validating() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         // Use FullAuto to bypass approval gate for this lifecycle test
         let task = orchestrator
@@ -1835,7 +1835,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_start_validation_fails_if_not_executing() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         let task = orchestrator
             .create_task("Test".to_string(), vec![])
@@ -1851,7 +1851,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_complete_task_with_passed_validation_accepts_task() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         // Use FullAuto to bypass approval gate for this lifecycle test
         let task = orchestrator
@@ -1882,7 +1882,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_complete_task_with_failed_validation_rejects_task() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         // Use FullAuto to bypass approval gate for this lifecycle test
         let task = orchestrator
@@ -1913,7 +1913,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_complete_task_escalates_after_4_failures() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         // Use FullAuto to bypass approval gate for this escalation test
         let task = orchestrator
@@ -2011,7 +2011,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_full_task_lifecycle() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         // 1. Create task with FullAuto to bypass approval gate
         let task = orchestrator
@@ -2079,7 +2079,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_nonexistent_task_returns_error() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let result = orchestrator.get_task(Uuid::new_v4()).await;
 
         assert!(matches!(result.unwrap_err(), SwellError::TaskNotFound(_)));
@@ -2087,7 +2087,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_task_fails_with_invalid_state() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
 
         // Try to assign a task that hasn't been made ready
         let task = orchestrator
@@ -2112,7 +2112,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_acquire_task_locks_success() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let task_id = Uuid::new_v4();
         let files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
 
@@ -2131,7 +2131,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_acquire_task_locks_conflict() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
         let files = vec!["file1.rs".to_string()];
@@ -2153,7 +2153,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_release_task_locks() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let task_id = Uuid::new_v4();
         let files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
 
@@ -2176,7 +2176,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_release_all_releases_partial_locks_on_conflict() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
 
@@ -2216,7 +2216,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_lock_conflicts() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
 
@@ -2248,7 +2248,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_lock_stats() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
 
@@ -2280,7 +2280,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_same_task_re_acquires_lock() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let task_id = Uuid::new_v4();
         let files = vec!["file1.rs".to_string()];
 
@@ -2309,7 +2309,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_task_locks() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
 
@@ -2338,7 +2338,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_release_non_existent_task_locks() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let fake_task_id = Uuid::new_v4();
 
         // Release locks for task that has none

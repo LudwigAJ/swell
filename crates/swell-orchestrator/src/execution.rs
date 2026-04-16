@@ -1596,15 +1596,15 @@ impl Default for ExecutionConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use std::sync::Arc;
     use swell_core::traits::Tool;
     use swell_llm::MockLlm;
     use swell_tools::ToolRegistry;
+    use crate::OrchestratorBuilder;
 
     #[tokio::test]
     async fn test_execution_controller_creation() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
         let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
@@ -1613,7 +1613,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_execution() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
         let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
@@ -1683,7 +1683,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execution_controller_with_max_iterations() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -1699,7 +1699,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_execution_controller_default_max_iterations() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -1712,7 +1712,7 @@ mod tests {
     async fn test_execution_controller_with_pipeline_and_max_iterations() {
         use swell_validation::ValidationPipeline;
 
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
         let validation_pipeline = ValidationPipeline::new();
@@ -1749,7 +1749,7 @@ mod tests {
     async fn test_turn_loop_terminates_on_text_only_response() {
         // This test verifies that the turn loop terminates correctly
         // when receiving a text-only response (no tool calls)
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::with_response("claude-sonnet", "Hello, world!"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -1778,7 +1778,7 @@ mod tests {
     #[tokio::test]
     async fn test_turn_loop_respects_max_iterations() {
         // Create a mock that always returns a tool call to force iteration
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         // Use a mock that returns tool use pattern - but MockLlm doesn't support tool calls
         // So we just test with text-only responses
         let mock_llm = Arc::new(MockLlm::with_response("claude-sonnet", "Hello"));
@@ -1809,7 +1809,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_turn_loop_error_handling() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::failing("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -1835,7 +1835,7 @@ mod tests {
     // ========================================================================
 
     fn make_controller_with_compaction(threshold: usize, tail_count: usize) -> ExecutionController {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -2212,7 +2212,7 @@ mod tests {
     async fn test_execute_tool_returns_error_on_deny_permission() {
         // Test that execute_tool returns ToolOutput with success=false
         // when the tool requires Deny permission tier
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -2265,7 +2265,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_tool_allows_non_deny_permission() {
         // Test that tools with non-Deny permission (Auto, Ask) are allowed through
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -2314,7 +2314,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_tool_auto_permission_allowed() {
         // Test that tools with Auto permission are allowed through
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -2356,7 +2356,7 @@ mod tests {
     async fn test_killswitch_fullstop_halts_turn_loop() {
         use swell_core::kill_switch::KillLevel;
 
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::with_response("claude-sonnet", "Hello world"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -2401,7 +2401,7 @@ mod tests {
     async fn test_killswitch_fullstop_blocks_tool_execution() {
         use swell_core::kill_switch::KillLevel;
 
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -2450,7 +2450,7 @@ mod tests {
     async fn test_killswitch_level_ordering_fullstop_overrides_all() {
         use swell_core::kill_switch::KillLevel;
 
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -2490,7 +2490,7 @@ mod tests {
     async fn test_killswitch_networkkill_ordering() {
         use swell_core::kill_switch::KillLevel;
 
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 

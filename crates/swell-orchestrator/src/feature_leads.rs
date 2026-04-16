@@ -452,6 +452,7 @@ impl FeatureLeadSpawner for Orchestrator {
 mod tests {
     use super::*;
     use swell_core::{PlanStep, RiskLevel, StepStatus};
+    use crate::OrchestratorBuilder;
 
     fn create_test_plan_with_steps(step_count: usize) -> Plan {
         let steps: Vec<PlanStep> = (0..step_count)
@@ -554,7 +555,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_feature_lead_creation() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let parent_task = orchestrator
             .create_task("Complex task".to_string(), vec![])
             .await
@@ -578,7 +579,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_feature_lead_execution() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let parent_task = orchestrator
             .create_task("Complex task".to_string(), vec![])
             .await
@@ -606,7 +607,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_feature_lead_escalation_trigger() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let parent_task = orchestrator
             .create_task("Complex task".to_string(), vec![])
             .await
@@ -643,7 +644,7 @@ mod tests {
     #[test]
     fn test_feature_lead_manager_register() {
         let mut manager = FeatureLeadManager::new();
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let parent_orch = Arc::new(orchestrator);
 
         let lead = FeatureLead::new(
@@ -663,7 +664,7 @@ mod tests {
     #[test]
     fn test_feature_lead_manager_remove() {
         let mut manager = FeatureLeadManager::new();
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let parent_orch = Arc::new(orchestrator);
 
         let lead = FeatureLead::new(
@@ -683,7 +684,7 @@ mod tests {
     #[test]
     fn test_feature_lead_manager_active_task_ids() {
         let mut manager = FeatureLeadManager::new();
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let parent_orch = Arc::new(orchestrator);
 
         let task1 = Uuid::new_v4();
@@ -802,7 +803,7 @@ mod tests {
     /// Test that FeatureLead correctly identifies which steps it's managing
     #[tokio::test]
     async fn test_feature_lead_assigned_steps_tracking() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let parent_task = orchestrator
             .create_task("Test".to_string(), vec![])
             .await
@@ -828,7 +829,7 @@ mod tests {
     /// Test that FeatureLead correctly reports completion
     #[tokio::test]
     async fn test_feature_lead_completion_tracking() {
-        let orchestrator = Orchestrator::new();
+        let orchestrator = OrchestratorBuilder::new().build();
         let parent_task = orchestrator
             .create_task("Test".to_string(), vec![])
             .await
