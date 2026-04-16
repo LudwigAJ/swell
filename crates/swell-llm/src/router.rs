@@ -25,8 +25,11 @@
 //! let response = router.route(TaskType::Coding, messages, None, config).await?;
 //! ```
 
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use swell_core::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition, SwellError};
+use tokio::sync::RwLock;
 
 /// Task types that determine model selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -121,20 +124,225 @@ impl RouteConfig {
     }
 }
 
-/// Model router that selects appropriate LLM backend based on task type
+/// Statistics for a single model's health tracking
+#[derive(Debug, Default)]
+pub struct ModelHealthStats {
+    /// Number of successful calls
+    successes: AtomicU64,
+    /// Number of failed calls
+    failures: AtomicU64,
+}
+
+impl ModelHealthStats {
+    /// Create a new empty stats entry
+    pub fn new() -> Self {
+        Self {
+            successes: AtomicU64::new(0),
+            failures: AtomicU64::new(0),
+        }
+    }
+
+    /// Get success count
+    pub fn successes(&self) -> u64 {
+        self.successes.load(Ordering::Relaxed)
+    }
+
+    /// Get failure count
+    pub fn failures(&self) -> u64 {
+        self.failures.load(Ordering::Relaxed)
+    }
+}
+
+/// Health information for a model including success rate
 #[derive(Debug, Clone)]
+pub struct ModelHealthInfo {
+    /// Model name
+    pub model_name: String,
+    /// Success count
+    pub successes: u64,
+    /// Failure count
+    pub failures: u64,
+    /// Success rate (0.0 to 1.0), or None if not enough samples
+    pub success_rate: Option<f64>,
+    /// Whether this model is currently deprioritized
+    pub is_deprioritized: bool,
+}
+
+/// Tracker for model health and success rates.
+///
+/// Tracks per-model success/failure counts and deprioritizes models
+/// whose success rate drops below a configurable threshold.
+#[derive(Debug)]
+pub struct ModelHealthTracker {
+    /// Per-model health statistics
+    stats: RwLock<HashMap<String, ModelHealthStats>>,
+    /// Success rate threshold below which models are deprioritized (0.0 to 1.0)
+    success_rate_threshold: f64,
+    /// Minimum number of samples before deprioritization kicks in
+    min_samples: u64,
+}
+
+impl ModelHealthTracker {
+    /// Create a new health tracker with default settings
+    ///
+    /// Default threshold: 50% success rate
+    /// Default min samples: 5
+    pub fn new() -> Self {
+        Self::with_config(0.5, 5)
+    }
+
+    /// Create a health tracker with custom configuration
+    ///
+    /// # Arguments
+    /// * `success_rate_threshold` - Success rate below which model is deprioritized (0.0 to 1.0)
+    /// * `min_samples` - Minimum samples before deprioritization applies
+    pub fn with_config(success_rate_threshold: f64, min_samples: u64) -> Self {
+        Self {
+            stats: RwLock::new(HashMap::new()),
+            success_rate_threshold,
+            min_samples,
+        }
+    }
+
+    /// Record a successful call for a model
+    pub async fn record_success(&self, model_name: &str) {
+        let mut stats = self.stats.write().await;
+        let entry = stats.entry(model_name.to_string()).or_default();
+        entry.successes.fetch_add(1, Ordering::Relaxed);
+
+        tracing::debug!(
+            model = %model_name,
+            successes = entry.successes.load(Ordering::Relaxed),
+            failures = entry.failures.load(Ordering::Relaxed),
+            "Model success recorded"
+        );
+    }
+
+    /// Record a failed call for a model
+    pub async fn record_failure(&self, model_name: &str) {
+        let mut stats = self.stats.write().await;
+        let entry = stats.entry(model_name.to_string()).or_default();
+        entry.failures.fetch_add(1, Ordering::Relaxed);
+
+        tracing::debug!(
+            model = %model_name,
+            successes = entry.successes.load(Ordering::Relaxed),
+            failures = entry.failures.load(Ordering::Relaxed),
+            "Model failure recorded"
+        );
+    }
+
+    /// Get health info for a specific model
+    pub async fn get_health_info(&self, model_name: &str) -> ModelHealthInfo {
+        let stats = self.stats.read().await;
+        if let Some(entry) = stats.get(model_name) {
+            self.build_health_info(model_name, entry).await
+        } else {
+            ModelHealthInfo {
+                model_name: model_name.to_string(),
+                successes: 0,
+                failures: 0,
+                success_rate: None,
+                is_deprioritized: false,
+            }
+        }
+    }
+
+    /// Build health info from stats entry
+    async fn build_health_info(&self, model_name: &str, entry: &ModelHealthStats) -> ModelHealthInfo {
+        let successes = entry.successes.load(Ordering::Relaxed);
+        let failures = entry.failures.load(Ordering::Relaxed);
+        let total = successes + failures;
+
+        let success_rate = if total >= self.min_samples {
+            Some(successes as f64 / total as f64)
+        } else {
+            None
+        };
+
+        let is_deprioritized = success_rate
+            .map(|rate| rate < self.success_rate_threshold)
+            .unwrap_or(false);
+
+        ModelHealthInfo {
+            model_name: model_name.to_string(),
+            successes,
+            failures,
+            success_rate,
+            is_deprioritized,
+        }
+    }
+
+    /// Check if a model should be deprioritized based on its success rate
+    pub async fn is_deprioritized(&self, model_name: &str) -> bool {
+        let info = self.get_health_info(model_name).await;
+        info.is_deprioritized
+    }
+
+    /// Get all models that should be deprioritized
+    pub async fn get_deprioritized_models(&self) -> Vec<String> {
+        let stats = self.stats.read().await;
+        let mut deprioritized = Vec::new();
+
+        for (name, entry) in stats.iter() {
+            let info = self.build_health_info(name, entry).await;
+            if info.is_deprioritized {
+                deprioritized.push(name.clone());
+            }
+        }
+
+        deprioritized
+    }
+
+    /// Get the configured success rate threshold
+    pub fn threshold(&self) -> f64 {
+        self.success_rate_threshold
+    }
+
+    /// Get the configured minimum samples
+    pub fn min_samples(&self) -> u64 {
+        self.min_samples
+    }
+
+    /// Reset health statistics (useful for testing)
+    pub async fn reset(&self) {
+        let mut stats = self.stats.write().await;
+        stats.clear();
+    }
+}
+
+impl Default for ModelHealthTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Model router that selects appropriate LLM backend based on task type
+#[derive(Debug)]
 pub struct ModelRouter {
     routes: std::collections::HashMap<TaskType, RouteConfig>,
     /// Default fallback when no route is registered for a task type
     default_fallbacks: Vec<ModelRoute>,
+    /// Health tracker for success rate tracking and deprioritization
+    health_tracker: ModelHealthTracker,
 }
 
 impl ModelRouter {
-    /// Create a new empty router
+    /// Create a new empty router with default health tracking settings
     pub fn new() -> Self {
         Self {
             routes: std::collections::HashMap::new(),
             default_fallbacks: Vec::new(),
+            health_tracker: ModelHealthTracker::new(),
+        }
+    }
+
+    /// Create a new router with custom health tracking configuration
+    pub fn with_health_tracker(success_rate_threshold: f64, min_samples: u64) -> Self {
+        Self {
+            routes: std::collections::HashMap::new(),
+            default_fallbacks: Vec::new(),
+            health_tracker: ModelHealthTracker::with_config(success_rate_threshold, min_samples),
         }
     }
 
@@ -183,9 +391,12 @@ impl ModelRouter {
     /// Route a chat request to the appropriate model based on task type
     ///
     /// Tries models in order:
-    /// 1. Primary model for the task type
+    /// 1. Primary model for the task type (respects deprioritization)
     /// 2. Fallback models for the task type
     /// 3. Global default fallbacks
+    ///
+    /// Models with low success rates are automatically deprioritized within their tier.
+    /// Fallback events are logged for observability.
     ///
     /// Returns the first successful response or the last error.
     pub async fn route(
@@ -195,8 +406,8 @@ impl ModelRouter {
         tools: Option<Vec<LlmToolDefinition>>,
         config: LlmConfig,
     ) -> Result<LlmResponse, SwellError> {
-        // Collect all candidate routes
-        let candidates = self.get_candidates(task_type);
+        // Collect all candidate routes with deprioritization applied
+        let candidates = self.get_candidates_deprioritized(task_type).await;
 
         if candidates.is_empty() {
             return Err(SwellError::ConfigError(format!(
@@ -206,10 +417,21 @@ impl ModelRouter {
         }
 
         let mut last_error = None;
+        let mut fallback_reason: Option<&str> = None;
 
-        for candidate in candidates {
+        for (index, candidate) in candidates.iter().enumerate() {
             let model_name = candidate.model_name.clone();
-            tracing::debug!(model = %model_name, task_type = ?task_type, "Trying model");
+            let is_primary = index == 0;
+            let is_deprioritized = self.health_tracker.is_deprioritized(&model_name).await;
+
+            tracing::debug!(
+                model = %model_name,
+                task_type = ?task_type,
+                is_primary = is_primary,
+                is_deprioritized = is_deprioritized,
+                position = index,
+                "Trying model"
+            );
 
             match candidate
                 .backend
@@ -217,18 +439,96 @@ impl ModelRouter {
                 .await
             {
                 Ok(response) => {
-                    tracing::info!(model = %model_name, task_type = ?task_type, tokens = %response.usage.total_tokens, "Model route succeeded");
+                    // Record success
+                    self.health_tracker.record_success(&model_name).await;
+
+                    // Log structured fallback event
+                    if !is_primary {
+                        let previous = candidates.first().map(|c| c.model_name.as_str()).unwrap_or("none");
+                        tracing::info!(
+                            target: "model_fallback",
+                            model = %model_name,
+                            task_type = ?task_type,
+                            fallback_reason = ?fallback_reason,
+                            previous_model = %previous,
+                            deprioritized_models = ?self.health_tracker.get_deprioritized_models().await,
+                            "Model fallback succeeded"
+                        );
+                    }
+
+                    tracing::info!(
+                        model = %model_name,
+                        task_type = ?task_type,
+                        tokens = %response.usage.total_tokens,
+                        success_rate = ?self.health_tracker.get_health_info(&model_name).await.success_rate,
+                        "Model route succeeded"
+                    );
+
                     return Ok(response);
                 }
                 Err(e) => {
-                    tracing::warn!(model = %model_name, error = %e, "Model route failed, trying fallback");
+                    // Record failure
+                    self.health_tracker.record_failure(&model_name).await;
+
+                    // Determine fallback reason based on error type
+                    fallback_reason = Some(determine_fallback_reason(&e));
+
+                    // Log structured fallback event
+                    let previous = candidates.first().map(|c| c.model_name.as_str()).unwrap_or("none");
+                    tracing::warn!(
+                        target: "model_fallback",
+                        model = %model_name,
+                        task_type = ?task_type,
+                        error = %e,
+                        fallback_reason = ?fallback_reason,
+                        fallback_trigger = "error",
+                        previous_model = %previous,
+                        is_deprioritized = is_deprioritized,
+                        "Model route failed, trying fallback"
+                    );
+
                     last_error = Some(e);
                 }
             }
         }
 
+        // Log final failure event
+        tracing::error!(
+            task_type = ?task_type,
+            all_models_failed = true,
+            deprioritized_models = ?self.health_tracker.get_deprioritized_models().await,
+            "All models in fallback chain failed"
+        );
+
         Err(last_error
             .unwrap_or_else(|| SwellError::ConfigError("No routes available".to_string())))
+    }
+
+    /// Get all candidate routes for a task type, with deprioritized models moved to the end
+    async fn get_candidates_deprioritized(&self, task_type: TaskType) -> Vec<ModelRoute> {
+        let candidates = self.get_candidates(task_type);
+
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+
+        // Separate healthy and deprioritized models
+        let mut healthy: Vec<&ModelRoute> = Vec::new();
+        let mut deprioritized: Vec<&ModelRoute> = Vec::new();
+
+        for candidate in &candidates {
+            if self.health_tracker.is_deprioritized(&candidate.model_name).await {
+                deprioritized.push(candidate);
+            } else {
+                healthy.push(candidate);
+            }
+        }
+
+        // Return healthy models first, then deprioritized
+        let mut result: Vec<ModelRoute> = healthy.into_iter().cloned().collect();
+        result.extend(deprioritized.into_iter().cloned());
+
+        result
     }
 
     /// Get all candidate routes for a task type in order of preference
@@ -289,11 +589,55 @@ impl ModelRouter {
             .get(&task_type)
             .map(|c| c.primary.model_name.as_str())
     }
+
+    /// Get the health tracker for this router
+    pub fn health_tracker(&self) -> &ModelHealthTracker {
+        &self.health_tracker
+    }
+
+    /// Get health info for a specific model
+    pub async fn get_model_health(&self, model_name: &str) -> ModelHealthInfo {
+        self.health_tracker.get_health_info(model_name).await
+    }
+
+    /// Get all deprioritized models
+    pub async fn get_deprioritized_models(&self) -> Vec<String> {
+        self.health_tracker.get_deprioritized_models().await
+    }
 }
 
 impl Default for ModelRouter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Determine the reason for a fallback based on the error type
+fn determine_fallback_reason(error: &SwellError) -> &'static str {
+    let error_str = error.to_string().to_lowercase();
+
+    if error_str.contains("rate limit") || error_str.contains("429") {
+        "rate_limit"
+    } else if error_str.contains("timeout") || error_str.contains("timed out") {
+        "timeout"
+    } else if error_str.contains("unauthorized") || error_str.contains("401") {
+        "auth_error"
+    } else if error_str.contains("forbidden") || error_str.contains("403") {
+        "permission_error"
+    } else if error_str.contains("bad request") || error_str.contains("400") {
+        "invalid_request"
+    } else if error_str.contains("internal server error") || error_str.contains("500") {
+        "server_error"
+    } else if error_str.contains("service unavailable") || error_str.contains("503") {
+        "service_unavailable"
+    } else if error_str.contains("gateway timeout") || error_str.contains("504") {
+        "gateway_timeout"
+    } else if error_str.contains("network") || error_str.contains("connection") {
+        "network_error"
+    } else if error_str.contains("llm error") {
+        "llm_error"
+    } else {
+        "unknown_error"
     }
 }
 
@@ -309,7 +653,7 @@ fn task_type_fallback_chain(task_type: TaskType) -> Vec<TaskType> {
 }
 
 /// Builder for creating a ModelRouter with sensible defaults
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ModelRouterBuilder {
     router: ModelRouter,
 }
@@ -320,6 +664,16 @@ impl ModelRouterBuilder {
         Self {
             router: ModelRouter::new(),
         }
+    }
+
+    /// Configure custom health tracking settings
+    ///
+    /// # Arguments
+    /// * `success_rate_threshold` - Success rate below which model is deprioritized (0.0 to 1.0), default 0.5
+    /// * `min_samples` - Minimum samples before deprioritization applies, default 5
+    pub fn with_health_tracking(mut self, success_rate_threshold: f64, min_samples: u64) -> Self {
+        self.router = ModelRouter::with_health_tracker(success_rate_threshold, min_samples);
+        self
     }
 
     /// Build the router with standard Anthropic model routing
