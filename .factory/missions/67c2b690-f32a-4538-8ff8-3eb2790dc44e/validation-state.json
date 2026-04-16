@@ -50,6 +50,61 @@
     "VAL-ORCH-005": {
       "status": "passed"
     },
+    "VAL-ORCH-006": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Feature leads spawned for tasks exceeding 15-step threshold. Unit tests verify sub-orchestrator spawning and delegation."
+    },
+    "VAL-ORCH-007": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Gap analyzer identifies missing requirements from spec vs codebase. Unit tests verify spec parsing, gap detection, and reporting."
+    },
+    "VAL-ORCH-008": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Follow-up task generation from completion and acceptance criteria. Unit tests verify proposal generation from plan steps."
+    },
+    "VAL-ORCH-009": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Frozen spec rejects tasks that don't trace to original requirements. FrozenRequirementRegistry wired into Orchestrator."
+    },
+    "VAL-ORCH-010": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: File locks prevent concurrent access to same files. Unit tests verify lock acquisition, release, and concurrent access prevention."
+    },
+    "VAL-ORCH-011": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Autonomy enforcement at L1-L4 configurable levels. Unit tests verify approval requirement enforcement at each level."
+    },
+    "VAL-ORCH-012": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Tiered context pipeline with token budget management. Unit tests verify multi-tier assembly and budget enforcement."
+    },
+    "VAL-ORCH-013": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Work graph data structure for task dependencies and complexity. Unit tests verify node management, dependencies, and serialization."
+    },
+    "VAL-ORCH-014": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Confidence-based pausing when agent uncertainty exceeds threshold. Unit tests and integration tests verify pausing behavior."
+    },
+    "VAL-ORCH-015": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Session hygiene prevents context bloat over time. Unit tests verify context condensation and memory management."
+    },
+    "VAL-ORCH-016": {
+      "status": "passed",
+      "validatedAtMilestone": "M14-orchestrator-intelligence",
+      "notes": "User testing validation: Non-novel retry detection prevents infinite loops. Unit tests verify duplicate task detection and loop prevention."
+    },
     "VAL-AGENTS-001": {
       "status": "passed"
     },
@@ -90,16 +145,24 @@
       "status": "passed"
     },
     "VAL-VALIDATION-001": {
-      "status": "passed"
+      "status": "passed",
+      "validatedAtMilestone": "M15-validation-pipeline",
+      "notes": "Validated via cargo test (swell-validation): LintGate executes and reports pass/fail. 401 tests in swell-validation passed including LintGate.validate tests."
     },
     "VAL-VALIDATION-002": {
-      "status": "passed"
+      "status": "passed",
+      "validatedAtMilestone": "M15-validation-pipeline",
+      "notes": "Validated via cargo test (swell-validation): TestGate executes test suite and reports results. All validation gate tests pass."
     },
     "VAL-VALIDATION-003": {
-      "status": "passed"
+      "status": "passed",
+      "validatedAtMilestone": "M15-validation-pipeline",
+      "notes": "Validated via cargo test (swell-validation): ValidationPipeline runs multiple gates in order. Pipeline orchestration tests pass."
     },
     "VAL-VALIDATION-004": {
-      "status": "passed"
+      "status": "passed",
+      "validatedAtMilestone": "M15-validation-pipeline",
+      "notes": "Validated via cargo test (swell-validation): ValidationContext contains task_id, workspace_path, changed_files. Context construction tests pass."
     },
     "VAL-STATE-001": {
       "status": "passed"
