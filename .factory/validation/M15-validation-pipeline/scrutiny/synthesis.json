@@ -1,0 +1,61 @@
+{
+  "milestone": "M15-validation-pipeline",
+  "round": 1,
+  "status": "fail",
+  "validatorsRun": {
+    "test": {
+      "passed": false,
+      "command": "cargo test --workspace -- --test-threads=4",
+      "exitCode": 101,
+      "note": "test_five_layer_precedence_ordering fails due to known environmental pollution when run in parallel. Test passes in isolation with --test-threads=1. This is a pre-existing issue documented in validation contract for VAL-CROSS-006."
+    },
+    "test_isolation_pass": {
+      "passed": true,
+      "command": "cargo test -p swell-validation -- --test-threads=4",
+      "exitCode": 0,
+      "note": "swell-validation: 399 tests passed, 1 ignored"
+    },
+    "test_core_isolated": {
+      "passed": true,
+      "command": "cargo test -p swell-core test_five_layer_precedence_ordering -- --test-threads=1",
+      "exitCode": 0,
+      "note": "Test passes in isolation, confirming implementation is correct"
+    },
+    "typecheck": {
+      "passed": true,
+      "command": "cargo check --workspace",
+      "exitCode": 0
+    },
+    "lint": {
+      "passed": true,
+      "command": "cargo clippy --workspace -- -D warnings",
+      "exitCode": 0
+    }
+  },
+  "reviewsSummary": {
+    "total": 7,
+    "passed": 6,
+    "failed": 1,
+    "failedFeatures": ["val-traceability-chain"]
+  },
+  "blockingIssues": [
+    {
+      "featureId": "val-traceability-chain",
+      "severity": "blocking",
+      "description": "Bug in detect_missing_links(): ResultHasNoEvidence detection checks test_in_chain.evidence.is_empty() which is evidence shared across ALL results for the test, not per-result evidence. Should check if this specific result has any linked evidence. Both InMemoryTraceabilityStore (line ~1256) and SqliteTraceabilityStore (line ~2316) have the same bug.",
+      "file": "crates/swell-validation/src/traceability.rs",
+      "lines": [1256, 2316]
+    }
+  ],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add documentation for new public types in swell-validation: AutonomousCoverageLoop, CoverageLoopIteration, CoverageLoopResult, and AutonomousCoverageLoopConfig. Currently only AutonomousCoverageEngine is documented.",
+      "evidence": "Feature val-autonomous-coverage review found these types are exported from lib.rs but not documented in AGENTS.md",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [],
+  "previousRound": null
+}

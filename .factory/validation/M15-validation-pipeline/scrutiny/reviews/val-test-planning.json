@@ -1,0 +1,34 @@
+{
+  "featureId": "val-test-planning",
+  "reviewedAt": "2026-04-16T06:45:00Z",
+  "commitId": "235ddc09abcf2a7265993cdf117caff9882d08db",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The val-test-planning feature adds Given/When/Then (Gherkin) format parsing to test_planning.rs. The implementation adds: (1) GherkinFormat struct with given/when/then clause vectors, (2) format field to AcceptanceCriterion struct, (3) parse_gherkin_format() method in AcceptanceCriteriaParser that handles Gherkin-style criteria with AND/But continuations, (4) 6 new tests covering Gherkin criterion parsing. All 25 test_planning tests pass and clippy is clean.",
+    "issues": [
+      {
+        "file": "crates/swell-validation/src/test_planning.rs",
+        "line": 395,
+        "severity": "non_blocking",
+        "description": "parse_gherkin_format() returns Option<GherkinFormat>, but the return None case (when no Gherkin keywords found) is checked at the start before any content is accumulated. If text starts with 'Given' but contains no other Gherkin keywords, the final current_content is never flushed. However, the post-loop cleanup block at lines 463-471 handles this case, so no content is lost. This is a minor code clarity issue - the post-loop block already handles the case properly."
+      },
+      {
+        "file": "handoff file",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "Handoff commit ID '235ddc0fa3a52f36b5e9f7c8e8c3e02e47a5d6b7' is 41 characters (truncated format showing 39 hex chars) but actual commit hash is '235ddc09abcf2a7265993cdf117caff9882d08db'. The handoff has a truncated/incorrect commit ID reference. This is a documentation issue only - the actual commit is findable."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The handoff verification section mentions 'cargo test -p swell-validation -- test_planning -- --test-threads=4' passed with 25 tests, but the handoff only describes adding Gherkin parsing without explicitly listing all 25 tests. The diff shows only test_planning.rs was modified, so the other ~19 tests pre-existed. This is consistent but worth noting that the feature was additive (adding Gherkin parsing) rather than creating the entire test_planning.rs module.",
+      "evidence": "handoff file verification.commandsRun shows only the aggregate test count, not per-module breakdown. The diff shows only test_planning.rs was modified in this commit."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The val-test-planning feature correctly implements Given/When/Then (Gherkin) format parsing for acceptance criteria in test_planning.rs. The implementation includes GherkinFormat struct, parse_gherkin_format() method with AND/But continuation support, and 6 new tests. All 25 tests pass and clippy is clean. No blocking issues found - only minor non-blocking observations about code clarity and handoff documentation."
+}
