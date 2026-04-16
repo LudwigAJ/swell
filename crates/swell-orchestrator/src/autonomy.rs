@@ -873,7 +873,8 @@ impl AutonomyController {
     ) -> bool {
         // CRITICAL: Failure-derived tasks targeting files outside original plan
         // ALWAYS require explicit approval after 80% completion
-        if task_origin == TaskOrigin::FailureDerived && plan_completion >= 0.8
+        if task_origin == TaskOrigin::FailureDerived
+            && plan_completion >= 0.8
             && !is_file_in_scope(affected_files, original_scope)
         {
             // Out-of-scope failure-derived task - always requires approval

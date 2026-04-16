@@ -97,8 +97,10 @@ async fn wiring_daemon_holds_llm_backend() {
     use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
     use swell_llm::LlmBackend;
 
-    let _llm: Arc<dyn LlmBackend> =
-        Arc::new(ScenarioMockLlm::new("test-model", vec![ScenarioStep::text("ok")]));
+    let _llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "test-model",
+        vec![ScenarioStep::text("ok")],
+    ));
 
     // TODO(Tier 1.1): Daemon::new must accept an LlmBackend.
     // Expected signature after wiring:
@@ -316,8 +318,7 @@ fn witness_daemon_does_not_depend_on_swell_llm() {
     ))
     .expect("swell-daemon/Cargo.toml must be readable");
 
-    let has_llm_dep =
-        manifest.contains("swell-llm") || manifest.contains(r#"swell_llm"#);
+    let has_llm_dep = manifest.contains("swell-llm") || manifest.contains(r#"swell_llm"#);
 
     // Deliberately inverted: if this fails, congratulations — Tier 1.1 is
     // done, now go un-ignore `wiring_daemon_holds_llm_backend` and delete

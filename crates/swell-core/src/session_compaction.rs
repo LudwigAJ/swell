@@ -271,7 +271,7 @@ impl SessionCompactor {
 
         // Calculate remaining budget (simplified - assume we compacted to threshold)
         let remaining_budget = self.config.token_threshold.saturating_sub(
-            conversation_summary.total_tokens / 2 // Rough estimate after compaction
+            conversation_summary.total_tokens / 2, // Rough estimate after compaction
         );
 
         ResumePacket {
@@ -304,9 +304,10 @@ impl SessionCompactor {
         let task_description = self.extract_task_description(events);
 
         // Calculate remaining budget
-        let remaining_budget = self.config.token_threshold.saturating_sub(
-            conversation_summary.total_tokens / 2
-        );
+        let remaining_budget = self
+            .config
+            .token_threshold
+            .saturating_sub(conversation_summary.total_tokens / 2);
 
         ResumePacket {
             id: Uuid::new_v4(),
@@ -338,13 +339,20 @@ impl SessionCompactor {
                             // Extract decision description (simplified)
                             let description = content
                                 .lines()
-                                .filter(|l| l.to_lowercase().contains("decision") || l.to_lowercase().contains("decided"))
+                                .filter(|l| {
+                                    l.to_lowercase().contains("decision")
+                                        || l.to_lowercase().contains("decided")
+                                })
                                 .take(1)
                                 .map(|l| l.trim().to_string())
                                 .find(|l| !l.is_empty())
-                                .unwrap_or_else(|| "Decision extracted from conversation".to_string());
+                                .unwrap_or_else(|| {
+                                    "Decision extracted from conversation".to_string()
+                                });
 
-                            if !description.is_empty() && decisions.len() < self.config.max_decisions as usize {
+                            if !description.is_empty()
+                                && decisions.len() < self.config.max_decisions as usize
+                            {
                                 decisions.push(Decision {
                                     timestamp: event.timestamp,
                                     description,
@@ -397,7 +405,9 @@ impl SessionCompactor {
                 if let Some(access) = access_type {
                     // Try to extract file path from arguments
                     if let Some(path) = extract_file_path(&payload.arguments) {
-                        if seen_paths.insert(path.clone()) && file_contexts.len() < self.config.max_active_files as usize {
+                        if seen_paths.insert(path.clone())
+                            && file_contexts.len() < self.config.max_active_files as usize
+                        {
                             file_contexts.push(FileContext {
                                 path,
                                 access_type: access,
@@ -425,8 +435,7 @@ impl SessionCompactor {
                 if payload.success && pending.len() < self.config.max_pending_actions as usize {
                     let description = format!(
                         "Execute {} with args {:?}",
-                        payload.tool_name,
-                        payload.arguments
+                        payload.tool_name, payload.arguments
                     );
                     pending.push(PendingAction {
                         tool_name: payload.tool_name.clone(),
@@ -451,7 +460,10 @@ impl SessionCompactor {
                     // Look for constraint patterns
                     for line in content.lines() {
                         let lower = line.to_lowercase();
-                        if lower.contains("must not") || lower.contains("constraint:") || lower.contains("requirement:") {
+                        if lower.contains("must not")
+                            || lower.contains("constraint:")
+                            || lower.contains("requirement:")
+                        {
                             let constraint = line.trim().to_string();
                             if !constraint.is_empty() {
                                 constraints.push(constraint);
@@ -466,7 +478,10 @@ impl SessionCompactor {
     }
 
     /// Extract conversation turns and summary
-    fn extract_turns(&self, events: &[TranscriptEvent]) -> (ConversationSummary, Vec<PreservedTurn>) {
+    fn extract_turns(
+        &self,
+        events: &[TranscriptEvent],
+    ) -> (ConversationSummary, Vec<PreservedTurn>) {
         let mut turn_count = 0u32;
         let mut input_tokens = 0u64;
         let mut output_tokens = 0u64;
@@ -505,7 +520,9 @@ impl SessionCompactor {
                     if let Some(ref mut turn) = current_turn {
                         turn.tool_calls.push(PreservedToolCall {
                             name: payload.tool_name.clone(),
-                            id: payload.arguments.get("id")
+                            id: payload
+                                .arguments
+                                .get("id")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("unknown")
                                 .to_string(),
@@ -529,7 +546,8 @@ impl SessionCompactor {
 
         // Take only the tail turns
         let mut tail_turns = if preserved_turns.len() > self.config.preserve_tail_turns as usize {
-            preserved_turns.split_off(preserved_turns.len() - self.config.preserve_tail_turns as usize)
+            preserved_turns
+                .split_off(preserved_turns.len() - self.config.preserve_tail_turns as usize)
         } else {
             preserved_turns
         };
@@ -1044,7 +1062,10 @@ mod tests {
 
         // Verify compaction should trigger
         let trigger = CompactionTrigger::check(50 * 150, token_threshold); // ~7500 tokens > 1000
-        assert!(trigger.should_compact(), "Compaction should trigger with 50 turns");
+        assert!(
+            trigger.should_compact(),
+            "Compaction should trigger with 50 turns"
+        );
 
         // Trigger compaction
         let packet = compactor.compact(session, &log);
@@ -1054,52 +1075,87 @@ mod tests {
         assert_eq!(packet.session_id, session, "Session ID is preserved");
 
         // VAL-CLAW-002.2: Packet contains key decisions
-        let decision_texts: Vec<_> = packet.decisions.iter()
+        let decision_texts: Vec<_> = packet
+            .decisions
+            .iter()
             .map(|d| d.description.to_lowercase())
             .collect();
-        assert!(!packet.decisions.is_empty(), "Packet contains extracted decisions");
+        assert!(
+            !packet.decisions.is_empty(),
+            "Packet contains extracted decisions"
+        );
         // Should have extracted at least the "decision:" marked ones
         let has_jwt_decision = decision_texts.iter().any(|t| t.contains("jwt"));
         let has_bcrypt_decision = decision_texts.iter().any(|t| t.contains("bcrypt"));
-        assert!(has_jwt_decision || has_bcrypt_decision, "Should extract decision content");
+        assert!(
+            has_jwt_decision || has_bcrypt_decision,
+            "Should extract decision content"
+        );
 
         // VAL-CLAW-002.3: Packet contains active files
-        assert!(!packet.active_files.is_empty(), "Packet contains active files");
+        assert!(
+            !packet.active_files.is_empty(),
+            "Packet contains active files"
+        );
         let file_paths: Vec<_> = packet.active_files.iter().map(|f| f.path.clone()).collect();
-        assert!(file_paths.contains(&"/src/auth.rs".to_string()), "Active files include auth.rs");
-        assert!(file_paths.contains(&"/src/models.rs".to_string()), "Active files include models.rs");
+        assert!(
+            file_paths.contains(&"/src/auth.rs".to_string()),
+            "Active files include auth.rs"
+        );
+        assert!(
+            file_paths.contains(&"/src/models.rs".to_string()),
+            "Active files include models.rs"
+        );
 
         // VAL-CLAW-002.4: Packet contains pending actions (tool calls)
         // Note: pending_actions tracks tool executions, not failures
-        assert!(!packet.pending_actions.is_empty(), "Packet contains pending actions");
+        assert!(
+            !packet.pending_actions.is_empty(),
+            "Packet contains pending actions"
+        );
 
         // VAL-CLAW-002.5: New session can resume from packet with preserved context
         let resumption = resume_from_packet(&packet);
 
         // Verify decisions preserved
-        assert_eq!(resumption.decisions.len(), packet.decisions.len(),
-            "Resumption has same number of decisions");
+        assert_eq!(
+            resumption.decisions.len(),
+            packet.decisions.len(),
+            "Resumption has same number of decisions"
+        );
 
         // Verify active files preserved
-        assert_eq!(resumption.active_files.len(), packet.active_files.len(),
-            "Resumption has same number of active files");
+        assert_eq!(
+            resumption.active_files.len(),
+            packet.active_files.len(),
+            "Resumption has same number of active files"
+        );
 
         // Verify constraints extracted
-        let constraint_texts: Vec<_> = resumption.constraints.iter()
+        let constraint_texts: Vec<_> = resumption
+            .constraints
+            .iter()
             .map(|c| c.to_lowercase())
             .collect();
         let has_rest_constraint = constraint_texts.iter().any(|t| t.contains("rest"));
         let has_oauth_constraint = constraint_texts.iter().any(|t| t.contains("oauth"));
-        assert!(has_rest_constraint || has_oauth_constraint,
-            "Constraints include REST and OAuth requirements");
+        assert!(
+            has_rest_constraint || has_oauth_constraint,
+            "Constraints include REST and OAuth requirements"
+        );
 
         // Verify conversation summary is accurate
-        assert_eq!(packet.conversation_summary.turn_count, 50,
-            "Conversation summary reflects 50 turns");
+        assert_eq!(
+            packet.conversation_summary.turn_count, 50,
+            "Conversation summary reflects 50 turns"
+        );
 
         // Verify preserved tail turns
-        assert_eq!(packet.preserved_tail.len(), preserve_tail as usize,
-            "Preserved tail has configured number of turns");
+        assert_eq!(
+            packet.preserved_tail.len(),
+            preserve_tail as usize,
+            "Preserved tail has configured number of turns"
+        );
 
         // Verify tail turns are the last ones by checking we have turns from near the end
         // Since we renumber from 0, check that preserved count is correct
@@ -1108,17 +1164,25 @@ mod tests {
             let first_idx = packet.preserved_tail.first().map(|t| t.index);
             let last_idx = packet.preserved_tail.last().map(|t| t.index);
             // If renumbering works, first should be 0 and last should be preserve_tail - 1
-            assert!(first_idx.is_some() && last_idx.is_some(),
-                "All tail turns should have valid indices");
+            assert!(
+                first_idx.is_some() && last_idx.is_some(),
+                "All tail turns should have valid indices"
+            );
         }
 
         // Verify token tracking
-        assert!(packet.conversation_summary.total_tokens > 0,
-            "Token usage is tracked");
-        assert!(packet.conversation_summary.input_tokens > 0,
-            "Input tokens are tracked");
-        assert!(packet.conversation_summary.output_tokens > 0,
-            "Output tokens are tracked");
+        assert!(
+            packet.conversation_summary.total_tokens > 0,
+            "Token usage is tracked"
+        );
+        assert!(
+            packet.conversation_summary.input_tokens > 0,
+            "Input tokens are tracked"
+        );
+        assert!(
+            packet.conversation_summary.output_tokens > 0,
+            "Output tokens are tracked"
+        );
     }
 
     #[test]
@@ -1163,8 +1227,10 @@ mod tests {
         let packet = compactor.compact(session, &log);
 
         // All tool calls should be captured
-        assert!(packet.conversation_summary.tool_call_count > 0,
-            "Tool calls are counted");
+        assert!(
+            packet.conversation_summary.tool_call_count > 0,
+            "Tool calls are counted"
+        );
     }
 
     #[test]

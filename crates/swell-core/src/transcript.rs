@@ -420,10 +420,7 @@ impl TranscriptLog {
         self.events.push(event.clone());
 
         // Index by type for efficient filtering
-        self.by_type
-            .entry(event_type)
-            .or_default()
-            .push(idx);
+        self.by_type.entry(event_type).or_default().push(idx);
 
         // Broadcast to subscribers (ignore if no receivers - this is normal)
         let _ = self.subscriber_tx.send(event);
@@ -474,10 +471,7 @@ impl TranscriptLog {
         // Sort indices to maintain insertion order
         indices.sort_unstable();
 
-        indices
-            .into_iter()
-            .map(|idx| &self.events[idx])
-            .collect()
+        indices.into_iter().map(|idx| &self.events[idx]).collect()
     }
 
     /// Get all events of a specific type
@@ -546,7 +540,10 @@ pub struct TranscriptSubscriber {
 
 impl TranscriptSubscriber {
     /// Create a new subscriber with a broadcast receiver and type filter
-    fn new(receiver: broadcast::Receiver<TranscriptEvent>, type_filter: HashSet<TranscriptEventType>) -> Self {
+    fn new(
+        receiver: broadcast::Receiver<TranscriptEvent>,
+        type_filter: HashSet<TranscriptEventType>,
+    ) -> Self {
         Self {
             receiver,
             type_filter,
@@ -604,7 +601,10 @@ mod tests {
     fn test_transcript_event_type_display() {
         assert_eq!(TranscriptEventType::ToolCall.to_string(), "tool_call");
         assert_eq!(TranscriptEventType::LlmResponse.to_string(), "llm_response");
-        assert_eq!(TranscriptEventType::StateTransition.to_string(), "state_transition");
+        assert_eq!(
+            TranscriptEventType::StateTransition.to_string(),
+            "state_transition"
+        );
         assert_eq!(TranscriptEventType::Error.to_string(), "error");
     }
 
@@ -724,7 +724,12 @@ mod tests {
         );
         log.append_llm_response(
             session,
-            LlmResponsePayload::new("gpt-4".to_string(), Some("response".to_string()), None, None),
+            LlmResponsePayload::new(
+                "gpt-4".to_string(),
+                Some("response".to_string()),
+                None,
+                None,
+            ),
         );
         log.append_state_transition(
             session,
@@ -773,7 +778,12 @@ mod tests {
         );
         log.append_llm_response(
             session,
-            LlmResponsePayload::new("gpt-4".to_string(), Some("response".to_string()), None, None),
+            LlmResponsePayload::new(
+                "gpt-4".to_string(),
+                Some("response".to_string()),
+                None,
+                None,
+            ),
         );
         log.append_tool_call(
             session,
@@ -793,7 +803,9 @@ mod tests {
         // Filter by ToolCall
         let tool_calls = log.by_type(TranscriptEventType::ToolCall);
         assert_eq!(tool_calls.len(), 2);
-        assert!(tool_calls.iter().all(|e| e.event_type == TranscriptEventType::ToolCall));
+        assert!(tool_calls
+            .iter()
+            .all(|e| e.event_type == TranscriptEventType::ToolCall));
 
         // Filter by LlmResponse
         let llm_responses = log.by_type(TranscriptEventType::LlmResponse);
@@ -819,7 +831,12 @@ mod tests {
         );
         log.append_llm_response(
             session,
-            LlmResponsePayload::new("gpt-4".to_string(), Some("response".to_string()), None, None),
+            LlmResponsePayload::new(
+                "gpt-4".to_string(),
+                Some("response".to_string()),
+                None,
+                None,
+            ),
         );
         log.append_error(
             session,
@@ -834,7 +851,8 @@ mod tests {
         let filtered = log.by_types(&[TranscriptEventType::ToolCall, TranscriptEventType::Error]);
         assert_eq!(filtered.len(), 2);
         assert!(filtered.iter().all(|e| {
-            e.event_type == TranscriptEventType::ToolCall || e.event_type == TranscriptEventType::Error
+            e.event_type == TranscriptEventType::ToolCall
+                || e.event_type == TranscriptEventType::Error
         }));
     }
 
@@ -851,7 +869,12 @@ mod tests {
         );
         log.append_llm_response(
             session2, // Different session
-            LlmResponsePayload::new("gpt-4".to_string(), Some("response".to_string()), None, None),
+            LlmResponsePayload::new(
+                "gpt-4".to_string(),
+                Some("response".to_string()),
+                None,
+                None,
+            ),
         );
         log.append_tool_call(
             session1,
@@ -877,13 +900,16 @@ mod tests {
         );
         log.append_llm_response(
             session,
-            LlmResponsePayload::new("gpt-4".to_string(), Some("response".to_string()), None, None),
+            LlmResponsePayload::new(
+                "gpt-4".to_string(),
+                Some("response".to_string()),
+                None,
+                None,
+            ),
         );
 
         // Subscribe to only ToolCall events
-        let subscriber = log.subscribe(
-            [TranscriptEventType::ToolCall].into_iter().collect(),
-        );
+        let subscriber = log.subscribe([TranscriptEventType::ToolCall].into_iter().collect());
 
         assert!(subscriber.filters_type(TranscriptEventType::ToolCall));
         assert!(!subscriber.filters_type(TranscriptEventType::LlmResponse));
@@ -904,7 +930,12 @@ mod tests {
         );
         let llm_event = TranscriptEvent::llm_response(
             session,
-            LlmResponsePayload::new("gpt-4".to_string(), Some("response".to_string()), None, None),
+            LlmResponsePayload::new(
+                "gpt-4".to_string(),
+                Some("response".to_string()),
+                None,
+                None,
+            ),
         );
         log.append(llm_event.clone());
         log.append_error(
@@ -945,7 +976,12 @@ mod tests {
         );
         log.append_llm_response(
             session,
-            LlmResponsePayload::new("gpt-4".to_string(), Some("response".to_string()), None, None),
+            LlmResponsePayload::new(
+                "gpt-4".to_string(),
+                Some("response".to_string()),
+                None,
+                None,
+            ),
         );
         log.append_tool_call(
             session,
@@ -975,7 +1011,11 @@ mod tests {
         let session = session_id();
         let event = TranscriptEvent::tool_call(
             session,
-            ToolCallPayload::success("file_read".to_string(), serde_json::json!({"path": "/test.txt"}), 50),
+            ToolCallPayload::success(
+                "file_read".to_string(),
+                serde_json::json!({"path": "/test.txt"}),
+                50,
+            ),
         );
 
         let json = serde_json::to_string(&event).unwrap();
@@ -1010,7 +1050,12 @@ mod tests {
         );
         log.append_llm_response(
             session,
-            LlmResponsePayload::new("gpt-4".to_string(), Some("response".to_string()), None, None),
+            LlmResponsePayload::new(
+                "gpt-4".to_string(),
+                Some("response".to_string()),
+                None,
+                None,
+            ),
         );
 
         assert_eq!(log.len(), 2);

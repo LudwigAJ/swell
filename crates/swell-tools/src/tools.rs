@@ -183,8 +183,7 @@ impl Tool for ReadFileTool {
                 return Err(SwellError::ToolExecutionFailed(format!(
                     "Cannot read binary file '{}': {}. \
                      Set allow_binary=true to read binary files as base64-encoded text.",
-                    args.path,
-                    reason
+                    args.path, reason
                 )));
             }
             // allow_binary is true - encode as base64 and return
@@ -202,11 +201,9 @@ impl Tool for ReadFileTool {
         }
 
         // Content is not binary - convert to string and return
-        let content = String::from_utf8(content_bytes)
-            .map_err(|e| SwellError::ToolExecutionFailed(format!(
-                "File content is not valid UTF-8: {}",
-                e
-            )))?;
+        let content = String::from_utf8(content_bytes).map_err(|e| {
+            SwellError::ToolExecutionFailed(format!("File content is not valid UTF-8: {}", e))
+        })?;
 
         info!(path = %args.path, "File read successfully");
         Ok(ToolOutput {

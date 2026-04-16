@@ -8,13 +8,13 @@ pub mod events;
 pub mod kill_switch;
 pub mod langfuse;
 pub mod opentelemetry;
+pub mod session_compaction;
 pub mod trace_waterfall;
 pub mod tracing_json;
 pub mod traits;
 pub mod transcript;
 pub mod treesitter;
 pub mod types;
-pub mod session_compaction;
 
 pub use audit::{
     verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,
@@ -32,23 +32,23 @@ pub use events::{
     AgentSessionId, CrossTaskCorrelationId, EventStore, ObservableEvent, Outcome, RequestId,
     SpanId, ToolInvocation, TraceId, TurnSummaryEvent,
 };
-pub use transcript::{
-    EntityType, ErrorKind, ErrorPayload, LlmResponsePayload, StateTransitionPayload,
-    TokenUsage, ToolCallPayload, TranscriptEvent, TranscriptEventPayload, TranscriptEventType,
-    TranscriptLog, TranscriptSubscriber,
-};
-pub use session_compaction::{
-    CompactionConfig, CompactionTrigger, Decision, DecisionCategory, FileAccessType,
-    FileContext, PendingAction, PreservedToolCall, PreservedTurn, ResumePacket,
-    SessionCompactor, SessionResumption, ConversationSummary,
-};
 pub use kill_switch::{
     EnvVarVerifier, FileVerifier, KillLevel, KillSwitchError, KillSwitchGuard, KillSwitchState,
     KillSwitchVerifier, RedisVerifier, ScopeBlock, ThrottleConfig,
 };
+pub use session_compaction::{
+    CompactionConfig, CompactionTrigger, ConversationSummary, Decision, DecisionCategory,
+    FileAccessType, FileContext, PendingAction, PreservedToolCall, PreservedTurn, ResumePacket,
+    SessionCompactor, SessionResumption,
+};
 pub use trace_waterfall::{
     SpanAttribute, SpanAttributeValue, SpanKind, ToTraceSpan, ToolSpanDetails, TraceSpan,
     TraceSummary, TraceWaterfall, TraceWaterfallBuilder,
+};
+pub use transcript::{
+    EntityType, ErrorKind, ErrorPayload, LlmResponsePayload, StateTransitionPayload, TokenUsage,
+    ToolCallPayload, TranscriptEvent, TranscriptEventPayload, TranscriptEventType, TranscriptLog,
+    TranscriptSubscriber,
 };
 pub use types::*;
 // Explicitly re-export traits to avoid ambiguity with types::Agent and types::Tool
