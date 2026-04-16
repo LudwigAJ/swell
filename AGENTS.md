@@ -225,6 +225,51 @@ cargo test --workspace
 cargo clippy --workspace -- -D warnings
 ```
 
+### Wiring Guardrail Tests (READ THIS BEFORE EDITING ANY CRATE)
+
+Swell has a recurring failure pattern: agents build a feature, it passes its
+own unit tests, and it is **never connected to the runtime**. The daemon ends
+up unable to reach subsystems that are fully implemented and unit-tested
+somewhere else in the workspace.
+
+Unit tests cannot catch this, because unit tests load the module they test —
+so reachability *from the test* is guaranteed by construction.
+
+To catch the orphan pattern, the workspace has a dedicated integration-test
+binary:
+
+```bash
+cargo test -p swell-integration-tests --test full_cycle_wiring
+```
+
+Rules for working with this binary:
+
+1. **Do not delete any test in `full_cycle_wiring.rs`.** Each test encodes a
+   wiring invariant that an audit found missing. If the test is wrong,
+   escalate — do not silently weaken it.
+2. **Do not convert wiring tests into mock-only unit tests.** The whole point
+   is to cross the daemon → subsystem boundary through production wiring.
+3. **`#[ignore]` tags reference a Tier 1/2 blocker** in
+   `plan/audit-2026-04-16/04_tier1_blockers.md` and
+   `05_tier2_reliability.md`. When you complete a blocker, your PR must:
+   - Remove the `#[ignore]` on the matching `wiring_*` test
+   - Delete the matching `witness_*` test (if any)
+   - Leave both changes in the same commit
+4. **`witness_*` tests assert today's broken state** so they fail loudly once
+   the fix lands. A green witness means the wire is still missing. A red
+   witness in CI means: "congrats, now un-ignore the matching invariant."
+5. **If an API change breaks compilation of `full_cycle_wiring.rs`, update
+   the test, do not delete it.** The test is the contract; your API change
+   must honor it.
+
+Background and rationale:
+
+- `plan/audit-2026-04-16/00_README.md` — overall audit summary
+- `plan/audit-2026-04-16/07_integration_test_strategy.md` — why this binary
+  exists and what every invariant must prove
+- `crates/swell-integration-tests/tests/full_cycle_wiring.rs` — the tests
+  themselves, with extensive module docs
+
 ### Format
 ```bash
 cargo fmt --all

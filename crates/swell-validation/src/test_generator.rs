@@ -1232,10 +1232,7 @@ mod {sanitized}_invariant_property_tests {{
     ///
     /// The `use_proptest`, `proptest_iterations`, and `proptest_max_shrink_iters`
     /// config fields control the generated test behavior.
-    pub fn generate_proptest_tests(
-        &self,
-        criteria: &[AcceptanceCriterion],
-    ) -> Vec<GeneratedTest> {
+    pub fn generate_proptest_tests(&self, criteria: &[AcceptanceCriterion]) -> Vec<GeneratedTest> {
         let mut tests = Vec::new();
 
         // If proptest is disabled, return empty
@@ -1277,10 +1274,7 @@ mod {sanitized}_invariant_property_tests {{
     }
 
     /// Generate a single proptest-based invariant test
-    fn generate_proptest_invariant_test(
-        &self,
-        criterion: &AcceptanceCriterion,
-    ) -> GeneratedTest {
+    fn generate_proptest_invariant_test(&self, criterion: &AcceptanceCriterion) -> GeneratedTest {
         let test_name = self.generate_test_name(criterion);
         let sanitized = self.sanitize_name(&test_name);
         let module_path = format!("tests/proptest_{}", sanitized);
@@ -1294,7 +1288,11 @@ mod {sanitized}_invariant_property_tests {{
             test_type: TestType::PropertyProptest,
             covers_criteria: vec![criterion.id.clone()],
             confidence: 0.80,
-            tags: vec!["proptest".to_string(), "invariant".to_string(), criterion.category.clone()],
+            tags: vec![
+                "proptest".to_string(),
+                "invariant".to_string(),
+                criterion.category.clone(),
+            ],
         }
     }
 
@@ -1312,21 +1310,39 @@ mod {sanitized}_invariant_property_tests {{
         // Determine the type of invariant to test based on criterion text
         let text_lower = criterion.text.to_lowercase();
 
-        if text_lower.contains("length") || text_lower.contains("size") || text_lower.contains("bound") {
+        if text_lower.contains("length")
+            || text_lower.contains("size")
+            || text_lower.contains("bound")
+        {
             // Length/size invariant
             self.generate_length_invariant_test(sanitized, criterion_text, iterations, max_shrink)
         } else if text_lower.contains("revers") || text_lower.contains("inverse") {
             // Reversibility invariant
-            self.generate_reversibility_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+            self.generate_reversibility_invariant_test(
+                sanitized,
+                criterion_text,
+                iterations,
+                max_shrink,
+            )
         } else if text_lower.contains("determin") || text_lower.contains("consistent") {
             // Determinism invariant
-            self.generate_determinism_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+            self.generate_determinism_invariant_test(
+                sanitized,
+                criterion_text,
+                iterations,
+                max_shrink,
+            )
         } else if text_lower.contains("combin") || text_lower.contains("associat") {
             // Monoid/associativity invariant
             self.generate_monoid_invariant_test(sanitized, criterion_text, iterations, max_shrink)
         } else if text_lower.contains("idempot") {
             // Idempotence invariant
-            self.generate_idempotence_invariant_test(sanitized, criterion_text, iterations, max_shrink)
+            self.generate_idempotence_invariant_test(
+                sanitized,
+                criterion_text,
+                iterations,
+                max_shrink,
+            )
         } else {
             // Default: generic bounds invariant
             self.generate_bounds_invariant_test(sanitized, criterion_text, iterations, max_shrink)
@@ -2653,7 +2669,8 @@ mod test_generator_tests {
         let generator = TestGenerator::with_defaults();
         let criteria = vec![AcceptanceCriterion {
             id: "AC-1".to_string(),
-            text: "For all valid inputs, output length shall not exceed input length + N".to_string(),
+            text: "For all valid inputs, output length shall not exceed input length + N"
+                .to_string(),
             category: "invariant".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["length".to_string(), "invariant".to_string()],
@@ -2725,7 +2742,8 @@ mod test_generator_tests {
         let generator = TestGenerator::with_defaults();
         let criteria = vec![AcceptanceCriterion {
             id: "AC-1".to_string(),
-            text: "The function must be deterministic: same input always yields same output".to_string(),
+            text: "The function must be deterministic: same input always yields same output"
+                .to_string(),
             category: "determinism".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["deterministic".to_string(), "consistent".to_string()],
@@ -2746,7 +2764,8 @@ mod test_generator_tests {
 
         let criteria = vec![AcceptanceCriterion {
             id: "AC-1".to_string(),
-            text: "For all valid inputs, output length shall not exceed input length + N".to_string(),
+            text: "For all valid inputs, output length shall not exceed input length + N"
+                .to_string(),
             category: "invariant".to_string(),
             criticality: CriterionCriticality::MustHave,
             test_hints: vec!["length".to_string()],

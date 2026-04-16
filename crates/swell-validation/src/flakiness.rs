@@ -1465,7 +1465,10 @@ mod quarantine_pool_tests {
         for i in 3..=10 {
             let should_remain = pool.record_result("test_record", true);
             if i < 10 {
-                assert!(should_remain, "Should remain in quarantine during stability loop");
+                assert!(
+                    should_remain,
+                    "Should remain in quarantine during stability loop"
+                );
             } else {
                 assert!(!should_remain, "Should signal exit after 10 passes");
             }
@@ -1543,7 +1546,10 @@ mod quarantine_pool_tests {
 
         // Check that consecutive_passes is reset
         let test = pool.get_quarantined_test("test_stability").unwrap();
-        assert_eq!(test.consecutive_passes, 0, "Consecutive passes should reset to 0 after failure");
+        assert_eq!(
+            test.consecutive_passes, 0,
+            "Consecutive passes should reset to 0 after failure"
+        );
 
         // Pass 10 more times to exit
         for _ in 0..10 {
@@ -1566,7 +1572,11 @@ mod quarantine_pool_tests {
         // First 9 passes should remain in quarantine
         for i in 0..9 {
             let should_remain = pool.record_result("test_10_passes", true);
-            assert!(should_remain, "Should remain in quarantine during stability loop (pass {})", i + 1);
+            assert!(
+                should_remain,
+                "Should remain in quarantine during stability loop (pass {})",
+                i + 1
+            );
         }
 
         // 10th pass should signal exit (consecutive_passes >= stability_loop_runs)
@@ -1590,7 +1600,10 @@ mod quarantine_pool_tests {
         for i in 0..9 {
             let should_remain = pool.record_result("test_9_passes", true);
             if i < 8 {
-                assert!(should_remain, "Should remain in quarantine during stability loop");
+                assert!(
+                    should_remain,
+                    "Should remain in quarantine during stability loop"
+                );
             }
             // After 9 passes, still in quarantine
         }

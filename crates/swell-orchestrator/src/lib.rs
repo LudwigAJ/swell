@@ -77,8 +77,8 @@ pub use alerts::{
     LoopDetectionState, PolicyViolationConfig, SharedAlertManager,
 };
 pub use autonomy::{
-    ApprovalDecision, ApprovalRequest, AutonomyController, AutonomyOverride,
-    AutonomyOverrideMatrix, ConfidenceThresholdConfig, TaskType,
+    ApprovalDecayConfig, ApprovalDecision, ApprovalRequest, AutonomyController, AutonomyOverride,
+    AutonomyOverrideMatrix, ConfidenceThresholdConfig, TaskOrigin, TaskType,
 };
 pub use backlog::{
     BacklogItem, BacklogSource, BacklogStats, DeduplicationConfig, PriorityScoringConfig,
@@ -840,9 +840,7 @@ impl Orchestrator {
             info!(task_id = %task_id, iteration_count = %iteration_count, "Task rejected");
 
             // Evaluate non-novel retry detection
-            let non_novel_result = self
-                .check_non_novel_retry(task_id, iteration_count)
-                .await;
+            let non_novel_result = self.check_non_novel_retry(task_id, iteration_count).await;
 
             if let Some(non_novel) = non_novel_result {
                 if !non_novel.is_novel {
@@ -855,13 +853,15 @@ impl Orchestrator {
                     );
 
                     // Emit event for observability
-                    let _ = self.event_sender.send(OrchestratorEvent::NonNovelRetryRejection {
-                        task_id,
-                        similarity: non_novel.max_similarity,
-                        similar_to_iteration: non_novel.most_similar_iteration.unwrap_or(0),
-                        forced_action: non_novel.forced_action.unwrap(),
-                        reason: non_novel.reason.unwrap_or_default(),
-                    });
+                    let _ = self
+                        .event_sender
+                        .send(OrchestratorEvent::NonNovelRetryRejection {
+                            task_id,
+                            similarity: non_novel.max_similarity,
+                            similar_to_iteration: non_novel.most_similar_iteration.unwrap_or(0),
+                            forced_action: non_novel.forced_action.unwrap(),
+                            reason: non_novel.reason.unwrap_or_default(),
+                        });
 
                     // Handle forced action based on type
                     match non_novel.forced_action {
@@ -870,7 +870,8 @@ impl Orchestrator {
                             sm.escalate_task(task_id)?;
                             info!(task_id = %task_id, "Task escalated due to non-novel retry");
                         }
-                        Some(ForcedStrategyChange::SwitchModel) | Some(ForcedStrategyChange::ChangeApproach) => {
+                        Some(ForcedStrategyChange::SwitchModel)
+                        | Some(ForcedStrategyChange::ChangeApproach) => {
                             // The retry will use a different model/approach - this is handled
                             // by the retry policy which will see iteration_count and decide
                             // to switch model on next retry
@@ -957,11 +958,7 @@ impl Orchestrator {
 
     /// Record the diff for the current task attempt.
     /// This should be called after task execution completes but before validation.
-    pub async fn record_attempt_diff(
-        &self,
-        task_id: Uuid,
-        diff: String,
-    ) -> Result<(), SwellError> {
+    pub async fn record_attempt_diff(&self, task_id: Uuid, diff: String) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
 
         sm.with_task_mut(task_id, |task| {
@@ -979,14 +976,16 @@ impl Orchestrator {
                 attempt.diff = Some(diff);
             } else {
                 // Create new prior attempt record
-                task.enrichment.prior_attempts.push(swell_core::PriorAttempt {
-                    iteration,
-                    timestamp: chrono::Utc::now(),
-                    outcome: None,
-                    rejected_reason: None,
-                    modified_files: Vec::new(),
-                    diff: Some(diff),
-                });
+                task.enrichment
+                    .prior_attempts
+                    .push(swell_core::PriorAttempt {
+                        iteration,
+                        timestamp: chrono::Utc::now(),
+                        outcome: None,
+                        rejected_reason: None,
+                        modified_files: Vec::new(),
+                        diff: Some(diff),
+                    });
             }
 
             Ok(())

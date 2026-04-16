@@ -1,0 +1,363 @@
+//! ╔════════════════════════════════════════════════════════════════════════╗
+//! ║                                                                        ║
+//! ║                FULL-CYCLE WIRING GUARDRAIL TESTS                       ║
+//! ║                                                                        ║
+//! ║   DO NOT DELETE. DO NOT MOVE. DO NOT REWRITE AS MOCKS.                 ║
+//! ║                                                                        ║
+//! ║   These tests exist because Swell's dominant failure mode is not       ║
+//! ║   "features are broken" but "features are built and never connected    ║
+//! ║   to the runtime." Unit tests cannot catch this — by construction a    ║
+//! ║   unit test loads the module it tests, so the module is always         ║
+//! ║   reachable from the test.                                             ║
+//! ║                                                                        ║
+//! ║   Every test in this file asserts a **wiring invariant**: that the     ║
+//! ║   primary runtime entry point (`swell_daemon::Daemon`) can reach a     ║
+//! ║   load-bearing subsystem through production wiring, NOT through        ║
+//! ║   test-only builders and NOT with mocks substituted for the components ║
+//! ║   under test.                                                          ║
+//! ║                                                                        ║
+//! ║   If a test here fails, the fault is ALWAYS wiring, not logic.         ║
+//! ║                                                                        ║
+//! ║   Context & rationale:                                                 ║
+//! ║     plan/audit-2026-04-16/00_README.md                                 ║
+//! ║     plan/audit-2026-04-16/07_integration_test_strategy.md              ║
+//! ║                                                                        ║
+//! ║   Swarm instructions:                                                  ║
+//! ║     - Each `#[ignore]` attribute below references a Tier 1 blocker.    ║
+//! ║       When you complete that blocker, remove the `#[ignore]` line      ║
+//! ║       and make the test green. Do not remove the test itself.          ║
+//! ║     - If a test stops compiling because an API changed, UPDATE the     ║
+//! ║       test to use the new API. Do not delete or shortcut the           ║
+//! ║       assertion.                                                       ║
+//! ║     - If you think a test is wrong, escalate — do not silently         ║
+//! ║       weaken it. These tests are a contract, not scaffolding.          ║
+//! ║                                                                        ║
+//! ╚════════════════════════════════════════════════════════════════════════╝
+//!
+//! # Why this file exists (extended)
+//!
+//! Audit 2026-04-13 prescribed a full agent → tool → validation → git → PR
+//! pipeline. Audit 2026-04-16 found that the pipeline was built in pieces,
+//! each piece unit-tested, but the daemon never constructs an
+//! `ExecutionController`, never receives an `LlmBackend`, never instantiates
+//! a `WorktreePool`, and never invokes the `ValidationOrchestrator`. The
+//! orphan island was green in CI because nothing exercised the edge from
+//! daemon into the island.
+//!
+//! These tests cross that edge and refuse to be green until the wires exist.
+//!
+//! # What this file is NOT
+//!
+//! - Not a correctness test of `PlannerAgent`, `ValidationOrchestrator`,
+//!   `CommitStrategy`, etc. Those have their own unit tests in their own
+//!   crates. Keep them.
+//! - Not an LLM-quality test. The LLM is always `ScenarioMockLlm` here so
+//!   tests are deterministic and offline. Real LLM smoke tests go in a
+//!   separate file gated by `LIVE_LLM=1`.
+//! - Not a replacement for `prompt_integration_tests.rs`, which is a
+//!   narrower test of `ValidationOrchestrator` in isolation.
+//!
+//! # How to extend this file
+//!
+//! Add a new test for any new Tier 1/2 wiring invariant. Name the test
+//! `wiring_<subject>_<invariant>` so a failure message reads like
+//! `FAIL: wiring_daemon_holds_llm_backend` and the operator can locate the
+//! broken wire immediately.
+
+#![allow(unused_imports)] // tests reference symbols that may not exist yet
+#![allow(dead_code)]
+#![allow(unreachable_code)] // `todo!()` placeholders for un-shipped APIs
+
+use std::sync::Arc;
+
+// -----------------------------------------------------------------------------
+// Tier 1.1 — LlmBackend is threaded from daemon into orchestrator.
+// Blocker: plan/audit-2026-04-16/04_tier1_blockers.md §1.1
+// -----------------------------------------------------------------------------
+
+/// WIRING INVARIANT: `Daemon::new` accepts an `LlmBackend` (or a factory)
+/// and the constructed `Orchestrator` holds it.
+///
+/// Currently `Daemon::new(socket_path: String)` takes only a path.
+/// When Tier 1.1 ships, `Daemon::new` must take an `Arc<dyn LlmBackend>`
+/// (directly, or via a `DaemonBuilder`). This test proves that path exists.
+///
+/// # How to un-ignore
+/// 1. Complete Tier 1.1 — add the dependency to `swell-daemon/Cargo.toml`,
+///    update `Daemon::new`, update `Orchestrator::new`.
+/// 2. Replace the `todo!()` below with the real constructor calls.
+/// 3. Remove the `#[ignore]` attribute. Run: `cargo test -p swell-integration-tests
+///    --test full_cycle_wiring wiring_daemon_holds_llm_backend`.
+/// 4. Green means Tier 1.1 is demonstrably complete.
+#[tokio::test]
+#[ignore = "Blocked by Tier 1.1 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+async fn wiring_daemon_holds_llm_backend() {
+    // The ScenarioMockLlm stands in for AnthropicBackend / OpenAIBackend.
+    // The assertion is on wiring, not on which backend.
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+
+    let _llm: Arc<dyn LlmBackend> =
+        Arc::new(ScenarioMockLlm::new("test-model", vec![ScenarioStep::text("ok")]));
+
+    // TODO(Tier 1.1): Daemon::new must accept an LlmBackend.
+    // Expected signature after wiring:
+    //     Daemon::new(socket_path: String, llm: Arc<dyn LlmBackend>)
+    // or   DaemonBuilder::new(path).with_llm(llm).build()
+    let _daemon: () = todo!("Daemon::new accepting llm not yet implemented");
+
+    // Expected assertion shape (will compile once APIs land):
+    //
+    //     let orch = _daemon.orchestrator();
+    //     let held = orch.lock().await.llm_backend().expect("orchestrator must hold llm");
+    //     assert!(Arc::ptr_eq(&held, &llm), "orchestrator must hold the EXACT Arc we provided — \
+    //             not a newly-constructed backend, not a clone of a different backend");
+    let _ = _llm;
+}
+
+// -----------------------------------------------------------------------------
+// Tier 1.2 — ExecutionController is constructed inside Orchestrator and a
+// dispatch loop drives tasks through it.
+// Blocker: plan/audit-2026-04-16/04_tier1_blockers.md §1.2
+// -----------------------------------------------------------------------------
+
+/// WIRING INVARIANT: the orchestrator exposes an ExecutionController whose
+/// `llm` and `tool_registry` are the daemon-injected singletons.
+#[tokio::test]
+#[ignore = "Blocked by Tier 1.2 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+async fn wiring_orchestrator_holds_execution_controller() {
+    // TODO(Tier 1.2): Orchestrator must expose a fn that returns an
+    // `Arc<ExecutionController>`. Fill in when API exists.
+    //
+    //     let orch = Orchestrator::new(llm.clone(), tool_registry.clone());
+    //     let ctrl = orch.execution_controller();
+    //     assert!(Arc::ptr_eq(&ctrl.llm(), &llm));
+    //     assert!(Arc::ptr_eq(&ctrl.tool_registry(), &tool_registry));
+    todo!("Orchestrator::execution_controller accessor not yet implemented")
+}
+
+/// WIRING INVARIANT: submitting a task via `handle_command(TaskCreate)` +
+/// `handle_command(TaskApprove)` drives the full planner → generator →
+/// evaluator loop to `TaskState::Done`.
+///
+/// This is THE canary — if this goes green, Swell can actually run tasks.
+#[tokio::test]
+#[ignore = "Blocked by Tier 1.2 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+async fn wiring_full_cycle_task_reaches_done() {
+    // Scripted 3-step scenario: plan, generate, evaluate.
+    // Use the ScenarioMockLlm so this is deterministic and offline.
+    //
+    //     let scenario = vec![
+    //         ScenarioStep::text(r#"{"plan": {...}, "handoff": {...}}"#),       // planner
+    //         ScenarioStep::text("Wrote src/foo.rs with the required function"), // generator
+    //         ScenarioStep::text(r#"{"success": true, "confidence": 0.92}"#),    // evaluator
+    //     ];
+    //
+    //     let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new("test-model", scenario));
+    //     let daemon = Daemon::new(socket_path, llm.clone());
+    //     let create_evt = handle_command(CliCommand::TaskCreate { description: "..." }, ...).await;
+    //     let task_id = create_evt.task_id();
+    //     let _approve = handle_command(CliCommand::TaskApprove { task_id }, ...).await;
+    //
+    //     // Dispatch loop must drive the task. 30s budget is generous; real loop should
+    //     // complete in milliseconds with ScenarioMockLlm.
+    //     let final_state = wait_for_terminal_state(&daemon, task_id, Duration::from_secs(30))
+    //         .await
+    //         .expect("task must reach a terminal state");
+    //     assert_eq!(final_state, TaskState::Done,
+    //         "task must reach Done — if it stalled at Ready or Running, the dispatch loop is broken");
+    //
+    //     let calls = llm.recorded_calls();
+    //     assert_eq!(calls.len(), 3, "must call planner, generator, evaluator exactly once");
+    todo!("full-cycle task dispatch not yet wired")
+}
+
+// -----------------------------------------------------------------------------
+// Tier 1.3 — ValidationOrchestrator is wired into ExecutionController.
+// Blocker: plan/audit-2026-04-16/04_tier1_blockers.md §1.3
+// -----------------------------------------------------------------------------
+
+/// WIRING INVARIANT: after the generator finishes, the execution controller
+/// invokes `ValidationOrchestrator::validate_task_completion`. A scripted
+/// failing validation causes the task to transition to `Failed`, NOT `Done`.
+#[tokio::test]
+#[ignore = "Blocked by Tier 1.3 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+async fn wiring_validation_orchestrator_blocks_done_on_failure() {
+    // Expected shape:
+    //     - Construct a ValidationOrchestrator with a gate that always fails.
+    //     - Inject it into the Orchestrator/ExecutionController.
+    //     - Run the full cycle.
+    //     - Assert the task ended in TaskState::Failed with the validation
+    //       error surfaced in the task checkpoint / event log.
+    //
+    // This test must fail loudly if the execution controller silently
+    // short-circuits validation or uses its internal default pipeline
+    // instead of the injected ValidationOrchestrator.
+    todo!("validation orchestrator wiring not yet implemented")
+}
+
+// -----------------------------------------------------------------------------
+// Tier 1.4 — WorktreePool allocated per task, CommitStrategy runs on success.
+// Blocker: plan/audit-2026-04-16/04_tier1_blockers.md §1.4
+// -----------------------------------------------------------------------------
+
+/// WIRING INVARIANT: each task runs in an isolated worktree under
+/// `<workspace>/.swell/worktrees/`, not in the workspace root.
+#[tokio::test]
+#[ignore = "Blocked by Tier 1.4 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+async fn wiring_task_runs_in_allocated_worktree() {
+    // Expected shape:
+    //     - tempdir as workspace root with a git-initialized repo.
+    //     - Start daemon pointing at that workspace.
+    //     - Submit a scripted task that writes `src/foo.rs`.
+    //     - Assert the file exists under the allocated worktree path, NOT
+    //       under the workspace root, until the commit lands.
+    //     - Assert the worktree path begins with `<workspace>/.swell/worktrees/`.
+    todo!("WorktreePool allocation not yet wired into execution controller")
+}
+
+/// WIRING INVARIANT: on successful validation, CommitStrategy produces a
+/// branch `swell/<task-id>` with a commit whose trailers contain
+/// `Task-Id: <task-id>`.
+#[tokio::test]
+#[ignore = "Blocked by Tier 1.4 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+async fn wiring_success_produces_branch_and_commit_trailer() {
+    // Expected shape:
+    //     - Run a task to successful Done.
+    //     - Inspect git: `git branch --list swell/<task-id>` must match one line.
+    //     - Inspect commit: `git log -1 swell/<task-id>` must contain
+    //       `Task-Id: <task-id>` in the message body.
+    //     - If the trailer is missing, CommitStrategy was bypassed.
+    todo!("CommitStrategy not yet wired into execution controller post-validation")
+}
+
+// -----------------------------------------------------------------------------
+// Tier 1.5 — PostToolHookManager installed on production ToolExecutor.
+// Blocker: plan/audit-2026-04-16/04_tier1_blockers.md §1.5
+// -----------------------------------------------------------------------------
+
+/// WIRING INVARIANT: the production `ToolExecutor` has a hook manager
+/// installed. Verified by counting invocations of a test hook plugged in
+/// via a dedicated test-only accessor.
+#[tokio::test]
+#[ignore = "Blocked by Tier 1.5 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+async fn wiring_post_tool_hooks_fire_during_execution() {
+    // Expected shape:
+    //     - Install a TestPostHook whose count is observable.
+    //     - Run a task that makes at least one tool call.
+    //     - Assert the counter > 0.
+    //
+    // If the counter is 0, either hooks aren't installed or the executor
+    // used during execution is a different instance than the one we
+    // installed the hook on.
+    todo!("PostToolHookManager not yet installed on production executor")
+}
+
+// -----------------------------------------------------------------------------
+// NEGATIVE INVARIANT — pipeline must stop, not silently skip stages.
+// -----------------------------------------------------------------------------
+
+/// WIRING INVARIANT: a scripted pre-tool denial causes the task to end in
+/// `Failed` with the denial visible in the transcript. A silent success here
+/// would mean the permission layer is bypassed.
+///
+/// Requires Tier 2.1 pre-tool hooks — remains ignored until then.
+#[tokio::test]
+#[ignore = "Blocked by Tier 2.2 (pre-tool hooks) — see plan/audit-2026-04-16/05_tier2_reliability.md"]
+async fn wiring_pre_tool_denial_fails_task_not_done() {
+    todo!("pre-tool hooks not yet implemented")
+}
+
+// -----------------------------------------------------------------------------
+// Tier 2 previews — these are not Tier 1 blockers but kept here as stubs so
+// the swarm sees them coming. Each stays #[ignore] until its Tier 2 item ships.
+// -----------------------------------------------------------------------------
+
+/// WIRING INVARIANT: a task exceeding its token budget transitions to
+/// `Paused` with `FailureClass::BudgetExceeded`.
+#[tokio::test]
+#[ignore = "Blocked by Tier 2.4 — see plan/audit-2026-04-16/05_tier2_reliability.md"]
+async fn wiring_cost_guard_pauses_at_budget_limit() {
+    todo!("CostGuard enforcement not yet implemented")
+}
+
+/// WIRING INVARIANT: the turn loop emits a `TurnSummary` event per agent
+/// iteration with 4D token usage populated.
+#[tokio::test]
+#[ignore = "Blocked by Tier 2.2 + 2.3 — see plan/audit-2026-04-16/05_tier2_reliability.md"]
+async fn wiring_turn_summary_events_emitted_per_iteration() {
+    todo!("TurnSummary event emission not yet implemented")
+}
+
+// -----------------------------------------------------------------------------
+// Today's-state witnesses — these ALWAYS RUN and serve as tripwires.
+//
+// Unlike the ignored tests above, these assert the *current* broken state.
+// They exist so the swarm agent cannot silently fix a wiring hole and forget
+// to un-ignore the corresponding invariant above.
+//
+// When a swarm agent completes Tier 1.X, these witnesses will FAIL, which
+// is the signal to also un-ignore the matching invariant test above.
+//
+// Think of them as the inverse of the invariants. Once the invariants go
+// green, the witnesses must be deleted in the same PR.
+// -----------------------------------------------------------------------------
+
+/// CURRENT-STATE WITNESS: `swell-daemon/Cargo.toml` does not depend on
+/// `swell-llm`. Passes today. Must fail once Tier 1.1 lands.
+///
+/// Yes, this is an unusual test shape. Its job is to force the swarm to
+/// touch the invariant test above when they wire in the LLM crate.
+#[test]
+fn witness_daemon_does_not_depend_on_swell_llm() {
+    let manifest = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../swell-daemon/Cargo.toml"
+    ))
+    .expect("swell-daemon/Cargo.toml must be readable");
+
+    let has_llm_dep =
+        manifest.contains("swell-llm") || manifest.contains(r#"swell_llm"#);
+
+    // Deliberately inverted: if this fails, congratulations — Tier 1.1 is
+    // done, now go un-ignore `wiring_daemon_holds_llm_backend` and delete
+    // this witness in the same PR.
+    assert!(
+        !has_llm_dep,
+        "swell-daemon now depends on swell-llm — DELETE THIS WITNESS and \
+         un-ignore `wiring_daemon_holds_llm_backend` in the same PR. \
+         See plan/audit-2026-04-16/04_tier1_blockers.md §1.1."
+    );
+}
+
+/// CURRENT-STATE WITNESS: `swell-orchestrator/src/lib.rs` does not reference
+/// `ExecutionController` inside the `Orchestrator` struct. Passes today.
+/// Must fail once Tier 1.2 lands.
+#[test]
+fn witness_orchestrator_does_not_hold_execution_controller() {
+    let lib = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../swell-orchestrator/src/lib.rs"
+    ))
+    .expect("swell-orchestrator/src/lib.rs must be readable");
+
+    // The struct declaration `pub struct Orchestrator { ... }` must NOT
+    // contain a field of type `ExecutionController` or `Arc<ExecutionController>`.
+    // This is a crude scan but sufficient — any mention of the type name
+    // inside the struct body is enough signal.
+    let struct_start = lib
+        .find("pub struct Orchestrator {")
+        .expect("Orchestrator struct must exist in swell-orchestrator/src/lib.rs");
+    let after_struct = &lib[struct_start..];
+    let struct_end = after_struct.find("\n}").unwrap_or(after_struct.len());
+    let struct_body = &after_struct[..struct_end];
+
+    let has_controller = struct_body.contains("ExecutionController");
+
+    assert!(
+        !has_controller,
+        "Orchestrator struct now holds an ExecutionController field — \
+         DELETE THIS WITNESS and un-ignore `wiring_orchestrator_holds_execution_controller` \
+         in the same PR. See plan/audit-2026-04-16/04_tier1_blockers.md §1.2."
+    );
+}

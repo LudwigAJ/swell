@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use swell_core::{
-    get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, DataResponse,
-    FailureClass, TaskState,
+    get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, DataResponse, FailureClass,
+    TaskState,
 };
 use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
@@ -809,7 +809,12 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // First create a task
-        let task = orch.lock().await.create_task("Test task".to_string(), Vec::new()).await.unwrap();
+        let task = orch
+            .lock()
+            .await
+            .create_task("Test task".to_string(), Vec::new())
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orch.lock().await.set_plan(task.id, plan).await.unwrap();
 
@@ -880,7 +885,12 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create a task and set it up for rejection
-        let task = orch.lock().await.create_task("Test task".to_string(), Vec::new()).await.unwrap();
+        let task = orch
+            .lock()
+            .await
+            .create_task("Test task".to_string(), Vec::new())
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orch.lock().await.set_plan(task.id, plan).await.unwrap();
 
@@ -946,7 +956,12 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create a task
-        let task = orch.lock().await.create_task("Test task".to_string(), Vec::new()).await.unwrap();
+        let task = orch
+            .lock()
+            .await
+            .create_task("Test task".to_string(), Vec::new())
+            .await
+            .unwrap();
         let command = CliCommand::TaskCancel { task_id: task.id };
 
         let event = handle_command(
@@ -1005,9 +1020,21 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create some tasks
-        let _ = orch.lock().await.create_task("Task 1".to_string(), Vec::new()).await;
-        let _ = orch.lock().await.create_task("Task 2".to_string(), Vec::new()).await;
-        let _ = orch.lock().await.create_task("Task 3".to_string(), Vec::new()).await;
+        let _ = orch
+            .lock()
+            .await
+            .create_task("Task 1".to_string(), Vec::new())
+            .await;
+        let _ = orch
+            .lock()
+            .await
+            .create_task("Task 2".to_string(), Vec::new())
+            .await;
+        let _ = orch
+            .lock()
+            .await
+            .create_task("Task 3".to_string(), Vec::new())
+            .await;
 
         let command = CliCommand::TaskList;
         let event = handle_command(
@@ -1066,7 +1093,12 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create a task (starts in Created state)
-        let task = orch.lock().await.create_task("Test task".to_string(), Vec::new()).await.unwrap();
+        let task = orch
+            .lock()
+            .await
+            .create_task("Test task".to_string(), Vec::new())
+            .await
+            .unwrap();
         let command = CliCommand::TaskWatch { task_id: task.id };
 
         let event = handle_command(
@@ -1095,7 +1127,12 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create a task
-        let task = orch.lock().await.create_task("Test task".to_string(), Vec::new()).await.unwrap();
+        let task = orch
+            .lock()
+            .await
+            .create_task("Test task".to_string(), Vec::new())
+            .await
+            .unwrap();
         let plan = create_test_plan(task.id);
         orch.lock().await.set_plan(task.id, plan).await.unwrap();
 
@@ -1515,7 +1552,12 @@ mod tests {
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
 
-        let task = orch.lock().await.create_task("Test task".to_string(), Vec::new()).await.unwrap();
+        let task = orch
+            .lock()
+            .await
+            .create_task("Test task".to_string(), Vec::new())
+            .await
+            .unwrap();
         let command = CliCommand::TaskPause {
             task_id: task.id,
             reason: "Operator requested".to_string(),
@@ -2112,8 +2154,16 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create some tasks
-        let _ = orch.lock().await.create_task("Task 1".to_string(), Vec::new()).await;
-        let _ = orch.lock().await.create_task("Task 2".to_string(), Vec::new()).await;
+        let _ = orch
+            .lock()
+            .await
+            .create_task("Task 1".to_string(), Vec::new())
+            .await;
+        let _ = orch
+            .lock()
+            .await
+            .create_task("Task 2".to_string(), Vec::new())
+            .await;
 
         let command = CliCommand::DaemonStatus;
         let event = handle_command(
@@ -2200,8 +2250,16 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create tasks - they start in Created state
-        let task1 = orch.lock().await.create_task("Task 1".to_string(), Vec::new()).await.unwrap();
-        orch.lock().await.create_task("Task 2".to_string(), Vec::new()).await;
+        let task1 = orch
+            .lock()
+            .await
+            .create_task("Task 1".to_string(), Vec::new())
+            .await
+            .unwrap();
+        orch.lock()
+            .await
+            .create_task("Task 2".to_string(), Vec::new())
+            .await;
 
         // Transition task1 to Enriched state
         {

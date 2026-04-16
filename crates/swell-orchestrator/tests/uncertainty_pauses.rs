@@ -163,12 +163,18 @@ async fn test_clarification_event_contains_reason_context_and_options() {
         "clarification event must include suggested options"
     );
     assert!(
-        event.suggested_options.iter().any(|o| o.option_id == "continue"),
+        event
+            .suggested_options
+            .iter()
+            .any(|o| o.option_id == "continue"),
         "standard 'continue' option must be present"
     );
     // Generator-specific option
     assert!(
-        event.suggested_options.iter().any(|o| o.option_id == "simplify_scope"),
+        event
+            .suggested_options
+            .iter()
+            .any(|o| o.option_id == "simplify_scope"),
         "Generator-specific 'simplify_scope' option must be present"
     );
 
@@ -196,10 +202,7 @@ async fn test_agent_state_transitions_to_paused_on_low_confidence() {
         TaskState::Paused,
         "task must transition to Paused when confidence drops below threshold"
     );
-    assert!(
-        task.paused_reason.is_some(),
-        "paused_reason must be set"
-    );
+    assert!(task.paused_reason.is_some(), "paused_reason must be set");
     assert!(
         task.paused_reason.unwrap().contains("confidence score"),
         "paused_reason must include the confidence score context"
@@ -283,7 +286,9 @@ async fn test_execution_does_not_resume_until_clarification_injected() {
     // The foreground blocks here until the response is injected (max 5 s)
     let start = std::time::Instant::now();
     let response = manager
-        .wait_for_response(request_id, 5, 0 /* poll every ~0 s (actually minimal sleep) */)
+        .wait_for_response(
+            request_id, 5, 0, /* poll every ~0 s (actually minimal sleep) */
+        )
         .await;
 
     let elapsed = start.elapsed();
@@ -393,9 +398,7 @@ async fn test_full_uncertainty_pause_and_resume_flow() {
     });
 
     // 7. Wait for the response (blocks until injected, max 5 s)
-    let maybe_response = manager
-        .wait_for_response(request_id, 5, 0)
-        .await;
+    let maybe_response = manager.wait_for_response(request_id, 5, 0).await;
     assert!(
         maybe_response.is_some(),
         "step 7: clarification response must be received"

@@ -482,7 +482,10 @@ mod tests {
         assert!(!result.is_novel);
         assert_eq!(result.max_similarity, 0.95);
         assert_eq!(result.most_similar_iteration, Some(2));
-        assert_eq!(result.forced_action, Some(ForcedStrategyChange::SwitchModel));
+        assert_eq!(
+            result.forced_action,
+            Some(ForcedStrategyChange::SwitchModel)
+        );
         assert!(result.reason.is_some());
     }
 
@@ -505,8 +508,14 @@ mod tests {
     #[test]
     fn test_prior_attempt_diffs_with_data() {
         let diffs = PriorAttemptDiffs::new(vec![
-            (1, "--- a/foo.rs\n+++ a/foo.rs\n@@ -1,3 +1,4 @@\n+new line".to_string()),
-            (2, "--- a/bar.rs\n+++ a/bar.rs\n@@ -1,2 +1,3 @@\n+another".to_string()),
+            (
+                1,
+                "--- a/foo.rs\n+++ a/foo.rs\n@@ -1,3 +1,4 @@\n+new line".to_string(),
+            ),
+            (
+                2,
+                "--- a/bar.rs\n+++ a/bar.rs\n@@ -1,2 +1,3 @@\n+another".to_string(),
+            ),
         ]);
 
         assert!(!diffs.is_empty());
@@ -532,10 +541,7 @@ mod tests {
     fn test_detector_no_prior_diffs() {
         let detector = NonNovelRetryDetector::new();
 
-        let result = detector.check(
-            "new diff content",
-            &PriorAttemptDiffs::new(vec![]),
-        );
+        let result = detector.check("new diff content", &PriorAttemptDiffs::new(vec![]));
 
         assert!(result.is_novel);
     }
@@ -654,24 +660,33 @@ mod tests {
 "#;
 
         let prior_diffs = PriorAttemptDiffs::new(vec![
-            (1, r#"--- a/other.rs
+            (
+                1,
+                r#"--- a/other.rs
 +++ a/other.rs
 @@ -1,2 +1,3 @@
 +fn different() {}
 "#
-            .to_string()),
-            (2, r#"--- a/target.rs
+                .to_string(),
+            ),
+            (
+                2,
+                r#"--- a/target.rs
 +++ a/target.rs
 @@ -1,2 +1,3 @@
 +fn almost_same() {}
 "#
-            .to_string()),
-            (3, r#"--- a/target.rs
+                .to_string(),
+            ),
+            (
+                3,
+                r#"--- a/target.rs
 +++ a/target.rs
 @@ -1,2 +1,3 @@
 +fn target() {}
 "#
-            .to_string()),
+                .to_string(),
+            ),
         ]);
 
         let result = detector.check(new_diff, &prior_diffs);
@@ -713,10 +728,8 @@ mod tests {
         assert_eq!(sim_equal, 1.0);
 
         // One is twice as long
-        let sim_twice = detector.length_similarity(
-            &["a".to_string(), "b".to_string()],
-            &["a".to_string()],
-        );
+        let sim_twice =
+            detector.length_similarity(&["a".to_string(), "b".to_string()], &["a".to_string()]);
         assert_eq!(sim_twice, 0.5);
 
         // One is 10x as long
@@ -762,7 +775,10 @@ mod tests {
 
     #[test]
     fn test_forced_strategy_change_display() {
-        assert_eq!(format!("{}", ForcedStrategyChange::SwitchModel), "SwitchModel");
+        assert_eq!(
+            format!("{}", ForcedStrategyChange::SwitchModel),
+            "SwitchModel"
+        );
         assert_eq!(
             format!("{}", ForcedStrategyChange::ChangeApproach),
             "ChangeApproach"

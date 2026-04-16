@@ -1831,7 +1831,10 @@ mod gherkin_criterion_tests {
         let spec = "Given a user is logged in When they attempt to access protected resource Then they should be granted access";
 
         let criteria = parser.parse(spec);
-        assert!(!criteria.is_empty(), "Should parse Given/When/Then criterion");
+        assert!(
+            !criteria.is_empty(),
+            "Should parse Given/When/Then criterion"
+        );
 
         let criterion = &criteria[0];
         assert!(
@@ -1848,7 +1851,12 @@ mod gherkin_criterion_tests {
             format.given.len(),
             format.given
         );
-        assert_eq!(format.when.len(), 1, "Should have exactly one When clause, got {:?}", format.when);
+        assert_eq!(
+            format.when.len(),
+            1,
+            "Should have exactly one When clause, got {:?}",
+            format.when
+        );
         assert_eq!(format.then.len(), 1, "Should have exactly one Then clause");
     }
 
@@ -1862,7 +1870,12 @@ mod gherkin_criterion_tests {
 
         let criterion = &criteria[0];
         let format = criterion.format.as_ref().unwrap();
-        assert_eq!(format.given.len(), 3, "Should have 3 Given clauses (2 AND), got: {:?}", format.given);
+        assert_eq!(
+            format.given.len(),
+            3,
+            "Should have 3 Given clauses (2 AND), got: {:?}",
+            format.given
+        );
         assert_eq!(format.when.len(), 1);
         assert_eq!(format.then.len(), 1);
     }
@@ -1879,7 +1892,12 @@ mod gherkin_criterion_tests {
         let format = criterion.format.as_ref().unwrap();
         assert_eq!(format.given.len(), 1);
         assert_eq!(format.when.len(), 1);
-        assert_eq!(format.then.len(), 3, "Should have 3 Then clauses (2 AND), got: {:?}", format.then);
+        assert_eq!(
+            format.then.len(),
+            3,
+            "Should have 3 Then clauses (2 AND), got: {:?}",
+            format.then
+        );
     }
 
     #[test]

@@ -15,7 +15,10 @@
 use async_trait::async_trait;
 use std::process::Command;
 use std::time::Instant;
-use swell_core::{SwellError, ValidationContext, ValidationGate, ValidationLevel, ValidationMessage, ValidationOutcome};
+use swell_core::{
+    SwellError, ValidationContext, ValidationGate, ValidationLevel, ValidationMessage,
+    ValidationOutcome,
+};
 use tokio::task;
 
 /// Configuration for the mutation test gate
@@ -91,9 +94,11 @@ pub struct SurvivingMutant {
 impl MutationTestConfig {
     /// Check if a file path matches any critical path pattern
     pub fn is_critical_path(&self, file_path: &str) -> bool {
-        self.critical_path_patterns
-            .iter()
-            .any(|p| glob::Pattern::new(p).map(|pat| pat.matches(file_path)).unwrap_or(false))
+        self.critical_path_patterns.iter().any(|p| {
+            glob::Pattern::new(p)
+                .map(|pat| pat.matches(file_path))
+                .unwrap_or(false)
+        })
     }
 }
 
@@ -127,11 +132,11 @@ impl MutationTestGate {
     ) -> Result<MutationTestResult, SwellError> {
         let workspace_path = workspace_path.to_string();
 
-        task::spawn_blocking(move || {
-            Self::run_mutation_test_sync(&workspace_path)
-        })
-        .await
-        .map_err(|e| SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e))))?
+        task::spawn_blocking(move || Self::run_mutation_test_sync(&workspace_path))
+            .await
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!("Task join error: {}", e)))
+            })?
     }
 
     /// Synchronous version of mutation test runner
@@ -151,24 +156,37 @@ impl MutationTestGate {
 
                 // Check if cargo mutants ran successfully
                 if output.status.success() || stdout.contains("mutants tested") {
-                    return Self::parse_mutation_output(&stdout, &stderr, start.elapsed().as_millis() as u64);
+                    return Self::parse_mutation_output(
+                        &stdout,
+                        &stderr,
+                        start.elapsed().as_millis() as u64,
+                    );
                 }
 
                 // If exit code is 2, mutants were found - still parse output
                 if output.status.code() == Some(2) {
-                    return Self::parse_mutation_output(&stdout, &stderr, start.elapsed().as_millis() as u64);
+                    return Self::parse_mutation_output(
+                        &stdout,
+                        &stderr,
+                        start.elapsed().as_millis() as u64,
+                    );
                 }
 
                 // Check if cargo-mutants is not found
                 if stderr.contains("not found") || stdout.contains("not found") {
                     return Err(SwellError::ConfigError(
-                        "cargo-mutants not found. Install with: cargo install cargo-mutants".to_string(),
+                        "cargo-mutants not found. Install with: cargo install cargo-mutants"
+                            .to_string(),
                     ));
                 }
 
                 // Try to parse anyway (might have partial output)
                 if !stdout.is_empty() || !stderr.is_empty() {
-                    return Self::parse_mutation_output(&stdout, &stderr, start.elapsed().as_millis() as u64);
+                    return Self::parse_mutation_output(
+                        &stdout,
+                        &stderr,
+                        start.elapsed().as_millis() as u64,
+                    );
                 }
 
                 Err(SwellError::IoError(std::io::Error::other(format!(
@@ -180,7 +198,8 @@ impl MutationTestGate {
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     return Err(SwellError::ConfigError(
-                        "cargo-mutants not found. Install with: cargo install cargo-mutants".to_string(),
+                        "cargo-mutants not found. Install with: cargo install cargo-mutants"
+                            .to_string(),
                     ));
                 }
                 Err(SwellError::IoError(e))
@@ -204,26 +223,34 @@ impl MutationTestGate {
     }
 
     /// Parse JSON output from cargo-mutants
-    fn parse_json_output(json_str: &str, duration_ms: u64) -> Result<MutationTestResult, SwellError> {
-        let json: serde_json::Value = serde_json::from_str(json_str)
-            .map_err(|e| SwellError::IoError(std::io::Error::other(format!("JSON parse error: {}", e))))?;
+    fn parse_json_output(
+        json_str: &str,
+        duration_ms: u64,
+    ) -> Result<MutationTestResult, SwellError> {
+        let json: serde_json::Value = serde_json::from_str(json_str).map_err(|e| {
+            SwellError::IoError(std::io::Error::other(format!("JSON parse error: {}", e)))
+        })?;
 
-        let total = json.get("total")
+        let total = json
+            .get("total")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize)
             .unwrap_or(0);
 
-        let killed = json.get("caught")
+        let killed = json
+            .get("caught")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize)
             .unwrap_or(0);
 
-        let survived = json.get("missed")
+        let survived = json
+            .get("missed")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize)
             .unwrap_or(0);
 
-        let unviable = json.get("unviable")
+        let unviable = json
+            .get("unviable")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize)
             .unwrap_or(0);
@@ -233,21 +260,25 @@ impl MutationTestGate {
         if let Some(mutations) = json.get("mutations").and_then(|v| v.as_array()) {
             for m in mutations {
                 if m.get("outcome").and_then(|v| v.as_str()) == Some("missed") {
-                    let file = m.get("file")
+                    let file = m
+                        .get("file")
                         .or_else(|| m.get("src_file"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown")
                         .to_string();
-                    let line = m.get("line")
+                    let line = m
+                        .get("line")
                         .and_then(|v| v.as_u64())
                         .map(|v| v as u32)
                         .unwrap_or(0);
-                    let mutation_type = m.get("mut_type")
+                    let mutation_type = m
+                        .get("mut_type")
                         .or_else(|| m.get("mutation_type"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown")
                         .to_string();
-                    let description = m.get("description")
+                    let description = m
+                        .get("description")
                         .or_else(|| m.get("mutated_function"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("no description")
@@ -282,7 +313,11 @@ impl MutationTestGate {
     }
 
     /// Parse text output from cargo-mutants
-    fn parse_text_output(stdout: &str, stderr: &str, duration_ms: u64) -> Result<MutationTestResult, SwellError> {
+    fn parse_text_output(
+        stdout: &str,
+        stderr: &str,
+        duration_ms: u64,
+    ) -> Result<MutationTestResult, SwellError> {
         let mut total = 0usize;
         let mut killed = 0usize;
         let mut survived = 0usize;
@@ -302,8 +337,10 @@ impl MutationTestGate {
             }
 
             // Check if this is a continuation of the previous mutant line
-            let has_file_path = line.starts_with("src/") || line.starts_with("lib/")
-                || line.starts_with("crates/") || line.starts_with('/');
+            let has_file_path = line.starts_with("src/")
+                || line.starts_with("lib/")
+                || line.starts_with("crates/")
+                || line.starts_with('/');
             let has_not_caught = line.contains("NOT CAUGHT") || line.contains("not caught");
 
             // If we have a pending line being built
@@ -432,10 +469,20 @@ impl MutationTestGate {
                 let end = after_replace.find("...").unwrap_or(after_replace.len());
                 after_replace[..end].trim().to_string()
             } else {
-                full_line.split("...").next().unwrap_or(&full_line).trim().to_string()
+                full_line
+                    .split("...")
+                    .next()
+                    .unwrap_or(&full_line)
+                    .trim()
+                    .to_string()
             }
         } else {
-            full_line.split("...").next().unwrap_or(&full_line).trim().to_string()
+            full_line
+                .split("...")
+                .next()
+                .unwrap_or(&full_line)
+                .trim()
+                .to_string()
         };
 
         // Determine mutation type from description
@@ -453,15 +500,37 @@ impl MutationTestGate {
     /// Classify the mutation type from the description
     fn classify_mutation_type(description: &str) -> String {
         let desc_lower = description.to_lowercase();
-        if desc_lower.contains("relational") || desc_lower.contains("<") || desc_lower.contains(">") || desc_lower.contains("<=") || desc_lower.contains(">=") {
+        if desc_lower.contains("relational")
+            || desc_lower.contains("<")
+            || desc_lower.contains(">")
+            || desc_lower.contains("<=")
+            || desc_lower.contains(">=")
+        {
             "relational_flip".to_string()
-        } else if desc_lower.contains("arithmetic") || desc_lower.contains("+") || desc_lower.contains("-") || desc_lower.contains("*") || desc_lower.contains("/") {
+        } else if desc_lower.contains("arithmetic")
+            || desc_lower.contains("+")
+            || desc_lower.contains("-")
+            || desc_lower.contains("*")
+            || desc_lower.contains("/")
+        {
             "arithmetic_change".to_string()
-        } else if desc_lower.contains("conditional") || desc_lower.contains("if") || desc_lower.contains("else") {
+        } else if desc_lower.contains("conditional")
+            || desc_lower.contains("if")
+            || desc_lower.contains("else")
+        {
             "conditional_complement".to_string()
-        } else if desc_lower.contains("return") || desc_lower.contains("->") || desc_lower.contains("ok(") || desc_lower.contains("err(") {
+        } else if desc_lower.contains("return")
+            || desc_lower.contains("->")
+            || desc_lower.contains("ok(")
+            || desc_lower.contains("err(")
+        {
             "return_value_change".to_string()
-        } else if desc_lower.contains("default") || desc_lower.contains("unwrap") || desc_lower.contains("expect") || desc_lower.contains("none") || desc_lower.contains("some(") {
+        } else if desc_lower.contains("default")
+            || desc_lower.contains("unwrap")
+            || desc_lower.contains("expect")
+            || desc_lower.contains("none")
+            || desc_lower.contains("some(")
+        {
             "default_value".to_string()
         } else if desc_lower.contains("dead") || desc_lower.contains("unreachable") {
             "dead_code".to_string()
@@ -471,10 +540,7 @@ impl MutationTestGate {
     }
 
     /// Convert results to validation messages
-    fn results_to_messages(
-        &self,
-        result: &MutationTestResult,
-    ) -> Vec<ValidationMessage> {
+    fn results_to_messages(&self, result: &MutationTestResult) -> Vec<ValidationMessage> {
         let mut messages = Vec::new();
         let config = &self.config;
 
@@ -532,7 +598,12 @@ impl MutationTestGate {
 
         if !result.surviving_mutations.is_empty() {
             let mut mutant_list = Vec::new();
-            for (i, m) in result.surviving_mutations.iter().take(surviving_limit).enumerate() {
+            for (i, m) in result
+                .surviving_mutations
+                .iter()
+                .take(surviving_limit)
+                .enumerate()
+            {
                 let critical_tag = if m.is_critical { " [CRITICAL]" } else { "" };
                 mutant_list.push(format!(
                     "  {}. {}:{} - {}{}",
@@ -552,7 +623,8 @@ impl MutationTestGate {
             }
 
             messages.push(ValidationMessage {
-                level: if has_critical_mutants && result.score < config.min_mutation_score_critical {
+                level: if has_critical_mutants && result.score < config.min_mutation_score_critical
+                {
                     ValidationLevel::Error
                 } else {
                     ValidationLevel::Warning
@@ -614,7 +686,8 @@ impl ValidationGate for MutationTestGate {
         if !Self::is_available() {
             if self.config.fail_if_unavailable {
                 return Err(SwellError::ConfigError(
-                    "cargo-mutants is not installed. Install with: cargo install cargo-mutants".to_string(),
+                    "cargo-mutants is not installed. Install with: cargo install cargo-mutants"
+                        .to_string(),
                 ));
             }
 

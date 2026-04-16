@@ -1333,7 +1333,10 @@ impl AutonomousCoverageLoop {
     }
 
     /// Create with custom engine and loop configuration
-    pub fn with_config(engine: AutonomousCoverageEngine, config: AutonomousCoverageLoopConfig) -> Self {
+    pub fn with_config(
+        engine: AutonomousCoverageEngine,
+        config: AutonomousCoverageLoopConfig,
+    ) -> Self {
         Self { engine, config }
     }
 
@@ -1378,7 +1381,10 @@ impl AutonomousCoverageLoop {
             let initial_report = current_report.clone();
 
             // Generate tests for current gaps
-            let generated_tests = self.engine.generate_tests_for_gaps(&current_report.gaps).await?;
+            let generated_tests = self
+                .engine
+                .generate_tests_for_gaps(&current_report.gaps)
+                .await?;
             total_tests_generated += generated_tests.len();
 
             // Write tests to files if configured
@@ -1400,7 +1406,10 @@ impl AutonomousCoverageLoop {
 
             // Small delay between iterations
             if self.config.iteration_delay_ms > 0 {
-                tokio::time::sleep(tokio::time::Duration::from_millis(self.config.iteration_delay_ms)).await;
+                tokio::time::sleep(tokio::time::Duration::from_millis(
+                    self.config.iteration_delay_ms,
+                ))
+                .await;
             }
 
             // Re-analyze coverage after running tests
@@ -1478,18 +1487,17 @@ impl AutonomousCoverageLoop {
         }
 
         // Write the test file
-        tokio::fs::write(&target_path, &test.code).await.map_err(|e| {
-            SwellError::IoError(std::io::Error::other(format!(
-                "Failed to write test file {}: {}",
-                target_path.display(),
-                e
-            )))
-        })?;
+        tokio::fs::write(&target_path, &test.code)
+            .await
+            .map_err(|e| {
+                SwellError::IoError(std::io::Error::other(format!(
+                    "Failed to write test file {}: {}",
+                    target_path.display(),
+                    e
+                )))
+            })?;
 
-        tracing::info!(
-            "Written generated test to {}",
-            target_path.display()
-        );
+        tracing::info!("Written generated test to {}", target_path.display());
 
         Ok(())
     }
@@ -1504,10 +1512,7 @@ impl AutonomousCoverageLoop {
             .output()
             .await
             .map_err(|e| {
-                SwellError::IoError(std::io::Error::other(format!(
-                    "Failed to run tests: {}",
-                    e
-                )))
+                SwellError::IoError(std::io::Error::other(format!("Failed to run tests: {}", e)))
             })?;
 
         Ok(output.status.success())
@@ -2444,7 +2449,7 @@ mod autonomous_coverage_tests {
             }),
             should_continue: false,
             termination_reason: Some(
-                "Improvement (0.50%) at or below threshold (1.00%)".to_string()
+                "Improvement (0.50%) at or below threshold (1.00%)".to_string(),
             ),
         };
 
@@ -2470,12 +2475,12 @@ mod autonomous_coverage_tests {
         let config = AutonomousCoverageConfig {
             thresholds: CoverageThresholds {
                 min_mutation_score: 0.0, // Don't require mutation score
-                min_line_coverage: 1.0, // Unrealistic to force iterations
+                min_line_coverage: 1.0,  // Unrealistic to force iterations
                 min_branch_coverage: 1.0,
                 min_function_coverage: 1.0,
             },
             enable_mutation_testing: false, // Speed up test
-            enable_static_analysis: true, // Find actual gaps
+            enable_static_analysis: true,   // Find actual gaps
             auto_generate_tests: true,
             max_tests_per_gap: 3,
         };
@@ -2547,7 +2552,10 @@ mod autonomous_coverage_tests {
                 severity: GapSeverity::High,
                 gap_type: GapType::MissingBranch,
                 description: "Branch condition not fully tested".to_string(),
-                suggested_patterns: vec!["test_branch_true".to_string(), "test_branch_false".to_string()],
+                suggested_patterns: vec![
+                    "test_branch_true".to_string(),
+                    "test_branch_false".to_string(),
+                ],
                 risk_score: 0.7,
             },
             CoverageGap {
@@ -2604,9 +2612,18 @@ mod autonomous_coverage_tests {
             .collect();
 
         // Each gap should have generated tests
-        assert!(!fn_tests.is_empty(), "Should generate tests for untested function");
-        assert!(!branch_tests.is_empty(), "Should generate tests for missing branch");
-        assert!(!edge_tests.is_empty(), "Should generate tests for edge case");
+        assert!(
+            !fn_tests.is_empty(),
+            "Should generate tests for untested function"
+        );
+        assert!(
+            !branch_tests.is_empty(),
+            "Should generate tests for missing branch"
+        );
+        assert!(
+            !edge_tests.is_empty(),
+            "Should generate tests for edge case"
+        );
 
         // Branch tests should include branch-specific patterns
         let branch_code = branch_tests.first().map(|t| t.code.as_str()).unwrap_or("");

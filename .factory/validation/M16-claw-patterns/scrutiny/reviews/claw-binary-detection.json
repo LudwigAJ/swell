@@ -1,0 +1,22 @@
+{
+  "featureId": "claw-binary-detection",
+  "reviewedAt": "2026-04-16T13:35:00Z",
+  "commitId": "3964ff65d6b354bdf5a47b15b4ad9a8cbd7cb806",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation correctly adds binary file detection to ReadFileTool with allow_binary opt-in flag for base64-encoded reads. Binary write rejection is handled via file_guardrails module. All 6 expected behaviors are covered by tests.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "pattern": "ReadFileTool::new().with_allow_binary(true) builder pattern exists but execute() always uses args.allow_binary from JSON input, making the builder method effectively unused at runtime",
+      "evidence": "tools.rs:27 - allow_binary field exists, with_allow_binary() setter exists (line 46-50), but execute() uses args.allow_binary (line 180) which defaults to false from serde",
+      "suggestedAction": "Either remove the unused builder method or document that it only affects the JSON schema default value, not runtime behavior"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation passes review. Binary detection is correctly implemented using detect_binary_content() which checks first 8192 bytes for null bytes and magic bytes (ELF, PNG, JPEG, PDF, ZIP + 30+ additional formats). Binary files are rejected by default with clear error messages, and allowed with allow_binary=true returning base64-encoded content. Tests verify all expected behaviors. Binary write rejection is properly handled via file_guardrails module."
+}

@@ -7,6 +7,23 @@ edition.workspace = true
 name = "prompt_integration_tests"
 path = "tests/prompt_integration_tests.rs"
 
+# Full-cycle wiring guardrail tests.
+#
+# See plan/audit-2026-04-16/07_integration_test_strategy.md and the module
+# docs at tests/full_cycle_wiring.rs. These tests protect against Swell's
+# recurring failure mode of "feature built but never connected to the
+# daemon." They include:
+#
+#   1. Ignored `wiring_*` tests that become the acceptance criteria for
+#      each Tier 1 blocker in plan/audit-2026-04-16/04_tier1_blockers.md.
+#   2. Active `witness_*` tests that assert the CURRENT broken state so
+#      that un-ignoring the invariant cannot be forgotten.
+#
+# DO NOT delete this test binary. If an API changes, update the tests.
+[[test]]
+name = "full_cycle_wiring"
+path = "tests/full_cycle_wiring.rs"
+
 [dependencies]
 swell-core = { path = "../swell-core" }
 swell-llm = { path = "../swell-llm" }

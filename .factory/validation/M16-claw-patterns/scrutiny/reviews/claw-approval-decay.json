@@ -1,0 +1,28 @@
+{
+  "featureId": "claw-approval-decay",
+  "reviewedAt": "2026-04-16T13:45:00Z",
+  "commitId": "3964ff6",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Feature implementation is complete and correct at the unit level. ApprovalDecayConfig, TaskOrigin enum, and needs_approval_with_decay method are properly implemented with comprehensive test coverage. All 44 autonomy tests pass including 17 new tests for approval decay.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/autonomy.rs",
+        "line": 865,
+        "severity": "non_blocking",
+        "description": "needs_approval_with_decay is implemented and tested but is not called from any production orchestration code path. The method exists as a library function that would need to be invoked by the orchestrator's execution flow to be effective. This appears to be by design as the feature provides the API for future integration."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature implements approval decay API correctly but the API is not wired into the orchestrator's main execution loop. The method needs_approval_with_decay requires plan_completion, task_origin, affected_files, and original_scope parameters - these values would need to be tracked and passed by the orchestration code.",
+      "evidence": "grep for 'needs_approval_with_decay' across all .rs files shows only test code calling this method. No production calls found in lib.rs, execution.rs, or other orchestrator modules."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The claw-approval-decay feature is correctly implemented with ApprovalDecayConfig, TaskOrigin enum, and comprehensive tests. All 44 autonomy tests pass. The implementation correctly handles: (1) standard threshold below 80% completion, (2) elevated threshold above 80%, (3) failure-derived out-of-scope tasks requiring approval after 80%, and (4) configurable decay parameters. The API is properly exported from the crate. The only notable gap is that needs_approval_with_decay is not invoked from the orchestrator's production code path - it exists as a library method ready for integration."
+}

@@ -434,6 +434,85 @@ impl ConfidenceThresholdConfig {
     }
 }
 
+/// Approval decay configuration for controlling how approval thresholds change
+/// as a task run progresses.
+///
+/// # Decay Behavior
+///
+/// - Below `decay_start_completion` (default 80%): standard approval rules apply
+/// - Above `decay_start_completion`: elevated approval thresholds apply
+/// - Failure-derived tasks targeting files outside original plan scope always
+///   require explicit approval after `decay_start_completion`
+#[derive(Debug, Clone)]
+pub struct ApprovalDecayConfig {
+    /// Completion percentage (0.0-1.0) at which decay starts to apply.
+    /// Below this threshold, standard approval rules apply.
+    /// Default: 0.8 (80%)
+    pub decay_start_completion: f64,
+    /// Multiplier applied to approval threshold after decay starts.
+    /// Higher values require more confidence to auto-approve.
+    /// Default: 1.5 (50% harder to auto-approve)
+    pub threshold_multiplier: f64,
+    /// Maximum multiplier cap to prevent over-escalation.
+    /// Default: 2.0
+    pub max_multiplier: f64,
+}
+
+impl Default for ApprovalDecayConfig {
+    fn default() -> Self {
+        Self {
+            decay_start_completion: 0.8,
+            threshold_multiplier: 1.5,
+            max_multiplier: 2.0,
+        }
+    }
+}
+
+impl ApprovalDecayConfig {
+    /// Create a new decay configuration with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the completion threshold at which decay starts.
+    pub fn with_decay_start(mut self, completion: f64) -> Self {
+        self.decay_start_completion = completion.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set the threshold multiplier applied after decay starts.
+    pub fn with_multiplier(mut self, multiplier: f64) -> Self {
+        self.threshold_multiplier = multiplier.max(1.0);
+        self
+    }
+
+    /// Set the maximum multiplier cap.
+    pub fn with_max_multiplier(mut self, max_mult: f64) -> Self {
+        self.max_multiplier = max_mult.max(1.0);
+        self
+    }
+
+    /// Calculate the effective threshold multiplier based on completion.
+    ///
+    /// Returns 1.0 if completion is below decay_start_completion.
+    /// Returns progressively higher multiplier as completion approaches 1.0.
+    pub fn get_effective_multiplier(&self, completion: f64) -> f64 {
+        if completion < self.decay_start_completion {
+            return 1.0;
+        }
+
+        // Linear interpolation between 1.0 and threshold_multiplier
+        // as completion goes from decay_start to 1.0
+        let progress =
+            (completion - self.decay_start_completion) / (1.0 - self.decay_start_completion);
+        let progress = progress.clamp(0.0, 1.0);
+
+        let multiplier_range = self.threshold_multiplier - 1.0;
+        let effective = 1.0 + (progress * multiplier_range);
+        effective.min(self.max_multiplier)
+    }
+}
+
 /// Manages approval requests and decisions for autonomy levels
 pub struct AutonomyController {
     pending_requests: Arc<RwLock<HashMap<Uuid, ApprovalRequest>>>,
@@ -442,6 +521,8 @@ pub struct AutonomyController {
     override_matrix: Arc<RwLock<AutonomyOverrideMatrix>>,
     /// Confidence threshold configuration for uncertainty pauses
     confidence_threshold: Arc<RwLock<ConfidenceThresholdConfig>>,
+    /// Approval decay configuration for post-80% completion behavior
+    approval_decay: Arc<RwLock<ApprovalDecayConfig>>,
 }
 
 impl AutonomyController {
@@ -451,6 +532,7 @@ impl AutonomyController {
             decisions: Arc::new(RwLock::new(HashMap::new())),
             override_matrix: Arc::new(RwLock::new(AutonomyOverrideMatrix::new())),
             confidence_threshold: Arc::new(RwLock::new(ConfidenceThresholdConfig::new(0.5))),
+            approval_decay: Arc::new(RwLock::new(ApprovalDecayConfig::new())),
         }
     }
 
@@ -461,6 +543,7 @@ impl AutonomyController {
             decisions: Arc::new(RwLock::new(HashMap::new())),
             override_matrix: Arc::new(RwLock::new(matrix)),
             confidence_threshold: Arc::new(RwLock::new(ConfidenceThresholdConfig::new(0.5))),
+            approval_decay: Arc::new(RwLock::new(ApprovalDecayConfig::new())),
         }
     }
 
@@ -474,6 +557,22 @@ impl AutonomyController {
             decisions: Arc::new(RwLock::new(HashMap::new())),
             override_matrix: Arc::new(RwLock::new(matrix)),
             confidence_threshold: Arc::new(RwLock::new(threshold_config)),
+            approval_decay: Arc::new(RwLock::new(ApprovalDecayConfig::new())),
+        }
+    }
+
+    /// Create a new controller with all configuration options
+    pub fn with_config(
+        matrix: AutonomyOverrideMatrix,
+        threshold_config: ConfidenceThresholdConfig,
+        decay_config: ApprovalDecayConfig,
+    ) -> Self {
+        Self {
+            pending_requests: Arc::new(RwLock::new(HashMap::new())),
+            decisions: Arc::new(RwLock::new(HashMap::new())),
+            override_matrix: Arc::new(RwLock::new(matrix)),
+            confidence_threshold: Arc::new(RwLock::new(threshold_config)),
+            approval_decay: Arc::new(RwLock::new(decay_config)),
         }
     }
 
@@ -707,6 +806,155 @@ impl AutonomyController {
     pub async fn get_confidence_threshold_config(&self) -> ConfidenceThresholdConfig {
         self.confidence_threshold.read().await.clone()
     }
+
+    // ============================================================================
+    // Approval Decay Management
+    // ============================================================================
+
+    /// Get the current approval decay configuration.
+    pub async fn get_approval_decay_config(&self) -> ApprovalDecayConfig {
+        self.approval_decay.read().await.clone()
+    }
+
+    /// Set the approval decay configuration.
+    pub async fn set_approval_decay_config(&self, config: ApprovalDecayConfig) {
+        let mut current = self.approval_decay.write().await;
+        *current = config;
+    }
+
+    /// Update decay configuration using a builder pattern.
+    pub async fn update_approval_decay<F>(self: &Arc<Self>, f: F)
+    where
+        F: FnOnce(&mut ApprovalDecayConfig),
+    {
+        let mut config = self.approval_decay.write().await;
+        f(&mut config);
+    }
+
+    /// Calculate the effective approval threshold multiplier based on plan completion.
+    ///
+    /// Below the decay start threshold (default 80%), returns 1.0 (no change).
+    /// Above 80%, returns progressively higher multiplier up to max_multiplier.
+    pub async fn get_approval_multiplier(&self, plan_completion: f64) -> f64 {
+        let config = self.approval_decay.read().await;
+        config.get_effective_multiplier(plan_completion)
+    }
+
+    /// Determine if an approval is required based on plan completion and task origin.
+    ///
+    /// This method extends `needs_approval` with approval decay logic:
+    /// - Below 80% completion: standard approval rules apply
+    /// - At or above 80% completion: elevated thresholds apply
+    /// - Failure-derived tasks targeting files outside original plan scope ALWAYS
+    ///   require explicit approval, regardless of completion percentage
+    ///
+    /// # Arguments
+    /// * `plan_completion` - Progress through the plan (0.0 to 1.0)
+    /// * `task_origin` - Source of the task (Planned vs FailureDerived)
+    /// * `affected_files` - Files the task would modify
+    /// * `original_scope` - Files in the original task plan scope
+    /// * `risk_level` - Risk level of the action
+    /// * `autonomy_level` - Base autonomy level
+    /// * `agent_role` - Role of the agent requesting approval
+    /// * `task_type` - Type of task
+    /// * `is_strategic_action` - Whether the action is classified as strategic
+    #[allow(clippy::too_many_arguments)]
+    pub async fn needs_approval_with_decay(
+        &self,
+        plan_completion: f64,
+        task_origin: TaskOrigin,
+        affected_files: &[String],
+        original_scope: &[String],
+        risk_level: swell_core::RiskLevel,
+        autonomy_level: swell_core::AutonomyLevel,
+        agent_role: swell_core::AgentRole,
+        task_type: TaskType,
+        is_strategic_action: bool,
+    ) -> bool {
+        // CRITICAL: Failure-derived tasks targeting files outside original plan
+        // ALWAYS require explicit approval after 80% completion
+        if task_origin == TaskOrigin::FailureDerived && plan_completion >= 0.8
+            && !is_file_in_scope(affected_files, original_scope)
+        {
+            // Out-of-scope failure-derived task - always requires approval
+            tracing::debug!(
+                plan_completion = plan_completion,
+                "Failure-derived task outside original scope - explicit approval required"
+            );
+            return true;
+        }
+
+        // Get the base approval requirement
+        let base_needs_approval = self
+            .needs_approval(
+                Uuid::new_v4(),
+                risk_level,
+                autonomy_level,
+                agent_role,
+                task_type,
+                is_strategic_action,
+            )
+            .await;
+
+        // If base says no approval needed, check decay
+        if !base_needs_approval {
+            return false;
+        }
+
+        // If base says approval needed, apply decay multiplier
+        // to determine if it's truly required or if it can be auto-approved
+        let multiplier = self.get_approval_multiplier(plan_completion).await;
+
+        // At multiplier 1.0, standard rules apply
+        if multiplier <= 1.0 {
+            return base_needs_approval;
+        }
+
+        // With decay active, only high-risk or strategic actions require approval
+        // (lower-risk actions might get auto-approved at higher multipliers)
+        if risk_level == swell_core::RiskLevel::High || is_strategic_action {
+            return true;
+        }
+
+        // Medium risk at high multipliers might be approved
+        if risk_level == swell_core::RiskLevel::Medium {
+            // Threshold increases by multiplier, so medium risk at > 1.5 might pass
+            return multiplier < 1.5;
+        }
+
+        // Low risk is rarely blocked
+        false
+    }
+}
+
+/// Task origin classification for decay decisions
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskOrigin {
+    /// Task from the original plan (in-scope, expected work)
+    Planned,
+    /// Task derived from a validation failure (often out-of-scope)
+    FailureDerived,
+}
+
+/// Check if any of the affected files are within the original scope.
+fn is_file_in_scope(affected_files: &[String], original_scope: &[String]) -> bool {
+    if original_scope.is_empty() {
+        // Empty scope means everything is in scope
+        return true;
+    }
+
+    for file in affected_files {
+        // Check if file is under any scope directory
+        if original_scope
+            .iter()
+            .any(|scope| file.starts_with(scope) || scope.starts_with(file))
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 impl Default for AutonomyController {
@@ -1415,5 +1663,272 @@ mod tests {
                 .await,
             0.5
         );
+    }
+
+    // ============================================================================
+    // Approval Decay Tests
+    // ============================================================================
+
+    #[test]
+    fn test_approval_decay_config_default() {
+        let config = ApprovalDecayConfig::new();
+        assert_eq!(config.decay_start_completion, 0.8);
+        assert_eq!(config.threshold_multiplier, 1.5);
+        assert_eq!(config.max_multiplier, 2.0);
+    }
+
+    #[test]
+    fn test_approval_decay_get_effective_multiplier_below_threshold() {
+        let config = ApprovalDecayConfig::new();
+
+        // Below 80% - multiplier should be 1.0
+        assert_eq!(config.get_effective_multiplier(0.0), 1.0);
+        assert_eq!(config.get_effective_multiplier(0.5), 1.0);
+        assert_eq!(config.get_effective_multiplier(0.79), 1.0);
+    }
+
+    #[test]
+    fn test_approval_decay_get_effective_multiplier_above_threshold() {
+        let config = ApprovalDecayConfig::new();
+
+        // At exactly 80% - not yet past, so multiplier should be 1.0
+        let mult_80 = config.get_effective_multiplier(0.8);
+        assert_eq!(
+            mult_80, 1.0,
+            "At exactly 80%, multiplier should be 1.0 (not past threshold yet)"
+        );
+
+        // Above 80% - decay starts
+        let mult_85 = config.get_effective_multiplier(0.85);
+        assert!(
+            mult_85 > 1.0,
+            "Multiplier at 85% should be > 1.0, got {}",
+            mult_85
+        );
+
+        // At 100% - should reach threshold_multiplier
+        let mult_100 = config.get_effective_multiplier(1.0);
+        assert_eq!(
+            mult_100, 1.5,
+            "Multiplier at 100% should be threshold_multiplier (1.5)"
+        );
+    }
+
+    #[test]
+    fn test_approval_decay_max_multiplier_cap() {
+        let config = ApprovalDecayConfig::new().with_max_multiplier(1.2);
+
+        // Even at 100%, multiplier should be capped
+        assert_eq!(config.get_effective_multiplier(1.0), 1.2);
+    }
+
+    #[test]
+    fn test_approval_decay_custom_config() {
+        let config = ApprovalDecayConfig::new()
+            .with_decay_start(0.5)
+            .with_multiplier(2.0)
+            .with_max_multiplier(3.0);
+
+        assert_eq!(config.decay_start_completion, 0.5);
+        assert_eq!(config.threshold_multiplier, 2.0);
+        assert_eq!(config.max_multiplier, 3.0);
+
+        // At exactly 50%, not yet past decay start, so multiplier = 1.0
+        let mult = config.get_effective_multiplier(0.5);
+        assert_eq!(
+            mult, 1.0,
+            "At exactly decay_start, multiplier should be 1.0"
+        );
+
+        // Just above 50%
+        let mult_51 = config.get_effective_multiplier(0.51);
+        assert!(
+            mult_51 > 1.0,
+            "Just above decay_start, multiplier should be > 1.0"
+        );
+
+        // At 100%, should reach 2.0
+        assert_eq!(config.get_effective_multiplier(1.0), 2.0);
+    }
+
+    #[tokio::test]
+    async fn test_autonomy_controller_default_approval_decay() {
+        let controller = AutonomyController::new();
+
+        let config = controller.get_approval_decay_config().await;
+        assert_eq!(config.decay_start_completion, 0.8);
+        assert_eq!(config.threshold_multiplier, 1.5);
+    }
+
+    #[tokio::test]
+    async fn test_autonomy_controller_set_approval_decay_config() {
+        let controller = AutonomyController::new();
+
+        let new_config = ApprovalDecayConfig::new()
+            .with_decay_start(0.7)
+            .with_multiplier(2.0);
+
+        controller.set_approval_decay_config(new_config).await;
+
+        let config = controller.get_approval_decay_config().await;
+        assert_eq!(config.decay_start_completion, 0.7);
+        assert_eq!(config.threshold_multiplier, 2.0);
+    }
+
+    #[tokio::test]
+    async fn test_get_approval_multiplier_below_80_percent() {
+        let controller = AutonomyController::new();
+
+        // Below 80% - multiplier should be 1.0
+        assert_eq!(controller.get_approval_multiplier(0.0).await, 1.0);
+        assert_eq!(controller.get_approval_multiplier(0.5).await, 1.0);
+        assert_eq!(controller.get_approval_multiplier(0.79).await, 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_get_approval_multiplier_above_80_percent() {
+        let controller = AutonomyController::new();
+
+        // At 100% - should reach 1.5
+        assert_eq!(controller.get_approval_multiplier(1.0).await, 1.5);
+    }
+
+    #[tokio::test]
+    async fn test_needs_approval_with_decay_below_80_percent() {
+        let controller = AutonomyController::new();
+
+        // Below 80% - standard rules apply, so low risk at Guided should NOT need approval
+        let needs_approval = controller
+            .needs_approval_with_decay(
+                0.5, // plan_completion < 80%
+                TaskOrigin::Planned,
+                &["src/lib.rs".to_string()],
+                &["src/".to_string()],
+                swell_core::RiskLevel::Low,
+                swell_core::AutonomyLevel::Guided,
+                swell_core::AgentRole::Generator,
+                TaskType::CodeGeneration,
+                false,
+            )
+            .await;
+
+        assert!(
+            !needs_approval,
+            "Low risk planned task at 50% completion should not need approval"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_needs_approval_with_decay_failure_derived_out_of_scope() {
+        let controller = AutonomyController::new();
+
+        // Failure-derived task targeting files outside original scope at >80% should ALWAYS need approval
+        let needs_approval = controller
+            .needs_approval_with_decay(
+                0.9, // 90% completion - decay active
+                TaskOrigin::FailureDerived,
+                &["unrelated/file.rs".to_string()], // NOT in original scope
+                &["src/".to_string()],              // original scope
+                swell_core::RiskLevel::Low,         // even low risk
+                swell_core::AutonomyLevel::Autonomous,
+                swell_core::AgentRole::Generator,
+                TaskType::CodeGeneration,
+                false,
+            )
+            .await;
+
+        assert!(
+            needs_approval,
+            "Failure-derived out-of-scope task at 90% completion should ALWAYS need approval"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_needs_approval_with_decay_failure_derived_in_scope() {
+        let controller = AutonomyController::new();
+
+        // Failure-derived task targeting files WITHIN original scope - standard rules apply
+        let needs_approval = controller
+            .needs_approval_with_decay(
+                0.9, // 90% completion
+                TaskOrigin::FailureDerived,
+                &["src/lib.rs".to_string()], // IN original scope
+                &["src/".to_string()],
+                swell_core::RiskLevel::Low,
+                swell_core::AutonomyLevel::Autonomous,
+                swell_core::AgentRole::Generator,
+                TaskType::CodeGeneration,
+                false,
+            )
+            .await;
+
+        assert!(
+            !needs_approval,
+            "Failure-derived in-scope task at 90% completion should follow standard rules"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_needs_approval_with_decay_high_risk_always_needs_approval() {
+        let controller = AutonomyController::new();
+
+        // High risk tasks should always need approval even with decay
+        let needs_approval = controller
+            .needs_approval_with_decay(
+                0.9,
+                TaskOrigin::Planned,
+                &["src/lib.rs".to_string()],
+                &["src/".to_string()],
+                swell_core::RiskLevel::High,
+                swell_core::AutonomyLevel::Autonomous,
+                swell_core::AgentRole::Generator,
+                TaskType::CodeGeneration,
+                false,
+            )
+            .await;
+
+        assert!(
+            needs_approval,
+            "High risk task should need approval even at 90% completion"
+        );
+    }
+
+    #[test]
+    fn test_is_file_in_scope_empty_scope() {
+        // Empty scope means everything is in scope
+        assert!(is_file_in_scope(&["any/file.rs".to_string()], &[]));
+    }
+
+    #[test]
+    fn test_is_file_in_scope_file_in_directory() {
+        let scope = &["src/".to_string()];
+        assert!(is_file_in_scope(&["src/lib.rs".to_string()], scope));
+        assert!(is_file_in_scope(&["src/main.rs".to_string()], scope));
+        assert!(!is_file_in_scope(&["other/file.rs".to_string()], scope));
+    }
+
+    #[test]
+    fn test_is_file_in_scope_exact_match() {
+        let scope = &["Cargo.toml".to_string()];
+        assert!(is_file_in_scope(&["Cargo.toml".to_string()], scope));
+        assert!(!is_file_in_scope(&["Cargo.lock".to_string()], scope));
+    }
+
+    #[test]
+    fn test_task_origin_serde() {
+        // Verify TaskOrigin can be serialized and deserialized
+        use serde_json;
+
+        let planned = TaskOrigin::Planned;
+        let json = serde_json::to_string(&planned).unwrap();
+        assert_eq!(json, "\"planned\"");
+        let back: TaskOrigin = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, TaskOrigin::Planned);
+
+        let failure = TaskOrigin::FailureDerived;
+        let json = serde_json::to_string(&failure).unwrap();
+        assert_eq!(json, "\"failure_derived\"");
+        let back: TaskOrigin = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, TaskOrigin::FailureDerived);
     }
 }

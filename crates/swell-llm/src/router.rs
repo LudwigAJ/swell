@@ -26,8 +26,8 @@
 //! ```
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use swell_core::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition, SwellError};
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
@@ -250,7 +250,11 @@ impl ModelHealthTracker {
     }
 
     /// Build health info from stats entry
-    async fn build_health_info(&self, model_name: &str, entry: &ModelHealthStats) -> ModelHealthInfo {
+    async fn build_health_info(
+        &self,
+        model_name: &str,
+        entry: &ModelHealthStats,
+    ) -> ModelHealthInfo {
         let successes = entry.successes.load(Ordering::Relaxed);
         let failures = entry.failures.load(Ordering::Relaxed);
         let total = successes + failures;
@@ -454,8 +458,10 @@ impl ModelRouter {
 
                     // Log structured fallback event
                     if !is_primary {
-                        let previous =
-                            candidates.first().map(|c| c.model_name.as_str()).unwrap_or("none");
+                        let previous = candidates
+                            .first()
+                            .map(|c| c.model_name.as_str())
+                            .unwrap_or("none");
                         tracing::info!(
                             target: "model_fallback",
                             model = %model_name,
@@ -487,8 +493,10 @@ impl ModelRouter {
                     fallback_reason = Some(determine_fallback_reason(&e));
 
                     // Log structured fallback event
-                    let previous =
-                        candidates.first().map(|c| c.model_name.as_str()).unwrap_or("none");
+                    let previous = candidates
+                        .first()
+                        .map(|c| c.model_name.as_str())
+                        .unwrap_or("none");
                     tracing::warn!(
                         target: "model_fallback",
                         model = %model_name,
@@ -555,7 +563,11 @@ impl ModelRouter {
         let mut deprioritized: Vec<&ModelRoute> = Vec::new();
 
         for candidate in &candidates {
-            if self.health_tracker.is_deprioritized(&candidate.model_name).await {
+            if self
+                .health_tracker
+                .is_deprioritized(&candidate.model_name)
+                .await
+            {
                 deprioritized.push(candidate);
             } else {
                 healthy.push(candidate);
@@ -920,16 +932,13 @@ impl ModelRouterBuilder {
     /// Example chain: ["claude-sonnet-4-20250514", "gpt-4o", "claude-haiku-4-20250530"]
     ///
     /// Panics if required environment variables are not set.
-    pub fn with_fallback_chain_from_models_config(
-        mut self,
-        fallback_chain: Vec<String>,
-    ) -> Self {
+    pub fn with_fallback_chain_from_models_config(mut self, fallback_chain: Vec<String>) -> Self {
         use crate::{AnthropicBackend, OpenAIBackend};
 
         let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
             .expect("ANTHROPIC_API_KEY environment variable must be set");
-        let openai_key =
-            std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable must be set");
+        let openai_key = std::env::var("OPENAI_API_KEY")
+            .expect("OPENAI_API_KEY environment variable must be set");
 
         // Build backends for each model in the chain
         let mut backends: Vec<(String, Arc<dyn LlmBackend>)> = Vec::new();
@@ -944,12 +953,12 @@ impl ModelRouterBuilder {
         }
 
         // For non-Fast task types: use chain as-is (primary → fallback → final)
-        let primary = backends.first().cloned().expect("fallback_chain must not be empty");
-        let fallbacks: Vec<(String, Arc<dyn LlmBackend>)> = backends
-            .iter()
-            .skip(1)
+        let primary = backends
+            .first()
             .cloned()
-            .collect();
+            .expect("fallback_chain must not be empty");
+        let fallbacks: Vec<(String, Arc<dyn LlmBackend>)> =
+            backends.iter().skip(1).cloned().collect();
 
         for task_type in [
             TaskType::Coding,
@@ -962,13 +971,12 @@ impl ModelRouterBuilder {
         }
 
         // For Fast tasks: reverse the chain (fastest first)
-        let fast_primary = backends.last().cloned().expect("fallback_chain must not be empty");
-        let fast_fallbacks: Vec<(String, Arc<dyn LlmBackend>)> = backends
-            .iter()
-            .rev()
-            .skip(1)
+        let fast_primary = backends
+            .last()
             .cloned()
-            .collect();
+            .expect("fallback_chain must not be empty");
+        let fast_fallbacks: Vec<(String, Arc<dyn LlmBackend>)> =
+            backends.iter().rev().skip(1).cloned().collect();
         self.router.register(
             TaskType::Fast,
             &fast_primary.0,
