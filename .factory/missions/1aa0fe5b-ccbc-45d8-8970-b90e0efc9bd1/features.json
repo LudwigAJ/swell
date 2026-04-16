@@ -1,0 +1,949 @@
+{
+  "features": [
+    {
+      "id": "tier1-thread-llm-backend-from-daemon",
+      "description": "Thread an `LlmBackend` from `swell-daemon` into `Orchestrator` so the production runtime can construct reachable execution dependencies. Derived from `01_daemon_orphaned_wiring.md` and `04_tier1_blockers.md`.",
+      "skillName": "runtime-wiring-worker",
+      "preconditions": [
+        "phasea-establish-full-cycle-wiring-guardrails"
+      ],
+      "expectedBehavior": [
+        "`swell-daemon` depends on the runtime crates needed to construct a real execution path",
+        "`Daemon::new` accepts an injected LLM dependency or equivalent execution dependency builder",
+        "`Orchestrator` stores the injected LLM or production dependencies instead of staying disconnected"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "cargo test -p swell-daemon",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-WIRING-001"
+      ],
+      "milestone": "tier1-runtime-wiring",
+      "status": "in_progress",
+      "workerSessionIds": [
+        "ebdaae2c-a068-47a8-be0d-180fe450de75",
+        "f7dd96b4-f4a0-4d28-9615-4451ecc49140"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier1-construct-execution-controller-and-dispatch-loop",
+      "description": "Construct `ExecutionController` inside `Orchestrator` and add the production dispatch loop that actually runs approved tasks. Derived from `01_daemon_orphaned_wiring.md`, `02_execution_path_gaps.md`, and `04_tier1_blockers.md`.",
+      "skillName": "runtime-wiring-worker",
+      "preconditions": [
+        "phasea-establish-full-cycle-wiring-guardrails",
+        "tier1-thread-llm-backend-from-daemon"
+      ],
+      "expectedBehavior": [
+        "`Orchestrator` owns a production `ExecutionController`",
+        "tasks entering `Ready` are dispatched into the real execution pipeline",
+        "submitting and approving a task through the daemon path results in runtime execution"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-WIRING-002",
+        "VAL-CYCLE-001",
+        "VAL-CYCLE-002"
+      ],
+      "milestone": "tier1-runtime-wiring",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier1-wire-validation-orchestrator-into-execution",
+      "description": "Wire `ValidationOrchestrator` into the real execution epilogue so runtime success depends on the audited validation path, not only local default validation. Derived from `02_execution_path_gaps.md`, `04_tier1_blockers.md`, and `07_integration_test_strategy.md`.",
+      "skillName": "runtime-wiring-worker",
+      "preconditions": [
+        "phasea-establish-full-cycle-wiring-guardrails",
+        "tier1-construct-execution-controller-and-dispatch-loop"
+      ],
+      "expectedBehavior": [
+        "`ExecutionController` holds a reachable `ValidationOrchestrator`",
+        "generator output is validated through the production validation orchestrator before task success",
+        "validation failure transitions the task to failure and blocks false success"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "cargo test -p swell-validation",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-WIRING-004",
+        "VAL-CYCLE-005",
+        "VAL-NEG-002"
+      ],
+      "milestone": "tier1-runtime-wiring",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier1-install-worktree-pool-and-commit-on-success",
+      "description": "Install `WorktreePool`, allocate per-task worktrees, and commit validated changes on success using task-linked branch and commit metadata. Derived from `03_git_worktree_orphaned.md`, `04_tier1_blockers.md`, and `07_integration_test_strategy.md`.",
+      "skillName": "runtime-wiring-worker",
+      "preconditions": [
+        "phasea-establish-full-cycle-wiring-guardrails",
+        "tier1-construct-execution-controller-and-dispatch-loop",
+        "tier1-wire-validation-orchestrator-into-execution"
+      ],
+      "expectedBehavior": [
+        "task execution happens inside an allocated worktree rather than directly in the repo root",
+        "successful validated tasks create `swell/<task-id>` branch artifacts",
+        "success commits include task-linked metadata trailers"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "cargo test -p swell-tools",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-WIRING-003",
+        "VAL-CYCLE-003",
+        "VAL-CYCLE-004"
+      ],
+      "milestone": "tier1-runtime-wiring",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier1-install-post-tool-hook-manager-in-production",
+      "description": "Install `PostToolHookManager` on the production `ToolExecutor` used by the execution path. Derived from `02_execution_path_gaps.md`, `04_tier1_blockers.md`, and `07_integration_test_strategy.md`.",
+      "skillName": "runtime-wiring-worker",
+      "preconditions": [
+        "phasea-establish-full-cycle-wiring-guardrails",
+        "tier1-construct-execution-controller-and-dispatch-loop"
+      ],
+      "expectedBehavior": [
+        "the real runtime `ToolExecutor` has a hook manager installed",
+        "post-tool hooks can be observed firing in the production execution path",
+        "formatting/diagnostic hooks become runtime-reachable rather than test-only"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "cargo test -p swell-tools",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-WIRING-005",
+        "VAL-CYCLE-006"
+      ],
+      "milestone": "tier1-runtime-wiring",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier1-gate-and-progress-enforcement",
+      "description": "Enforce Tier 1 gate completion and strict machine-readable progress/checkback tracking for audited runtime wiring work, including witness/ignore hygiene review. This feature exists because flaky workers and validators require explicit ownership of gate state and progress evidence.",
+      "skillName": "gatekeeper-worker",
+      "preconditions": [
+        "phasea-establish-full-cycle-wiring-guardrails",
+        "tier1-thread-llm-backend-from-daemon",
+        "tier1-construct-execution-controller-and-dispatch-loop",
+        "tier1-wire-validation-orchestrator-into-execution",
+        "tier1-install-worktree-pool-and-commit-on-success",
+        "tier1-install-post-tool-hook-manager-in-production"
+      ],
+      "expectedBehavior": [
+        "strict machine-readable progress checkbacks are updated for each Tier 1 feature",
+        "witness/ignore hygiene is reviewed and recorded",
+        "Tier 1 gate status is set only when all Tier 1 assertions are green",
+        "each Tier 1 checkback links exact artifact evidence for reported status"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "Review progress-checkbacks.json and validation-state.json for complete Tier 1 evidence",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER1-GATE",
+        "VAL-PROGRESS-001",
+        "VAL-PROGRESS-003",
+        "VAL-PROGRESS-004"
+      ],
+      "milestone": "tier1-runtime-wiring",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-permission-ordering-and-dynamic-bash-classifier",
+      "description": "Add required permission metadata and dynamic bash command classification so permission behavior matches the audited reliability requirements. Derived from `05_tier2_reliability.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier1-install-post-tool-hook-manager-in-production"
+      ],
+      "expectedBehavior": [
+        "tools expose required permissions",
+        "bash commands are classified by risk rather than treated uniformly",
+        "permission ordering is enforced by runtime execution"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools",
+        "cargo clippy -p swell-tools -- -D warnings",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-REL-007",
+        "VAL-REL-008"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-pre-tool-hooks-turnsummary-and-compaction-trigger",
+      "description": "Add `PreToolHookManager`, emit `TurnSummary`, and trigger context compaction from the real execution loop. Derived from `02_execution_path_gaps.md` and `05_tier2_reliability.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier1-install-post-tool-hook-manager-in-production"
+      ],
+      "expectedBehavior": [
+        "pre-tool hooks can deny or rewrite tool behavior before execution",
+        "turn-level runtime telemetry is emitted per iteration",
+        "compaction triggers when cumulative token usage crosses threshold"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools",
+        "cargo test -p swell-orchestrator",
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-NEG-001",
+        "VAL-REL-001",
+        "VAL-REL-009"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-4d-token-accounting-and-prompt-caching",
+      "description": "Extend token accounting to input/output/cache_creation/cache_read dimensions and send prompt caching hints to the provider boundary. Derived from `02_execution_path_gaps.md` and `05_tier2_reliability.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier2-pre-tool-hooks-turnsummary-and-compaction-trigger"
+      ],
+      "expectedBehavior": [
+        "token usage captures all four audited dimensions",
+        "cost calculations use the audited formulas and dimensions",
+        "prompt caching boundaries are carried to the backend request format"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-core",
+        "cargo test -p swell-llm",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-REL-002"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-costguard-enforcement",
+      "description": "Enforce cost guard warnings and hard pause behavior in the execution loop. Derived from `05_tier2_reliability.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier2-4d-token-accounting-and-prompt-caching"
+      ],
+      "expectedBehavior": [
+        "runtime emits warning at threshold",
+        "runtime pauses task at budget exhaustion",
+        "resume requires explicit operator action"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-orchestrator",
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-NEG-003",
+        "VAL-REL-003"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-taskspec-validation-at-creation",
+      "description": "Validate `TaskSpec` before pipeline insertion so invalid task requests do not enter runtime execution. Derived from `05_tier2_reliability.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier1-construct-execution-controller-and-dispatch-loop"
+      ],
+      "expectedBehavior": [
+        "task creation rejects empty or structurally invalid specs before insertion",
+        "creation path uses validating constructors instead of raw task insertion",
+        "task policy fields become required runtime inputs where audited"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-orchestrator",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-REL-004"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-configloader-five-layer-merge-and-provenance",
+      "description": "Implement the exact audited five-layer ConfigLoader precedence (`user-legacy`, `user-modern`, `project-legacy`, `project-modern`, `local-override`) and preserve per-value provenance in the audited load/audit trail surfaces. Derived from `05_tier2_reliability.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier1-construct-execution-controller-and-dispatch-loop"
+      ],
+      "expectedBehavior": [
+        "configuration resolves through exactly the five audited precedence layers in the audited order",
+        "merged values preserve per-value provenance in the audited audit-trail/load-report surfaces",
+        "configuration behavior is deterministic and operator-auditable"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-daemon",
+        "cargo test -p swell-core",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-REL-010A",
+        "VAL-REL-010B"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-session-autosave-and-restart-resume",
+      "description": "Implement audited session autosave and session resume after daemon restart using workspace fingerprint discovery and the audited `SessionResume` operator path. Derived from `05_tier2_reliability.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier1-construct-execution-controller-and-dispatch-loop"
+      ],
+      "expectedBehavior": [
+        "unfinished session state is persisted under the audited workspace/session surfaces before shutdown",
+        "after fresh daemon construction the unfinished session is rediscovered by workspace fingerprint",
+        "the audited `SessionResume` path resumes the same unfinished session after restart"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-daemon",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-REL-005A",
+        "VAL-REL-005B"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-atomic-state-json-and-status-surface",
+      "description": "Implement atomic `.swell/state.json` writes using the audited temp-file-then-rename semantics and wire `swell status` to read that state directly as the audited operator surface. Derived from `05_tier2_reliability.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier1-construct-execution-controller-and-dispatch-loop"
+      ],
+      "expectedBehavior": [
+        "task state writes to `.swell/state.json` are atomic across transitions using the audited write pattern",
+        "`swell status` reads the atomic state file directly without daemon IPC",
+        "producer and consumer surfaces both reflect the audited task state model"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-cli",
+        "cargo test -p swell-daemon",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-REL-006A",
+        "VAL-REL-006B"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier2-gate-enforcement",
+      "description": "Enforce Tier 2 reliability gate and cross-tier blocking so later work cannot proceed while audited reliability assertions are red. Includes strict machine-readable checkback review for Tier 2.",
+      "skillName": "gatekeeper-worker",
+      "preconditions": [
+        "tier2-permission-ordering-and-dynamic-bash-classifier",
+        "tier2-pre-tool-hooks-turnsummary-and-compaction-trigger",
+        "tier2-4d-token-accounting-and-prompt-caching",
+        "tier2-costguard-enforcement",
+        "tier2-taskspec-validation-at-creation",
+        "tier2-configloader-five-layer-merge-and-provenance",
+        "tier2-session-autosave-and-restart-resume",
+        "tier2-atomic-state-json-and-status-surface"
+      ],
+      "expectedBehavior": [
+        "Tier 2 gate is not marked green until all audited reliability assertions are green",
+        "progress artifacts show Tier 2 checkbacks and preserved Tier 1 green state",
+        "Tier 3 remains blocked unless Tier 2 gate is green"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "Review progress-checkbacks.json and validation-state.json for complete Tier 2 evidence",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER2-GATE",
+        "VAL-PROGRESS-002",
+        "VAL-PROGRESS-005"
+      ],
+      "milestone": "tier2-reliability",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-repl-mode-and-shared-slash-command-registry",
+      "description": "Add audited REPL mode and shared slash-command registry as the production operator surface described in `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier2-costguard-enforcement",
+        "tier2-configloader-five-layer-merge-and-provenance",
+        "tier2-session-autosave-and-restart-resume",
+        "tier2-atomic-state-json-and-status-surface"
+      ],
+      "expectedBehavior": [
+        "CLI supports audited REPL mode",
+        "slash commands share the audited registry with operator commands",
+        "the production operator surface reaches the registry through the intended CLI/runtime path"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-cli",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-001A"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-session-manifest-tab-completion",
+      "description": "Implement manifest-backed `/resume <session-id>` tab completion from the audited session manifest surfaces described in `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-repl-mode-and-shared-slash-command-registry",
+        "tier2-session-autosave-and-restart-resume"
+      ],
+      "expectedBehavior": [
+        "`/resume` tab completion reads from the audited session manifest surfaces",
+        "completion suggestions are driven by session manifest data rather than hardcoded values",
+        "the operator surface remains consistent with audited resume semantics"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-cli",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-001B"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-task-review-command",
+      "description": "Add audited `swell task review <id>` operator flow. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-repl-mode-and-shared-slash-command-registry"
+      ],
+      "expectedBehavior": [
+        "`swell task review <id>` is available through the production operator path",
+        "the review command reaches the intended daemon/runtime review flow",
+        "operator review behavior matches the audited surface"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-cli",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-002A"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-task-diff-per-hunk-accept-reject",
+      "description": "Add audited `swell task diff <id>` flow with per-hunk accept/reject behavior. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-task-review-command"
+      ],
+      "expectedBehavior": [
+        "`swell task diff <id>` renders the audited diff surface",
+        "operators can accept or reject changes at hunk granularity",
+        "the per-hunk decisions flow through the intended runtime/operator path"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-cli",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-002B"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-task-set-mode-command",
+      "description": "Add audited `swell task set-mode <id> <mode>` operator flow for changing autonomy mode mid-task. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-task-review-command"
+      ],
+      "expectedBehavior": [
+        "`swell task set-mode <id> <mode>` is available through the operator surface",
+        "the command updates the active autonomy mode mid-task",
+        "the runtime reflects the updated audited mode semantics"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-cli",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-002C"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-mcp-config-view-runtime-bridge-split",
+      "description": "Split MCP config inspection from live runtime-bridge health so audited inspection surfaces remain available under degraded startup. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier2-configloader-five-layer-merge-and-provenance"
+      ],
+      "expectedBehavior": [
+        "config inspection remains available when the live MCP runtime bridge is unhealthy",
+        "MCP startup clearly distinguishes config visibility from runtime health",
+        "the operator can inspect audited MCP state under degraded conditions"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-003A"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-mcp-plugin-state-machine",
+      "description": "Implement the audited MCP plugin state lifecycle including degraded and failed states. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-mcp-config-view-runtime-bridge-split"
+      ],
+      "expectedBehavior": [
+        "the MCP plugin lifecycle exposes the audited degraded and failed states",
+        "state transitions are surfaced through the intended runtime/operator layers",
+        "the degraded lifecycle is production-reachable rather than test-only"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-003B"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-mcp-failure-reason-and-recovery-hints",
+      "description": "Surface audited MCP failure reasons and actionable `recovery_hint` information for failed servers. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-mcp-plugin-state-machine"
+      ],
+      "expectedBehavior": [
+        "failed MCP servers expose audited `reason` data",
+        "failed MCP servers expose actionable `recovery_hint` guidance",
+        "failure metadata is reachable through the intended operator/runtime surface"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-003C"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-mcp-degraded-reporting-surface",
+      "description": "Implement audited MCP degraded reporting listing working, failed, and unavailable tools. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-mcp-failure-reason-and-recovery-hints"
+      ],
+      "expectedBehavior": [
+        "degraded reporting lists working tools",
+        "degraded reporting lists failed tools",
+        "degraded reporting lists unavailable tools in the audited surface"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools",
+        "cargo test -p swell-daemon",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-003D"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-smoke-and-integration-coverage",
+      "description": "Add smoke/integration proofs for every Tier 3 operator surface so completion does not rely only on crate-local unit tests. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "gatekeeper-worker",
+      "preconditions": [
+        "tier3-session-manifest-tab-completion",
+        "tier3-task-review-command",
+        "tier3-task-diff-per-hunk-accept-reject",
+        "tier3-task-set-mode-command",
+        "tier3-mcp-degraded-reporting-surface",
+        "tier3-swell-lsp-crate",
+        "tier3-tool-registry-layering-and-structured-results",
+        "tier3-embedding-and-retrieval-depth",
+        "tier3-mutation-testing-gate",
+        "tier3-background-learning-workers"
+      ],
+      "expectedBehavior": [
+        "each Tier 3 feature has at least one smoke or integration proof beyond crate-local unit tests",
+        "Tier 3 smoke proofs preserve previously-green Tier 1 and Tier 2 behavior",
+        "smoke/integration coverage is linked in machine-readable artifact form"
+      ],
+      "verificationSteps": [
+        "Run the audited Tier 3 smoke/integration commands for each operator surface",
+        "Review progress-checkbacks.json and validation-state.json for Tier 3 smoke evidence",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-SMOKE-001"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-swell-lsp-crate",
+      "description": "Add the `swell-lsp` crate and LSP-backed tools using the audited registry pattern. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-mcp-degraded-reporting-surface"
+      ],
+      "expectedBehavior": [
+        "workspace contains a new `swell-lsp` crate",
+        "LSP tools are registered through the audited language-to-server registry model",
+        "diagnostics/definition/hover surfaces become runtime-reachable"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-lsp",
+        "cargo test -p swell-tools",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-004"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-tool-registry-layering-and-structured-results",
+      "description": "Implement registry layering, alias normalization, and structured tool result content. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-swell-lsp-crate"
+      ],
+      "expectedBehavior": [
+        "tool lookup preserves provenance by layer",
+        "aliases normalize to canonical tool names",
+        "tool outputs are structured rather than plain text-only"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-tools",
+        "cargo test -p swell-core",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-005"
+      ],
+      "milestone": "tier3-operator-surfaces",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-embedding-and-retrieval-depth",
+      "description": "Implement the audited retrieval-depth work: Voyage embeddings, LanceDB index, graph backends, extractor, and working-memory compilation. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier2-configloader-five-layer-merge-and-provenance"
+      ],
+      "expectedBehavior": [
+        "embedding client and model selection surfaces exist as audited",
+        "code index and graph backends support retrieval composition",
+        "working memory compiler assembles bounded runtime context from retrieval sources"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-memory",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-006"
+      ],
+      "milestone": "tier3-knowledge-depth",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-mutation-testing-gate",
+      "description": "Add mutation testing to `ValidationOrchestrator` with post-pass execution and feedback into test generation. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "gatekeeper-worker",
+      "preconditions": [
+        "tier1-wire-validation-orchestrator-into-execution"
+      ],
+      "expectedBehavior": [
+        "validation can run mutation testing as an audited gate",
+        "mutation results influence follow-up testing behavior",
+        "kill-rate thresholds are enforced where configured"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-validation",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-007"
+      ],
+      "milestone": "tier3-knowledge-depth",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-background-learning-workers",
+      "description": "Spawn background learning workers on task closure for pattern learning, skill extraction, and contrastive learning. Derived from `06_tier3_ops_and_depth.md`.",
+      "skillName": "reliability-worker",
+      "preconditions": [
+        "tier3-embedding-and-retrieval-depth"
+      ],
+      "expectedBehavior": [
+        "task closure can trigger background learning workers",
+        "learning outputs persist into the intended memory/skill surfaces",
+        "background learning remains downstream of the trusted execution loop"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-memory",
+        "cargo test -p swell-orchestrator",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-008"
+      ],
+      "milestone": "tier3-knowledge-depth",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "tier3-gate-enforcement",
+      "description": "Confirm all audited Tier 3 assertions are green only after Tier 1 and Tier 2 gates remain green, and record the final strict machine-readable progress evidence for full audit coverage.",
+      "skillName": "gatekeeper-worker",
+      "preconditions": [
+        "tier3-session-manifest-tab-completion",
+        "tier3-task-review-command",
+        "tier3-task-diff-per-hunk-accept-reject",
+        "tier3-task-set-mode-command",
+        "tier3-mcp-degraded-reporting-surface",
+        "tier3-swell-lsp-crate",
+        "tier3-tool-registry-layering-and-structured-results",
+        "tier3-embedding-and-retrieval-depth",
+        "tier3-mutation-testing-gate",
+        "tier3-background-learning-workers",
+        "tier3-smoke-and-integration-coverage"
+      ],
+      "expectedBehavior": [
+        "Tier 3 gate is only marked green when all Tier 3 audited assertions are green",
+        "previously green Tier 1 and Tier 2 gates remain green",
+        "final progress artifact captures complete audit coverage"
+      ],
+      "verificationSteps": [
+        "Review validation-state.json and progress-checkbacks.json for all-tier green state",
+        "Record mission checkback with production caller, validation IDs, commands run, and gate status"
+      ],
+      "fulfills": [
+        "VAL-TIER3-GATE"
+      ],
+      "milestone": "tier3-knowledge-depth",
+      "status": "pending",
+      "workerSessionIds": [],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "phasea-establish-full-cycle-wiring-guardrails",
+      "description": "Create or extend `crates/swell-integration-tests/tests/full_cycle_wiring.rs` before any Tier 1 implementation so the audited guardrail invariants exist, are named, and are mapped to every Tier 1 blocker exactly as required by `07_integration_test_strategy.md`.",
+      "skillName": "gatekeeper-worker",
+      "preconditions": [],
+      "expectedBehavior": [
+        "`full_cycle_wiring.rs` exists before any Tier 1 implementation feature is considered complete",
+        "the file encodes the audited Tier 1 wiring invariants with loud invariant-oriented naming and anti-deletion guidance",
+        "each Tier 1 blocker is mapped to at least one named guardrail assertion before coding starts"
+      ],
+      "verificationSteps": [
+        "cargo test -p swell-integration-tests --test full_cycle_wiring",
+        "Review crates/swell-integration-tests/tests/full_cycle_wiring.rs for documented Tier 1 invariant coverage",
+        "Record mission checkback with production caller, validation IDs, commands run, artifact links, and gate status"
+      ],
+      "fulfills": [
+        "VAL-PHASEA-001",
+        "VAL-PHASEA-002",
+        "VAL-PHASEA-003"
+      ],
+      "milestone": "phasea-guardrails",
+      "status": "completed",
+      "workerSessionIds": [
+        "fc66a935-96ee-41c2-994b-0c2f8d2ff920"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "scrutiny-validator-phasea-guardrails",
+      "description": "Scrutiny validation for milestone \"phasea-guardrails\". Runs test suite, typecheck, and lint. Spawns review subagents for each completed feature. Synthesizes findings. Always returns to orchestrator.",
+      "skillName": "scrutiny-validator",
+      "preconditions": [
+        "All implementation features for milestone \"phasea-guardrails\" are complete"
+      ],
+      "expectedBehavior": [
+        "Validators pass (test, typecheck, lint)",
+        "Review subagents spawned for each feature",
+        "Findings synthesized into scrutiny report"
+      ],
+      "verificationSteps": [],
+      "milestone": "phasea-guardrails",
+      "status": "completed",
+      "workerSessionIds": [
+        "b7702449-886c-49ab-8285-e9baa2cd66c8"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    },
+    {
+      "id": "user-testing-validator-phasea-guardrails",
+      "description": "User testing validation for milestone \"phasea-guardrails\". Determines testable assertions from features' fulfills field, sets up environment, spawns flow validator subagents, synthesizes results. Always returns to orchestrator.",
+      "skillName": "user-testing-validator",
+      "preconditions": [
+        "All implementation features for milestone \"phasea-guardrails\" are complete"
+      ],
+      "expectedBehavior": [
+        "Testable assertions determined from fulfills mapping",
+        "Environment set up (services started, data seeded)",
+        "Flow validator subagents spawned and completed",
+        "Results synthesized, validation-state.json updated"
+      ],
+      "verificationSteps": [],
+      "milestone": "phasea-guardrails",
+      "status": "completed",
+      "workerSessionIds": [
+        "6655b0d3-d9de-4eeb-a3ba-8ba1b7d2b35c"
+      ],
+      "currentWorkerSessionId": null,
+      "completedWorkerSessionId": null
+    }
+  ]
+}

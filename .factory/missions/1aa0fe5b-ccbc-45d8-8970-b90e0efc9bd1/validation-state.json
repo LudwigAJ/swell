@@ -1,0 +1,195 @@
+{
+  "assertions": {
+    "VAL-PHASEA-001": {
+      "status": "pass",
+      "verified_by": "phasea-establish-full-cycle-wiring-guardrails",
+      "evidence": "crates/swell-integration-tests/tests/full_cycle_wiring.rs exists and compiles"
+    },
+    "VAL-PHASEA-002": {
+      "status": "pass",
+      "verified_by": "phasea-establish-full-cycle-wiring-guardrails",
+      "evidence": "File contains wiring_* tests for all Tier 1 invariants: daemon_holds_llm_backend (1.1), orchestrator_holds_execution_controller (1.2), full_cycle_task_reaches_done (1.2), validation_orchestrator_blocks_done_on_failure (1.3), task_runs_in_allocated_worktree (1.4), success_produces_branch_and_commit_trailer (1.4), post_tool_hooks_fire_during_execution (1.5)"
+    },
+    "VAL-PHASEA-003": {
+      "status": "pass",
+      "verified_by": "phasea-establish-full-cycle-wiring-guardrails",
+      "evidence": "All 5 Tier 1 blockers mapped to named guardrail assertions per doc 07 mapping table"
+    },
+    "VAL-WIRING-001": {
+      "status": "pending"
+    },
+    "VAL-WIRING-002": {
+      "status": "pending"
+    },
+    "VAL-WIRING-003": {
+      "status": "pending"
+    },
+    "VAL-WIRING-004": {
+      "status": "pending"
+    },
+    "VAL-WIRING-005": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-001": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-002": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-003": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-004": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-005": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-006": {
+      "status": "pending"
+    },
+    "VAL-NEG-001": {
+      "status": "pending"
+    },
+    "VAL-NEG-002": {
+      "status": "pending"
+    },
+    "VAL-NEG-003": {
+      "status": "pending"
+    },
+    "VAL-REL-001": {
+      "status": "pending"
+    },
+    "VAL-REL-002": {
+      "status": "pending"
+    },
+    "VAL-REL-003": {
+      "status": "pending"
+    },
+    "VAL-REL-004": {
+      "status": "pending"
+    },
+    "VAL-REL-005A": {
+      "status": "pending"
+    },
+    "VAL-REL-005B": {
+      "status": "pending"
+    },
+    "VAL-REL-006A": {
+      "status": "pending"
+    },
+    "VAL-REL-006B": {
+      "status": "pending"
+    },
+    "VAL-REL-007": {
+      "status": "pending"
+    },
+    "VAL-REL-008": {
+      "status": "pending"
+    },
+    "VAL-REL-009": {
+      "status": "pending"
+    },
+    "VAL-REL-010A": {
+      "status": "pending"
+    },
+    "VAL-REL-010B": {
+      "status": "pending"
+    },
+    "VAL-TIER3-001A": {
+      "status": "pending"
+    },
+    "VAL-TIER3-001B": {
+      "status": "pending"
+    },
+    "VAL-TIER3-002A": {
+      "status": "pending"
+    },
+    "VAL-TIER3-002B": {
+      "status": "pending"
+    },
+    "VAL-TIER3-002C": {
+      "status": "pending"
+    },
+    "VAL-TIER3-003A": {
+      "status": "pending"
+    },
+    "VAL-TIER3-003B": {
+      "status": "pending"
+    },
+    "VAL-TIER3-003C": {
+      "status": "pending"
+    },
+    "VAL-TIER3-003D": {
+      "status": "pending"
+    },
+    "VAL-TIER3-004": {
+      "status": "pending"
+    },
+    "VAL-TIER3-005": {
+      "status": "pending"
+    },
+    "VAL-TIER3-006": {
+      "status": "pending"
+    },
+    "VAL-TIER3-007": {
+      "status": "pending"
+    },
+    "VAL-TIER3-008": {
+      "status": "pending"
+    },
+    "VAL-TIER3-SMOKE-001": {
+      "status": "pending"
+    },
+    "VAL-TIER1-GATE": {
+      "status": "pending"
+    },
+    "VAL-TIER2-GATE": {
+      "status": "pending"
+    },
+    "VAL-TIER3-GATE": {
+      "status": "pending"
+    },
+    "VAL-PROGRESS-001": {
+      "status": "pending"
+    },
+    "VAL-PROGRESS-002": {
+      "status": "pending"
+    },
+    "VAL-PROGRESS-003": {
+      "status": "pending"
+    },
+    "VAL-PROGRESS-004": {
+      "status": "pending"
+    },
+    "VAL-PROGRESS-005": {
+      "status": "pending"
+    }
+  },
+  "gates": {
+    "tier1": {
+      "status": "pending",
+      "assertions": [
+        "VAL-TIER1-GATE"
+      ]
+    },
+    "tier2": {
+      "status": "pending",
+      "assertions": [
+        "VAL-TIER2-GATE"
+      ]
+    },
+    "tier3": {
+      "status": "pending",
+      "assertions": [
+        "VAL-TIER3-GATE"
+      ]
+    }
+  },
+  "progress": {
+    "strictMachineReadableCheckbacks": true,
+    "currentTier": "tier1",
+    "completedFeatures": [],
+    "latestCheckbackFile": null
+  }
+}

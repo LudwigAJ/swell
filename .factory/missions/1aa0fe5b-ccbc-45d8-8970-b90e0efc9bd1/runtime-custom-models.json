@@ -1,0 +1,37 @@
+{
+  "customModels": [
+    {
+      "model": "MiniMax-M2.7",
+      "id": "custom:MiniMax-M2.7-0",
+      "index": 0,
+      "baseUrl": "https://api.minimax.io/anthropic",
+      "apiKey": "sk-cp-ie_KBKAHRhp62sz0hg6zmb06f6luMqd0X5MhunonYHp3KX_SrL17-8WMJxFKfmrZonIXobb8HdiAT8ggDUrw7tIRyJnw7Pcx_uA60Eoi0kgk-DRzWLZ1XeY",
+      "displayName": "MiniMax-M2.7",
+      "maxOutputTokens": 128000,
+      "noImageSupport": false,
+      "provider": "anthropic"
+    },
+    {
+      "model": "gpt-5.4",
+      "id": "custom:GPT-5.4",
+      "index": 1,
+      "baseUrl": "http://127.0.0.1:8317/v1",
+      "apiKey": "sk-codex-proxy-35537830bc289d47f2755058db5efafdae9029055c2400cd",
+      "displayName": "GPT-5.4",
+      "maxOutputTokens": 128000,
+      "noImageSupport": false,
+      "provider": "openai"
+    },
+    {
+      "model": "gpt-5.4-mini",
+      "id": "custom:GPT-5.4-mini",
+      "index": 2,
+      "baseUrl": "http://127.0.0.1:8317/v1",
+      "apiKey": "sk-codex-proxy-35537830bc289d47f2755058db5efafdae9029055c2400cd",
+      "displayName": "GPT-5.4-mini",
+      "maxOutputTokens": 128000,
+      "noImageSupport": false,
+      "provider": "openai"
+    }
+  ]
+}

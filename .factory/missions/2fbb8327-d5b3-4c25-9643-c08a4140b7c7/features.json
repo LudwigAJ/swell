@@ -1,0 +1,903 @@
+{
+  "features": [
+    {
+      "id": "A-01-phase0-constructor-inventory",
+      "phase": "A",
+      "refactor": "01",
+      "worker_routing": "gatekeeper-worker",
+      "depends_on": [],
+      "fulfills": [
+        "VAL-A1-001"
+      ],
+      "worker_spec": {
+        "summary": "Create the checked-in Phase 0 inventory artifact for the orchestrator-constructor refactor.",
+        "files": [
+          ".factory/missions/2fbb8327-d5b3-4c25-9643-c08a4140b7c7/handoffs/A-01-phase0-constructor-inventory.md"
+        ],
+        "target_state_description": "Run the inventory sweeps described in plan/structural-refactors/01_orchestrator_constructor/03_migration_plan.md Phase 0 and write a one-file artifact containing every current call site of `Orchestrator::new`, `Orchestrator::with_llm`, `Orchestrator::with_checkpoint_manager`, and `.llm_backend()`. The artifact must list exact file:line references so later workers do not need to rediscover them. Do not edit Rust code in this feature.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/01_orchestrator_constructor/03_migration_plan.md#phase-0--inventory"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "test -f .factory/missions/2fbb8327-d5b3-4c25-9643-c08a4140b7c7/handoffs/A-01-phase0-constructor-inventory.md",
+            "expect": "exit 0",
+            "fail_reason": "constructor inventory artifact missing"
+          },
+          {
+            "cmd": "rg -n 'Orchestrator::(new|with_llm|with_checkpoint_manager)|\\.llm_backend\\(\\)' .factory/missions/2fbb8327-d5b3-4c25-9643-c08a4140b7c7/handoffs/A-01-phase0-constructor-inventory.md",
+            "expect": "exit 0",
+            "fail_reason": "constructor inventory artifact does not record all required query categories"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A-02-phase1-introduce-builder",
+      "phase": "A",
+      "refactor": "01",
+      "worker_routing": "runtime-wiring-worker",
+      "depends_on": [
+        "A-01-phase0-constructor-inventory"
+      ],
+      "fulfills": [
+        "VAL-A1-002",
+        "VAL-A1-003",
+        "VAL-A1-004",
+        "VAL-A1-005",
+        "VAL-A1-006"
+      ],
+      "worker_spec": {
+        "summary": "Introduce the test-only OrchestratorBuilder behind the `test-support` feature without breaking existing callers.",
+        "files": [
+          "crates/swell-orchestrator/src/builder.rs",
+          "crates/swell-orchestrator/src/lib.rs",
+          "crates/swell-orchestrator/Cargo.toml"
+        ],
+        "target_state_description": "Add `OrchestratorBuilder` exactly as a test-only construction surface. `builder.rs` must exist. The builder type, its impl blocks, and its export from `lib.rs` must all be guarded by `#[cfg(any(test, feature = \"test-support\"))]`. Add `test-support = []` to `crates/swell-orchestrator/Cargo.toml`. This phase is add-only: do not delete old constructors yet.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/01_orchestrator_constructor/03_migration_plan.md#phase-1--introduce-orchestratorbuilder-behind-a-feature-flag"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after builder introduction"
+          },
+          {
+            "cmd": "test -f crates/swell-orchestrator/src/builder.rs",
+            "expect": "exit 0",
+            "fail_reason": "builder.rs missing"
+          },
+          {
+            "cmd": "rg -n '#\\[cfg\\(any\\(test, feature = \"test-support\"\\)\\)\\]' crates/swell-orchestrator/src/builder.rs crates/swell-orchestrator/src/lib.rs",
+            "expect": "exit 0",
+            "fail_reason": "test-support cfg gates missing on builder surface"
+          },
+          {
+            "cmd": "rg -n '^test-support\\s*=\\s*\\[\\]' crates/swell-orchestrator/Cargo.toml",
+            "expect": "exit 0",
+            "fail_reason": "test-support feature missing from Cargo.toml"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A-03-phase2-migrate-tests-orchestrator-crate",
+      "phase": "A",
+      "refactor": "01",
+      "worker_routing": "runtime-wiring-worker",
+      "depends_on": [
+        "A-02-phase1-introduce-builder"
+      ],
+      "fulfills": [],
+      "worker_spec": {
+        "summary": "Migrate the orchestrator crate\u2019s own tests from old constructors to OrchestratorBuilder.",
+        "files": [
+          "crates/swell-orchestrator/src/lib.rs",
+          "crates/swell-orchestrator/tests/",
+          "crates/swell-orchestrator/src/"
+        ],
+        "target_state_description": "Using the inventory artifact, replace orchestrator-crate test call sites of `Orchestrator::new()`, `Orchestrator::with_llm(...)`, and `Orchestrator::with_checkpoint_manager(...)` with `OrchestratorBuilder` usage. Restrict edits to the orchestrator crate\u2019s test surfaces and any minimal supporting code required there. Do not touch daemon or integration tests yet.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/01_orchestrator_constructor/03_migration_plan.md#phase-2--migrate-tests-onto-the-builder"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after orchestrator test migration"
+          },
+          {
+            "cmd": "cargo test -p swell-orchestrator -- --test-threads=4",
+            "expect": "exit 0",
+            "fail_reason": "orchestrator crate tests regressed during builder migration"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A-04-phase2-migrate-tests-cross-crate",
+      "phase": "A",
+      "refactor": "01",
+      "worker_routing": "runtime-wiring-worker",
+      "depends_on": [
+        "A-03-phase2-migrate-tests-orchestrator-crate"
+      ],
+      "fulfills": [
+        "VAL-A2-001",
+        "VAL-A2-002",
+        "VAL-A2-003",
+        "VAL-A2-004"
+      ],
+      "worker_spec": {
+        "summary": "Finish Phase 2 by migrating remaining non-orchestrator tests and integration call sites to OrchestratorBuilder.",
+        "files": [
+          "crates/swell-validation/",
+          "crates/swell-integration-tests/tests/full_cycle_wiring.rs",
+          "crates/*/Cargo.toml"
+        ],
+        "target_state_description": "Use the inventory artifact to migrate every remaining test/integration call site off `Orchestrator::new`, `Orchestrator::with_llm`, and `Orchestrator::with_checkpoint_manager`. Update dev-dependencies only where needed for `test-support`. At the end of this feature there must be zero test/integration call sites using the old constructor surface.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/01_orchestrator_constructor/03_migration_plan.md#phase-2--migrate-tests-onto-the-builder"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after cross-crate builder migration"
+          },
+          {
+            "cmd": "rg -n 'Orchestrator::new\\(|Orchestrator::with_llm\\(|Orchestrator::with_checkpoint_manager\\(' crates/ --type rust -g '!**/src/lib.rs' -g '!**/src/server.rs'",
+            "expect": "exit 1",
+            "fail_reason": "old orchestrator constructor calls remain in test or integration code"
+          },
+          {
+            "cmd": "cargo test -p swell-validation -- --test-threads=4 && cargo test -p swell-integration-tests --test full_cycle_wiring",
+            "expect": "exit 0",
+            "fail_reason": "cross-crate tests regressed during builder migration"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A-05-phase3-flip-production-constructor",
+      "phase": "A",
+      "refactor": "01",
+      "worker_routing": "runtime-wiring-worker",
+      "depends_on": [
+        "A-04-phase2-migrate-tests-cross-crate"
+      ],
+      "fulfills": [
+        "VAL-A3-001",
+        "VAL-A3-002",
+        "VAL-A3-003",
+        "VAL-A3-004",
+        "VAL-A3-005",
+        "VAL-A3-006",
+        "VAL-A3-007",
+        "VAL-A3-008"
+      ],
+      "worker_spec": {
+        "summary": "Delete the legacy constructor surface and make `Orchestrator::new(llm)` the sole production constructor.",
+        "files": [
+          "crates/swell-orchestrator/src/lib.rs",
+          "crates/swell-orchestrator/src/builder.rs",
+          "crates/swell-daemon/src/server.rs"
+        ],
+        "target_state_description": "Change `llm_backend` from `Option<Arc<dyn LlmBackend>>` to `Arc<dyn LlmBackend>`. Delete `Orchestrator::new()` and `Orchestrator::with_checkpoint_manager(...)`. Rename/replace `with_llm` so `pub fn new(llm)` is the only public constructor. Update `llm_backend()` to return `Arc<dyn LlmBackend>` directly. Update `crates/swell-daemon/src/server.rs` to call `Orchestrator::new(llm)`. Ensure the builder delegates to the new constructor. Do not add any placeholder Option fields for future subsystems. Update any `.is_some()` or `.unwrap()` call sites on `llm_backend()` to match the new non-optional return type.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/01_orchestrator_constructor/03_migration_plan.md#phase-3--flip-the-production-constructor"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after constructor flip"
+          },
+          {
+            "cmd": "rg -c 'llm_backend:\\s*Option' crates/swell-orchestrator/src/lib.rs",
+            "expect": "count 0",
+            "fail_reason": "llm_backend is still optional after constructor flip"
+          },
+          {
+            "cmd": "test \"$(rg -c '^\\s*pub (async )?fn new\\s*\\(' crates/swell-orchestrator/src/lib.rs)\" = \"1\"",
+            "expect": "exit 0",
+            "fail_reason": "expected exactly one public Orchestrator::new constructor"
+          },
+          {
+            "cmd": "rg -n '^\\s*pub (async )?fn with_' crates/swell-orchestrator/src/lib.rs",
+            "expect": "exit 1",
+            "fail_reason": "public with_* constructor still exists on Orchestrator"
+          },
+          {
+            "cmd": "cargo test --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace tests regressed after constructor flip"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A-06-phase4-gate-builder",
+      "phase": "A",
+      "refactor": "01",
+      "worker_routing": "runtime-wiring-worker",
+      "depends_on": [
+        "A-05-phase3-flip-production-constructor"
+      ],
+      "fulfills": [
+        "VAL-A4-001",
+        "VAL-A4-002",
+        "VAL-A4-003"
+      ],
+      "worker_spec": {
+        "summary": "Prove the builder is unreachable from production via compile-fail and production-build checks.",
+        "files": [
+          "crates/swell-orchestrator/src/lib.rs",
+          ".github/workflows/",
+          "crates/swell-orchestrator/"
+        ],
+        "target_state_description": "Add the `compile_fail` doctest on `Orchestrator` proving parameterless construction does not compile. Add the CI/build check described in the plan so production build artifacts do not expose `OrchestratorBuilder`. Pick one deterministic validation path suitable for this repo\u2019s platform/tooling and encode it clearly. Do not weaken the gating requirement.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/01_orchestrator_constructor/03_migration_plan.md#phase-4--gate-the-builder"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo test --workspace --doc",
+            "expect": "exit 0",
+            "fail_reason": "doctests did not prove compile-fail constructor invariant"
+          },
+          {
+            "cmd": "cargo build -p swell-daemon --release",
+            "expect": "exit 0",
+            "fail_reason": "production daemon build failed during builder-gating checks"
+          },
+          {
+            "cmd": "! nm -g target/release/swell-daemon | grep OrchestratorBuilder",
+            "expect": "exit 0",
+            "fail_reason": "OrchestratorBuilder leaked into production binary"
+          }
+        ]
+      }
+    },
+    {
+      "id": "A-07-phase5-antipatterns-and-doc-handoff",
+      "phase": "A",
+      "refactor": "01",
+      "worker_routing": "gatekeeper-worker",
+      "depends_on": [
+        "A-06-phase4-gate-builder"
+      ],
+      "fulfills": [
+        "VAL-A5-001",
+        "VAL-A5-002",
+        "VAL-A5-003",
+        "VAL-A5-004",
+        "VAL-A5-005",
+        "VAL-A5-006",
+        "VAL-A6-001",
+        "VAL-A6-002",
+        "VAL-A6-003",
+        "VAL-A6-004",
+        "VAL-A6-005",
+        "VAL-A6-006",
+        "VAL-A6-007"
+      ],
+      "worker_spec": {
+        "summary": "Finish Phase A by removing compile-time-redundant wiring tests, codifying constructor policy, and proving all anti-patterns are blocked mechanically.",
+        "files": [
+          "crates/swell-integration-tests/tests/full_cycle_wiring.rs",
+          "crates/swell-orchestrator/AGENTS.md",
+          "crates/swell-integration-tests/AGENTS.md",
+          "plan/audit-2026-04-16/07_integration_test_strategy.md"
+        ],
+        "target_state_description": "Apply the redundancy audit exactly: remove only the compile-time-redundant constructor-presence wiring/witness tests, keep the runtime-behavior keepers, and update the named AGENTS/docs surfaces. Also ensure the tree contains no anti-pattern backdoors from `02_target_architecture.md`: no wrapped Option holes, no required-subsystem Defaults, no public `with_*` setters on `Orchestrator`, no disabled/null constructor substitutes, and no `OrchestratorConfig` with `Option` holes. This is the final Phase A hard gate.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/01_orchestrator_constructor/02_target_architecture.md#anti-patterns--things-that-look-legal-but-arent"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile during Phase A final gate"
+          },
+          {
+            "cmd": "rg -n 'Arc<Mutex<Option<|Arc<RwLock<Option<|RwLock<Option<' crates/swell-orchestrator crates/swell-daemon --type rust",
+            "expect": "exit 1",
+            "fail_reason": "wrapped Option anti-pattern still present"
+          },
+          {
+            "cmd": "rg -n 'impl Default for (ExecutionController|ValidationOrchestrator|WorktreePool|PostToolHookManager|CommitStrategy|CostGuard|HookManager)' crates/ --type rust",
+            "expect": "exit 1",
+            "fail_reason": "required subsystem still has Default backdoor"
+          },
+          {
+            "cmd": "rg -n '^\\s*pub (async )?fn with_' crates/swell-orchestrator/src/lib.rs",
+            "expect": "exit 1",
+            "fail_reason": "public with_* setter still exists on Orchestrator"
+          },
+          {
+            "cmd": "rg -n 'fn (disabled|no_op|null)\\s*\\(' crates/swell-orchestrator crates/swell-daemon --type rust",
+            "expect": "exit 1",
+            "fail_reason": "disabled or null constructor backdoor still present on refactor-01 surface"
+          },
+          {
+            "cmd": "rg -n 'struct OrchestratorConfig|Option<.*(LlmBackend|ExecutionController|ValidationOrchestrator|WorktreePool|PostToolHookManager)' crates/ --type rust -g '!**/builder.rs'",
+            "expect": "exit 1",
+            "fail_reason": "OrchestratorConfig Option-hole anti-pattern present"
+          },
+          {
+            "cmd": "cargo test -p swell-integration-tests --test full_cycle_wiring && cargo test --workspace --doc",
+            "expect": "exit 0",
+            "fail_reason": "wiring suite or doctests regressed during Phase A final gate"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-01-wiring-report-trait-and-manifest-surface",
+      "phase": "B",
+      "refactor": "02",
+      "worker_routing": "runtime-wiring-worker",
+      "depends_on": [
+        "A-07-phase5-antipatterns-and-doc-handoff"
+      ],
+      "fulfills": [
+        "VAL-B1-001",
+        "VAL-B1-002",
+        "VAL-B1-003",
+        "VAL-B1-004"
+      ],
+      "worker_spec": {
+        "summary": "Introduce the WiringReport/WiringState contract and the orchestrator wiring-manifest surface.",
+        "files": [
+          "crates/swell-core/src/",
+          "crates/swell-orchestrator/src/"
+        ],
+        "target_state_description": "Add the shared `WiringReport` trait and `WiringState` enum, then add the `Orchestrator` wiring-manifest surface that returns report entries for every required/load-bearing subsystem named in the plan. It is acceptable for not-yet-landed subsystems to report `DISABLED(<reason>)`; do not implement those future subsystems here.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/02_startup_wiring_manifest.md"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after WiringReport introduction"
+          },
+          {
+            "cmd": "rg -n 'trait WiringReport|enum WiringState|fn wiring_manifest' crates/swell-core crates/swell-orchestrator --type rust",
+            "expect": "exit 0",
+            "fail_reason": "wiring manifest contract surface incomplete"
+          },
+          {
+            "cmd": "rg -n 'LlmBackend|WorktreePool|ExecutionController|ValidationOrchestrator|PostToolHookManager' crates/swell-orchestrator --type rust",
+            "expect": "exit 0",
+            "fail_reason": "required subsystem names missing from wiring manifest surface"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-02-startup-manifest-print-and-strict-mode",
+      "phase": "B",
+      "refactor": "02",
+      "worker_routing": "runtime-wiring-worker",
+      "depends_on": [
+        "B-01-wiring-report-trait-and-manifest-surface"
+      ],
+      "fulfills": [
+        "VAL-B2-001",
+        "VAL-B2-002",
+        "VAL-B2-003",
+        "VAL-B2-004",
+        "VAL-B2-006"
+      ],
+      "worker_spec": {
+        "summary": "Print the wiring manifest once at daemon startup and enforce strict mode on degraded/disabled state.",
+        "files": [
+          "crates/swell-daemon/src/",
+          "crates/swell-daemon/AGENTS.md"
+        ],
+        "target_state_description": "Hook the manifest into the daemon startup path so it prints exactly once with explicit state tokens and a `[wiring-check]` summary line. Implement `SWELL_STRICT=1` refusal behavior when any subsystem reports degraded or disabled. Update daemon guidance so future subsystem additions must update the manifest output.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/02_startup_wiring_manifest.md#strict-mode"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after startup-manifest wiring"
+          },
+          {
+            "cmd": "cargo test -p swell-daemon -- --test-threads=4",
+            "expect": "exit 0",
+            "fail_reason": "daemon tests regressed after startup-manifest wiring"
+          },
+          {
+            "cmd": "rg -n '\\[wiring-check\\]|DEGRADED|DISABLED|enabled' crates/swell-daemon --type rust",
+            "expect": "exit 0",
+            "fail_reason": "manifest output missing explicit state tokens or summary"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-03-manifest-integration-proof",
+      "phase": "B",
+      "refactor": "02",
+      "worker_routing": "runtime-wiring-worker",
+      "depends_on": [
+        "B-02-startup-manifest-print-and-strict-mode"
+      ],
+      "fulfills": [
+        "VAL-B2-005"
+      ],
+      "worker_spec": {
+        "summary": "Add the manifest-specific integration proof to the wiring suite.",
+        "files": [
+          "crates/swell-integration-tests/tests/full_cycle_wiring.rs"
+        ],
+        "target_state_description": "Add the wiring-manifest integration assertion described by the plan: the full-cycle wiring suite must prove the manifest includes every required subsystem by name. Keep the test mechanical and bounded to named subsystem entries.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/02_startup_wiring_manifest.md#integration-test-angle"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo test -p swell-integration-tests --test full_cycle_wiring",
+            "expect": "exit 0",
+            "fail_reason": "full_cycle_wiring did not prove manifest coverage"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-04-newtype-socketpath",
+      "phase": "B",
+      "refactor": "03",
+      "worker_routing": "structural-refactor-worker",
+      "depends_on": [
+        "A-07-phase5-antipatterns-and-doc-handoff"
+      ],
+      "fulfills": [
+        "VAL-B3-001",
+        "VAL-B3-007",
+        "VAL-B3-008"
+      ],
+      "worker_spec": {
+        "summary": "Introduce and migrate `SocketPath` as the first ID newtype.",
+        "files": [
+          "crates/swell-core/src/ids.rs",
+          "crates/swell-core/src/lib.rs",
+          "crates/swell-daemon/src/"
+        ],
+        "target_state_description": "Create the shared ids module if needed and add `SocketPath` as a transparent newtype with named accessors, not `From<String>` shortcuts. Migrate the daemon-facing socket-path surface to use it. Keep the feature limited to this one newtype plus the minimal shared ids module scaffolding required.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/03_newtype_ids.md#phase-2--migrate-one-id-at-a-time-per-crate"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after SocketPath migration"
+          },
+          {
+            "cmd": "rg -n 'struct SocketPath|pub struct SocketPath' crates/swell-core/src/ids.rs",
+            "expect": "exit 0",
+            "fail_reason": "SocketPath newtype missing"
+          },
+          {
+            "cmd": "rg -n 'impl From<String> for SocketPath|impl From<Uuid> for SocketPath' crates/swell-core/src/ids.rs",
+            "expect": "exit 1",
+            "fail_reason": "SocketPath has forbidden From conversion backdoor"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-05-newtype-commitsha",
+      "phase": "B",
+      "refactor": "03",
+      "worker_routing": "structural-refactor-worker",
+      "depends_on": [
+        "B-04-newtype-socketpath"
+      ],
+      "fulfills": [
+        "VAL-B3-002",
+        "VAL-B3-009"
+      ],
+      "worker_spec": {
+        "summary": "Introduce and migrate `CommitSha` as a standalone newtype step.",
+        "files": [
+          "crates/swell-core/src/ids.rs",
+          "crates/swell-tools/src/",
+          "crates/swell-orchestrator/src/"
+        ],
+        "target_state_description": "Add `CommitSha` to the shared ids module and migrate the bounded commit-sha surfaces that currently use raw strings. Do not mix in other ID migrations in this feature.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/03_newtype_ids.md"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after CommitSha migration"
+          },
+          {
+            "cmd": "rg -n 'struct CommitSha|pub struct CommitSha' crates/swell-core/src/ids.rs",
+            "expect": "exit 0",
+            "fail_reason": "CommitSha newtype missing"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-06-newtype-branchname",
+      "phase": "B",
+      "refactor": "03",
+      "worker_routing": "structural-refactor-worker",
+      "depends_on": [
+        "B-05-newtype-commitsha"
+      ],
+      "fulfills": [
+        "VAL-B3-003",
+        "VAL-B3-010"
+      ],
+      "worker_spec": {
+        "summary": "Introduce and migrate `BranchName` as its own commit-shaped feature.",
+        "files": [
+          "crates/swell-core/src/ids.rs",
+          "crates/swell-tools/src/",
+          "crates/swell-orchestrator/src/"
+        ],
+        "target_state_description": "Add `BranchName` with explicit validation/access methods and migrate the bounded branch-name surfaces that currently use raw strings. Keep the feature mechanical and limited to this newtype migration.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/03_newtype_ids.md"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after BranchName migration"
+          },
+          {
+            "cmd": "rg -n 'struct BranchName|pub struct BranchName' crates/swell-core/src/ids.rs",
+            "expect": "exit 0",
+            "fail_reason": "BranchName newtype missing"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-07-newtype-worktreeid",
+      "phase": "B",
+      "refactor": "03",
+      "worker_routing": "structural-refactor-worker",
+      "depends_on": [
+        "B-06-newtype-branchname"
+      ],
+      "fulfills": [
+        "VAL-B3-004",
+        "VAL-B3-011"
+      ],
+      "worker_spec": {
+        "summary": "Introduce and migrate `WorktreeId` as a dedicated feature.",
+        "files": [
+          "crates/swell-core/src/ids.rs",
+          "crates/swell-tools/src/",
+          "crates/swell-orchestrator/src/"
+        ],
+        "target_state_description": "Add `WorktreeId` and migrate only the bounded worktree-id surfaces that currently use raw `Uuid`/string identifiers. Keep the blast radius explicit and mechanical.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/03_newtype_ids.md"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after WorktreeId migration"
+          },
+          {
+            "cmd": "rg -n 'struct WorktreeId|pub struct WorktreeId' crates/swell-core/src/ids.rs",
+            "expect": "exit 0",
+            "fail_reason": "WorktreeId newtype missing"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-08-newtype-agentid",
+      "phase": "B",
+      "refactor": "03",
+      "worker_routing": "structural-refactor-worker",
+      "depends_on": [
+        "B-07-newtype-worktreeid"
+      ],
+      "fulfills": [
+        "VAL-B3-005",
+        "VAL-B3-012"
+      ],
+      "worker_spec": {
+        "summary": "Introduce and migrate `AgentId` as a dedicated feature.",
+        "files": [
+          "crates/swell-core/src/ids.rs",
+          "crates/swell-orchestrator/src/",
+          "crates/swell-daemon/src/"
+        ],
+        "target_state_description": "Add `AgentId` and migrate only the bounded agent-id surfaces that currently use raw `Uuid` fields/parameters. Keep the feature limited to this one ID migration.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/03_newtype_ids.md"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after AgentId migration"
+          },
+          {
+            "cmd": "rg -n 'struct AgentId|pub struct AgentId' crates/swell-core/src/ids.rs",
+            "expect": "exit 0",
+            "fail_reason": "AgentId newtype missing"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-09-newtype-taskid-and-final-id-audit",
+      "phase": "B",
+      "refactor": "03",
+      "worker_routing": "structural-refactor-worker",
+      "depends_on": [
+        "B-08-newtype-agentid"
+      ],
+      "fulfills": [
+        "VAL-B3-006",
+        "VAL-B3-013",
+        "VAL-B3-014",
+        "VAL-B3-015"
+      ],
+      "worker_spec": {
+        "summary": "Introduce and migrate `TaskId`, then run the final public-ID grep audit and update guidance.",
+        "files": [
+          "crates/swell-core/src/ids.rs",
+          "crates/swell-orchestrator/src/",
+          "crates/swell-daemon/src/",
+          "crates/swell-core/AGENTS.md",
+          "crates/swell-orchestrator/AGENTS.md",
+          "crates/swell-daemon/AGENTS.md"
+        ],
+        "target_state_description": "Add `TaskId`, migrate the bounded daemon/orchestrator task-id surfaces off raw `Uuid` arguments/fields, then update the relevant guidance files so domain IDs are documented as newtypes. This feature also performs the final raw-ID grep audit for daemon/orchestrator public surfaces and must drive that filtered count to 0 by excluding legitimate non-domain-ID uses via `-g` filters rather than leaving a narrative floor.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/03_newtype_ids.md#acceptance-criteria"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after TaskId migration"
+          },
+          {
+            "cmd": "rg -n 'struct TaskId|pub struct TaskId' crates/swell-core/src/ids.rs",
+            "expect": "exit 0",
+            "fail_reason": "TaskId newtype missing"
+          },
+          {
+            "cmd": "rg -c ':\\s*Uuid\\b' crates/swell-daemon/ crates/swell-orchestrator/ --type rust -g '!**/tests/**' -g '!**/*_test.rs' -g '!**/ids.rs'",
+            "expect": "exit 1",
+            "fail_reason": "raw Uuid domain-ID positions remain in daemon/orchestrator surfaces"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-10-daemon-error-enum-shell",
+      "phase": "B",
+      "refactor": "04",
+      "worker_routing": "reliability-worker",
+      "depends_on": [
+        "A-07-phase5-antipatterns-and-doc-handoff"
+      ],
+      "fulfills": [
+        "VAL-B4-001",
+        "VAL-B4-002",
+        "VAL-B4-003",
+        "VAL-B4-009"
+      ],
+      "worker_spec": {
+        "summary": "Add the structured daemon error shell and its wire projection without flipping all public APIs yet.",
+        "files": [
+          "crates/swell-daemon/src/error.rs",
+          "crates/swell-daemon/src/lib.rs",
+          "crates/swell-daemon/Cargo.toml"
+        ],
+        "target_state_description": "Define `DaemonError` and `DaemonErrorWire` in the daemon error surface, using `thiserror` for the internal enum. Include the structured failure classes called out by the plan, at minimum `ValidationFailed`, `HookDenied`, and `BudgetExceeded`, even if some are not yet fully returned in all paths. Add the crate dependency wiring required for this error shell.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/04_daemon_error_enum.md"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after adding DaemonError shell"
+          },
+          {
+            "cmd": "rg -n 'enum DaemonError|enum DaemonErrorWire|ValidationFailed|HookDenied|BudgetExceeded' crates/swell-daemon/src/error.rs",
+            "expect": "exit 0",
+            "fail_reason": "structured daemon error shell is incomplete"
+          },
+          {
+            "cmd": "rg -n '^thiserror\\s*=' crates/swell-daemon/Cargo.toml",
+            "expect": "exit 0",
+            "fail_reason": "thiserror dependency missing from daemon crate"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-11-daemon-public-boundary-flip",
+      "phase": "B",
+      "refactor": "04",
+      "worker_routing": "reliability-worker",
+      "depends_on": [
+        "B-10-daemon-error-enum-shell"
+      ],
+      "fulfills": [
+        "VAL-B4-004",
+        "VAL-B4-010"
+      ],
+      "worker_spec": {
+        "summary": "Flip the daemon\u2019s public Result boundary from anyhow to DaemonError.",
+        "files": [
+          "crates/swell-daemon/src/"
+        ],
+        "target_state_description": "Change public daemon-facing functions so they return `Result<_, DaemonError>` instead of `anyhow::Result<_>`. Internal helpers may still use `anyhow` if needed, but the public boundary must become typed. Keep the feature limited to the daemon crate public boundary and its tests.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/04_daemon_error_enum.md#phase-2--flip-the-daemons-public-api"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after daemon public-boundary flip"
+          },
+          {
+            "cmd": "rg -n 'pub .*anyhow::Result|pub .*Result<.*anyhow::Error>' crates/swell-daemon/src --type rust",
+            "expect": "exit 1",
+            "fail_reason": "public daemon API still exposes anyhow results"
+          },
+          {
+            "cmd": "cargo test -p swell-daemon -- --test-threads=4",
+            "expect": "exit 0",
+            "fail_reason": "daemon tests regressed after public-boundary flip"
+          }
+        ]
+      }
+    },
+    {
+      "id": "B-12-daemon-error-path-upgrades-and-grep-cleanup",
+      "phase": "B",
+      "refactor": "04",
+      "worker_routing": "reliability-worker",
+      "depends_on": [
+        "B-11-daemon-public-boundary-flip"
+      ],
+      "fulfills": [
+        "VAL-B4-005",
+        "VAL-B4-006",
+        "VAL-B4-007",
+        "VAL-B4-008"
+      ],
+      "worker_spec": {
+        "summary": "Upgrade the targeted daemon failure paths and remove stringly error matching outside tests.",
+        "files": [
+          "crates/swell-daemon/src/",
+          "crates/swell-orchestrator/src/",
+          "crates/*/src/"
+        ],
+        "target_state_description": "Upgrade the specific failure paths needed by the plan so validation failures, hook denials, and budget-exceeded conditions can surface as structured daemon error classes. Remove all non-test `.contains(...)` string-matching on errors from workspace sources touched by this refactor. Keep the changes bounded to the structured-error migration; do not implement unrelated Tier 2 runtime features.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/04_daemon_error_enum.md#phase-3--upgrade-specific-error-paths"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace",
+            "expect": "exit 0",
+            "fail_reason": "workspace did not compile after daemon error-path upgrades"
+          },
+          {
+            "cmd": "rg -n 'err.*\\.contains\\(|error.*\\.contains\\(' crates/ --type rust -g '!**/tests/**' -g '!**/*_test.rs'",
+            "expect": "exit 1",
+            "fail_reason": "stringly error matching remains outside tests"
+          },
+          {
+            "cmd": "cargo test -p swell-daemon -- --test-threads=4",
+            "expect": "exit 0",
+            "fail_reason": "daemon tests regressed after structured error-path upgrades"
+          }
+        ]
+      }
+    },
+    {
+      "id": "C-01-regression-audit-and-tier1-handoff",
+      "phase": "C",
+      "refactor": "audit",
+      "worker_routing": "gatekeeper-worker",
+      "depends_on": [
+        "B-03-manifest-integration-proof",
+        "B-09-newtype-taskid-and-final-id-audit",
+        "B-12-daemon-error-path-upgrades-and-grep-cleanup"
+      ],
+      "fulfills": [
+        "VAL-C1-001",
+        "VAL-C1-002",
+        "VAL-C1-003",
+        "VAL-C1-004",
+        "VAL-C1-005",
+        "VAL-C1-006"
+      ],
+      "worker_spec": {
+        "summary": "Run the final regression greps, record before/after counts, and apply the documented handoff edit to Tier 1 blockers.",
+        "files": [
+          ".factory/missions/2fbb8327-d5b3-4c25-9643-c08a4140b7c7/handoffs/C-01-regression-audit-and-tier1-handoff.md",
+          "plan/audit-2026-04-16/04_tier1_blockers.md"
+        ],
+        "target_state_description": "Run the four regression greps from `plan/structural-refactors/00_README.md`, record the final counts in the handoff artifact, confirm they meet targets, and then replace the precondition banner in `plan/audit-2026-04-16/04_tier1_blockers.md` with the documented one-line handoff note containing the landed refactor-01 commit SHA. This is the only allowed edit under `plan/audit-2026-04-16/` for this mission.",
+        "rollback": "git revert <this-commit-sha>",
+        "reference": "plan/structural-refactors/00_README.md#for-mission-planners"
+      },
+      "validator_spec": {
+        "steps": [
+          {
+            "cmd": "cargo check --workspace && cargo test --workspace && cargo test --workspace --doc && cargo test -p swell-integration-tests --test full_cycle_wiring",
+            "expect": "exit 0",
+            "fail_reason": "final workspace validation did not pass during regression audit"
+          },
+          {
+            "cmd": "rg -c 'Option<.*(LlmBackend|WorktreePool|ValidationOrchestrator|PostToolHookManager|ExecutionController|CommitStrategy|CostGuard|HookManager)>' crates/ --type rust",
+            "expect": "target 0",
+            "fail_reason": "refactor-01 grep target not met"
+          },
+          {
+            "cmd": "rg -l 'impl WiringReport' crates/ --type rust | wc -l",
+            "expect": "count matches recorded Phase C manifest target",
+            "fail_reason": "refactor-02 WiringReport coverage target not met"
+          },
+          {
+            "cmd": "rg -c ':\\s*Uuid\\b' crates/swell-daemon/ crates/swell-orchestrator/ --type rust -g '!**/tests/**' -g '!**/*_test.rs' -g '!**/ids.rs'",
+            "expect": "exit 1",
+            "fail_reason": "refactor-03 raw Uuid target not met"
+          },
+          {
+            "cmd": "rg -c 'err.*\\.contains\\(|error.*\\.contains\\(' crates/ --type rust -g '!**/tests/**' -g '!**/*_test.rs'",
+            "expect": "target 0",
+            "fail_reason": "refactor-04 stringly error-matching target not met"
+          },
+          {
+            "cmd": "rg -n 'Refactor 01 landed at commit .*; new subsystems land as required constructor parameters\\.' plan/audit-2026-04-16/04_tier1_blockers.md",
+            "expect": "exit 0",
+            "fail_reason": "tier1 blocker handoff note missing or malformed"
+          }
+        ]
+      }
+    }
+  ]
+}

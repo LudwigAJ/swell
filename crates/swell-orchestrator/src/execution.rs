@@ -10,7 +10,7 @@ use crate::{
         generate_suggested_options, ConfidenceLevel, UncertaintyClarificationEvent,
         UncertaintyManager,
     },
-    EvaluatorAgent, FeatureLead, FeatureLeadSpawner, GeneratorAgent, Orchestrator, PlannerAgent,
+    FeatureLead, FeatureLeadSpawner, GeneratorAgent, Orchestrator, PlannerAgent,
     MAX_CONCURRENT_AGENTS,
 };
 use futures::stream::{self, StreamExt};
@@ -27,7 +27,10 @@ use swell_tools::{
     resource_limits::{SessionLimits, SessionResourceTracker},
     ToolRegistry,
 };
-use swell_validation::ValidationPipeline;
+use swell_validation::{
+    orchestrator::{TaskCompletionInput, TaskExecutionMetadata, ValidationOrchestrator},
+    ValidationPipeline,
+};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -192,6 +195,13 @@ pub struct ExecutionController {
     orchestrator: Arc<Orchestrator>,
     llm: Arc<dyn LlmBackend>,
     tool_registry: Arc<ToolRegistry>,
+    /// The high-level validation orchestrator for task completion validation.
+    /// This is the audited production entry point that runs all configured validation gates.
+    /// VAL-WIRING-004: Runtime success depends on ValidationOrchestrator validation, not only local default validation.
+    validation_orchestrator: ValidationOrchestrator,
+    /// Backward-compatible pipeline field (deprecated, prefer validation_orchestrator).
+    /// Kept for existing code that may still reference it directly.
+    #[allow(dead_code)]
     validation_pipeline: ValidationPipeline,
     /// Kill switch for emergency stops and pause/resume
     kill_switch: OrchestratorKillSwitch,
@@ -233,6 +243,10 @@ impl ExecutionController {
     /// * `orchestrator` - The orchestrator for task coordination
     /// * `llm` - The LLM backend for agent reasoning
     /// * `tool_registry` - The tool registry for tool execution
+    ///
+    /// # Notes
+    /// - Creates a `ValidationOrchestrator` with default gates (lint, test, security).
+    /// - This is the production entry point: runtime success depends on `ValidationOrchestrator`.
     pub fn new(
         orchestrator: Arc<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
@@ -242,6 +256,7 @@ impl ExecutionController {
             orchestrator,
             llm,
             tool_registry,
+            validation_orchestrator: ValidationOrchestrator::default(),
             validation_pipeline: ValidationPipeline::new(),
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
@@ -271,6 +286,7 @@ impl ExecutionController {
             orchestrator,
             llm,
             tool_registry,
+            validation_orchestrator: ValidationOrchestrator::default(),
             validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
@@ -306,6 +322,7 @@ impl ExecutionController {
             orchestrator,
             llm,
             tool_registry,
+            validation_orchestrator: ValidationOrchestrator::default(),
             validation_pipeline: ValidationPipeline::new(),
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
@@ -336,6 +353,7 @@ impl ExecutionController {
             orchestrator,
             llm,
             tool_registry,
+            validation_orchestrator: ValidationOrchestrator::default(),
             validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
@@ -377,6 +395,7 @@ impl ExecutionController {
             orchestrator,
             llm,
             tool_registry,
+            validation_orchestrator: ValidationOrchestrator::default(),
             validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
@@ -421,6 +440,7 @@ impl ExecutionController {
             orchestrator,
             llm,
             tool_registry,
+            validation_orchestrator: ValidationOrchestrator::default(),
             validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::new(session_limits),
@@ -921,38 +941,68 @@ impl ExecutionController {
         // Step 4: Start validation phase
         self.orchestrator.start_validation(task_id).await?;
 
-        // Step 5: Run EvaluatorAgent with validation pipeline
-        let evaluator = EvaluatorAgent::with_pipeline(
-            "claude-sonnet".to_string(),
-            self.validation_pipeline.clone(),
-        );
-        let eval_context = AgentContext {
-            task: self.orchestrator.get_task(task_id).await?,
-            memory_blocks: Vec::new(),
-            session_id: Uuid::new_v4(),
-            workspace_path: None,
+        // Step 5: Run ValidationOrchestrator to validate task completion.
+        // VAL-WIRING-004: Runtime success depends on ValidationOrchestrator validation,
+        // not only local default validation. This is the audited production entry point.
+        let task = self.orchestrator.get_task(task_id).await?;
+        let changed_files = task.enrichment.enriched_files.clone();
+        let validation_input = TaskCompletionInput {
+            task_id,
+            workspace_path: ".".to_string(),
+            changed_files,
+            plan: task.plan.clone(),
+            execution_metadata: Some(TaskExecutionMetadata {
+                completed_without_error: generator_result.success,
+                iteration_count: 0, // TODO: track from execution
+                input_tokens: 0,
+                output_tokens: 0,
+                duration_ms: 0,
+                tool_calls_made: 0,
+                max_iterations_reached: false,
+            }),
         };
 
-        let eval_result = evaluator.execute(eval_context).await?;
+        let orchestrator_result = self
+            .validation_orchestrator
+            .validate_task_completion(validation_input)
+            .await;
 
-        // Step 6: Build final validation result combining generator and evaluator results
-        let validation_passed = generator_result.success && eval_result.success;
+        // Step 6: Build final validation result from ValidationOrchestrator output
+        let (validation_passed, mut errors) = match orchestrator_result {
+            Ok(ref result) => {
+                let passed = result.passed;
+                let errs = result.errors.clone();
+                (passed, errs)
+            }
+            Err(ref e) => {
+                let err_msg = format!("Validation orchestrator error: {}", e);
+                (false, vec![err_msg])
+            }
+        };
 
-        let mut errors = Vec::new();
+        // Collect any generator errors
         if let Some(err) = generator_result.error {
-            errors.push(err);
-        }
-        if let Some(err) = eval_result.error {
             errors.push(err);
         }
 
         let result = ValidationResult {
             passed: validation_passed,
-            // For MVP, validation gates are stubbed - in full implementation these come from evaluator
-            lint_passed: eval_result.success,
-            tests_passed: eval_result.success,
-            security_passed: eval_result.success,
-            ai_review_passed: eval_result.success,
+            lint_passed: orchestrator_result
+                .as_ref()
+                .map(|r| r.lint_passed)
+                .unwrap_or(false),
+            tests_passed: orchestrator_result
+                .as_ref()
+                .map(|r| r.tests_passed)
+                .unwrap_or(false),
+            security_passed: orchestrator_result
+                .as_ref()
+                .map(|r| r.security_passed)
+                .unwrap_or(false),
+            ai_review_passed: orchestrator_result
+                .as_ref()
+                .map(|r| r.ai_review_passed)
+                .unwrap_or(false),
             errors,
             warnings: vec![],
         };
@@ -1498,6 +1548,7 @@ impl Clone for ExecutionController {
             orchestrator: self.orchestrator.clone(),
             llm: self.llm.clone(),
             tool_registry: self.tool_registry.clone(),
+            validation_orchestrator: self.validation_orchestrator.clone(),
             validation_pipeline: self.validation_pipeline.clone(),
             kill_switch: self.kill_switch.clone(),
             resource_tracker: self.resource_tracker.clone(),
