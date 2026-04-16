@@ -1,0 +1,28 @@
+{
+  "featureId": "orch-frozen-spec",
+  "reviewedAt": "2026-04-16T01:30:00Z",
+  "commitId": "b9cf39a",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The blocking issue has been fixed by the scrutiny validator. FrozenRequirementRegistry is now integrated into the Orchestrator struct and verify_traceability() is called in both create_task() and create_task_with_autonomy(). Tasks are only rejected if the registry is non-empty (empty registry = no requirements to enforce, preventing false rejections during initial use). SwellError::TaskNotTracedToSpec was added as the error variant for traceability rejections.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/lib.rs",
+        "line": 0,
+        "severity": "resolved",
+        "description": "Blocking issue: FrozenRequirementRegistry was not wired into Orchestrator. FIXED: Added frozen_registry: FrozenRequirementRegistry field to Orchestrator struct, initialized with empty registry in new() and with_checkpoint_manager(). Added verify_traceability() call in create_task() and create_task_with_autonomy() with non-empty check to prevent false rejections."
+      },
+      {
+        "file": "crates/swell-core/src/error.rs",
+        "line": 0,
+        "severity": "resolved",
+        "description": "Added TaskNotTracedToSpec(String) variant to SwellError for traceability rejection."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "PASS after fix. The verify_traceability() check is now called in both create_task() and create_task_with_autonomy(). The check only rejects tasks when the registry is non-empty (has spec requirements), preventing false rejections during initial use. All 16 frozen_spec tests pass. cargo clippy passes."
+}

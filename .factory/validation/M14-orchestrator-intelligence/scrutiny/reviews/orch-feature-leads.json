@@ -1,0 +1,21 @@
+{
+  "featureId": "orch-feature-leads",
+  "reviewedAt": "2026-04-16T04:23:00Z",
+  "commitId": "6b43d38",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "FeatureLead sub-orchestrator wiring is fully implemented and properly integrated. The implementation adds: (1) get_connected_subgraphs() and largest_subgraph_size() to TaskGraph for subgraph extraction using BFS traversal, (2) FeatureLead struct with should_spawn() threshold check at >15 steps, (3) FeatureLeadManager for tracking active leads, (4) wiring in ExecutionController.execute_task() to spawn leads for complex tasks, (5) comprehensive tests covering threshold boundaries, plan segmentation, and subgraph extraction.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The AGENTS.md file in crates/swell-orchestrator/AGENTS.md incorrectly documents FEATURE_LEAD_STEP_THRESHOLD as 10, but the actual implementation uses 15. This discrepancy could mislead future developers.",
+      "evidence": "AGENTS.md line states 'pub const FEATURE_LEAD_STEP_THRESHOLD: usize = 10;' but feature_leads.rs defines 'pub const FEATURE_LEAD_STEP_THRESHOLD: usize = 15;' which is the correct value per the feature description (>15 tasks triggers spawning)."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-feature-leads passes review. The implementation correctly wires FeatureLead sub-orchestrators for DAG sub-graphs exceeding 15 tasks, with proper subgraph extraction, spawning logic, and comprehensive test coverage. MockLlm is only used in test modules. One documentation gap noted: AGENTS.md threshold value (10) does not match implementation (15)."
+}

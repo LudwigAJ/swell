@@ -1,0 +1,26 @@
+{
+  "featureId": "orch-non-novel-retry",
+  "reviewedAt": "2026-04-16T04:30:00.000Z",
+  "commitId": "5b687dc",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Feature implementation is complete and correct. The non-novel retry detection uses Jaccard+length similarity algorithm to compare diffs across task retries, rejecting retries with >90% similarity and forcing strategy changes (SwitchModel/Escalate). 26 unit tests cover the functionality. However, note the handoff file references commit 1a0a73d which is actually a follow-up fix for Clone derives in swell-llm - the actual feature implementation is in commit 5b687dc.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The handoff file's commitId field (1a0a73d) does not match the actual feature commit (5b687dc). The handoff references a fix commit for Clone derives in swell-llm, not the feature implementation itself. This mismatch could confuse future reviewers.",
+      "evidence": "Handoff file says commitId: '1a0a73d' but git show 1a0a73d --stat shows it's about 'fix(swell-llm): remove Clone derives from ModelRouter'. The actual feature is in commit 5b687dc which shows 'feat(swell-orchestrator): implement non-novel retry detection'"
+    },
+    {
+      "area": "conventions",
+      "observation": "The feature description mentions 'After 3 non-novel retries, stop retrying and emit a NonNovelRetryExhausted event' but this is NOT implemented. The expectedBehavior (which is the verification contract) does NOT include this item, so it's not a blocking issue - but the feature description and expectedBehavior are inconsistent.",
+      "evidence": "Feature description text: 'After 3 non-novel retries, stop retrying and emit a NonNovelRetryExhausted event.' No NonNovelRetryExhausted event exists in the code. expectedBehavior only has 5 items and doesn't mention exhaustion limit."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Implementation passes review. Non-novel retry detection is properly wired: diffs are compared using Jaccard+length similarity, >90% similarity triggers SwitchModel/Escalate forced actions, and NonNovelRetryRejection events are emitted. 26 unit tests exist. MockLlm only appears in test modules. Two non-blocking observations: (1) handoff commit reference mismatch, (2) feature description mentions '3 non-novel retries exhaustion' which isn't implemented but also isn't in expectedBehavior."
+}

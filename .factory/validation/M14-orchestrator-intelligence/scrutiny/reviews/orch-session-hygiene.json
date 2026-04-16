@@ -1,0 +1,22 @@
+{
+  "featureId": "orch-session-hygiene",
+  "reviewedAt": "2026-04-16T03:40:00Z",
+  "commitId": "b5e24be7fd8f0ae429f0d06ee92f34b22186473c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Feature orch-session-hygiene properly implements session hygiene with acceptance ratio tracking. The module adds checkpointing at configurable intervals, progress evaluation, and acceptance ratio monitoring with alert emission when ratio drops below threshold. 50 unit tests cover all functionality.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/session_hygiene.rs",
+        "line": 22,
+        "severity": "non_blocking",
+        "description": "Documentation outdated: module doc comment shows `SessionHygiene::new(config, soft_limits)` with 2 parameters, but actual implementation only takes 1 parameter `SessionHygiene::new(config)`. This appears to be a copy-paste artifact from the soft_limits module example."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-session-hygiene passes review. The session_hygiene.rs module is properly wired to the orchestrator through lib.rs exports including SessionHygiene, SessionHygieneConfig, AcceptanceRatioEvaluation, and the SessionHygieneAlert event variant. Implementation includes checkpointing every 60 minutes (configurable), acceptance ratio tracking, and alert emission when ratio drops below 20% threshold over the last hour. 50 tests pass and clippy shows no warnings. No hardcoded test doubles found in production code."
+}

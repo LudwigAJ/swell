@@ -1,0 +1,26 @@
+{
+  "featureId": "orch-tiered-context-pipeline",
+  "reviewedAt": "2026-04-16T03:45:00Z",
+  "commitId": "6548471",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Feature implementation is complete and correct. The 5-tier context pipeline (ActiveFile, OpenRecent, VectorSearch, GraphExpanded, ConversationHistory) is properly implemented with token budget enforcement, relevance scoring, and tier-based truncation. All 17 tests pass and clippy is clean.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Parent task description mentions '3-tier context pipeline' with hot/warm/cold terminology, but features.json and validation-contract.md describe a 5-tier pipeline. Worker correctly followed features.json (5-tier) but this discrepancy between task prompt and features.json could cause confusion in future reviews.",
+      "evidence": "Task prompt: 'Wire the 3-tier context pipeline in orchestrator.rs: hot (active task + recent events), warm (milestone spec + blocked tasks), cold (frozen spec + project README)'. features.json: 'Context assembled in 5 tiers: active file, open/recent, vector search, graph-expanded, conversation'. Worker followed features.json correctly."
+    },
+    {
+      "area": "conventions",
+      "observation": "Parent task description mentions 'Add StructuredLLMOutput guard' but this requirement does not appear in features.json or validation-contract.md for this feature. The feature as validated does not include StructuredLLMOutput.",
+      "evidence": "features.json description: 'Wire context_pipeline.rs with multi-tier context assembly...' no mention of StructuredLLMOutput. validation-contract.md VAL-ORCH-012: only describes tiered context assembly with token budget. No StructuredLLMOutput found in codebase."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Review passes. The orch-tiered-context-pipeline feature is properly implemented with 5-tier context assembly (ActiveFile → OpenRecent → VectorSearch → GraphExpanded → ConversationHistory), configurable token budget enforcement via ContextPipelineConfig, relevance scoring via priority_score(), and proper truncation via truncate_to_budget() that preserves higher-priority tiers. All 17 tests pass including test_removed_items_tracked which verifies Tier 5 is trimmed first. MockLlm is only used in test modules, not production paths. Clippy passes clean for this crate. Two non-blocking observations: (1) parent task description mentions 3-tier hot/warm/cold pipeline but features.json describes 5-tier - worker correctly followed features.json, (2) parent mentions StructuredLLMOutput which is not in the feature specification."
+}

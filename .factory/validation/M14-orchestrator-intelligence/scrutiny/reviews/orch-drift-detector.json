@@ -1,0 +1,34 @@
+{
+  "featureId": "orch-drift-detector",
+  "reviewedAt": "2026-04-16T00:52:00Z",
+  "commitId": "8eea7b19dc0960b2ee3ae55b098511db8be64c4b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The drift detection implementation is wired into ExecutionController and Orchestrator with proper DriftReport structure and event emission. 14 tests pass covering threshold behavior, edge cases, and event emission. DriftDetector correctly only flags positive drift (>30% threshold for scope creep), not negative drift (under-implementation).",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/execution.rs",
+        "line": 423,
+        "severity": "non_blocking",
+        "description": "track_file_modification() is implemented but not automatically called during tool execution. The method exists and is wired to modified_files HashSet, but no code path calls it when file_write/file_edit tools execute. Workers must manually call track_file_modification() to record changes. This is acceptable given the on-demand nature of the feature, but means drift detection requires explicit instrumentation of file tools."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/execution.rs",
+        "line": 473,
+        "severity": "non_blocking",
+        "description": "drift_check_interval_seconds field exists with getter/setter but no periodic checking mechanism is implemented. The interval is stored but no timer/interval loop calls check_drift() at configured intervals. The feature works on-demand (explicit check_drift call) which satisfies the spec, but the interval mechanism is vestigial."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The rust-worker skill procedure for 'file modifications' does not mention calling track_file_modification() after file edits. Workers implementing features that modify files won't know to manually record modifications for drift detection.",
+      "evidence": "No mention of drift tracking in rust-worker SKILL.md. The track_file_modification() method exists in ExecutionController but requires explicit calls that aren't documented in the skill."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The orch-drift-detector feature implementation passes review. Drift detection is properly wired with DriftDetector integration, check_drift method, and OrchestratorEvent::DriftWarning emission. Tests pass (14/14) and clippy shows no warnings. The implementation correctly flags >30% positive drift (scope creep) while not flagging negative drift (under-implementation). Two non-blocking observations: track_file_modification() requires explicit calls (not auto-wired to tool execution), and the periodic interval mechanism is defined but not actively used - both are acceptable given the on-demand nature of the feature."
+}

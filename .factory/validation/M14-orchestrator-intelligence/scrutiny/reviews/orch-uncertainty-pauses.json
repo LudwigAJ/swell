@@ -1,0 +1,21 @@
+{
+  "featureId": "orch-uncertainty-pauses",
+  "reviewedAt": "2026-04-16T04:12:00Z",
+  "commitId": "cbba3af",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation fully covers expected behavior with proper wired confidence-based pausing. Agent pauses when confidence < configurable threshold, emits structured clarification events with reason/context/options, blocks until clarification is injected. Tests pass (11/11), clippy passes.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The handoff file belongs to feature 'VAL-ORCH-014' (non-novel retry), not 'orch-uncertainty-pauses'. The handoff file at 'handoffs/2026-04-16T01-58-51-676Z__orch-uncertainty-pauses__fdf8769b-2b76-42bd-8ada-a582faa530ec.json' contains content about non-novel retry detection, not uncertainty pauses. The actual commit for uncertainty pauses is cbba3af but there is no corresponding handoff file. This is a handoff/manifest inconsistency - worker session IDs in features.json (af16353a, 0668422d, 2ca7e599) do not match the actual handoff file's session ID (fdf8769b).",
+      "evidence": "features.json shows workerSessionIds: ['af16353a-8f69-4a6f-9e47-81e6c7cc56e5', '0668422d-341d-4104-b933-e8114de25980', '2ca7e599-a851-4f60-9fdc-37d9a198a5b9'] but the only handoff file for 'orch-uncertainty-pauses' has workerSessionId: 'fdf8769b-2b76-42bd-8ada-a582faa530ec'. The handoff's 'whatWasImplemented' describes non-novel retry, not uncertainty pauses."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-uncertainty-pauses passed scrutiny review. Implementation at commit cbba3af properly wires confidence-based execution pauses: ExecutionController checks confidence_score from AgentResult after GeneratorAgent completes, creates UncertaintyClarificationEvent with reason/context/options when score < threshold, pauses task state machine, blocks on wait_for_response until clarification injection. AgentResult.confidence_score field exists in swell-core (traits.rs). Orchestrator emits UncertaintyClarificationRequest event for observability. 11 tests pass including full pause/resume flow test. Clippy passes with -D warnings. MockLlm usage is test-only (execution.rs #[cfg(test)], model_fallback.rs #[cfg(test)], agents.rs #[cfg(test)]), not in production paths."
+}

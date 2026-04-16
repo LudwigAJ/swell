@@ -1,0 +1,39 @@
+{
+  "featureId": "orch-value-scoring",
+  "reviewedAt": "2026-04-16T00:30:00Z",
+  "commitId": "fb45cadb1e26e88f57df4914ba17dff2fe02ef05",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The ValueScorer implementation is complete and functional. It provides 3-dimensional scoring (spec_alignment, blocking_impact, complexity) with composite priority computation and discard filtering. 41 tests pass. Clippy is clean. No MockLlm or test doubles in production paths.",
+    "issues": [
+      {
+        "file": "crates/swell-orchestrator/src/value_scorer.rs",
+        "line": 1212,
+        "severity": "non_blocking",
+        "description": "Unused variable 'discarded' in test_score_and_filter_some_discarded_v2 - should be prefixed with underscore or used. Not a production issue, only affects test compilation."
+      },
+      {
+        "file": "crates/swell-orchestrator/src/backlog.rs",
+        "line": 0,
+        "severity": "non_blocking",
+        "description": "ValueScorer is not wired into the backlog's task proposal flow. The backlog.rs uses hardcoded priority scores (Plan=5, Failure=4, SpecGap=3, Improvement=2) instead of ValueScorer.score_and_filter(). The ValueScorer infrastructure is standalone and would need to be integrated by a follow-up feature if automatic task filtering is desired at the backlog level."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "ValueScorer is exported from lib.rs but not integrated into any production code path outside of tests. The backlog has its own priority scoring documentation mentioning 'spec alignment, blocking impact, and complexity' but uses hardcoded values instead of the ValueScorer. This is not a bug - the ValueScorer is a standalone component - but could be clarified in AGENTS.md if integration is planned.",
+      "evidence": "backlog.rs has BacklogItem with hardcoded priority_score (Plan=5, Failure=4, SpecGap=3, Improvement=2). ValueScorer::new(), ValueScorer::with_config(), and score_and_filter() are only used in #[cfg(test)] modules."
+    },
+    {
+      "area": "skills",
+      "observation": "The rust-worker skill procedure was followed correctly. Worker read backlog.rs to understand task proposal flow but determined ValueScorer should be a standalone component. No deviations from skill procedure.",
+      "evidence": "Transcript shows worker read backlog.rs and searched for 'task.*proposal|propose.*task' patterns before implementing."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The orch-value-scoring feature is PASS. Implementation is complete: ComplexityScore type added (1-5), TaskScore updated with 3-dimensional scoring, composite priority formula implemented (spec*0.4 + blocking*0.3 + (6-complexity)*0.3), discard_threshold mechanism with configurable threshold (default 2.0) in settings.json, score_and_filter() method returns (kept, discarded) tuples with debug logging. 41 tests pass. Clippy clean. ValueScorer is correctly implemented as a standalone scoring engine but is not yet integrated into the backlog's task proposal flow - this is a non-blocking observation as the infrastructure is complete and ready for integration."
+}

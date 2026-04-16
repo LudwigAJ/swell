@@ -1,0 +1,26 @@
+{
+  "featureId": "orch-task-enrichment",
+  "reviewedAt": "2026-04-16T00:00:00Z",
+  "commitId": "dace57b",
+  "transcriptSkeletonReviewed": false,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Task enrichment pipeline properly implemented with no LLM calls. New module task_enrichment.rs provides discover_enriched_files, discover_related_tests, discover_constraints, and build_prior_attempts functions. TaskEnrichment and PriorAttempt structs added to swell-core/types.rs. state_machine.rs enrich_task() properly populates enrichment metadata before transitioning to Enriched state, and ready_task() enforces is_enriched check before entering Ready state.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The PriorAttempt struct in types.rs has a `diff` field that is not referenced anywhere in the implementation. The build_prior_attempts function sets `diff: None`. This appears to be a pre-planned field for future use (recording actual diffs during execution) but is not yet wired up. This is not a bug but worth noting for completeness.",
+      "evidence": "crates/swell-core/src/types.rs: PriorAttempt { ... diff: Option<String> ... } and task_enrichment.rs: build_prior_attempts sets diff: None"
+    },
+    {
+      "area": "skills",
+      "observation": "The worker followed the rust-worker skill properly and implemented VAL-ORCH-001 requirements. All expected behaviors from features.json were covered: enriched_files from plan/description, related_tests via naming conventions, constraints from SWELL conventions, prior_attempts for retries. No LLM calls (deterministic heuristics only).",
+      "evidence": "task_enrichment.rs uses only string matching and path heuristics, no LLM imports"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-task-enrichment implemented correctly. 8 unit tests in task_enrichment.rs and 9 tests in state_machine.rs verifying enrichment all pass. No MockLlm or test doubles found in production paths. cargo clippy clean for the enrichment code (5 warnings in unrelated files elsewhere in the crate). Feature is properly wired: enrich_task called in state_machine Created->Enriched transition, ready_task enforces is_enriched check before Ready state."
+}

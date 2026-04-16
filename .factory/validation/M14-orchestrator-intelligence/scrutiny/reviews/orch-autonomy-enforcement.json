@@ -1,0 +1,21 @@
+{
+  "featureId": "orch-autonomy-enforcement",
+  "reviewedAt": "2026-04-16T00:20:00.000Z",
+  "commitId": "5e99ddd56b5e0f61bfea191eea5e92dc7770488c",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Full 4-level autonomy enforcement wired correctly. TaskType enum implements strategic/routine classification. AutonomyOverrideMatrix supports per-agent-type and per-task-type overrides with correct priority resolution (specific combo > agent > task > global > base). needs_approval() correctly enforces: Supervised (always approval), Guided (strategic only), Autonomous (high-risk only + strategic if override), Full Auto (never unless strategic override). All types properly exported from lib.rs.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The autonomy module uses a builder pattern for AutonomyOverrideMatrix (add_override, add_agent_override, add_task_override, set_global_fallback). These methods consume self and return Self, which is idiomatic but worth documenting if there's a convention for builder patterns in this codebase.",
+      "evidence": "autonomy.rs: AutonomyOverrideMatrix methods all use `mut self` and return `Self` for chaining"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature orch-autonomy-enforcement passes review. Implementation provides full 4-level autonomy enforcement (Supervised/Guided/Autonomous/FullAuto) with per-agent-type and per-task-type override matrix. TaskType enum classifies work as strategic or routine. 27 autonomy tests pass. Clippy clean. No hardcoded test doubles in production paths."
+}
