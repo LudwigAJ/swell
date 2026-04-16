@@ -14,6 +14,7 @@ pub mod traits;
 pub mod transcript;
 pub mod treesitter;
 pub mod types;
+pub mod session_compaction;
 
 pub use audit::{
     verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,
@@ -35,6 +36,11 @@ pub use transcript::{
     EntityType, ErrorKind, ErrorPayload, LlmResponsePayload, StateTransitionPayload,
     TokenUsage, ToolCallPayload, TranscriptEvent, TranscriptEventPayload, TranscriptEventType,
     TranscriptLog, TranscriptSubscriber,
+};
+pub use session_compaction::{
+    CompactionConfig, CompactionTrigger, Decision, DecisionCategory, FileAccessType,
+    FileContext, PendingAction, PreservedToolCall, PreservedTurn, ResumePacket,
+    SessionCompactor, SessionResumption, ConversationSummary,
 };
 pub use kill_switch::{
     EnvVarVerifier, FileVerifier, KillLevel, KillSwitchError, KillSwitchGuard, KillSwitchState,
