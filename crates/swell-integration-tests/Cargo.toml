@@ -34,3 +34,5 @@ tokio.workspace = true
 
 [dev-dependencies]
 tokio-test.workspace = true
+swell-daemon = { path = "../swell-daemon" }
+tempfile.workspace = true

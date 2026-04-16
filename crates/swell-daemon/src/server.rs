@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use swell_core::{CliCommand, DaemonEvent, TaskState};
+use swell_llm::LlmBackend;
 use swell_memory::recall::RecallService;
 use swell_memory::SqliteMemoryStore;
 use swell_orchestrator::Orchestrator;
@@ -42,10 +43,18 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    pub fn new(socket_path: String) -> Self {
+    /// Create a new daemon with the provided LLM backend.
+    ///
+    /// The LLM backend is threaded into the orchestrator via [`Orchestrator::with_llm`].
+    /// This enables the production runtime to construct reachable execution dependencies.
+    ///
+    /// # Arguments
+    /// * `socket_path` - Path to the Unix socket for client connections
+    /// * `llm` - The LLM backend to use for agent execution
+    pub fn new(socket_path: String, llm: Arc<dyn LlmBackend>) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
-            orchestrator: Arc::new(Mutex::new(Orchestrator::new())),
+            orchestrator: Arc::new(Mutex::new(Orchestrator::with_llm(llm))),
             event_emitter: Arc::new(EventEmitter::new()),
             socket_path,
             shutdown_flag: Arc::new(AtomicBool::new(false)),

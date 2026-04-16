@@ -78,43 +78,39 @@ use std::sync::Arc;
 /// WIRING INVARIANT: `Daemon::new` accepts an `LlmBackend` (or a factory)
 /// and the constructed `Orchestrator` holds it.
 ///
-/// Currently `Daemon::new(socket_path: String)` takes only a path.
-/// When Tier 1.1 ships, `Daemon::new` must take an `Arc<dyn LlmBackend>`
-/// (directly, or via a `DaemonBuilder`). This test proves that path exists.
+/// This test proves that the production runtime path exists:
+/// `Daemon::new(socket_path, llm) -> Orchestrator::with_llm(llm) -> orchestrator.llm_backend()`
 ///
-/// # How to un-ignore
-/// 1. Complete Tier 1.1 — add the dependency to `swell-daemon/Cargo.toml`,
-///    update `Daemon::new`, update `Orchestrator::new`.
-/// 2. Replace the `todo!()` below with the real constructor calls.
-/// 3. Remove the `#[ignore]` attribute. Run: `cargo test -p swell-integration-tests
-///    --test full_cycle_wiring wiring_daemon_holds_llm_backend`.
-/// 4. Green means Tier 1.1 is demonstrably complete.
+/// # Verification
+/// Run: `cargo test -p swell-integration-tests --test full_cycle_wiring wiring_daemon_holds_llm_backend`
 #[tokio::test]
-#[ignore = "Blocked by Tier 1.1 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
 async fn wiring_daemon_holds_llm_backend() {
-    // The ScenarioMockLlm stands in for AnthropicBackend / OpenAIBackend.
-    // The assertion is on wiring, not on which backend.
     use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
     use swell_llm::LlmBackend;
+    use swell_daemon::Daemon;
+    use tempfile::TempDir;
 
-    let _llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+    // The ScenarioMockLlm stands in for AnthropicBackend / OpenAIBackend.
+    // The assertion is on wiring, not on which backend.
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
         "test-model",
         vec![ScenarioStep::text("ok")],
     ));
 
-    // TODO(Tier 1.1): Daemon::new must accept an LlmBackend.
-    // Expected signature after wiring:
-    //     Daemon::new(socket_path: String, llm: Arc<dyn LlmBackend>)
-    // or   DaemonBuilder::new(path).with_llm(llm).build()
-    let _daemon: () = todo!("Daemon::new accepting llm not yet implemented");
+    // Create a temp directory for the socket path
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let socket_path = temp_dir.path().join("swell-daemon.sock");
 
-    // Expected assertion shape (will compile once APIs land):
-    //
-    //     let orch = _daemon.orchestrator();
-    //     let held = orch.lock().await.llm_backend().expect("orchestrator must hold llm");
-    //     assert!(Arc::ptr_eq(&held, &llm), "orchestrator must hold the EXACT Arc we provided — \
-    //             not a newly-constructed backend, not a clone of a different backend");
-    let _ = _llm;
+    // Daemon::new accepts an LlmBackend as second argument (Tier 1.1 wiring)
+    let daemon = Daemon::new(socket_path.to_string_lossy().to_string(), llm.clone());
+
+    // The orchestrator must hold the EXACT Arc we provided — not a clone, not a new backend
+    let orch = daemon.orchestrator();
+    let held = orch.lock().await.llm_backend().expect("orchestrator must hold llm");
+    assert!(
+        Arc::ptr_eq(&held, &llm),
+        "orchestrator must hold the EXACT Arc we provided — not a newly-constructed backend, not a clone"
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -304,32 +300,6 @@ async fn wiring_turn_summary_events_emitted_per_iteration() {
 // Think of them as the inverse of the invariants. Once the invariants go
 // green, the witnesses must be deleted in the same PR.
 // -----------------------------------------------------------------------------
-
-/// CURRENT-STATE WITNESS: `swell-daemon/Cargo.toml` does not depend on
-/// `swell-llm`. Passes today. Must fail once Tier 1.1 lands.
-///
-/// Yes, this is an unusual test shape. Its job is to force the swarm to
-/// touch the invariant test above when they wire in the LLM crate.
-#[test]
-fn witness_daemon_does_not_depend_on_swell_llm() {
-    let manifest = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../swell-daemon/Cargo.toml"
-    ))
-    .expect("swell-daemon/Cargo.toml must be readable");
-
-    let has_llm_dep = manifest.contains("swell-llm") || manifest.contains(r#"swell_llm"#);
-
-    // Deliberately inverted: if this fails, congratulations — Tier 1.1 is
-    // done, now go un-ignore `wiring_daemon_holds_llm_backend` and delete
-    // this witness in the same PR.
-    assert!(
-        !has_llm_dep,
-        "swell-daemon now depends on swell-llm — DELETE THIS WITNESS and \
-         un-ignore `wiring_daemon_holds_llm_backend` in the same PR. \
-         See plan/audit-2026-04-16/04_tier1_blockers.md §1.1."
-    );
-}
 
 /// CURRENT-STATE WITNESS: `swell-orchestrator/src/lib.rs` does not reference
 /// `ExecutionController` inside the `Orchestrator` struct. Passes today.

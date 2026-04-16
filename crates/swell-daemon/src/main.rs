@@ -3,8 +3,63 @@ use swell_core::init_tracing;
 use swell_core::opentelemetry::{init_tracer_provider, OtelConfig};
 use swell_daemon::dashboard::{start_dashboard_server, DashboardState};
 use swell_daemon::Daemon;
+use swell_llm::{AnthropicBackend, LlmBackend, MockLlm, OpenAIBackend};
 use swell_orchestrator::OrchestratorEvent;
 use tracing::{info, warn};
+
+/// Construct an LLM backend from environment configuration.
+///
+/// The backend is selected based on `SWELL_PROVIDER` env var (defaults to "anthropic").
+/// Model is configured via `SWELL_MODEL` env var.
+/// API keys are read from `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+fn construct_llm_backend() -> Arc<dyn LlmBackend> {
+    let provider = std::env::var("SWELL_PROVIDER").unwrap_or_else(|_| "anthropic".to_string());
+    let model = std::env::var("SWELL_MODEL")
+        .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string());
+
+    match provider.as_str() {
+        "anthropic" => {
+            let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_else(|_| {
+                warn!("ANTHROPIC_API_KEY not set, using MockLlm for development");
+                "mock".to_string()
+            });
+
+            if api_key == "mock" {
+                info!(model = %model, "Using MockLlm backend (ANTHROPIC_API_KEY not set)");
+                Arc::new(MockLlm::new(&model)) as Arc<dyn LlmBackend>
+            } else {
+                info!(model = %model, provider = %provider, "Using AnthropicBackend");
+                Arc::new(AnthropicBackend::new(&model, &api_key)) as Arc<dyn LlmBackend>
+            }
+        }
+        "openai" => {
+            let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| {
+                warn!("OPENAI_API_KEY not set, using MockLlm for development");
+                "mock".to_string()
+            });
+
+            if api_key == "mock" {
+                info!(model = %model, "Using MockLlm backend (OPENAI_API_KEY not set)");
+                Arc::new(MockLlm::new(&model)) as Arc<dyn LlmBackend>
+            } else {
+                match OpenAIBackend::new(&model, &api_key) {
+                    Ok(backend) => {
+                        info!(model = %model, provider = %provider, "Using OpenAIBackend");
+                        Arc::new(backend) as Arc<dyn LlmBackend>
+                    }
+                    Err(e) => {
+                        warn!(error = %e, model = %model, "Failed to create OpenAIBackend, using MockLlm");
+                        Arc::new(MockLlm::new(&model)) as Arc<dyn LlmBackend>
+                    }
+                }
+            }
+        }
+        _ => {
+            warn!(provider = %provider, "Unknown SWELL_PROVIDER, using MockLlm");
+            Arc::new(MockLlm::new(&model)) as Arc<dyn LlmBackend>
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,9 +94,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()
         .unwrap_or(3100);
 
+    // Construct the LLM backend from environment configuration
+    let llm_backend = construct_llm_backend();
+
     info!(path = %socket_path, port = dashboard_port, "Starting swell-daemon");
 
-    let daemon = Arc::new(Daemon::new(socket_path));
+    let daemon = Arc::new(Daemon::new(socket_path, llm_backend));
     let dashboard_state = DashboardState::new(daemon.event_emitter());
 
     // Clone for the dashboard task before moving into spawned task

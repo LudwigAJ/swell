@@ -6043,6 +6043,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "swell-core",
+ "swell-llm",
  "swell-memory",
  "swell-orchestrator",
  "tempfile",
@@ -6061,8 +6062,10 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "swell-core",
+ "swell-daemon",
  "swell-llm",
  "swell-validation",
+ "tempfile",
  "tokio",
  "tokio-test",
  "uuid",

@@ -362,10 +362,14 @@ pub struct Orchestrator {
     non_novel_detector: Arc<RwLock<NonNovelRetryDetector>>,
     /// Frozen spec registry for verifying task traceability to the frozen spec (VAL-ORCH-009)
     frozen_registry: FrozenRequirementRegistry,
+    /// LLM backend for agent execution - injected from daemon at construction time.
+    /// This is the production LLM backend (Anthropic, OpenAI, etc.) that agents use.
+    llm_backend: Option<Arc<dyn swell_llm::LlmBackend>>,
 }
 
 impl Orchestrator {
-    /// Create a new orchestrator with default in-memory checkpoint store
+    /// Create a new orchestrator with default in-memory checkpoint store and no LLM backend.
+    /// The LLM backend should be injected via [`Self::with_llm`] for production use.
     pub fn new() -> Self {
         let (tx, _rx) = broadcast::channel(100);
         let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
@@ -383,10 +387,40 @@ impl Orchestrator {
             file_lock_manager: Arc::new(FileLockManager::new()),
             non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
             frozen_registry: FrozenRequirementRegistry::new(vec![]),
+            llm_backend: None,
         }
     }
 
-    /// Create a new orchestrator with a custom checkpoint manager
+    /// Create a new orchestrator with the provided LLM backend.
+    ///
+    /// This is the production constructor that injects the LLM backend from the daemon.
+    /// The backend is stored in the orchestrator and accessible via [`Self::llm_backend()`].
+    ///
+    /// # Arguments
+    /// * `llm` - The LLM backend to use for agent execution
+    pub fn with_llm(llm: Arc<dyn swell_llm::LlmBackend>) -> Self {
+        let (tx, _rx) = broadcast::channel(100);
+        let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
+        let checkpoint_manager = Arc::new(CheckpointManager::new(checkpoint_store));
+        let mcp_manager = Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap());
+
+        Self {
+            state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
+            agent_pool: Arc::new(RwLock::new(AgentPool::new())),
+            checkpoint_manager,
+            event_sender: tx,
+            feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
+            mcp_manager,
+            novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
+            file_lock_manager: Arc::new(FileLockManager::new()),
+            non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
+            frozen_registry: FrozenRequirementRegistry::new(vec![]),
+            llm_backend: Some(llm),
+        }
+    }
+
+    /// Create a new orchestrator with a custom checkpoint manager (no LLM backend).
+    #[allow(dead_code)]
     pub fn with_checkpoint_manager(checkpoint_manager: Arc<CheckpointManager>) -> Self {
         let (tx, _rx) = broadcast::channel(100);
         let mcp_manager = Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap());
@@ -402,7 +436,16 @@ impl Orchestrator {
             file_lock_manager: Arc::new(FileLockManager::new()),
             non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
             frozen_registry: FrozenRequirementRegistry::new(vec![]),
+            llm_backend: None,
         }
+    }
+
+    /// Get the LLM backend if one was injected.
+    ///
+    /// Returns `Some(Arc<dyn LlmBackend>)` if the orchestrator was constructed
+    /// with [`Self::with_llm`], or `None` if constructed with [`Self::new`].
+    pub fn llm_backend(&self) -> Option<Arc<dyn swell_llm::LlmBackend>> {
+        self.llm_backend.clone()
     }
 
     /// Subscribe to orchestrator events.
