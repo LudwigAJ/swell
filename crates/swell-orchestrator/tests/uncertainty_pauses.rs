@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use swell_core::{AgentRole, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
 use swell_orchestrator::{
+    builder::OrchestratorBuilder,
     check_confidence_threshold, generate_suggested_options, ClarificationOption,
     ClarificationResponse, Orchestrator, UncertaintyClarificationEvent, UncertaintyManager,
 };
@@ -186,7 +187,7 @@ async fn test_clarification_event_contains_reason_context_and_options() {
 /// Test: agent state transitions to Paused when confidence drops below threshold.
 #[tokio::test]
 async fn test_agent_state_transitions_to_paused_on_low_confidence() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let task_id = setup_executing_task(&orchestrator).await;
 
     // Simulate the agent reporting confidence 0.3 below threshold 0.5
@@ -328,7 +329,7 @@ async fn test_execution_does_not_resume_until_clarification_injected() {
 /// This is the main VAL-ORCH-014 integration scenario.
 #[tokio::test]
 async fn test_full_uncertainty_pause_and_resume_flow() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let manager = Arc::new(UncertaintyManager::new());
 
     // 1. Create and advance task to Executing

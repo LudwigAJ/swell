@@ -7,7 +7,7 @@
 //! This test module validates VAL-OBS-005: Interactive approval workflow
 
 use swell_core::{AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
-use swell_orchestrator::Orchestrator;
+use swell_orchestrator::{builder::OrchestratorBuilder, Orchestrator};
 use uuid::Uuid;
 
 /// Helper to create a test plan for a task.
@@ -33,7 +33,7 @@ fn create_test_plan(task_id: Uuid) -> Plan {
 /// after planning and requires explicit approval to proceed.
 #[tokio::test]
 async fn test_task_awaits_approval_with_supervised_autonomy() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // Create a task with L1 Supervised autonomy (requires plan approval)
     let task = orchestrator
@@ -68,7 +68,7 @@ async fn test_task_awaits_approval_with_supervised_autonomy() {
 /// Test that a task with L2 (Guided) autonomy level also requires approval.
 #[tokio::test]
 async fn test_task_awaits_approval_with_guided_autonomy() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // Create a task with L2 Guided autonomy (also requires plan approval)
     let task = orchestrator
@@ -96,7 +96,7 @@ async fn test_task_awaits_approval_with_guided_autonomy() {
 /// Test that `swell approve <id>` unblocks execution and proceeds to Executing.
 #[tokio::test]
 async fn test_approval_unblocks_execution() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // Create a task with L1 Supervised autonomy
     let task = orchestrator
@@ -132,7 +132,7 @@ async fn test_approval_unblocks_execution() {
 /// Test that `swell reject <id>` moves task to Rejected state.
 #[tokio::test]
 async fn test_rejection_moves_to_rejected_state() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // Create a task with L1 Supervised autonomy
     let task = orchestrator
@@ -172,7 +172,7 @@ async fn test_rejection_moves_to_rejected_state() {
 /// do NOT require plan approval and proceed directly to execution.
 #[tokio::test]
 async fn test_autonomous_levels_skip_approval_gate() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // Test L3 Autonomous - should skip approval gate
     // Use unique descriptions to avoid false positive novelty detection
@@ -220,7 +220,7 @@ async fn test_autonomous_levels_skip_approval_gate() {
 /// Test that a rejected task cannot be approved directly - it must be retried.
 #[tokio::test]
 async fn test_cannot_approve_rejected_task() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // Create a task with L1 Supervised autonomy
     let task = orchestrator
@@ -253,7 +253,7 @@ async fn test_cannot_approve_rejected_task() {
 /// Test the full workflow: create -> plan -> await approval -> approve -> execute -> validate -> accept
 #[tokio::test]
 async fn test_full_approval_workflow() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // 1. Create task with L1 Supervised (requires approval)
     let task = orchestrator
@@ -320,7 +320,7 @@ async fn test_full_approval_workflow() {
 /// Rejection should work from Validating state as well.
 #[tokio::test]
 async fn test_rejection_during_validation() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // Create a task with L1 Supervised
     let task = orchestrator

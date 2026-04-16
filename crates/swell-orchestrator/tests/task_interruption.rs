@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 use swell_core::{AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
-use swell_orchestrator::{checkpoint_wiring::CheckpointingTaskStateMachine, Orchestrator};
+use swell_orchestrator::{builder::OrchestratorBuilder, checkpoint_wiring::CheckpointingTaskStateMachine, Orchestrator};
 use swell_state::traits::in_memory::InMemoryCheckpointStore;
 use uuid::Uuid;
 
@@ -50,7 +50,7 @@ async fn setup_executing_task(orchestrator: &Orchestrator) -> (uuid::Uuid, swell
 /// Test that pause_task transitions a running task to PAUSED state.
 #[tokio::test]
 async fn test_pause_transitions_to_paused() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Verify task is in Executing state before pause
@@ -75,7 +75,7 @@ async fn test_pause_transitions_to_paused() {
 /// Test that pause_task can be called during Validating state.
 #[tokio::test]
 async fn test_pause_during_validating() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Transition to Validating
@@ -97,7 +97,7 @@ async fn test_pause_during_validating() {
 /// Test that resume_task restores task to EXECUTING state.
 #[tokio::test]
 async fn test_resume_restores_to_executing() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Pause the task
@@ -121,7 +121,7 @@ async fn test_resume_restores_to_executing() {
 /// Test that resume restores from Validating state back to Validating.
 #[tokio::test]
 async fn test_resume_from_validating_paused() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Transition to Validating then pause
@@ -142,7 +142,7 @@ async fn test_resume_from_validating_paused() {
 /// Test that inject_instruction adds instructions without stopping the task.
 #[tokio::test]
 async fn test_redirect_injects_instructions() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Verify no injected instructions initially
@@ -178,7 +178,7 @@ async fn test_redirect_injects_instructions() {
 /// Test that injected instructions are preserved across pause/resume.
 #[tokio::test]
 async fn test_injected_instructions_preserved_across_pause_resume() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Inject instructions while executing
@@ -206,7 +206,7 @@ async fn test_injected_instructions_preserved_across_pause_resume() {
 /// Test that inject_instruction works during Paused state.
 #[tokio::test]
 async fn test_inject_instruction_during_paused() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Pause the task
@@ -230,7 +230,7 @@ async fn test_inject_instruction_during_paused() {
 /// Test that injected instructions can be retrieved via get_injected_instructions.
 #[tokio::test]
 async fn test_get_injected_instructions() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Inject instructions
@@ -345,7 +345,7 @@ async fn test_checkpointing_inject_instruction_preserves_state() {
 /// Test that injecting instructions during pause and then resuming works correctly.
 #[tokio::test]
 async fn test_inject_during_pause_then_resume() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Pause
@@ -375,7 +375,7 @@ async fn test_inject_during_pause_then_resume() {
 /// Test that modify_scope and restore_original_scope work correctly.
 #[tokio::test]
 async fn test_modify_and_restore_scope() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Get original scope
@@ -409,7 +409,7 @@ async fn test_modify_and_restore_scope() {
 /// Test that cannot pause a task in non-active states.
 #[tokio::test]
 async fn test_cannot_pause_created_task() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let task = orchestrator
         .create_task("Test".to_string(), vec![])
         .await
@@ -425,7 +425,7 @@ async fn test_cannot_pause_created_task() {
 /// Test that cannot resume a task that is not paused.
 #[tokio::test]
 async fn test_cannot_resume_executing_task() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
     let (task_id, _) = setup_executing_task(&orchestrator).await;
 
     // Try to resume an executing task (not paused)
@@ -437,7 +437,7 @@ async fn test_cannot_resume_executing_task() {
 /// Test full pause/resume/redirect workflow.
 #[tokio::test]
 async fn test_full_interruption_workflow() {
-    let orchestrator = Orchestrator::new();
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // 1. Create and start task
     let task = orchestrator

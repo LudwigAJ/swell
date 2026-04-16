@@ -20,8 +20,8 @@ use swell_core::traits::Tool;
 use swell_core::{FailureClass, PermissionTier, SwellError, ToolOutput};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::{
-    BackoffStrategy, ExecutionController, FailureScenario, Orchestrator, RecoveryRecipe,
-    RecoveryStep, RecoverySteps,
+    builder::OrchestratorBuilder, BackoffStrategy, ExecutionController, FailureScenario,
+    Orchestrator, RecoveryRecipe, RecoveryStep, RecoverySteps,
 };
 use swell_tools::ToolRegistry;
 
@@ -506,7 +506,7 @@ async fn test_execution_continues_after_tool_failure() {
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Register a tool that fails with network error
@@ -605,7 +605,7 @@ async fn test_multiple_failure_types_recovery() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Register tools that fail with different error types
@@ -697,7 +697,7 @@ async fn test_git_commit_network_failure_recovery() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create a recipe registry with recipes for different failure classes
@@ -956,7 +956,7 @@ async fn test_full_recovery_flow() {
     ));
 
     // Step 6: Execute with the tool and verify continuation
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let mut controller =
         ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
 
@@ -1020,7 +1020,7 @@ async fn test_recovery_flow_permission_denied() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create a permission-denied tool
@@ -1089,7 +1089,7 @@ async fn test_recovery_flow_timeout() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     let timeout_tool = FailingTestTool::new("slow_tool", "timeout");

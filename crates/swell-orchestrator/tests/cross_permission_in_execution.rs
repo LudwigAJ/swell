@@ -16,7 +16,7 @@ use std::sync::Arc;
 use swell_core::traits::Tool;
 use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
-use swell_orchestrator::{ExecutionController, Orchestrator};
+use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, Orchestrator};
 use swell_tools::ToolRegistry;
 
 /// A test tool that requires a specific permission tier
@@ -106,7 +106,7 @@ async fn test_agent_continues_after_permission_denial() {
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Register a tool that requires Deny permission
@@ -204,7 +204,7 @@ async fn test_turn_loop_handles_permission_denial_gracefully() {
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Register the denied tool
@@ -299,7 +299,7 @@ async fn test_multiple_denied_tools_do_not_crash() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Register multiple denied tools

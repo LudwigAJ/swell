@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use swell_core::config::ConfigLoader;
 use swell_llm::mock::MockLlm;
-use swell_orchestrator::{ExecutionController, Orchestrator};
+use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, Orchestrator};
 use swell_tools::ToolRegistry;
 use tempfile::TempDir;
 
@@ -220,7 +220,7 @@ async fn test_execution_controller_respects_loaded_max_iterations() {
     assert_eq!(max_iterations, 5);
 
     // Create ExecutionController with the loaded value
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(ToolRegistry::new());
 
@@ -353,7 +353,7 @@ async fn test_execution_controller_enforces_cascade_max_iterations() {
     assert_eq!(max_iterations, 7);
 
     // Create ExecutionController with the loaded value
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(ToolRegistry::new());
 

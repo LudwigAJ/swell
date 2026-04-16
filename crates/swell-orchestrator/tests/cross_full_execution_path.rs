@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use swell_core::{AutonomyLevel, LlmBackend, Plan, PlanStep, RiskLevel, StepStatus};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
-use swell_orchestrator::{ExecutionController, Orchestrator};
+use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, Orchestrator};
 use swell_tools::ToolRegistry;
 use uuid::Uuid;
 
@@ -86,7 +86,7 @@ async fn test_execution_controller_full_pipeline_with_scenario_mock_llm() {
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create ExecutionController with the mock LLM
@@ -147,7 +147,7 @@ async fn test_execution_controller_skips_planner_when_plan_exists() {
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create ExecutionController
@@ -200,7 +200,7 @@ async fn test_execution_controller_returns_validation_result() {
     let scenario = create_full_pipeline_scenario(5);
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
     let controller = ExecutionController::new(orchestrator.clone(), mock_llm, tool_registry);
 
@@ -283,7 +283,7 @@ async fn test_execution_controller_sequential_tasks_maintain_isolation() {
     let scenario = create_full_pipeline_scenario(10);
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario.clone()));
 
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     let controller =

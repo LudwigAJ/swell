@@ -14,6 +14,7 @@ use swell_core::{
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::{
+    builder::OrchestratorBuilder,
     hard_limits::{HardLimits, HardLimitsConfig},
     stopping_conditions::{HardLimitType, StoppingCondition, StoppingConditions},
     ExecutionController, Orchestrator,
@@ -44,7 +45,7 @@ fn create_multi_turn_scenario(num_turns: usize) -> Vec<ScenarioStep> {
 #[tokio::test]
 async fn test_cost_tracker_accumulates_llm_costs() {
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create a CostTracker with a reasonable budget
@@ -171,7 +172,7 @@ async fn test_stopping_conditions_enforces_budget() {
 #[tokio::test]
 async fn test_execution_halts_when_budget_exceeded() {
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create a mock LLM that returns many responses to ensure we hit the budget

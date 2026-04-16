@@ -12,7 +12,7 @@ use swell_core::{
     Plan, PlanStep, RiskLevel, StepStatus, SwellError,
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
-use swell_orchestrator::{ExecutionController, GeneratorAgent, Orchestrator};
+use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, GeneratorAgent, Orchestrator};
 use swell_tools::ToolRegistry;
 use uuid::Uuid;
 
@@ -387,7 +387,7 @@ async fn test_execution_controller_with_memory_context() {
     let capturing_mock = Arc::new(CapturingMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator
-    let orchestrator = Arc::new(Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
 
     // Create tool registry
     let tool_registry = Arc::new(ToolRegistry::new());

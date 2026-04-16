@@ -8,11 +8,12 @@
 //! - No warnings are emitted when modifications stay within planned files
 
 use std::sync::Arc;
+use swell_orchestrator::builder::OrchestratorBuilder;
 use uuid::Uuid;
 
 /// Helper to create an ExecutionController for testing.
 async fn create_test_controller() -> swell_orchestrator::ExecutionController {
-    let orchestrator = Arc::new(swell_orchestrator::Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let mock_llm = Arc::new(swell_llm::MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(swell_tools::ToolRegistry::new());
 
@@ -281,7 +282,7 @@ async fn test_drift_report_lists_missing_files() {
 async fn test_orchestrator_emits_drift_warning_event() {
     use swell_orchestrator::OrchestratorEvent;
 
-    let orchestrator = Arc::new(swell_orchestrator::Orchestrator::new());
+    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
     let mut receiver = orchestrator.subscribe();
 
     // Setup controller with the same orchestrator
