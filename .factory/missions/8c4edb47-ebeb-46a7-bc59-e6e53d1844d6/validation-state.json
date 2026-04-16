@@ -1,0 +1,108 @@
+{
+  "assertions": {
+    "VAL-WIRING-001": {
+      "status": "pending"
+    },
+    "VAL-WIRING-002": {
+      "status": "pending"
+    },
+    "VAL-WIRING-003": {
+      "status": "pending"
+    },
+    "VAL-WIRING-004": {
+      "status": "pending"
+    },
+    "VAL-WIRING-005": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-001": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-002": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-003": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-004": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-005": {
+      "status": "pending"
+    },
+    "VAL-CYCLE-006": {
+      "status": "pending"
+    },
+    "VAL-NEG-001": {
+      "status": "pending"
+    },
+    "VAL-NEG-002": {
+      "status": "pending"
+    },
+    "VAL-NEG-003": {
+      "status": "pending"
+    },
+    "VAL-REL-001": {
+      "status": "pending"
+    },
+    "VAL-REL-002": {
+      "status": "pending"
+    },
+    "VAL-REL-003": {
+      "status": "pending"
+    },
+    "VAL-REL-004": {
+      "status": "pending"
+    },
+    "VAL-REL-005": {
+      "status": "pending"
+    },
+    "VAL-REL-006": {
+      "status": "pending"
+    },
+    "VAL-TIER1-GATE": {
+      "status": "pending"
+    },
+    "VAL-TIER2-GATE": {
+      "status": "pending"
+    },
+    "VAL-TIER3-GATE": {
+      "status": "pending"
+    },
+    "VAL-PROGRESS-001": {
+      "status": "pending"
+    },
+    "VAL-PROGRESS-002": {
+      "status": "pending"
+    },
+    "VAL-PROGRESS-003": {
+      "status": "pending"
+    }
+  },
+  "gates": {
+    "tier1": {
+      "status": "pending",
+      "assertions": [
+        "VAL-TIER1-GATE"
+      ]
+    },
+    "tier2": {
+      "status": "pending",
+      "assertions": [
+        "VAL-TIER2-GATE"
+      ]
+    },
+    "tier3": {
+      "status": "pending",
+      "assertions": [
+        "VAL-TIER3-GATE"
+      ]
+    }
+  },
+  "progress": {
+    "strictMachineReadableCheckbacks": true,
+    "currentTier": "tier1",
+    "completedFeatures": [],
+    "latestCheckbackFile": null
+  }
+}

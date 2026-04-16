@@ -1,11 +1,17 @@
 commands:
   install: echo "No install step needed for Rust workspace"
+  check: cargo check --workspace
   build: cargo build --workspace
   test: cargo test --workspace -- --test-threads=4
-  test_crate: cargo test -p ${CRATE} -- --test-threads=4
-  check: cargo check --workspace
   clippy: cargo clippy --workspace -- -D warnings
-  fmt: cargo fmt --all
   fmt_check: cargo fmt --all -- --check
+  wiring_guardrails: cargo test -p swell-integration-tests --test full_cycle_wiring
+  tier1_daemon: cargo test -p swell-daemon
+  tier1_orchestrator: cargo test -p swell-orchestrator
+  tier1_validation: cargo test -p swell-validation
+  tier1_tools: cargo test -p swell-tools
+  tier2_core: cargo test -p swell-core
+  tier3_cli: cargo test -p swell-cli
+  tier3_memory: cargo test -p swell-memory
 
 services: {}

@@ -1,35 +1,42 @@
 # User Testing
 
-Testing surface, tools, and validation configuration.
+Testing surface, tools, and validation configuration for the audit-recovery mission.
 
 ---
 
 ## Validation Surface
 
-### Primary: Cargo Test Suite
-- **Tool**: cargo commands (test, check, clippy)
-- **Coverage**: Unit tests per crate (~2,397 existing), integration tests in tests/
-- **Execution**: `cargo test --workspace -- --test-threads=4`
-- **Lint**: `cargo clippy --workspace -- -D warnings`
+### Primary: Wiring guardrail integration test
+- Tool: `cargo test -p swell-integration-tests --test full_cycle_wiring`
+- Purpose: prove daemon -> orchestrator -> execution -> validation -> worktree/git path is production-reachable
+- This surface is the highest priority and must stay green once established
 
-### Secondary: Daemon IPC
-- **Tool**: Build and run swell-daemon binary, connect via Unix socket
-- **Coverage**: Task creation, state transitions, event streaming
-- **Execution**: Start daemon on temp socket, send JSON commands, verify responses
+### Secondary: Crate-scoped cargo validation
+- Tool: `cargo test -p <crate>`, `cargo check -p <crate>`, `cargo clippy -p <crate> -- -D warnings`
+- Purpose: verify the local crate behavior for each audited feature without replacing the wiring guardrail surface
+
+### Tertiary: CLI and daemon operator surfaces
+- Tool: crate-scoped tests for `swell-cli`, `swell-daemon`, and audited integration surfaces
+- Purpose: validate Tier 3 operator features after Tier 1 and Tier 2 gates are green
 
 ## Validation Concurrency
 
-### Cargo Test Surface
-- **Max concurrent validators**: 5
-- **Rationale**: 10-core / 16 GB machine. cargo test uses ~500 MB per invocation. 5 concurrent = ~2.5 GB, well within 70% of ~10 GB available headroom.
+### Wiring guardrail surface
+- Max concurrent validators: 1
+- Rationale: this mission is specifically sensitive to flaky validation and shared runtime wiring; serialize this suite to avoid ambiguous failures.
 
-### Daemon IPC Surface
-- **Max concurrent validators**: 3
-- **Rationale**: Each daemon instance uses a unique temp socket and ~200 MB. Conservative limit due to filesystem I/O.
+### Crate-scoped cargo validation
+- Max concurrent validators: 3
+- Rationale: 10 CPU cores on this machine, but keep headroom for heavy orchestrator/integration compilation and avoid false negatives from resource contention.
 
-## Testing Patterns
+### CLI/daemon surfaces
+- Max concurrent validators: 2
+- Rationale: local filesystem/socket coordination and orchestrator-heavy runtime tests can interfere if overscheduled.
 
-- All LLM tests use MockLlm or ScenarioMockLlm (no real API calls)
-- Integration tests use temporary directories for filesystem isolation
-- Daemon tests use temporary Unix sockets in /tmp/
-- Git tests may need temp git repos (initialized per test)
+## Mission-Specific Rules
+
+- Never treat crate-local green as sufficient for Tier 1 wiring work.
+- After every Tier 1 feature, re-run the wiring guardrail surface relevant to the changed assertion(s).
+- After every Tier 2 feature, confirm no Tier 1 guardrail regression.
+- Tier 3 work must preserve already-green Tier 1 and Tier 2 gates.
+- Workers and validators must update the mission's machine-readable progress artifacts when reporting checkbacks.

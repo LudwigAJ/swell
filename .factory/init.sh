@@ -1,18 +1,15 @@
 #!/bin/bash
-# NOTE: This file should be executable (chmod +x .factory/init.sh)
 set -euo pipefail
 
-# Ensure Rust toolchain is available
-if ! command -v cargo &> /dev/null; then
-    echo "ERROR: cargo not found. Install Rust via https://rustup.rs"
-    exit 1
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "ERROR: cargo not found. Install Rust via https://rustup.rs"
+  exit 1
 fi
 
-# Verify workspace compiles
 echo "Checking workspace compilation..."
-cargo check --workspace 2>&1 || {
-    echo "ERROR: Workspace compilation failed"
-    exit 1
-}
+cargo check --workspace >/dev/null
 
-echo "Swell workspace ready."
+echo "Checking audit wiring guardrail test target exists..."
+cargo test -p swell-integration-tests --test full_cycle_wiring -- --list >/dev/null
+
+echo "Swell audit-recovery mission workspace ready."
