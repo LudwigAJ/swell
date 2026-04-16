@@ -6,6 +6,10 @@ use crate::{
     file_locks::LockAcquisitionResult,
     frozen_spec::FrozenSpecRef,
     killswitch::OrchestratorKillSwitch,
+    uncertainty::{
+        generate_suggested_options, ConfidenceLevel, UncertaintyClarificationEvent,
+        UncertaintyManager,
+    },
     EvaluatorAgent, FeatureLead, FeatureLeadSpawner, GeneratorAgent, Orchestrator, PlannerAgent,
     MAX_CONCURRENT_AGENTS,
 };
@@ -15,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::{
-    AgentContext, AgentResult, LlmMessage, Plan, StreamEvent, SwellError, ToolOutput,
+    AgentContext, AgentResult, AgentRole, LlmMessage, Plan, StreamEvent, SwellError, ToolOutput,
     ToolResultContent, ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
@@ -212,6 +216,14 @@ pub struct ExecutionController {
     modified_files: std::sync::RwLock<HashSet<String>>,
     /// Interval in seconds for periodic drift checks (0 = only at end of execution)
     drift_check_interval_seconds: u64,
+    /// Uncertainty manager for handling confidence-based pauses (VAL-ORCH-014)
+    uncertainty_manager: Arc<UncertaintyManager>,
+    /// Default confidence threshold (0.0 to 1.0) below which execution pauses.
+    /// Per-agent-type thresholds can be set via AutonomyController.
+    default_confidence_threshold: f64,
+    /// Timeout in seconds for waiting for a clarification response during an uncertainty pause.
+    /// Defaults to 3600 (1 hour). Use with_uncertainty_timeout() to change.
+    uncertainty_timeout_secs: u64,
 }
 
 impl ExecutionController {
@@ -242,6 +254,9 @@ impl ExecutionController {
             drift_detector: DriftDetector::new(),
             modified_files: std::sync::RwLock::new(HashSet::new()),
             drift_check_interval_seconds: 0,
+            uncertainty_manager: Arc::new(UncertaintyManager::new()),
+            default_confidence_threshold: 0.5,
+            uncertainty_timeout_secs: 3600,
         }
     }
 
@@ -268,6 +283,9 @@ impl ExecutionController {
             drift_detector: DriftDetector::new(),
             modified_files: std::sync::RwLock::new(HashSet::new()),
             drift_check_interval_seconds: 0,
+            uncertainty_manager: Arc::new(UncertaintyManager::new()),
+            default_confidence_threshold: 0.5,
+            uncertainty_timeout_secs: 3600,
         }
     }
 
@@ -300,6 +318,9 @@ impl ExecutionController {
             drift_detector: DriftDetector::new(),
             modified_files: std::sync::RwLock::new(HashSet::new()),
             drift_check_interval_seconds: 0,
+            uncertainty_manager: Arc::new(UncertaintyManager::new()),
+            default_confidence_threshold: 0.5,
+            uncertainty_timeout_secs: 3600,
         }
     }
 
@@ -327,6 +348,9 @@ impl ExecutionController {
             drift_detector: DriftDetector::new(),
             modified_files: std::sync::RwLock::new(HashSet::new()),
             drift_check_interval_seconds: 0,
+            uncertainty_manager: Arc::new(UncertaintyManager::new()),
+            default_confidence_threshold: 0.5,
+            uncertainty_timeout_secs: 3600,
         }
     }
 
@@ -365,6 +389,9 @@ impl ExecutionController {
             drift_detector: DriftDetector::new(),
             modified_files: std::sync::RwLock::new(HashSet::new()),
             drift_check_interval_seconds: 0,
+            uncertainty_manager: Arc::new(UncertaintyManager::new()),
+            default_confidence_threshold: 0.5,
+            uncertainty_timeout_secs: 3600,
         }
     }
 
@@ -406,6 +433,9 @@ impl ExecutionController {
             drift_detector: DriftDetector::new(),
             modified_files: std::sync::RwLock::new(HashSet::new()),
             drift_check_interval_seconds: 0,
+            uncertainty_manager: Arc::new(UncertaintyManager::new()),
+            default_confidence_threshold: 0.5,
+            uncertainty_timeout_secs: 3600,
         }
     }
 
@@ -555,6 +585,56 @@ impl ExecutionController {
     pub fn set_drift_check_interval(&mut self, interval_seconds: u64) {
         self.drift_check_interval_seconds = interval_seconds;
     }
+
+    // -------------------------------------------------------------------------
+    // Builder / configuration methods
+    // -------------------------------------------------------------------------
+
+    /// Override the confidence threshold below which execution pauses for clarification.
+    ///
+    /// When an agent's `AgentResult::confidence_score` is `Some(score)` and `score < threshold`,
+    /// the controller emits a `UncertaintyClarificationRequest` event, transitions the task to
+    /// `Paused`, and blocks until a clarification response is injected via the
+    /// `UncertaintyManager`.
+    ///
+    /// Default: `0.5`
+    pub fn with_confidence_threshold(mut self, threshold: f64) -> Self {
+        self.default_confidence_threshold = threshold;
+        self
+    }
+
+    /// Override the timeout for waiting for a clarification response (in seconds).
+    ///
+    /// If no response is injected within this duration the uncertainty pause fails
+    /// with [`SwellError::InvalidOperation`].
+    ///
+    /// Default: `3600` (1 hour)
+    pub fn with_uncertainty_timeout(mut self, timeout_secs: u64) -> Self {
+        self.uncertainty_timeout_secs = timeout_secs;
+        self
+    }
+
+    /// Inject a pre-created [`UncertaintyManager`] instance.
+    ///
+    /// Useful in tests to share a manager between the controller and the test
+    /// harness so that responses can be injected while `execute_task` is
+    /// blocking.
+    pub fn with_uncertainty_manager(mut self, manager: Arc<UncertaintyManager>) -> Self {
+        self.uncertainty_manager = manager;
+        self
+    }
+
+    /// Get a shared reference to the internal [`UncertaintyManager`].
+    ///
+    /// Tests can use this to inject clarification responses while
+    /// `execute_task` is paused.
+    pub fn uncertainty_manager(&self) -> Arc<UncertaintyManager> {
+        Arc::clone(&self.uncertainty_manager)
+    }
+
+    // -------------------------------------------------------------------------
+    // Execution
+    // -------------------------------------------------------------------------
 
     /// Execute a single task through the full Planner → Generator → Evaluator pipeline.
     ///
@@ -744,6 +824,99 @@ impl ExecutionController {
         };
 
         let generator_result: AgentResult = generator.execute(context).await?;
+
+        // VAL-ORCH-014: Check if agent confidence dropped below threshold.
+        // If confidence_score is present and below threshold, emit a structured clarification
+        // request, pause the task, and block execution until clarification is provided.
+        if let Some(confidence_score) = generator_result.confidence_score {
+            let threshold = self.default_confidence_threshold;
+            if confidence_score < threshold {
+                let confidence_level = ConfidenceLevel::from_score(confidence_score);
+                let reason = format!(
+                    "Agent reported low confidence score: {:.2} (threshold: {:.2})",
+                    confidence_score, threshold
+                );
+
+                info!(
+                    task_id = %task_id,
+                    confidence_score = confidence_score,
+                    threshold = threshold,
+                    "Agent confidence below threshold — pausing for clarification"
+                );
+
+                // Build and register the clarification event
+                let suggested_options =
+                    generate_suggested_options(AgentRole::Generator, confidence_level);
+                let event = UncertaintyClarificationEvent::new(
+                    task_id,
+                    None,
+                    AgentRole::Generator,
+                    confidence_score,
+                    threshold,
+                    reason.clone(),
+                    "Generator completed but confidence is low".to_string(),
+                    suggested_options,
+                );
+                let request_id = self.uncertainty_manager.create_request(event).await;
+
+                // Emit the structured clarification request event for observers
+                self.orchestrator.emit_uncertainty_clarification(
+                    task_id,
+                    Uuid::nil(),
+                    AgentRole::Generator,
+                    reason.clone(),
+                    "Generator completed but confidence is low".to_string(),
+                    vec![
+                        "Continue with current implementation".to_string(),
+                        "Provide more specific guidance".to_string(),
+                        "Retry with expanded context".to_string(),
+                        "Escalate to human review".to_string(),
+                    ],
+                    confidence_score,
+                    threshold,
+                );
+
+                // Pause the task state machine
+                if let Err(e) = self.orchestrator.pause_task(task_id, reason.clone()).await {
+                    warn!(
+                        task_id = %task_id,
+                        error = %e,
+                        "Could not transition task to Paused state during uncertainty pause"
+                    );
+                }
+
+                // Block until a clarification response is injected or timeout
+                let response = self
+                    .uncertainty_manager
+                    .wait_for_response(request_id, self.uncertainty_timeout_secs, 1)
+                    .await;
+
+                match response {
+                    Some(_clarification) => {
+                        info!(
+                            task_id = %task_id,
+                            request_id = %request_id,
+                            "Clarification received — resuming execution"
+                        );
+                        // Resume from Paused state
+                        if let Err(e) = self.orchestrator.resume_task(task_id).await {
+                            warn!(
+                                task_id = %task_id,
+                                error = %e,
+                                "Could not resume task after clarification"
+                            );
+                        }
+                    }
+                    None => {
+                        return Err(SwellError::InvalidOperation(format!(
+                            "Uncertainty pause timed out after {} seconds waiting for clarification \
+                             (confidence {:.2} below threshold {:.2})",
+                            self.uncertainty_timeout_secs, confidence_score, threshold
+                        )));
+                    }
+                }
+            }
+        }
 
         // Step 4: Start validation phase
         self.orchestrator.start_validation(task_id).await?;
@@ -1337,6 +1510,9 @@ impl Clone for ExecutionController {
             drift_detector: self.drift_detector.clone(),
             modified_files: std::sync::RwLock::new(HashSet::new()),
             drift_check_interval_seconds: self.drift_check_interval_seconds,
+            uncertainty_manager: Arc::clone(&self.uncertainty_manager),
+            default_confidence_threshold: self.default_confidence_threshold,
+            uncertainty_timeout_secs: self.uncertainty_timeout_secs,
         }
     }
 }

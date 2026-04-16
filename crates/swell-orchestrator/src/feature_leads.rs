@@ -252,6 +252,7 @@ impl FeatureLead {
             tool_calls: vec![],
             tokens_used: 0,
             error: None,
+            confidence_score: None,
         })
     }
 

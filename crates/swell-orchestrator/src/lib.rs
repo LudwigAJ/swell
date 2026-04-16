@@ -53,6 +53,7 @@ pub mod task_enrichment;
 pub mod task_graph;
 pub mod team_registry;
 pub mod tiered_merge;
+pub mod uncertainty;
 pub mod value_scorer;
 pub mod work_graph;
 pub mod worker_boot;
@@ -76,7 +77,7 @@ pub use alerts::{
 };
 pub use autonomy::{
     ApprovalDecision, ApprovalRequest, AutonomyController, AutonomyOverride,
-    AutonomyOverrideMatrix, TaskType,
+    AutonomyOverrideMatrix, ConfidenceThresholdConfig, TaskType,
 };
 pub use backlog::{
     BacklogItem, BacklogSource, BacklogStats, DeduplicationConfig, PriorityScoringConfig,
@@ -191,6 +192,10 @@ pub use task_enrichment::{
 pub use task_graph::TaskGraph;
 pub use team_registry::{Team, TeamEvent, TeamRegistry, TeamTaskFailed};
 pub use tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
+pub use uncertainty::{
+    check_confidence_threshold, generate_suggested_options, ClarificationOption,
+    ClarificationResponse, UncertaintyClarificationEvent, UncertaintyManager, UncertaintyStats,
+};
 pub use value_scorer::{
     BlockingImpactScore, ComplexityScore, SpecAlignmentScore, TaskDependency, TaskScore,
     ValueScorer, ValueScorerConfig,
@@ -277,6 +282,26 @@ pub enum OrchestratorEvent {
         severity: AlertSeverity,
         /// Recommended action to take
         recommended_action: String,
+    },
+    /// Uncertainty clarification request emitted when agent confidence drops below threshold.
+    /// The agent pauses execution and waits for clarification before resuming.
+    UncertaintyClarificationRequest {
+        /// Task requiring clarification
+        task_id: Uuid,
+        /// Agent that is uncertain
+        agent_id: AgentId,
+        /// Agent role that generated the uncertainty
+        agent_role: AgentRole,
+        /// Why confidence dropped below threshold
+        reason: String,
+        /// Current context/state when uncertainty was detected
+        current_context: String,
+        /// Suggested resolution options
+        suggested_options: Vec<String>,
+        /// Actual confidence score that triggered the pause
+        confidence_score: f64,
+        /// Threshold the score needed to be above
+        confidence_threshold: f64,
     },
 }
 
@@ -365,6 +390,46 @@ impl Orchestrator {
             planned_file_count,
             actual_file_count,
         });
+    }
+
+    /// Emit an uncertainty clarification request event when agent confidence drops below threshold.
+    ///
+    /// This is called by the ExecutionController when an agent reports a confidence score
+    /// below the configured threshold. The agent pauses execution until clarification is provided.
+    ///
+    /// # Arguments
+    /// * `task_id` - The task requiring clarification
+    /// * `agent_id` - Agent that generated the uncertainty
+    /// * `agent_role` - Agent role that generated the uncertainty
+    /// * `reason` - Why confidence dropped below threshold
+    /// * `current_context` - Current context/state when uncertainty was detected
+    /// * `suggested_options` - Suggested resolution options
+    /// * `confidence_score` - Actual confidence score that triggered the pause
+    /// * `confidence_threshold` - Threshold the score needed to be above
+    #[allow(clippy::too_many_arguments)]
+    pub fn emit_uncertainty_clarification(
+        &self,
+        task_id: Uuid,
+        agent_id: AgentId,
+        agent_role: AgentRole,
+        reason: String,
+        current_context: String,
+        suggested_options: Vec<String>,
+        confidence_score: f64,
+        confidence_threshold: f64,
+    ) {
+        let _ = self
+            .event_sender
+            .send(OrchestratorEvent::UncertaintyClarificationRequest {
+                task_id,
+                agent_id,
+                agent_role,
+                reason,
+                current_context,
+                suggested_options,
+                confidence_score,
+                confidence_threshold,
+            });
     }
 
     /// Create a new task

@@ -1704,6 +1704,7 @@ mod tests {
             injected_instructions: vec![],
             original_scope: None,
             current_scope: TaskScope::default(),
+            enrichment: Default::default(),
         }];
         let task_list = DataResponse::TaskList {
             tasks: tasks.clone(),
@@ -1745,6 +1746,7 @@ mod tests {
             injected_instructions: vec![],
             original_scope: None,
             current_scope: TaskScope::default(),
+            enrichment: Default::default(),
         };
         let task_detail = DataResponse::TaskDetail {
             task,
@@ -1902,6 +1904,7 @@ mod tests {
             injected_instructions: vec![],
             original_scope: None,
             current_scope: TaskScope::default(),
+            enrichment: Default::default(),
         };
 
         let event = DaemonEvent::DataResponse(Box::new(DataResponse::TaskDetail {

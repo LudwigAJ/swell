@@ -1515,9 +1515,10 @@ mod tests {
     fn test_total_complexity() {
         let graph = create_5_node_dag();
 
-        // 0.2 + 0.5 + 0.3 + 0.4 + 0.3 = 1.7
+        // 0.2 + 0.5 + 0.3 + 0.4 + 0.3 = 1.7 (within floating-point accumulation tolerance)
         let total = graph.total_complexity();
-        assert!((total - 1.7).abs() < f64::EPSILON, "Expected 1.7, got {}", total);
+        // Use a generous epsilon: accumulated FP error across 5 additions can exceed f64::EPSILON
+        assert!((total - 1.7).abs() < 1e-9, "Expected 1.7, got {}", total);
     }
 
     // ========================================================================

@@ -150,13 +150,18 @@ pub struct AgentContext {
 }
 
 /// Result from an agent execution
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct AgentResult {
     pub success: bool,
     pub output: String,
     pub tool_calls: Vec<ToolCallResult>,
     pub tokens_used: u64,
     pub error: Option<String>,
+    /// Agent's self-reported confidence score (0.0 to 1.0) for the current output.
+    /// Used by the orchestrator to determine if uncertainty pause is needed.
+    /// When None, confidence is assumed to be high enough to proceed without pause.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence_score: Option<f64>,
 }
 
 /// Result of calling a tool

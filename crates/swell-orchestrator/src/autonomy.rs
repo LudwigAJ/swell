@@ -386,12 +386,62 @@ pub enum ApprovalDecision {
     Pending,
 }
 
+/// Confidence threshold configuration for uncertainty pauses.
+/// Stores the confidence threshold for each agent type.
+#[derive(Debug, Clone, Default)]
+pub struct ConfidenceThresholdConfig {
+    /// Per-agent-role confidence thresholds (0.0 to 1.0).
+    /// If an agent's confidence score drops below this threshold,
+    /// the agent pauses and emits a clarification request.
+    thresholds: HashMap<String, f64>,
+    /// Default threshold for agents without a specific configuration.
+    default_threshold: f64,
+}
+
+impl ConfidenceThresholdConfig {
+    /// Create a new configuration with a default threshold.
+    pub fn new(default_threshold: f64) -> Self {
+        Self {
+            thresholds: HashMap::new(),
+            default_threshold,
+        }
+    }
+
+    /// Set a threshold for a specific agent role.
+    pub fn set_threshold(mut self, role: swell_core::AgentRole, threshold: f64) -> Self {
+        let key = format!("{:?}", role);
+        self.thresholds.insert(key, threshold);
+        self
+    }
+
+    /// Get the threshold for a specific agent role.
+    pub fn get_threshold(&self, role: swell_core::AgentRole) -> f64 {
+        let key = format!("{:?}", role);
+        self.thresholds
+            .get(&key)
+            .copied()
+            .unwrap_or(self.default_threshold)
+    }
+
+    /// Get the default threshold.
+    pub fn default_threshold(&self) -> f64 {
+        self.default_threshold
+    }
+
+    /// Check if a confidence score is below the threshold for a given role.
+    pub fn is_below_threshold(&self, role: swell_core::AgentRole, confidence: f64) -> bool {
+        confidence < self.get_threshold(role)
+    }
+}
+
 /// Manages approval requests and decisions for autonomy levels
 pub struct AutonomyController {
     pending_requests: Arc<RwLock<HashMap<Uuid, ApprovalRequest>>>,
     decisions: Arc<RwLock<HashMap<Uuid, ApprovalDecision>>>,
     /// Override matrix for per-agent-type and per-task-type autonomy control
     override_matrix: Arc<RwLock<AutonomyOverrideMatrix>>,
+    /// Confidence threshold configuration for uncertainty pauses
+    confidence_threshold: Arc<RwLock<ConfidenceThresholdConfig>>,
 }
 
 impl AutonomyController {
@@ -400,6 +450,7 @@ impl AutonomyController {
             pending_requests: Arc::new(RwLock::new(HashMap::new())),
             decisions: Arc::new(RwLock::new(HashMap::new())),
             override_matrix: Arc::new(RwLock::new(AutonomyOverrideMatrix::new())),
+            confidence_threshold: Arc::new(RwLock::new(ConfidenceThresholdConfig::new(0.5))),
         }
     }
 
@@ -409,6 +460,20 @@ impl AutonomyController {
             pending_requests: Arc::new(RwLock::new(HashMap::new())),
             decisions: Arc::new(RwLock::new(HashMap::new())),
             override_matrix: Arc::new(RwLock::new(matrix)),
+            confidence_threshold: Arc::new(RwLock::new(ConfidenceThresholdConfig::new(0.5))),
+        }
+    }
+
+    /// Create a new controller with a specific override matrix and confidence threshold config
+    pub fn with_confidence_config(
+        matrix: AutonomyOverrideMatrix,
+        threshold_config: ConfidenceThresholdConfig,
+    ) -> Self {
+        Self {
+            pending_requests: Arc::new(RwLock::new(HashMap::new())),
+            decisions: Arc::new(RwLock::new(HashMap::new())),
+            override_matrix: Arc::new(RwLock::new(matrix)),
+            confidence_threshold: Arc::new(RwLock::new(threshold_config)),
         }
     }
 
@@ -589,6 +654,58 @@ impl AutonomyController {
     ) -> AutonomyLevel {
         let matrix = self.override_matrix.read().await;
         matrix.get_effective(agent_role, task_type, base_level).0
+    }
+
+    // ============================================================================
+    // Confidence Threshold Management (for Uncertainty Pauses)
+    // ============================================================================
+
+    /// Get the confidence threshold for a specific agent role.
+    pub async fn get_confidence_threshold(&self, role: swell_core::AgentRole) -> f64 {
+        let config = self.confidence_threshold.read().await;
+        config.get_threshold(role)
+    }
+
+    /// Get the default confidence threshold.
+    pub async fn get_default_confidence_threshold(&self) -> f64 {
+        let config = self.confidence_threshold.read().await;
+        config.default_threshold()
+    }
+
+    /// Set the confidence threshold for a specific agent role.
+    /// This allows per-agent-type customization of the uncertainty pause threshold.
+    pub async fn set_confidence_threshold(&self, role: swell_core::AgentRole, threshold: f64) {
+        let mut config = self.confidence_threshold.write().await;
+        let key = format!("{:?}", role);
+        config.thresholds.insert(key, threshold);
+    }
+
+    /// Set the default confidence threshold.
+    pub async fn set_default_confidence_threshold(&self, threshold: f64) {
+        let mut config = self.confidence_threshold.write().await;
+        config.default_threshold = threshold;
+    }
+
+    /// Check if a confidence score is below the threshold for a given agent role.
+    /// Returns true if the agent should pause due to low confidence.
+    pub async fn is_confidence_below_threshold(
+        &self,
+        role: swell_core::AgentRole,
+        confidence: f64,
+    ) -> bool {
+        let config = self.confidence_threshold.read().await;
+        config.is_below_threshold(role, confidence)
+    }
+
+    /// Set the entire confidence threshold configuration.
+    pub async fn set_confidence_threshold_config(&self, config: ConfidenceThresholdConfig) {
+        let mut current = self.confidence_threshold.write().await;
+        *current = config;
+    }
+
+    /// Get a clone of the current confidence threshold configuration.
+    pub async fn get_confidence_threshold_config(&self) -> ConfidenceThresholdConfig {
+        self.confidence_threshold.read().await.clone()
     }
 }
 
@@ -1106,5 +1223,197 @@ mod tests {
             &[],
             TaskType::Documentation
         ));
+    }
+
+    // ============================================================================
+    // Confidence Threshold Configuration Tests
+    // ============================================================================
+
+    #[test]
+    fn test_confidence_threshold_config_default() {
+        let config = ConfidenceThresholdConfig::new(0.5);
+        assert_eq!(config.default_threshold(), 0.5);
+        // Default threshold should be returned for unknown roles
+        assert_eq!(config.get_threshold(swell_core::AgentRole::Generator), 0.5);
+    }
+
+    #[test]
+    fn test_confidence_threshold_config_per_role() {
+        let config = ConfidenceThresholdConfig::new(0.5)
+            .set_threshold(swell_core::AgentRole::Planner, 0.3)
+            .set_threshold(swell_core::AgentRole::Evaluator, 0.7);
+
+        // Custom thresholds
+        assert_eq!(config.get_threshold(swell_core::AgentRole::Planner), 0.3);
+        assert_eq!(config.get_threshold(swell_core::AgentRole::Evaluator), 0.7);
+        // Generator should use default
+        assert_eq!(config.get_threshold(swell_core::AgentRole::Generator), 0.5);
+    }
+
+    #[test]
+    fn test_confidence_threshold_config_is_below_threshold() {
+        let config =
+            ConfidenceThresholdConfig::new(0.5).set_threshold(swell_core::AgentRole::Coder, 0.3);
+
+        // Generator uses default 0.5
+        assert!(!config.is_below_threshold(swell_core::AgentRole::Generator, 0.6));
+        assert!(!config.is_below_threshold(swell_core::AgentRole::Generator, 0.5));
+        assert!(config.is_below_threshold(swell_core::AgentRole::Generator, 0.4));
+
+        // Coder uses custom 0.3
+        assert!(!config.is_below_threshold(swell_core::AgentRole::Coder, 0.4));
+        assert!(!config.is_below_threshold(swell_core::AgentRole::Coder, 0.3));
+        assert!(config.is_below_threshold(swell_core::AgentRole::Coder, 0.2));
+    }
+
+    #[tokio::test]
+    async fn test_autonomy_controller_default_confidence_threshold() {
+        let controller = AutonomyController::new();
+
+        // Default threshold should be 0.5
+        assert_eq!(controller.get_default_confidence_threshold().await, 0.5);
+
+        // All agent roles should initially use the default
+        assert_eq!(
+            controller
+                .get_confidence_threshold(swell_core::AgentRole::Generator)
+                .await,
+            0.5
+        );
+        assert_eq!(
+            controller
+                .get_confidence_threshold(swell_core::AgentRole::Planner)
+                .await,
+            0.5
+        );
+    }
+
+    #[tokio::test]
+    async fn test_autonomy_controller_set_per_role_threshold() {
+        let controller = AutonomyController::new();
+
+        // Set custom thresholds
+        controller
+            .set_confidence_threshold(swell_core::AgentRole::Planner, 0.3)
+            .await;
+        controller
+            .set_confidence_threshold(swell_core::AgentRole::Evaluator, 0.8)
+            .await;
+
+        // Verify thresholds
+        assert_eq!(
+            controller
+                .get_confidence_threshold(swell_core::AgentRole::Planner)
+                .await,
+            0.3
+        );
+        assert_eq!(
+            controller
+                .get_confidence_threshold(swell_core::AgentRole::Evaluator)
+                .await,
+            0.8
+        );
+        // Generator should still use default
+        assert_eq!(
+            controller
+                .get_confidence_threshold(swell_core::AgentRole::Generator)
+                .await,
+            0.5
+        );
+    }
+
+    #[tokio::test]
+    async fn test_autonomy_controller_is_confidence_below_threshold() {
+        let controller = AutonomyController::new();
+
+        // Set a custom threshold for Coder
+        controller
+            .set_confidence_threshold(swell_core::AgentRole::Coder, 0.4)
+            .await;
+
+        // Test Generator (default 0.5)
+        assert!(
+            !controller
+                .is_confidence_below_threshold(swell_core::AgentRole::Generator, 0.6)
+                .await
+        );
+        assert!(
+            !controller
+                .is_confidence_below_threshold(swell_core::AgentRole::Generator, 0.5)
+                .await
+        );
+        assert!(
+            controller
+                .is_confidence_below_threshold(swell_core::AgentRole::Generator, 0.4)
+                .await
+        );
+
+        // Test Coder (custom 0.4)
+        assert!(
+            !controller
+                .is_confidence_below_threshold(swell_core::AgentRole::Coder, 0.5)
+                .await
+        );
+        assert!(
+            controller
+                .is_confidence_below_threshold(swell_core::AgentRole::Coder, 0.3)
+                .await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_autonomy_controller_confidence_config_lifecycle() {
+        let controller = AutonomyController::new();
+
+        // Set individual thresholds
+        controller
+            .set_confidence_threshold(swell_core::AgentRole::Generator, 0.3)
+            .await;
+
+        // Get and verify config
+        let config = controller.get_confidence_threshold_config().await;
+        assert_eq!(config.get_threshold(swell_core::AgentRole::Generator), 0.3);
+
+        // Create new config with builder
+        let new_config = ConfidenceThresholdConfig::new(0.6)
+            .set_threshold(swell_core::AgentRole::TestWriter, 0.2);
+
+        // Set new config
+        controller.set_confidence_threshold_config(new_config).await;
+
+        // Verify new config
+        assert_eq!(
+            controller
+                .get_confidence_threshold(swell_core::AgentRole::Generator)
+                .await,
+            0.6
+        );
+        assert_eq!(
+            controller
+                .get_confidence_threshold(swell_core::AgentRole::TestWriter)
+                .await,
+            0.2
+        );
+    }
+
+    #[tokio::test]
+    async fn test_autonomy_controller_with_confidence_config() {
+        // Create controller with custom initial config
+        let config = ConfidenceThresholdConfig::new(0.7)
+            .set_threshold(swell_core::AgentRole::Refactorer, 0.5);
+
+        let matrix = AutonomyOverrideMatrix::new();
+        let controller = AutonomyController::with_confidence_config(matrix, config);
+
+        // Verify custom default
+        assert_eq!(controller.get_default_confidence_threshold().await, 0.7);
+
+        // Verify custom role threshold
+        assert_eq!(
+            controller
+                .get_confidence_threshold(swell_core::AgentRole::Refactorer)
+                .await,
+            0.5
+        );
     }
 }

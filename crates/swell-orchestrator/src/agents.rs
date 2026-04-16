@@ -688,6 +688,7 @@ impl Agent for PlannerAgent {
             tool_calls: vec![],
             tokens_used: response.usage.total_tokens,
             error: None,
+            confidence_score: None,
         })
     }
 }
@@ -1145,6 +1146,7 @@ impl Agent for GeneratorAgent {
                 tool_calls: vec![],
                 tokens_used: 1000,
                 error: None,
+                confidence_score: None,
             });
         }
 
@@ -1248,6 +1250,7 @@ impl Agent for GeneratorAgent {
             tool_calls: tool_call_results,
             tokens_used: total_tokens,
             error: None,
+            confidence_score: None,
         })
     }
 }
@@ -2067,6 +2070,7 @@ impl Agent for EvaluatorAgent {
                 tool_calls: vec![],
                 tokens_used: 300,
                 error: None,
+                confidence_score: None,
             });
         }
 
@@ -2218,6 +2222,7 @@ impl Agent for EvaluatorAgent {
             } else {
                 Some("Validation failed".to_string())
             },
+            confidence_score: None,
         })
     }
 }
@@ -2530,6 +2535,7 @@ impl Agent for ResearcherAgent {
                 tool_calls: vec![],
                 tokens_used: 0,
                 error: None,
+                confidence_score: None,
             });
         }
 
@@ -2608,6 +2614,7 @@ impl Agent for ResearcherAgent {
             tool_calls: vec![],
             tokens_used: 0,
             error: None,
+            confidence_score: None,
         })
     }
 }
@@ -4038,6 +4045,7 @@ impl Agent for CoderAgent {
                 tool_calls: vec![],
                 tokens_used: 800,
                 error: None,
+                confidence_score: None,
             });
         }
 
@@ -4215,6 +4223,7 @@ Generate the modified file content. Respond ONLY with JSON in this format:
             } else {
                 Some("Self-validation failed".to_string())
             },
+            confidence_score: None,
         })
     }
 }
@@ -4555,6 +4564,7 @@ impl Agent for TestWriterAgent {
             tool_calls: vec![],
             tokens_used: 800,
             error: None,
+            confidence_score: None,
         })
     }
 }
@@ -5072,6 +5082,7 @@ impl Agent for ReviewerAgent {
                 tool_calls: vec![],
                 tokens_used: 500,
                 error: None,
+                confidence_score: None,
             });
         }
 
@@ -5151,6 +5162,7 @@ impl Agent for ReviewerAgent {
             } else {
                 Some("Review found issues that block merge".to_string())
             },
+            confidence_score: None,
         })
     }
 }
@@ -5849,6 +5861,7 @@ impl Agent for RefactorerAgent {
                 tool_calls: vec![],
                 tokens_used: 700,
                 error: None,
+                confidence_score: None,
             });
         }
 
@@ -6047,6 +6060,7 @@ impl Agent for RefactorerAgent {
                 } else {
                     Some("Validation failed - behavior not preserved".to_string())
                 },
+                confidence_score: None,
             });
         } else {
             None
@@ -6073,6 +6087,7 @@ impl Agent for RefactorerAgent {
             } else {
                 Some("Validation failed - behavior not preserved".to_string())
             },
+            confidence_score: None,
         })
     }
 }
@@ -6219,6 +6234,7 @@ impl Agent for DocWriterAgent {
                 tool_calls: vec![],
                 tokens_used: 400,
                 error: None,
+                confidence_score: None,
             });
         };
 
@@ -6309,6 +6325,7 @@ impl Agent for DocWriterAgent {
             tool_calls: vec![],
             tokens_used: response.usage.total_tokens,
             error: None,
+            confidence_score: None,
         })
     }
 }
