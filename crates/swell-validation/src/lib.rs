@@ -267,9 +267,11 @@ pub mod traceability;
 pub use traceability::sqlite_store::SqliteTraceabilityStore;
 pub use traceability::{
     AcceptanceCriteria as TraceAcceptanceCriteria, ChainCounts, CriteriaCriticality,
-    CriteriaStatus, Evidence, EvidenceType, Goal, GoalStatus, InMemoryTraceabilityStore,
-    TestCase as TraceTestCase, TestCaseStatus, TestCaseType, TestResult as TraceTestResult,
-    TraceabilityChain, TraceabilityError, TraceabilityStore,
+    CriteriaStatus, CriteriaEvidence, Evidence, EvidenceArtifact,
+    EvidenceType, Goal, GoalStatus, InMemoryTraceabilityStore,
+    MissingLink, MissingLinkType, TestCase as TraceTestCase, TestCaseEvidence,
+    TestCaseStatus, TestCaseType, TestResult as TraceTestResult, TraceabilityChain,
+    TraceabilityError, TraceabilityEvidencePack, TraceabilityStore, CodeLocation,
 };
 
 // Re-export predictive test selection for ML-based intelligent test prioritization

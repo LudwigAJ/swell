@@ -482,6 +482,129 @@ pub trait TraceabilityStore: Send + Sync {
 
     /// Count items in the traceability chain
     async fn count_chain_items(&self, goal_id: Uuid) -> Result<ChainCounts, TraceabilityError>;
+
+    // --- Evidence Pack Assembly ---
+
+    /// Assemble an evidence pack for a requirement (goal).
+    ///
+    /// An evidence pack bundles all linked tests, their results, the code they cover,
+    /// and any artifacts for a given requirement. Used for merge decisions and audit trails.
+    async fn assemble_evidence_pack(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<TraceabilityEvidencePack, TraceabilityError>;
+
+    /// Detect missing links in the traceability chain.
+    ///
+    /// Returns a list of broken or missing links that prevent full traceability.
+    /// For example: criteria with no tests, tests with no results, results with no evidence.
+    async fn detect_missing_links(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<Vec<MissingLink>, TraceabilityError>;
+}
+
+/// An evidence pack for a requirement (goal).
+///
+/// Bundles all linked tests, their results, the code they cover,
+/// and any artifacts for a given requirement. Used for merge decisions
+/// and audit trails.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraceabilityEvidencePack {
+    /// Unique identifier
+    pub id: Uuid,
+    /// The goal/requirement this pack is for
+    pub requirement_id: Uuid,
+    /// When the pack was assembled
+    pub assembled_at: chrono::DateTime<Utc>,
+    /// Linked criteria with their tests and results
+    pub criteria: Vec<CriteriaEvidence>,
+    /// Total test count
+    pub total_tests: usize,
+    /// Tests that passed
+    pub passed_tests: usize,
+    /// Tests that failed
+    pub failed_tests: usize,
+    /// Code locations covered by tests
+    pub code_locations: Vec<CodeLocation>,
+    /// Evidence artifacts
+    pub artifacts: Vec<EvidenceArtifact>,
+}
+
+/// Evidence for a single criteria
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CriteriaEvidence {
+    /// The criteria
+    pub criteria: AcceptanceCriteria,
+    /// Test evidence items
+    pub tests: Vec<TestCaseEvidence>,
+}
+
+/// Evidence for a single test case
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TestCaseEvidence {
+    /// The test case
+    pub test_case: TestCase,
+    /// All results for this test (newest first)
+    pub results: Vec<TestResult>,
+    /// Evidence artifacts for this test
+    pub evidence: Vec<Evidence>,
+    /// Code location for this test
+    pub code_location: Option<CodeLocation>,
+}
+
+/// A code location covered by a test
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeLocation {
+    /// File path
+    pub file_path: String,
+    /// Line number (start)
+    pub line_start: u32,
+    /// Line number (end)
+    pub line_end: u32,
+    /// Description of what's being tested
+    pub description: Option<String>,
+}
+
+/// An evidence artifact from a test result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvidenceArtifact {
+    /// Evidence ID
+    pub id: Uuid,
+    /// Artifact type
+    pub evidence_type: EvidenceType,
+    /// Path to the artifact
+    pub artifact_path: String,
+    /// Description
+    pub description: Option<String>,
+    /// Created at timestamp
+    pub created_at: chrono::DateTime<Utc>,
+}
+
+/// A missing link in the traceability chain
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MissingLink {
+    /// The type of missing link
+    pub link_type: MissingLinkType,
+    /// The parent entity that has the missing link
+    pub parent_id: Uuid,
+    /// Description of what's missing
+    pub description: String,
+}
+
+/// Type of missing link
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MissingLinkType {
+    /// Criteria has no tests linked
+    CriteriaHasNoTests,
+    /// Test has no results linked
+    TestHasNoResults,
+    /// Result has no evidence linked
+    ResultHasNoEvidence,
+    /// Test has no file path (code location)
+    TestHasNoCodeLocation,
+    /// Goal has no criteria linked
+    GoalHasNoCriteria,
 }
 
 /// Complete traceability chain from a goal
@@ -974,6 +1097,169 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
             }),
             None => Err(TraceabilityError::NotFound(goal_id)),
         }
+    }
+
+    async fn assemble_evidence_pack(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<TraceabilityEvidencePack, TraceabilityError> {
+        let chain = self
+            .get_full_chain(goal_id)
+            .await?
+            .ok_or(TraceabilityError::NotFound(goal_id))?;
+
+        let mut criteria_evidence = Vec::new();
+        let mut total_tests = 0;
+        let mut passed_tests = 0;
+        let mut failed_tests = 0;
+        let mut code_locations = Vec::new();
+        let mut artifacts = Vec::new();
+
+        for criteria_in_chain in &chain.criteria {
+            let mut test_evidence_list = Vec::new();
+
+            for test_in_chain in &criteria_in_chain.tests {
+                total_tests += 1;
+                let passed = test_in_chain
+                    .results
+                    .first()
+                    .map(|r| r.passed)
+                    .unwrap_or(false);
+                if passed {
+                    passed_tests += 1;
+                } else if !test_in_chain.results.is_empty() {
+                    failed_tests += 1;
+                }
+
+                // Collect code location from test case
+                let code_location = test_in_chain.test_case.file_path.as_ref().map(|path| {
+                    CodeLocation {
+                        file_path: path.clone(),
+                        line_start: 0,
+                        line_end: 0,
+                        description: Some(test_in_chain.test_case.name.clone()),
+                    }
+                });
+
+                // Collect artifacts from evidence
+                for ev in &test_in_chain.evidence {
+                    artifacts.push(EvidenceArtifact {
+                        id: ev.id,
+                        evidence_type: ev.evidence_type,
+                        artifact_path: ev.artifact_path.clone(),
+                        description: ev.description.clone(),
+                        created_at: ev.created_at,
+                    });
+                }
+
+                // Collect code locations
+                if let Some(loc) = &code_location {
+                    code_locations.push(loc.clone());
+                }
+
+                test_evidence_list.push(TestCaseEvidence {
+                    test_case: test_in_chain.test_case.clone(),
+                    results: test_in_chain.results.clone(),
+                    evidence: test_in_chain.evidence.clone(),
+                    code_location,
+                });
+            }
+
+            criteria_evidence.push(CriteriaEvidence {
+                criteria: criteria_in_chain.criteria.clone(),
+                tests: test_evidence_list,
+            });
+        }
+
+        Ok(TraceabilityEvidencePack {
+            id: Uuid::new_v4(),
+            requirement_id: goal_id,
+            assembled_at: Utc::now(),
+            criteria: criteria_evidence,
+            total_tests,
+            passed_tests,
+            failed_tests,
+            code_locations,
+            artifacts,
+        })
+    }
+
+    async fn detect_missing_links(
+        &self,
+        goal_id: Uuid,
+    ) -> Result<Vec<MissingLink>, TraceabilityError> {
+        let mut missing = Vec::new();
+
+        // Check if goal exists and has criteria
+        let chain = self.get_full_chain(goal_id).await?;
+        let chain = match chain {
+            Some(c) => c,
+            None => return Err(TraceabilityError::NotFound(goal_id)),
+        };
+
+        // Check goal has criteria
+        if chain.criteria.is_empty() {
+            missing.push(MissingLink {
+                link_type: MissingLinkType::GoalHasNoCriteria,
+                parent_id: goal_id,
+                description: "Goal has no acceptance criteria linked".to_string(),
+            });
+        }
+
+        // Check each criteria for missing tests
+        for criteria_in_chain in &chain.criteria {
+            if criteria_in_chain.tests.is_empty() {
+                missing.push(MissingLink {
+                    link_type: MissingLinkType::CriteriaHasNoTests,
+                    parent_id: criteria_in_chain.criteria.id,
+                    description: format!(
+                        "Criteria '{}' has no tests linked",
+                        criteria_in_chain.criteria.text
+                    ),
+                });
+            }
+
+            // Check each test for missing results and code location
+            for test_in_chain in &criteria_in_chain.tests {
+                if test_in_chain.results.is_empty() {
+                    missing.push(MissingLink {
+                        link_type: MissingLinkType::TestHasNoResults,
+                        parent_id: test_in_chain.test_case.id,
+                        description: format!(
+                            "Test '{}' has no results linked",
+                            test_in_chain.test_case.name
+                        ),
+                    });
+                }
+
+                if test_in_chain.test_case.file_path.is_none() {
+                    missing.push(MissingLink {
+                        link_type: MissingLinkType::TestHasNoCodeLocation,
+                        parent_id: test_in_chain.test_case.id,
+                        description: format!(
+                            "Test '{}' has no code location (file_path)",
+                            test_in_chain.test_case.name
+                        ),
+                    });
+                }
+
+                // Check each result for missing evidence
+                for result in &test_in_chain.results {
+                    if test_in_chain.evidence.is_empty() {
+                        missing.push(MissingLink {
+                            link_type: MissingLinkType::ResultHasNoEvidence,
+                            parent_id: result.id,
+                            description: format!(
+                                "Result for test '{}' has no evidence linked",
+                                test_in_chain.test_case.name
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(missing)
     }
 }
 
@@ -1929,6 +2215,169 @@ pub mod sqlite_store {
                 None => Err(TraceabilityError::NotFound(goal_id)),
             }
         }
+
+        async fn assemble_evidence_pack(
+            &self,
+            goal_id: Uuid,
+        ) -> Result<TraceabilityEvidencePack, TraceabilityError> {
+            let chain = self
+                .get_full_chain(goal_id)
+                .await?
+                .ok_or(TraceabilityError::NotFound(goal_id))?;
+
+            let mut criteria_evidence = Vec::new();
+            let mut total_tests = 0;
+            let mut passed_tests = 0;
+            let mut failed_tests = 0;
+            let mut code_locations = Vec::new();
+            let mut artifacts = Vec::new();
+
+            for criteria_in_chain in &chain.criteria {
+                let mut test_evidence_list = Vec::new();
+
+                for test_in_chain in &criteria_in_chain.tests {
+                    total_tests += 1;
+                    let passed = test_in_chain
+                        .results
+                        .first()
+                        .map(|r| r.passed)
+                        .unwrap_or(false);
+                    if passed {
+                        passed_tests += 1;
+                    } else if !test_in_chain.results.is_empty() {
+                        failed_tests += 1;
+                    }
+
+                    // Collect code location from test case
+                    let code_location = test_in_chain.test_case.file_path.as_ref().map(|path| {
+                        CodeLocation {
+                            file_path: path.clone(),
+                            line_start: 0,
+                            line_end: 0,
+                            description: Some(test_in_chain.test_case.name.clone()),
+                        }
+                    });
+
+                    // Collect artifacts from evidence
+                    for ev in &test_in_chain.evidence {
+                        artifacts.push(EvidenceArtifact {
+                            id: ev.id,
+                            evidence_type: ev.evidence_type,
+                            artifact_path: ev.artifact_path.clone(),
+                            description: ev.description.clone(),
+                            created_at: ev.created_at,
+                        });
+                    }
+
+                    // Collect code locations
+                    if let Some(loc) = &code_location {
+                        code_locations.push(loc.clone());
+                    }
+
+                    test_evidence_list.push(TestCaseEvidence {
+                        test_case: test_in_chain.test_case.clone(),
+                        results: test_in_chain.results.clone(),
+                        evidence: test_in_chain.evidence.clone(),
+                        code_location,
+                    });
+                }
+
+                criteria_evidence.push(CriteriaEvidence {
+                    criteria: criteria_in_chain.criteria.clone(),
+                    tests: test_evidence_list,
+                });
+            }
+
+            Ok(TraceabilityEvidencePack {
+                id: Uuid::new_v4(),
+                requirement_id: goal_id,
+                assembled_at: Utc::now(),
+                criteria: criteria_evidence,
+                total_tests,
+                passed_tests,
+                failed_tests,
+                code_locations,
+                artifacts,
+            })
+        }
+
+        async fn detect_missing_links(
+            &self,
+            goal_id: Uuid,
+        ) -> Result<Vec<MissingLink>, TraceabilityError> {
+            let mut missing = Vec::new();
+
+            // Check if goal exists and has criteria
+            let chain = self.get_full_chain(goal_id).await?;
+            let chain = match chain {
+                Some(c) => c,
+                None => return Err(TraceabilityError::NotFound(goal_id)),
+            };
+
+            // Check goal has criteria
+            if chain.criteria.is_empty() {
+                missing.push(MissingLink {
+                    link_type: MissingLinkType::GoalHasNoCriteria,
+                    parent_id: goal_id,
+                    description: "Goal has no acceptance criteria linked".to_string(),
+                });
+            }
+
+            // Check each criteria for missing tests
+            for criteria_in_chain in &chain.criteria {
+                if criteria_in_chain.tests.is_empty() {
+                    missing.push(MissingLink {
+                        link_type: MissingLinkType::CriteriaHasNoTests,
+                        parent_id: criteria_in_chain.criteria.id,
+                        description: format!(
+                            "Criteria '{}' has no tests linked",
+                            criteria_in_chain.criteria.text
+                        ),
+                    });
+                }
+
+                // Check each test for missing results and code location
+                for test_in_chain in &criteria_in_chain.tests {
+                    if test_in_chain.results.is_empty() {
+                        missing.push(MissingLink {
+                            link_type: MissingLinkType::TestHasNoResults,
+                            parent_id: test_in_chain.test_case.id,
+                            description: format!(
+                                "Test '{}' has no results linked",
+                                test_in_chain.test_case.name
+                            ),
+                        });
+                    }
+
+                    if test_in_chain.test_case.file_path.is_none() {
+                        missing.push(MissingLink {
+                            link_type: MissingLinkType::TestHasNoCodeLocation,
+                            parent_id: test_in_chain.test_case.id,
+                            description: format!(
+                                "Test '{}' has no code location (file_path)",
+                                test_in_chain.test_case.name
+                            ),
+                        });
+                    }
+
+                    // Check each result for missing evidence
+                    for result in &test_in_chain.results {
+                        if test_in_chain.evidence.is_empty() {
+                            missing.push(MissingLink {
+                                link_type: MissingLinkType::ResultHasNoEvidence,
+                                parent_id: result.id,
+                                description: format!(
+                                    "Result for test '{}' has no evidence linked",
+                                    test_in_chain.test_case.name
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+
+            Ok(missing)
+        }
     }
 }
 
@@ -2370,5 +2819,188 @@ mod sqlite_traceability_tests {
         assert_eq!(counts.tests, 0);
         assert_eq!(counts.results, 0);
         assert_eq!(counts.evidence, 0);
+    }
+
+    #[tokio::test]
+    async fn test_evidence_pack_assembly_full_chain() {
+        // Test VAL-VPIPE-005: evidence pack contains all links and bidirectional traversal works
+        // Note: This test uses InMemoryTraceabilityStore from traceability_tests scope,
+        // where create_test_result has 2 args (passed: bool)
+        let store = InMemoryTraceabilityStore::new();
+        let task_id = Uuid::new_v4();
+
+        // Create goal (requirement)
+        let goal = Goal::new("Test goal", task_id);
+        let goal_id = store.create_goal(goal).await.unwrap();
+
+        // Link 2 tests to criteria
+        let criteria = AcceptanceCriteria::new("Test criteria", goal_id)
+            .with_category("functional")
+            .with_criticality(CriteriaCriticality::MustHave);
+        let criteria_id = store.add_criteria(criteria).await.unwrap();
+
+        let test1 = TestCase::new("test_1", criteria_id).with_file_path("tests/1.rs");
+        let test_id1 = store.add_test_case(test1).await.unwrap();
+
+        let test2 = TestCase::new("test_2", criteria_id).with_file_path("tests/2.rs");
+        let test_id2 = store.add_test_case(test2).await.unwrap();
+
+        // Record results for both tests using 2-arg version
+        let result1 = TestResult::new(test_id1, true).with_duration(100);
+        store.add_result(result1).await.unwrap();
+
+        let result2 = TestResult::new(test_id2, false).with_duration(50).with_failure_message("failed");
+        let result2_id = store.add_result(result2).await.unwrap();
+
+        // Link evidence to results
+        let evidence1 = Evidence::new(result2_id, EvidenceType::TestOutput, "/tmp/test_output.log");
+        store.add_evidence(evidence1).await.unwrap();
+
+        // Assemble evidence pack
+        let pack = store.assemble_evidence_pack(goal_id).await.unwrap();
+
+        // Verify pack contains all links
+        assert_eq!(pack.requirement_id, goal_id);
+        assert_eq!(pack.total_tests, 2);
+        assert_eq!(pack.passed_tests, 1);
+        assert_eq!(pack.failed_tests, 1);
+        assert_eq!(pack.criteria.len(), 1);
+        assert_eq!(pack.criteria[0].tests.len(), 2);
+
+        // Verify bidirectional traversal: requirement→tests
+        let criteria_tests = pack.criteria[0].tests.len();
+        assert_eq!(criteria_tests, 2);
+
+        // Verify tests have code locations (from create_test_case which has file_path)
+        let code_locs = pack.code_locations.len();
+        assert!(code_locs >= 2, "Expected at least 2 code locations, got {}", code_locs);
+
+        // Verify artifacts are present
+        assert_eq!(pack.artifacts.len(), 1, "Expected 1 artifact from evidence");
+    }
+
+    #[tokio::test]
+    async fn test_detect_missing_links() {
+        let store = InMemoryTraceabilityStore::new();
+        let task_id = Uuid::new_v4();
+
+        // Create goal with criteria but NO tests (missing link!)
+        let goal = Goal::new("Test goal", task_id);
+        let goal_id = store.create_goal(goal).await.unwrap();
+
+        let criteria = AcceptanceCriteria::new("Test criteria", goal_id);
+        store.add_criteria(criteria).await.unwrap();
+
+        // Detect missing links - should find criteria has no tests
+        let missing = store.detect_missing_links(goal_id).await.unwrap();
+
+        assert!(!missing.is_empty(), "Expected missing links to be detected");
+        let has_criteria_no_tests = missing.iter().any(|m| matches!(m.link_type, MissingLinkType::CriteriaHasNoTests));
+        assert!(has_criteria_no_tests, "Should detect criteria has no tests");
+    }
+
+    #[tokio::test]
+    async fn test_detect_no_missing_links_full_chain() {
+        let store = InMemoryTraceabilityStore::new();
+        let task_id = Uuid::new_v4();
+
+        // Build complete chain
+        let goal = Goal::new("Complete chain goal", task_id);
+        let goal_id = store.create_goal(goal).await.unwrap();
+
+        let criteria = AcceptanceCriteria::new("Complete criteria", goal_id);
+        let criteria_id = store.add_criteria(criteria).await.unwrap();
+
+        let test = TestCase::new("test_complete", criteria_id)
+            .with_file_path("src/lib.rs")
+            .with_test_type(TestCaseType::Unit);
+        let test_id = store.add_test_case(test).await.unwrap();
+
+        let result = TestResult::new(test_id, true).with_duration(100);
+        let result_id = store.add_result(result).await.unwrap();
+
+        let evidence = Evidence::new(result_id, EvidenceType::TestOutput, "/tmp/output.log");
+        store.add_evidence(evidence).await.unwrap();
+
+        // Detect missing links - should find none
+        let missing = store.detect_missing_links(goal_id).await.unwrap();
+
+        // Note: test has file_path, so no TestHasNoCodeLocation
+        // Result has evidence, so no ResultHasNoEvidence
+        // Criteria has tests, so no CriteriaHasNoTests
+        // Goal has criteria, so no GoalHasNoCriteria
+        // The only potential missing: result has evidence (1 found), tests have results (1 found)
+        // So missing should be empty
+        assert!(missing.is_empty(), "Expected no missing links for complete chain, got {:?}", missing);
+    }
+
+    #[tokio::test]
+    async fn test_evidence_pack_code_locations() {
+        let store = InMemoryTraceabilityStore::new();
+        let task_id = Uuid::new_v4();
+
+        let goal = Goal::new("Code locations test", task_id);
+        let goal_id = store.create_goal(goal).await.unwrap();
+
+        let criteria = AcceptanceCriteria::new("Code location criteria", goal_id);
+        let criteria_id = store.add_criteria(criteria).await.unwrap();
+
+        // Create test with code location
+        let test = TestCase::new("test_with_location", criteria_id)
+            .with_file_path("src/lib.rs")
+            .with_test_type(TestCaseType::Unit);
+        let test_id = store.add_test_case(test).await.unwrap();
+
+        let result = TestResult::new(test_id, true);
+        let result_id = store.add_result(result).await.unwrap();
+
+        let evidence = Evidence::new(result_id, EvidenceType::CoverageReport, "/tmp/coverage.json");
+        store.add_evidence(evidence).await.unwrap();
+
+        let pack = store.assemble_evidence_pack(goal_id).await.unwrap();
+
+        // Verify code locations include file path
+        assert!(!pack.code_locations.is_empty());
+        assert_eq!(pack.code_locations[0].file_path, "src/lib.rs");
+
+        // Verify artifacts include coverage report
+        let has_coverage = pack.artifacts.iter().any(|a| matches!(a.evidence_type, EvidenceType::CoverageReport));
+        assert!(has_coverage);
+    }
+
+    #[tokio::test]
+    async fn test_evidence_pack_bidirectional_traversal() {
+        // Test that we can traverse both ways: requirement→tests and test→requirement
+        let store = InMemoryTraceabilityStore::new();
+        let task_id = Uuid::new_v4();
+
+        let goal = Goal::new("Bidirectional test", task_id);
+        let goal_id = store.create_goal(goal).await.unwrap();
+
+        let criteria = AcceptanceCriteria::new("Bidirectional criteria", goal_id);
+        let criteria_id = store.add_criteria(criteria).await.unwrap();
+
+        let test = TestCase::new("test_bidir", criteria_id).with_file_path("src/lib.rs");
+        let test_id = store.add_test_case(test).await.unwrap();
+
+        let result = TestResult::new(test_id, true);
+        store.add_result(result).await.unwrap();
+
+        // Forward: get full chain from goal (requirement→tests)
+        let chain = store.get_full_chain(goal_id).await.unwrap().unwrap();
+        assert_eq!(chain.criteria[0].tests[0].test_case.id, test_id);
+
+        // Backward: get criteria for test (test→criteria) and then goal for criteria
+        let test_criteria = store.get_criteria_for_test(test_id).await.unwrap();
+        assert!(test_criteria.is_some());
+        assert_eq!(test_criteria.unwrap().id, criteria_id);
+
+        let criteria_goal = store.get_goal_for_criteria(criteria_id).await.unwrap();
+        assert!(criteria_goal.is_some());
+        assert_eq!(criteria_goal.unwrap().id, goal_id);
+
+        // Both directions should lead to same goal
+        let pack = store.assemble_evidence_pack(goal_id).await.unwrap();
+        assert_eq!(pack.requirement_id, goal_id);
     }
 }
