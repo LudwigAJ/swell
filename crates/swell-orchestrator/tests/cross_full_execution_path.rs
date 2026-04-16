@@ -96,8 +96,9 @@ async fn test_execution_controller_full_pipeline_with_scenario_mock_llm() {
     // Create a task with FullAuto autonomy to bypass approval gate
     // (PlannerAgent will still run since task doesn't have a plan)
     let task = orchestrator
-        .create_task_with_autonomy("Create a test file".to_string(), AutonomyLevel::FullAuto)
-        .await;
+        .create_task_with_autonomy("Create a test file".to_string(), AutonomyLevel::FullAuto, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Execute the full pipeline
@@ -151,8 +152,9 @@ async fn test_execution_controller_skips_planner_when_plan_exists() {
 
     // Create a task with FullAuto autonomy and a pre-existing plan
     let task = orchestrator
-        .create_task_with_autonomy("Create a test file".to_string(), AutonomyLevel::FullAuto)
-        .await;
+        .create_task_with_autonomy("Create a test file".to_string(), AutonomyLevel::FullAuto, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set a plan on the task before execution
@@ -195,8 +197,9 @@ async fn test_execution_controller_returns_validation_result() {
     let controller = ExecutionController::new(orchestrator.clone(), mock_llm, tool_registry);
 
     let task = orchestrator
-        .create_task_with_autonomy("Create a file".to_string(), AutonomyLevel::FullAuto)
-        .await;
+        .create_task_with_autonomy("Create a file".to_string(), AutonomyLevel::FullAuto, vec![])
+        .await
+        .unwrap();
     let result = controller.execute_task(task.id).await;
 
     assert!(
@@ -280,8 +283,9 @@ async fn test_execution_controller_sequential_tasks_maintain_isolation() {
 
     // Create and execute first task with FullAuto
     let task1 = orchestrator
-        .create_task_with_autonomy("Task 1".to_string(), AutonomyLevel::FullAuto)
-        .await;
+        .create_task_with_autonomy("Task 1".to_string(), AutonomyLevel::FullAuto, vec![])
+        .await
+        .unwrap();
     let result1 = controller.execute_task(task1.id).await;
     assert!(
         result1.is_ok(),
@@ -297,8 +301,9 @@ async fn test_execution_controller_sequential_tasks_maintain_isolation() {
 
     // Create and execute second task with FullAuto
     let task2 = orchestrator
-        .create_task_with_autonomy("Task 2".to_string(), AutonomyLevel::FullAuto)
-        .await;
+        .create_task_with_autonomy("Task 2".to_string(), AutonomyLevel::FullAuto, vec![])
+        .await
+        .unwrap();
     let result2 = controller.execute_task(task2.id).await;
     assert!(
         result2.is_ok(),

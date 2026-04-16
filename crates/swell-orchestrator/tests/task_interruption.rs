@@ -36,8 +36,9 @@ fn create_test_plan(task_id: Uuid) -> Plan {
 async fn setup_executing_task(orchestrator: &Orchestrator) -> (uuid::Uuid, swell_core::Task) {
     // Use FullAuto to bypass approval gate
     let task = orchestrator
-        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::FullAuto)
-        .await;
+        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::FullAuto, vec![])
+        .await
+        .unwrap();
     let plan = create_test_plan(task.id);
     orchestrator.set_plan(task.id, plan).await.unwrap();
     orchestrator.start_task(task.id).await.unwrap();
@@ -409,7 +410,7 @@ async fn test_modify_and_restore_scope() {
 #[tokio::test]
 async fn test_cannot_pause_created_task() {
     let orchestrator = Orchestrator::new();
-    let task = orchestrator.create_task("Test".to_string()).await;
+    let task = orchestrator.create_task("Test".to_string(), vec![]).await.unwrap();
 
     let result = orchestrator
         .pause_task(task.id, "Attempted pause".to_string())
@@ -437,8 +438,9 @@ async fn test_full_interruption_workflow() {
 
     // 1. Create and start task
     let task = orchestrator
-        .create_task_with_autonomy("Implement feature".to_string(), AutonomyLevel::FullAuto)
-        .await;
+        .create_task_with_autonomy("Implement feature".to_string(), AutonomyLevel::FullAuto, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
     let plan = create_test_plan(task_id);
     orchestrator.set_plan(task_id, plan).await.unwrap();

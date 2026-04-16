@@ -50,6 +50,12 @@ pub enum SwellError {
 
     #[error("Similar memory found: {0}")]
     SimilarMemoryFound(uuid::Uuid),
+
+    #[error("Duplicate task: {1} (similarity: {0:.2})")]
+    DuplicateTask(f32, uuid::Uuid),
+
+    #[error("Duplicate task by file overlap: {1} ({0:.0}% overlap)")]
+    DuplicateTaskByFileOverlap(f32, uuid::Uuid),
 }
 
 impl serde::Serialize for SwellError {

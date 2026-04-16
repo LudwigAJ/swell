@@ -316,7 +316,9 @@ mod tests {
         assert_eq!(report.estimated_files, 4);
         assert_eq!(report.actual_files, 2);
         assert_eq!(report.drift_percentage, -50.0); // (2-4)/4 * 100 = -50%
-        assert!(report.exceeds_threshold); // 50% exceeds 30%
+        // Negative drift (under-implementation) is not flagged as exceeds_threshold
+        // Only positive drift (scope creep) triggers the warning
+        assert!(!report.exceeds_threshold);
         assert!(report.extra_files.is_empty());
         assert_eq!(
             report.missing_files,
@@ -397,7 +399,9 @@ mod tests {
         assert_eq!(report.estimated_files, 2);
         assert_eq!(report.actual_files, 0);
         assert_eq!(report.drift_percentage, -100.0);
-        assert!(report.exceeds_threshold);
+        // Negative drift (under-implementation) is not flagged as exceeds_threshold
+        // Only positive drift (scope creep) triggers the warning
+        assert!(!report.exceeds_threshold);
         assert!(report.extra_files.is_empty());
         assert_eq!(
             report.missing_files,
@@ -453,7 +457,9 @@ mod tests {
         assert_eq!(report.actual_files, 2);
         // (2-3)/3 * 100 ≈ -33.33%
         assert!((report.drift_percentage - (-33.33)).abs() < 0.01);
-        assert!(report.exceeds_threshold);
+        // Negative drift (under-implementation) is not flagged as exceeds_threshold
+        // Only positive drift (scope creep) triggers the warning
+        assert!(!report.exceeds_threshold);
         assert_eq!(report.step_drift.len(), 2);
 
         // Step 1 drift

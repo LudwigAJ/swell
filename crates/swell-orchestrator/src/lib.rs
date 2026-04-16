@@ -284,6 +284,8 @@ pub struct Orchestrator {
     mcp_manager: Arc<McpConfigManager>,
     /// Novelty checker for duplicate task detection
     novelty_checker: Arc<RwLock<NoveltyChecker>>,
+    /// File lock manager for preventing concurrent edits to the same file
+    file_lock_manager: Arc<FileLockManager>,
 }
 
 impl Orchestrator {
@@ -302,6 +304,7 @@ impl Orchestrator {
             feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
             mcp_manager,
             novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
+            file_lock_manager: Arc::new(FileLockManager::new()),
         }
     }
 
@@ -318,6 +321,7 @@ impl Orchestrator {
             feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
             mcp_manager,
             novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
+            file_lock_manager: Arc::new(FileLockManager::new()),
         }
     }
 
@@ -865,6 +869,147 @@ impl Orchestrator {
         let sm = self.state_machine.read().await;
         let task = sm.get_task(task_id)?;
         Ok(task.current_scope.clone())
+    }
+
+    // ========================================================================
+    // File Lock Management
+    // ========================================================================
+
+    /// Get the file lock manager for this orchestrator.
+    ///
+    /// Returns a reference to the file lock manager that can be used to:
+    /// - Query lock status
+    /// - Acquire locks for tasks
+    /// - Release locks
+    pub fn file_lock_manager(&self) -> Arc<FileLockManager> {
+        self.file_lock_manager.clone()
+    }
+
+    /// Acquire file locks for a task based on its estimated files.
+    ///
+    /// This should be called when a task starts execution to lock the files
+    /// it expects to modify. If any file is already locked by another task,
+    /// this returns an error with the conflicting lock information.
+    ///
+    /// # Arguments
+    /// * `task_id` - The task ID acquiring locks
+    /// * `agent_id` - The agent ID executing the task (optional)
+    /// * `files` - The list of file paths to lock
+    ///
+    /// # Returns
+    /// - `Ok(Vec<FileLock>)` - All locks acquired successfully
+    /// - `Err(LockAcquisitionResult::Conflict)` - One or more files locked by another task
+    pub async fn acquire_task_locks(
+        &self,
+        task_id: Uuid,
+        agent_id: Option<Uuid>,
+        files: Vec<String>,
+    ) -> Result<Vec<FileLock>, LockAcquisitionResult> {
+        let mut acquired_locks = Vec::new();
+
+        for file_path in files {
+            match self.file_lock_manager.acquire(file_path, task_id, agent_id).await {
+                LockAcquisitionResult::Acquired(lock) => {
+                    acquired_locks.push(lock);
+                }
+                LockAcquisitionResult::Conflict { existing_lock, requested_by } => {
+                    // Release any locks we already acquired before failing
+                    for lock in &acquired_locks {
+                        let _ = self.file_lock_manager.release(&lock.path, task_id).await;
+                    }
+                    return Err(LockAcquisitionResult::Conflict {
+                        existing_lock,
+                        requested_by,
+                    });
+                }
+                LockAcquisitionResult::AlreadyHeld { existing_lock } => {
+                    // Re-acquisition by same task is fine
+                    acquired_locks.push(existing_lock);
+                }
+            }
+        }
+
+        Ok(acquired_locks)
+    }
+
+    /// Release all file locks held by a task.
+    ///
+    /// This should be called when a task completes (successfully or otherwise),
+    /// fails, or is cancelled. It releases all locks held by the task.
+    ///
+    /// # Arguments
+    /// * `task_id` - The task ID releasing locks
+    ///
+    /// # Returns
+    /// The number of locks released
+    pub async fn release_task_locks(&self, task_id: Uuid) -> usize {
+        self.file_lock_manager.release_all_for_task(task_id).await
+    }
+
+    /// Check if any files would conflict with acquiring locks for a task.
+    ///
+    /// This can be used to pre-check if a task can acquire its locks before
+    /// actually acquiring them. Useful for scheduling decisions.
+    ///
+    /// # Arguments
+    /// * `task_id` - The task ID that would acquire the locks
+    /// * `files` - The list of file paths to check
+    ///
+    /// # Returns
+    /// - `None` - No conflicts, all locks can be acquired
+    /// - `Some(FileLock)` - The first conflicting lock found
+    pub async fn check_lock_conflicts(
+        &self,
+        task_id: Uuid,
+        files: Vec<String>,
+    ) -> Option<FileLock> {
+        for file_path in files {
+            if let Some(conflict) = self.file_lock_manager.would_conflict(&file_path, task_id).await {
+                return Some(conflict);
+            }
+        }
+        None
+    }
+
+    /// Get all file locks held by a task.
+    ///
+    /// # Arguments
+    /// * `task_id` - The task ID
+    ///
+    /// # Returns
+    /// List of all active locks held by the task
+    pub async fn get_task_locks(&self, task_id: Uuid) -> Vec<FileLock> {
+        self.file_lock_manager.get_task_locks(task_id).await
+    }
+
+    /// Check if a file is locked.
+    ///
+    /// # Arguments
+    /// * `path` - The file path to check
+    ///
+    /// # Returns
+    /// `true` if the file is locked by any task
+    pub async fn is_file_locked(&self, path: &str) -> bool {
+        self.file_lock_manager.is_locked(path).await
+    }
+
+    /// Get the lock for a file, if any.
+    ///
+    /// # Arguments
+    /// * `path` - The file path
+    ///
+    /// # Returns
+    /// `Some(FileLock)` if the file is locked, `None` otherwise
+    pub async fn get_file_lock(&self, path: &str) -> Option<FileLock> {
+        self.file_lock_manager.get_lock(path).await
+    }
+
+    /// Get file lock statistics.
+    ///
+    /// # Returns
+    /// Current lock statistics
+    pub async fn lock_stats(&self) -> LockStats {
+        self.file_lock_manager.stats().await
     }
 }
 
@@ -1473,5 +1618,228 @@ mod tests {
 
         // Should fail because task is not in Ready state
         assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // File Lock Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_acquire_task_locks_success() {
+        let orchestrator = Orchestrator::new();
+        let task_id = Uuid::new_v4();
+        let files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
+
+        let result = orchestrator.acquire_task_locks(task_id, None, files.clone()).await;
+
+        assert!(result.is_ok());
+        let locks = result.unwrap();
+        assert_eq!(locks.len(), 2);
+
+        // Verify locks are active
+        assert!(orchestrator.is_file_locked("file1.rs").await);
+        assert!(orchestrator.is_file_locked("file2.rs").await);
+    }
+
+    #[tokio::test]
+    async fn test_acquire_task_locks_conflict() {
+        let orchestrator = Orchestrator::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+        let files = vec!["file1.rs".to_string()];
+
+        // Task1 acquires the lock
+        let result1 = orchestrator.acquire_task_locks(task1, None, files.clone()).await;
+        assert!(result1.is_ok());
+
+        // Task2 tries to acquire the same lock - should conflict
+        let result2 = orchestrator.acquire_task_locks(task2, None, files.clone()).await;
+        assert!(result2.is_err());
+        let err = result2.unwrap_err();
+        assert!(matches!(err, LockAcquisitionResult::Conflict { .. }));
+    }
+
+    #[tokio::test]
+    async fn test_release_task_locks() {
+        let orchestrator = Orchestrator::new();
+        let task_id = Uuid::new_v4();
+        let files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
+
+        // Acquire locks
+        orchestrator.acquire_task_locks(task_id, None, files.clone()).await.unwrap();
+        assert!(orchestrator.is_file_locked("file1.rs").await);
+        assert!(orchestrator.is_file_locked("file2.rs").await);
+
+        // Release locks
+        let released_count = orchestrator.release_task_locks(task_id).await;
+        assert_eq!(released_count, 2);
+
+        // Verify locks are released
+        assert!(!orchestrator.is_file_locked("file1.rs").await);
+        assert!(!orchestrator.is_file_locked("file2.rs").await);
+    }
+
+    #[tokio::test]
+    async fn test_release_all_releases_partial_locks_on_conflict() {
+        let orchestrator = Orchestrator::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // Task1 acquires lock on file1
+        orchestrator
+            .acquire_task_locks(task1, None, vec!["file1.rs".to_string()])
+            .await
+            .unwrap();
+
+        // Task2 tries to acquire file1 and file2 - should conflict
+        let result = orchestrator
+            .acquire_task_locks(
+                task2,
+                None,
+                vec!["file1.rs".to_string(), "file2.rs".to_string()],
+            )
+            .await;
+
+        // Should fail due to conflict
+        assert!(result.is_err());
+
+        // Task2 should not have any locks
+        let task2_locks = orchestrator.get_task_locks(task2).await;
+        assert!(task2_locks.is_empty());
+
+        // Verify file1 is still locked by task1
+        assert!(orchestrator.is_file_locked("file1.rs").await);
+        assert_eq!(
+            orchestrator.get_file_lock("file1.rs").await.unwrap().task_id,
+            task1
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_lock_conflicts() {
+        let orchestrator = Orchestrator::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // Task1 acquires a lock
+        orchestrator
+            .acquire_task_locks(task1, None, vec!["file1.rs".to_string()])
+            .await
+            .unwrap();
+
+        // Check if task2 would conflict
+        let conflict = orchestrator
+            .check_lock_conflicts(task2, vec!["file1.rs".to_string()])
+            .await;
+        assert!(conflict.is_some());
+        assert_eq!(conflict.unwrap().task_id, task1);
+
+        // Check with unlocked file - no conflict
+        let conflict = orchestrator
+            .check_lock_conflicts(task2, vec!["file2.rs".to_string()])
+            .await;
+        assert!(conflict.is_none());
+
+        // Check with same task - no conflict
+        let conflict = orchestrator
+            .check_lock_conflicts(task1, vec!["file1.rs".to_string()])
+            .await;
+        assert!(conflict.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_lock_stats() {
+        let orchestrator = Orchestrator::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // No locks yet
+        let stats = orchestrator.lock_stats().await;
+        assert_eq!(stats.active_locks, 0);
+        assert_eq!(stats.unique_tasks, 0);
+
+        // Add locks for task1
+        orchestrator
+            .acquire_task_locks(task1, None, vec!["file1.rs".to_string()])
+            .await
+            .unwrap();
+
+        let stats = orchestrator.lock_stats().await;
+        assert_eq!(stats.active_locks, 1);
+        assert_eq!(stats.unique_tasks, 1);
+
+        // Add locks for task2
+        orchestrator
+            .acquire_task_locks(task2, None, vec!["file2.rs".to_string()])
+            .await
+            .unwrap();
+
+        let stats = orchestrator.lock_stats().await;
+        assert_eq!(stats.active_locks, 2);
+        assert_eq!(stats.unique_tasks, 2);
+    }
+
+    #[tokio::test]
+    async fn test_same_task_re_acquires_lock() {
+        let orchestrator = Orchestrator::new();
+        let task_id = Uuid::new_v4();
+        let files = vec!["file1.rs".to_string()];
+
+        // First acquisition
+        let result1 = orchestrator.acquire_task_locks(task_id, None, files.clone()).await;
+        assert!(result1.is_ok());
+        let locks1 = result1.unwrap();
+        let first_lock_id = locks1[0].id;
+
+        // Same task re-acquires - should succeed (AlreadyHeld)
+        let result2 = orchestrator.acquire_task_locks(task_id, None, files.clone()).await;
+        assert!(result2.is_ok());
+        let locks2 = result2.unwrap();
+
+        // Should return the same lock ID (AlreadyHeld case)
+        assert_eq!(locks2[0].id, first_lock_id);
+
+        // Still only 1 lock
+        let stats = orchestrator.lock_stats().await;
+        assert_eq!(stats.active_locks, 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_task_locks() {
+        let orchestrator = Orchestrator::new();
+        let task1 = Uuid::new_v4();
+        let task2 = Uuid::new_v4();
+
+        // Task1 acquires multiple locks
+        orchestrator
+            .acquire_task_locks(
+                task1,
+                None,
+                vec!["file1.rs".to_string(), "file2.rs".to_string()],
+            )
+            .await
+            .unwrap();
+
+        // Task2 acquires one lock
+        orchestrator
+            .acquire_task_locks(task2, None, vec!["file3.rs".to_string()])
+            .await
+            .unwrap();
+
+        let task1_locks = orchestrator.get_task_locks(task1).await;
+        assert_eq!(task1_locks.len(), 2);
+
+        let task2_locks = orchestrator.get_task_locks(task2).await;
+        assert_eq!(task2_locks.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_release_non_existent_task_locks() {
+        let orchestrator = Orchestrator::new();
+        let fake_task_id = Uuid::new_v4();
+
+        // Release locks for task that has none
+        let released_count = orchestrator.release_task_locks(fake_task_id).await;
+        assert_eq!(released_count, 0);
     }
 }

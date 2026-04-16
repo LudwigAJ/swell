@@ -56,8 +56,10 @@ async fn test_cost_tracker_accumulates_llm_costs() {
         .create_task_with_autonomy(
             "Test task for cost tracking".to_string(),
             AutonomyLevel::FullAuto,
+            vec![],
         )
-        .await;
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set active task for cost tracking
@@ -190,8 +192,10 @@ async fn test_execution_halts_when_budget_exceeded() {
         .create_task_with_autonomy(
             "Task that should exceed budget".to_string(),
             AutonomyLevel::FullAuto,
+            vec![],
         )
-        .await;
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Execute with a very low cost budget

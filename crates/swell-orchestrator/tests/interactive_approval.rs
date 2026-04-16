@@ -37,8 +37,9 @@ async fn test_task_awaits_approval_with_supervised_autonomy() {
 
     // Create a task with L1 Supervised autonomy (requires plan approval)
     let task = orchestrator
-        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised)
-        .await;
+        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set a plan
@@ -71,8 +72,9 @@ async fn test_task_awaits_approval_with_guided_autonomy() {
 
     // Create a task with L2 Guided autonomy (also requires plan approval)
     let task = orchestrator
-        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Guided)
-        .await;
+        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Guided, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set a plan
@@ -98,8 +100,9 @@ async fn test_approval_unblocks_execution() {
 
     // Create a task with L1 Supervised autonomy
     let task = orchestrator
-        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised)
-        .await;
+        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set a plan
@@ -133,8 +136,9 @@ async fn test_rejection_moves_to_rejected_state() {
 
     // Create a task with L1 Supervised autonomy
     let task = orchestrator
-        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised)
-        .await;
+        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set a plan
@@ -171,9 +175,11 @@ async fn test_autonomous_levels_skip_approval_gate() {
     let orchestrator = Orchestrator::new();
 
     // Test L3 Autonomous - should skip approval gate
+    // Use unique descriptions to avoid false positive novelty detection
     let task_l3 = orchestrator
-        .create_task_with_autonomy("L3 task".to_string(), AutonomyLevel::Autonomous)
-        .await;
+        .create_task_with_autonomy("Build user authentication".to_string(), AutonomyLevel::Autonomous, vec![])
+        .await
+        .unwrap();
     let plan_l3 = create_test_plan(task_l3.id);
     orchestrator.set_plan(task_l3.id, plan_l3).await.unwrap();
     orchestrator.start_task(task_l3.id).await.unwrap();
@@ -186,9 +192,11 @@ async fn test_autonomous_levels_skip_approval_gate() {
     );
 
     // Test L4 FullAuto - should also skip approval gate
+    // Use a different unique description
     let task_l4 = orchestrator
-        .create_task_with_autonomy("L4 task".to_string(), AutonomyLevel::FullAuto)
-        .await;
+        .create_task_with_autonomy("Process payment gateway".to_string(), AutonomyLevel::FullAuto, vec![])
+        .await
+        .unwrap();
     let plan_l4 = create_test_plan(task_l4.id);
     orchestrator.set_plan(task_l4.id, plan_l4).await.unwrap();
     orchestrator.start_task(task_l4.id).await.unwrap();
@@ -208,8 +216,9 @@ async fn test_cannot_approve_rejected_task() {
 
     // Create a task with L1 Supervised autonomy
     let task = orchestrator
-        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised)
-        .await;
+        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set a plan and go through to Rejected
@@ -240,8 +249,9 @@ async fn test_full_approval_workflow() {
 
     // 1. Create task with L1 Supervised (requires approval)
     let task = orchestrator
-        .create_task_with_autonomy("Implement feature".to_string(), AutonomyLevel::Supervised)
-        .await;
+        .create_task_with_autonomy("Implement feature".to_string(), AutonomyLevel::Supervised, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
     assert_eq!(task.state, TaskState::Created);
 
@@ -302,8 +312,9 @@ async fn test_rejection_during_validation() {
 
     // Create a task with L1 Supervised
     let task = orchestrator
-        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised)
-        .await;
+        .create_task_with_autonomy("Test task".to_string(), AutonomyLevel::Supervised, vec![])
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set plan and proceed to validation

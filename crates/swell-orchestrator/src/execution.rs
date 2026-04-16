@@ -3,8 +3,9 @@
 
 use crate::{
     drift_detector::{DriftDetector, DriftReport},
-    frozen_spec::FrozenSpecRef, killswitch::OrchestratorKillSwitch, EvaluatorAgent, FeatureLead,
-    FeatureLeadSpawner, GeneratorAgent, Orchestrator, PlannerAgent, MAX_CONCURRENT_AGENTS,
+    file_locks::LockAcquisitionResult, frozen_spec::FrozenSpecRef,
+    killswitch::OrchestratorKillSwitch, EvaluatorAgent, FeatureLead, FeatureLeadSpawner,
+    GeneratorAgent, Orchestrator, PlannerAgent, MAX_CONCURRENT_AGENTS,
 };
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -558,8 +559,57 @@ impl ExecutionController {
     pub async fn execute_task(&self, task_id: uuid::Uuid) -> Result<ValidationResult, SwellError> {
         info!(task_id = %task_id, "Starting task execution");
 
-        // Step 1: Planning - run PlannerAgent if task doesn't have a plan
+        // Get the task and its estimated files for lock acquisition
         let task = self.orchestrator.get_task(task_id).await?;
+        let estimated_files = task.enrichment.enriched_files.clone();
+
+        // Step 0: Acquire file locks before execution
+        // This prevents concurrent edits to the same files across tasks
+        if !estimated_files.is_empty() {
+            match self
+                .orchestrator
+                .acquire_task_locks(task_id, None, estimated_files.clone())
+                .await
+            {
+                Ok(locks) => {
+                    info!(
+                        task_id = %task_id,
+                        lock_count = locks.len(),
+                        "File locks acquired for task execution"
+                    );
+                }
+                Err(LockAcquisitionResult::Conflict {
+                    existing_lock,
+                    requested_by: _,
+                }) => {
+                    warn!(
+                        task_id = %task_id,
+                        conflicting_file = %existing_lock.path,
+                        locked_by_task = %existing_lock.task_id,
+                        "Cannot start task: file conflict detected"
+                    );
+                    return Ok(ValidationResult {
+                        passed: false,
+                        lint_passed: false,
+                        tests_passed: false,
+                        security_passed: false,
+                        ai_review_passed: false,
+                        errors: vec![format!(
+                            "File conflict: '{}' is locked by another task",
+                            existing_lock.path
+                        )],
+                        warnings: vec![],
+                    });
+                }
+                _ => {}
+            }
+        }
+
+        // Ensure locks are released when task finishes (success, failure, or panic)
+        let file_lock_manager = self.orchestrator.file_lock_manager().clone();
+        let task_id_for_cleanup = task_id;
+
+        // Step 1: Planning - run PlannerAgent if task doesn't have a plan
         let needs_planning = task.plan.is_none();
 
         if needs_planning {
@@ -599,7 +649,13 @@ impl ExecutionController {
 
                 info!(task_id = %task_id, "PlannerAgent completed successfully, plan set on task");
             } else {
-                // Planner failed - return early with failure
+                // Planner failed - release locks and return failure
+                let released_count = file_lock_manager.release_all_for_task(task_id_for_cleanup).await;
+                info!(
+                    task_id = %task_id,
+                    locks_released = released_count,
+                    "File locks released due to planning failure"
+                );
                 return Ok(ValidationResult {
                     passed: false,
                     lint_passed: false,
@@ -734,6 +790,16 @@ impl ExecutionController {
         let _ = self.orchestrator.remove_feature_lead(task_id).await;
         if let Ok(mut leads) = self.feature_leads.write() {
             leads.remove(&task_id);
+        }
+
+        // Release file locks when task completes (success or failure)
+        let released_count = file_lock_manager.release_all_for_task(task_id_for_cleanup).await;
+        if released_count > 0 {
+            info!(
+                task_id = %task_id,
+                locks_released = released_count,
+                "File locks released after task completion"
+            );
         }
 
         Ok(result)

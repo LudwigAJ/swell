@@ -401,8 +401,10 @@ async fn test_execution_controller_with_memory_context() {
         .create_task_with_autonomy(
             "Create an async file with shared state".to_string(),
             AutonomyLevel::FullAuto,
+            vec![],
         )
-        .await;
+        .await
+        .unwrap();
     let task_id = task.id;
 
     // Set a plan on the task

@@ -38,7 +38,7 @@ impl Default for NoveltyCheckerConfig {
     fn default() -> Self {
         Self {
             similarity_threshold: 0.85,
-            file_overlap_threshold: 0.5,
+            file_overlap_threshold: 0.8, // 80% file overlap threshold
             max_levenshtein_distance: 30,
             enabled: true,
         }
@@ -406,19 +406,32 @@ mod tests {
         checker.track_task(TrackedTask::new(
             Uuid::new_v4(),
             "Implement login feature".to_string(),
-            vec!["src/auth.rs".to_string(), "src/session.rs".to_string()],
+            vec![
+                "src/auth.rs".to_string(),
+                "src/session.rs".to_string(),
+                "src/user.rs".to_string(),
+                "src/permissions.rs".to_string(),
+                "src/login.rs".to_string(),
+            ],
             false,
         ));
 
-        // New task with overlapping files
+        // New task with 4 overlapping files out of 5 = 80% overlap
+        // This meets the 80% threshold
         let result = checker.check(
             "Fix authentication bug",
-            &["src/auth.rs".to_string(), "src/login.rs".to_string()],
+            &[
+                "src/auth.rs".to_string(),
+                "src/session.rs".to_string(),
+                "src/user.rs".to_string(),
+                "src/permissions.rs".to_string(),
+                "src/other.rs".to_string(),
+            ],
             false,
         );
 
-        // 2 overlapping files out of 2 in the smallest set = 100% overlap
-        // This exceeds the 50% threshold
+        // 4 overlapping files out of 5 in the smallest set = 80% overlap
+        // This equals the 80% threshold
         assert!(!result.is_novel);
         assert!(result.duplicate_of.is_some());
         assert!(result.rejection_reason.unwrap().contains("file overlap"));
@@ -455,21 +468,47 @@ mod tests {
         checker.track_task(TrackedTask::new(
             Uuid::new_v4(),
             "Fix type error in auth.ts".to_string(),
-            vec!["src/auth.ts".to_string(), "src/session.rs".to_string()],
+            vec![
+                "src/auth.ts".to_string(),
+                "src/session.rs".to_string(),
+                "src/user.rs".to_string(),
+                "src/permissions.rs".to_string(),
+            ],
             true, // is_failure_derived
         ));
 
-        // New failure-derived task with overlapping files but different description
-        // Should still be rejected due to file overlap
-        let result = checker.check(
+        // New failure-derived task with 3 overlapping files out of 4 = 75% overlap
+        // This is below 80% threshold, so no rejection by file overlap alone
+        let result_below = checker.check(
             "Fix different error in login.ts",
-            &["src/auth.ts".to_string(), "src/login.ts".to_string()],
+            &[
+                "src/auth.ts".to_string(),
+                "src/session.rs".to_string(),
+                "src/user.rs".to_string(),
+                "src/login.ts".to_string(),
+            ],
             true, // is_failure_derived
         );
 
-        // File overlap: 1 file ("src/auth.ts") / min(2, 2) = 50% = threshold
-        assert!(!result.is_novel);
-        assert!(result.rejection_reason.unwrap().contains("file overlap"));
+        // 75% overlap is below 80% threshold, so description check would matter
+        // But descriptions are different enough, so it's novel
+        assert!(result_below.is_novel);
+
+        // Now test with 80% overlap - 4 files overlapping out of 4 = 100%
+        let result_above = checker.check(
+            "Fix different error in login.ts",
+            &[
+                "src/auth.ts".to_string(),
+                "src/session.rs".to_string(),
+                "src/user.rs".to_string(),
+                "src/permissions.rs".to_string(),
+            ],
+            true, // is_failure_derived
+        );
+
+        // 100% file overlap - exceeds 80% threshold even for failure-derived
+        assert!(!result_above.is_novel);
+        assert!(result_above.rejection_reason.unwrap().contains("file overlap"));
     }
 
     #[test]
@@ -648,7 +687,7 @@ mod tests {
 
         assert!(config.enabled);
         assert_eq!(config.similarity_threshold, 0.85);
-        assert_eq!(config.file_overlap_threshold, 0.5);
+        assert_eq!(config.file_overlap_threshold, 0.8); // 80% file overlap threshold
         assert_eq!(config.max_levenshtein_distance, 30);
     }
 
