@@ -45,6 +45,9 @@ pub enum SwellError {
     #[error("Invalid operation: {0}")]
     InvalidOperation(String),
 
+    #[error("Task not traced to frozen spec: {0}")]
+    TaskNotTracedToSpec(String),
+
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
 

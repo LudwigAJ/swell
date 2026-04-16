@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use swell_core::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition, SwellError};
 use tokio::sync::RwLock;
+use tokio::time::{timeout, Duration};
 
 /// Task types that determine model selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -418,6 +419,9 @@ impl ModelRouter {
 
         let mut last_error = None;
         let mut fallback_reason: Option<&str> = None;
+        // Panic guard: timeout for each model attempt (120s default)
+        // This prevents hanging on network issues and provides crash prevention
+        let call_timeout = Duration::from_secs(120);
 
         for (index, candidate) in candidates.iter().enumerate() {
             let model_name = candidate.model_name.clone();
@@ -433,25 +437,33 @@ impl ModelRouter {
                 "Trying model"
             );
 
-            match candidate
-                .backend
-                .chat(messages.clone(), tools.clone(), config.clone())
-                .await
-            {
-                Ok(response) => {
+            // Panic guard: wrap the chat call with a timeout.
+            // This catches hangs and prevents the orchestrator from crashing.
+            let chat_result = timeout(
+                call_timeout,
+                candidate
+                    .backend
+                    .chat(messages.clone(), tools.clone(), config.clone()),
+            )
+            .await;
+
+            match chat_result {
+                Ok(Ok(response)) => {
                     // Record success
                     self.health_tracker.record_success(&model_name).await;
 
                     // Log structured fallback event
                     if !is_primary {
-                        let previous = candidates.first().map(|c| c.model_name.as_str()).unwrap_or("none");
+                        let previous =
+                            candidates.first().map(|c| c.model_name.as_str()).unwrap_or("none");
                         tracing::info!(
                             target: "model_fallback",
                             model = %model_name,
                             task_type = ?task_type,
                             fallback_reason = ?fallback_reason,
                             previous_model = %previous,
-                            deprioritized_models = ?self.health_tracker.get_deprioritized_models().await,
+                            deprioritized_models =
+                                ?self.health_tracker.get_deprioritized_models().await,
                             "Model fallback succeeded"
                         );
                     }
@@ -460,13 +472,14 @@ impl ModelRouter {
                         model = %model_name,
                         task_type = ?task_type,
                         tokens = %response.usage.total_tokens,
-                        success_rate = ?self.health_tracker.get_health_info(&model_name).await.success_rate,
+                        success_rate =
+                            ?self.health_tracker.get_health_info(&model_name).await.success_rate,
                         "Model route succeeded"
                     );
 
                     return Ok(response);
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     // Record failure
                     self.health_tracker.record_failure(&model_name).await;
 
@@ -474,7 +487,8 @@ impl ModelRouter {
                     fallback_reason = Some(determine_fallback_reason(&e));
 
                     // Log structured fallback event
-                    let previous = candidates.first().map(|c| c.model_name.as_str()).unwrap_or("none");
+                    let previous =
+                        candidates.first().map(|c| c.model_name.as_str()).unwrap_or("none");
                     tracing::warn!(
                         target: "model_fallback",
                         model = %model_name,
@@ -489,15 +503,39 @@ impl ModelRouter {
 
                     last_error = Some(e);
                 }
+                Err(_) => {
+                    // Timeout: treat as failure and fall through to next model
+                    let e = SwellError::LlmError(format!(
+                        "Model {} timed out after {:?}",
+                        model_name, call_timeout
+                    ));
+                    self.health_tracker.record_failure(&model_name).await;
+                    fallback_reason = Some("timeout");
+
+                    tracing::warn!(
+                        target: "model_fallback",
+                        model = %model_name,
+                        task_type = ?task_type,
+                        timeout_secs = ?call_timeout,
+                        fallback_trigger = "timeout",
+                        "Model call timed out, trying fallback"
+                    );
+
+                    last_error = Some(e);
+                }
             }
         }
 
-        // Log final failure event
+        // Log final failure event (all models exhausted)
+        let tried_models: Vec<String> = candidates.iter().map(|c| c.model_name.clone()).collect();
         tracing::error!(
+            target: "model_exhausted",
             task_type = ?task_type,
             all_models_failed = true,
+            models_tried = ?tried_models,
+            last_error = ?last_error,
             deprioritized_models = ?self.health_tracker.get_deprioritized_models().await,
-            "All models in fallback chain failed"
+            "All models in fallback chain exhausted"
         );
 
         Err(last_error
@@ -867,6 +905,75 @@ impl ModelRouterBuilder {
                 ("gpt-4o".to_string(), gpt_4o),
                 ("claude-haiku-4-20250514".to_string(), haiku),
             ],
+        );
+
+        self
+    }
+
+    /// Configure the fallback chain from models.json configuration.
+    ///
+    /// Loads API keys from environment variables:
+    /// - `ANTHROPIC_API_KEY` for Anthropic models
+    /// - `OPENAI_API_KEY` for OpenAI models
+    ///
+    /// The `fallback_chain` parameter should contain model identifiers from models.json.
+    /// Example chain: ["claude-sonnet-4-20250514", "gpt-4o", "claude-haiku-4-20250530"]
+    ///
+    /// Panics if required environment variables are not set.
+    pub fn with_fallback_chain_from_models_config(
+        mut self,
+        fallback_chain: Vec<String>,
+    ) -> Self {
+        use crate::{AnthropicBackend, OpenAIBackend};
+
+        let anthropic_key = std::env::var("ANTHROPIC_API_KEY")
+            .expect("ANTHROPIC_API_KEY environment variable must be set");
+        let openai_key =
+            std::env::var("OPENAI_API_KEY").expect("OPENAI_API_KEY environment variable must be set");
+
+        // Build backends for each model in the chain
+        let mut backends: Vec<(String, Arc<dyn LlmBackend>)> = Vec::new();
+        for model_name in &fallback_chain {
+            let backend: Arc<dyn LlmBackend> = if model_name.starts_with("claude-") {
+                Arc::new(AnthropicBackend::new(model_name, anthropic_key.clone()))
+            } else {
+                // OpenAI models
+                Arc::new(OpenAIBackend::new(model_name, openai_key.clone()).unwrap())
+            };
+            backends.push((model_name.clone(), backend));
+        }
+
+        // For non-Fast task types: use chain as-is (primary → fallback → final)
+        let primary = backends.first().cloned().expect("fallback_chain must not be empty");
+        let fallbacks: Vec<(String, Arc<dyn LlmBackend>)> = backends
+            .iter()
+            .skip(1)
+            .cloned()
+            .collect();
+
+        for task_type in [
+            TaskType::Coding,
+            TaskType::Planning,
+            TaskType::Review,
+            TaskType::Default,
+        ] {
+            self.router
+                .register(task_type, &primary.0, primary.1.clone(), fallbacks.clone());
+        }
+
+        // For Fast tasks: reverse the chain (fastest first)
+        let fast_primary = backends.last().cloned().expect("fallback_chain must not be empty");
+        let fast_fallbacks: Vec<(String, Arc<dyn LlmBackend>)> = backends
+            .iter()
+            .rev()
+            .skip(1)
+            .cloned()
+            .collect();
+        self.router.register(
+            TaskType::Fast,
+            &fast_primary.0,
+            fast_primary.1.clone(),
+            fast_fallbacks,
         );
 
         self

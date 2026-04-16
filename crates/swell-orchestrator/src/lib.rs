@@ -322,6 +322,26 @@ pub enum OrchestratorEvent {
         /// Reason for the forced action
         reason: String,
     },
+    /// Model exhausted event emitted when all models in the fallback chain have failed.
+    /// This indicates a complete LLM outage and the orchestrator should pause.
+    ModelExhausted {
+        /// Task that was being processed
+        task_id: Option<Uuid>,
+        /// The error from the last failed model
+        last_error: String,
+        /// Names of models that were tried in order
+        models_tried: Vec<String>,
+    },
+    /// LLM call failed event emitted when an LLM call panics or fails catastrophically.
+    /// This indicates a critical error and the orchestrator should pause.
+    LlmCallFailed {
+        /// Task that was being processed
+        task_id: Option<Uuid>,
+        /// The model that failed
+        model: String,
+        /// Error message or panic description
+        error: String,
+    },
 }
 
 /// The main orchestrator that coordinates agents and tasks
@@ -340,6 +360,8 @@ pub struct Orchestrator {
     file_lock_manager: Arc<FileLockManager>,
     /// Non-novel retry detector for preventing repetitive failed attempts
     non_novel_detector: Arc<RwLock<NonNovelRetryDetector>>,
+    /// Frozen spec registry for verifying task traceability to the frozen spec (VAL-ORCH-009)
+    frozen_registry: FrozenRequirementRegistry,
 }
 
 impl Orchestrator {
@@ -360,6 +382,7 @@ impl Orchestrator {
             novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
             file_lock_manager: Arc::new(FileLockManager::new()),
             non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
+            frozen_registry: FrozenRequirementRegistry::new(vec![]),
         }
     }
 
@@ -378,6 +401,7 @@ impl Orchestrator {
             novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
             file_lock_manager: Arc::new(FileLockManager::new()),
             non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
+            frozen_registry: FrozenRequirementRegistry::new(vec![]),
         }
     }
 
@@ -486,6 +510,21 @@ impl Orchestrator {
             }
         }
 
+        // Verify task traceability against the frozen spec (VAL-ORCH-009).
+        // Only reject if the registry has requirements defined;
+        // an empty registry means no spec requirements to enforce.
+        if !self.frozen_registry.is_empty() {
+            let traceability = self.frozen_registry.verify_traceability(&description);
+            if !traceability.is_traced {
+                warn!(
+                    description = %description,
+                    reason = %traceability.reason,
+                    "Task rejected: not traced to frozen spec"
+                );
+                return Err(SwellError::TaskNotTracedToSpec(traceability.reason));
+            }
+        }
+
         let task = {
             let sm = self.state_machine.write().await;
             sm.create_task(description)
@@ -537,6 +576,21 @@ impl Orchestrator {
                         ));
                     }
                 }
+            }
+        }
+
+        // Verify task traceability against the frozen spec (VAL-ORCH-009).
+        // Only reject if the registry has requirements defined;
+        // an empty registry means no spec requirements to enforce.
+        if !self.frozen_registry.is_empty() {
+            let traceability = self.frozen_registry.verify_traceability(&description);
+            if !traceability.is_traced {
+                warn!(
+                    description = %description,
+                    reason = %traceability.reason,
+                    "Task rejected: not traced to frozen spec"
+                );
+                return Err(SwellError::TaskNotTracedToSpec(traceability.reason));
             }
         }
 
