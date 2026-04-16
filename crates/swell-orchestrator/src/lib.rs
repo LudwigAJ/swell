@@ -73,7 +73,10 @@ pub use alerts::{
     AlertManagerConfig, ConsecutiveFailureConfig, CostThresholdConfig, LoopDetectionConfig,
     LoopDetectionState, PolicyViolationConfig, SharedAlertManager,
 };
-pub use autonomy::{ApprovalDecision, ApprovalRequest, AutonomyController};
+pub use autonomy::{
+    ApprovalDecision, ApprovalRequest, AutonomyController, AutonomyOverride,
+    AutonomyOverrideMatrix, TaskType,
+};
 pub use backlog::{
     BacklogItem, BacklogSource, BacklogStats, DeduplicationConfig, PriorityScoringConfig,
     WorkBacklog,
