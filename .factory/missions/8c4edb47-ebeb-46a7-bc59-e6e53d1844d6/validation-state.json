@@ -1,10 +1,12 @@
 {
   "assertions": {
     "VAL-WIRING-001": {
-      "status": "pending"
+      "status": "green",
+      "evidence": "cargo test -p swell-integration-tests --test full_cycle_wiring wiring_daemon_holds_llm_backend passes. Daemon::new passes Arc<dyn LlmBackend> to Orchestrator::new. Identity check confirms orchestrator holds the exact Arc provided."
     },
     "VAL-WIRING-002": {
-      "status": "pending"
+      "status": "green",
+      "evidence": "cargo test -p swell-integration-tests --test full_cycle_wiring wiring_orchestrator_holds_execution_controller passes. Orchestrator::new constructs ExecutionController with injected LLM and ToolRegistry. execution_controller() returns Some(Arc<ExecutionController>) when constructed via new()."
     },
     "VAL-WIRING-003": {
       "status": "pending"

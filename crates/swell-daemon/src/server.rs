@@ -45,7 +45,7 @@ pub struct Daemon {
 impl Daemon {
     /// Create a new daemon with the provided LLM backend.
     ///
-    /// The LLM backend is threaded into the orchestrator via [`Orchestrator::with_llm`].
+    /// The LLM backend is threaded into the orchestrator via [`Orchestrator::new`].
     /// This enables the production runtime to construct reachable execution dependencies.
     ///
     /// # Arguments
@@ -54,7 +54,7 @@ impl Daemon {
     pub fn new(socket_path: String, llm: Arc<dyn LlmBackend>) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
-            orchestrator: Arc::new(Mutex::new(Orchestrator::with_llm(llm))),
+            orchestrator: Arc::new(Mutex::new(Orchestrator::new(llm))),
             event_emitter: Arc::new(EventEmitter::new()),
             socket_path,
             shutdown_flag: Arc::new(AtomicBool::new(false)),

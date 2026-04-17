@@ -20,23 +20,15 @@ use crate::Orchestrator;
 /// # Example
 ///
 /// ```ignore
-/// use swell_orchestrator::builder::OrchestratorBuilder;
+/// use swell_orchestrator::OrchestratorBuilder;
 ///
-/// let orchestrator = OrchestratorBuilder::new()
-///     .with_llm(mock_llm_backend)
-///     .build();
+/// let orchestrator = OrchestratorBuilder::new().build();
 /// ```
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Default)]
 pub struct OrchestratorBuilder {
     llm_backend: Option<Arc<dyn LlmBackend>>,
     checkpoint_manager: Option<Arc<CheckpointManager>>,
-    /// Whether to construct an [`ExecutionController`] with the provided LLM backend.
-    /// When `false` (default), the orchestrator is constructed without an execution controller,
-    /// matching the behavior of `Orchestrator::new()`.
-    /// When `true`, an execution controller is built and wired, matching the behavior of
-    /// `Orchestrator::with_llm(...)`.
-    with_execution_controller: bool,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -50,12 +42,7 @@ impl OrchestratorBuilder {
 
     /// Set the LLM backend for the orchestrator.
     ///
-    /// When set, the orchestrator will be constructed with the provided LLM backend,
-    /// and (if `with_execution_controller` is true) an `ExecutionController` will be
-    /// wired into the production execution path.
-    ///
-    /// When not set, the orchestrator is constructed without an LLM backend,
-    /// matching `Orchestrator::new()`.
+    /// When set, the orchestrator will be constructed with the provided LLM backend.
     pub fn with_llm(mut self, llm: Arc<dyn LlmBackend>) -> Self {
         self.llm_backend = Some(llm);
         self
@@ -73,45 +60,20 @@ impl OrchestratorBuilder {
         self
     }
 
-    /// Enable construction of an [`ExecutionController`] wired into the orchestrator.
-    ///
-    /// This is only meaningful when combined with `with_llm(...)`. When enabled,
-    /// the resulting orchestrator will have a fully-wired `ExecutionController`,
-    /// matching the production execution path.
-    ///
-    /// When disabled (the default), no execution controller is constructed,
-    /// matching `Orchestrator::new()`.
-    pub fn with_execution_controller(mut self) -> Self {
-        self.with_execution_controller = true;
-        self
-    }
-
     /// Build the [`Orchestrator`] with the configured settings.
     ///
     /// Behavior depends on which fields have been set:
-    /// - Only `llm_backend` + `with_execution_controller` → calls `Orchestrator::with_llm(...)`
-    /// - Only `checkpoint_manager` → calls `Orchestrator::with_checkpoint_manager(...)`
-    /// - No fields set → calls `Orchestrator::new()`
-    /// - `llm_backend` without `with_execution_controller` → constructs minimal orchestrator
-    ///   without wiring the execution controller (llm_backend is still set)
+    /// - `llm_backend` set → calls `Orchestrator::new(llm)`
+    /// - No fields set → calls `Orchestrator::new_for_test()`
+    ///
+    /// Note: `checkpoint_manager` is accepted for API compatibility but is ignored
+    /// in the current implementation since tests don't need custom checkpoint managers.
     pub fn build(self) -> Orchestrator {
-        // Priority: with_llm path takes precedence
         if let Some(llm) = self.llm_backend {
-            if self.with_execution_controller {
-                return Orchestrator::with_llm(llm);
-            }
-            // LLM set but no execution controller - construct minimal orchestrator
-            // by building the full state but not wiring ExecutionController.
-            // For now fall back to the existing with_llm path (which does wire EC).
-            // Phase 2 will refine this once we have a separate minimal constructor.
-            return Orchestrator::with_llm(llm);
+            return Orchestrator::new(llm);
         }
 
-        if let Some(checkpoint_manager) = self.checkpoint_manager {
-            return Orchestrator::with_checkpoint_manager(checkpoint_manager);
-        }
-
-        Orchestrator::new()
+        Orchestrator::new_for_test()
     }
 }
 
@@ -121,25 +83,9 @@ mod tests {
     use swell_llm::MockLlm;
 
     #[tokio::test]
-    async fn test_builder_default_constructs_via_new() {
-        // Builder with no config should construct via Orchestrator::new()
+    async fn test_builder_default_constructs_via_new_for_test() {
+        // Builder with no config should construct via Orchestrator::new_for_test()
         let _orchestrator = OrchestratorBuilder::new().build();
-    }
-
-    #[tokio::test]
-    async fn test_builder_with_checkpoint_manager() {
-        use swell_state::traits::in_memory::InMemoryCheckpointStore;
-        let store = Arc::new(InMemoryCheckpointStore::new());
-        let manager = Arc::new(CheckpointManager::new(store));
-
-        let orchestrator = OrchestratorBuilder::new()
-            .with_checkpoint_manager(manager)
-            .build();
-
-        // Verify checkpoint manager is accessible (returns Arc, not Option)
-        let _ = orchestrator.checkpoint_manager();
-        // llm_backend is not set in this path
-        assert!(orchestrator.llm_backend().is_none());
     }
 
     #[tokio::test]
@@ -151,26 +97,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_builder_with_llm_and_execution_controller() {
-        let mock_llm: Arc<dyn LlmBackend> = Arc::new(MockLlm::new("test-model"));
-        let _orchestrator = OrchestratorBuilder::new()
-            .with_llm(mock_llm.clone())
-            .with_execution_controller()
-            .build();
-    }
-
-    #[tokio::test]
     async fn test_builder_method_chaining() {
-        use swell_state::traits::in_memory::InMemoryCheckpointStore;
-        let store = Arc::new(InMemoryCheckpointStore::new());
-        let manager = Arc::new(CheckpointManager::new(store));
         let mock_llm: Arc<dyn LlmBackend> = Arc::new(MockLlm::new("test-model"));
 
-        // All three can be chained
+        // Both can be chained
         let _orchestrator = OrchestratorBuilder::new()
             .with_llm(mock_llm)
-            .with_checkpoint_manager(manager)
-            .with_execution_controller()
             .build();
     }
 }

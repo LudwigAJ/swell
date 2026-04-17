@@ -79,7 +79,7 @@ use std::sync::Arc;
 /// and the constructed `Orchestrator` holds it.
 ///
 /// This test proves that the production runtime path exists:
-/// `Daemon::new(socket_path, llm) -> Orchestrator::with_llm(llm) -> orchestrator.llm_backend()`
+/// `Daemon::new(socket_path, llm) -> Orchestrator::new(llm) -> orchestrator.llm_backend()`
 ///
 /// # Verification
 /// Run: `cargo test -p swell-integration-tests --test full_cycle_wiring wiring_daemon_holds_llm_backend`
@@ -106,7 +106,7 @@ async fn wiring_daemon_holds_llm_backend() {
 
     // The orchestrator must hold the EXACT Arc we provided — not a clone, not a new backend
     let orch = daemon.orchestrator();
-    let held = orch.lock().await.llm_backend().expect("orchestrator must hold llm");
+    let held = orch.lock().await.llm_backend();
     assert!(
         Arc::ptr_eq(&held, &llm),
         "orchestrator must hold the EXACT Arc we provided — not a newly-constructed backend, not a clone"
