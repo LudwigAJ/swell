@@ -18,8 +18,7 @@ pub mod backlog;
 /// Builder for [`Orchestrator`].
 ///
 /// This module provides a builder pattern for constructing [`Orchestrator`] instances.
-/// While primarily intended for tests, it is unconditionally compiled to support
-/// integration tests and development workflows.
+/// It is only available during tests or when the `test-support` feature is enabled.
 ///
 /// # Example
 ///
@@ -28,6 +27,7 @@ pub mod backlog;
 ///
 /// let orchestrator = OrchestratorBuilder::new().build();
 /// ```
+#[cfg(any(test, feature = "test-support"))]
 pub mod builder;
 
 pub mod checkpoint_wiring;
@@ -77,6 +77,7 @@ pub mod worker_boot;
 pub mod worker_pool;
 
 /// Re-export of [`OrchestratorBuilder`][builder::OrchestratorBuilder].
+#[cfg(any(test, feature = "test-support"))]
 pub use builder::OrchestratorBuilder;
 
 pub use agents::{

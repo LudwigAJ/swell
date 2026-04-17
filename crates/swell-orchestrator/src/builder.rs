@@ -1,13 +1,18 @@
 //! Builder for [`Orchestrator`].
 //!
 //! This module provides a builder pattern for constructing [`Orchestrator`] instances.
-//! It is unconditionally available to support tests and integration tests.
+//! It is only available during tests or when the `test-support` feature is enabled.
 
+#[cfg(any(test, feature = "test-support"))]
 use std::sync::Arc;
 
+#[cfg(any(test, feature = "test-support"))]
 use swell_llm::LlmBackend;
+
+#[cfg(any(test, feature = "test-support"))]
 use swell_state::CheckpointManager;
 
+#[cfg(any(test, feature = "test-support"))]
 use crate::Orchestrator;
 
 /// Builder for constructing [`Orchestrator`] instances in tests.
@@ -21,6 +26,7 @@ use crate::Orchestrator;
 ///     .with_llm(mock_llm_backend)
 ///     .build();
 /// ```
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Default)]
 pub struct OrchestratorBuilder {
     llm_backend: Option<Arc<dyn LlmBackend>>,
@@ -33,6 +39,7 @@ pub struct OrchestratorBuilder {
     with_execution_controller: bool,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl OrchestratorBuilder {
     /// Create a new builder with default (no-op) settings.
     ///

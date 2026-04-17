@@ -28,6 +28,7 @@ path = "tests/full_cycle_wiring.rs"
 swell-core = { path = "../swell-core" }
 swell-llm = { path = "../swell-llm" }
 swell-validation = { path = "../swell-validation" }
+swell-orchestrator = { path = "../swell-orchestrator", features = ["test-support"] }
 uuid.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

@@ -6064,6 +6064,7 @@ dependencies = [
  "swell-core",
  "swell-daemon",
  "swell-llm",
+ "swell-orchestrator",
  "swell-validation",
  "tempfile",
  "tokio",
