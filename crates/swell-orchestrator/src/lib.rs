@@ -15,9 +15,19 @@ pub mod alerts;
 pub mod autonomy;
 pub mod backlog;
 
-/// Test-support builder for [`Orchestrator`].
-/// This module is only compiled when running tests or when the `test-support` feature is enabled.
-#[cfg(any(test, feature = "test-support"))]
+/// Builder for [`Orchestrator`].
+///
+/// This module provides a builder pattern for constructing [`Orchestrator`] instances.
+/// While primarily intended for tests, it is unconditionally compiled to support
+/// integration tests and development workflows.
+///
+/// # Example
+///
+/// ```ignore
+/// use swell_orchestrator::OrchestratorBuilder;
+///
+/// let orchestrator = OrchestratorBuilder::new().build();
+/// ```
 pub mod builder;
 
 pub mod checkpoint_wiring;
@@ -66,8 +76,7 @@ pub mod work_graph;
 pub mod worker_boot;
 pub mod worker_pool;
 
-/// Test-gated re-export of [`OrchestratorBuilder`][builder::OrchestratorBuilder].
-#[cfg(any(test, feature = "test-support"))]
+/// Re-export of [`OrchestratorBuilder`][builder::OrchestratorBuilder].
 pub use builder::OrchestratorBuilder;
 
 pub use agents::{

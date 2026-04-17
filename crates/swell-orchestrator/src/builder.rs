@@ -1,26 +1,7 @@
-//! Test-support builder for [`Orchestrator`].
+//! Builder for [`Orchestrator`].
 //!
-//! This module provides a builder pattern for constructing [`Orchestrator`] instances
-//! in tests and integration tests. It is gated behind `#[cfg(any(test, feature = "test-support"))]`
-//! so it is never compiled into production builds.
-//!
-//! # Phase 1
-//!
-//! Phase 1 introduces this builder as a test-only artifact. The production constructor
-//! remains unchanged. Tests continue to use `Orchestrator::new()` during this phase.
-//!
-//! # Phase 2
-//!
-//! Phase 2 will migrate tests onto this builder, replacing calls to `Orchestrator::new()`,
-//! `Orchestrator::with_llm(...)`, and `Orchestrator::with_checkpoint_manager(...)` with
-//! equivalent builder calls.
-//!
-//! # Phase 3
-//!
-//! Phase 3 will flip the production constructor to require `llm_backend` as a non-optional
-//! constructor parameter, making the builder the sole test-side construction surface.
-
-#![cfg(any(test, feature = "test-support"))]
+//! This module provides a builder pattern for constructing [`Orchestrator`] instances.
+//! It is unconditionally available to support tests and integration tests.
 
 use std::sync::Arc;
 
