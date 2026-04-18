@@ -76,6 +76,8 @@ pub mod work_graph;
 pub mod worker_boot;
 pub mod worker_pool;
 
+pub mod wiring;
+
 /// Re-export of [`OrchestratorBuilder`][builder::OrchestratorBuilder].
 #[cfg(any(test, feature = "test-support"))]
 pub use builder::OrchestratorBuilder;
@@ -234,6 +236,8 @@ pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
 };
+pub use swell_core::wiring::WiringReport;
+pub use wiring::{CostGuard, PreToolHookManager};
 
 // Re-export web search tools from swell-tools for convenience
 pub use swell_tools::web_search::{DomainSearchTool, FetchPageTool, WebSearchTool};

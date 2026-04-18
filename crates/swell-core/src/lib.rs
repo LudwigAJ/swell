@@ -15,6 +15,7 @@ pub mod traits;
 pub mod transcript;
 pub mod treesitter;
 pub mod types;
+pub mod wiring;
 
 pub use audit::{
     verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,
@@ -51,6 +52,7 @@ pub use transcript::{
     TranscriptSubscriber,
 };
 pub use types::*;
+pub use wiring::{WiringReport, WiringState};
 // Explicitly re-export traits to avoid ambiguity with types::Agent and types::Tool
 // Also include LlmRole, LlmToolCall, LlmUsage from traits
 pub use traits::{

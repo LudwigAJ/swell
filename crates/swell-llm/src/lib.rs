@@ -23,6 +23,7 @@ pub mod openai;
 pub mod retry;
 pub mod router;
 pub mod traits;
+pub mod wiring;
 
 pub use anthropic::AnthropicBackend;
 pub use mock::{MockLlm, ScenarioMockLlm, ScenarioStep};
@@ -32,6 +33,7 @@ pub use router::{
     CostOptimizer, ModelRoute, ModelRouter, ModelRouterBuilder, RouteConfig, TaskType,
 };
 pub use traits::*;
+pub use swell_core::wiring::WiringReport;
 
 use std::sync::Arc;
 use swell_core::{LlmBackend as CoreLlmBackend, SwellError};

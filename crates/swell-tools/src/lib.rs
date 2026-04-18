@@ -44,6 +44,7 @@ pub mod vault;
 pub mod web_search;
 pub mod worktree_isolation;
 pub mod worktree_pool;
+pub mod wiring;
 
 pub use auto_masking::{
     AutoMasker, MaskSecrets, MaskingConfig, MaskingResult, MaskingStats, SecretPattern,
@@ -95,6 +96,7 @@ pub use mcp_config::{
     McpConfigManager, McpReconnectConfig, McpServerConfig, McpServerHealth, McpServerState,
     McpServersConfig,
 };
+pub use swell_core::wiring::WiringReport;
 pub use mcp_lsp::{
     LspBridgeManager, LspDefinitionTool, LspDiagnostic, LspDiagnosticsTool, LspHover, LspHoverTool,
     LspLanguage, LspLocation, LspPosition, LspRange, LspReferencesTool, LspRegistry,

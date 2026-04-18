@@ -19,6 +19,7 @@ pub mod sqlite;
 pub mod task_state_file;
 pub mod traits;
 pub mod workspace_fingerprint;
+pub mod wiring;
 
 pub use checkpoint_manager::{CheckpointManager, CheckpointManagerConfig, CheckpointMetadata};
 pub use manager::StateManager;
@@ -32,6 +33,7 @@ pub use task_state_file::{
     TaskStateFileError,
 };
 pub use traits::*;
+pub use swell_core::wiring::WiringReport;
 pub use workspace_fingerprint::workspace_fingerprint;
 
 #[cfg(test)]
