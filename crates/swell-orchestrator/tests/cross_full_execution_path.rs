@@ -86,12 +86,12 @@ async fn test_execution_controller_full_pipeline_with_scenario_mock_llm() {
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create ExecutionController with the mock LLM
     let controller =
-        ExecutionController::new(orchestrator.clone(), mock_llm.clone(), tool_registry);
+        ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm.clone(), tool_registry);
 
     // Create a task with FullAuto autonomy to bypass approval gate
     // (PlannerAgent will still run since task doesn't have a plan)
@@ -147,12 +147,12 @@ async fn test_execution_controller_skips_planner_when_plan_exists() {
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create ExecutionController
     let controller =
-        ExecutionController::new(orchestrator.clone(), mock_llm.clone(), tool_registry);
+        ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm.clone(), tool_registry);
 
     // Create a task with FullAuto autonomy and a pre-existing plan
     let task = orchestrator
@@ -200,9 +200,9 @@ async fn test_execution_controller_returns_validation_result() {
     let scenario = create_full_pipeline_scenario(5);
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
-    let controller = ExecutionController::new(orchestrator.clone(), mock_llm, tool_registry);
+    let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
     let task = orchestrator
         .create_task_with_autonomy("Create a file".to_string(), AutonomyLevel::FullAuto, vec![])
@@ -283,11 +283,11 @@ async fn test_execution_controller_sequential_tasks_maintain_isolation() {
     let scenario = create_full_pipeline_scenario(10);
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario.clone()));
 
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     let controller =
-        ExecutionController::new(orchestrator.clone(), mock_llm.clone(), tool_registry);
+        ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm.clone(), tool_registry);
 
     // Create and execute first task with FullAuto
     let task1 = orchestrator

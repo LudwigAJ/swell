@@ -13,11 +13,11 @@ use uuid::Uuid;
 
 /// Helper to create an ExecutionController for testing.
 async fn create_test_controller() -> swell_orchestrator::ExecutionController {
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let mock_llm = Arc::new(swell_llm::MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(swell_tools::ToolRegistry::new());
 
-    swell_orchestrator::ExecutionController::new(orchestrator, mock_llm, tool_registry)
+    swell_orchestrator::ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry)
 }
 
 // ========================================================================
@@ -282,14 +282,14 @@ async fn test_drift_report_lists_missing_files() {
 async fn test_orchestrator_emits_drift_warning_event() {
     use swell_orchestrator::OrchestratorEvent;
 
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let mut receiver = orchestrator.subscribe();
 
     // Setup controller with the same orchestrator
     let mock_llm = Arc::new(swell_llm::MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(swell_tools::ToolRegistry::new());
     let controller =
-        swell_orchestrator::ExecutionController::new(orchestrator.clone(), mock_llm, tool_registry);
+        swell_orchestrator::ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
     // Track files with 60% drift (5 actual vs 3 planned)
     controller.track_file_modification("src/a.rs");

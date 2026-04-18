@@ -25,7 +25,7 @@ const WATCH_POLL_INTERVAL_MS: u64 = 500;
 const SHUTDOWN_BROADCAST_INTERVAL_SECS: u64 = 1;
 
 pub struct Daemon {
-    orchestrator: Arc<Mutex<Orchestrator>>,
+    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
     event_emitter: Arc<EventEmitter>,
     socket_path: String,
     /// Flag indicating shutdown has been requested
@@ -86,7 +86,7 @@ impl Daemon {
     }
 
     /// Get the orchestrator for the daemon
-    pub fn orchestrator(&self) -> Arc<Mutex<Orchestrator>> {
+    pub fn orchestrator(&self) -> Arc<Mutex<Arc<Orchestrator>>> {
         Arc::clone(&self.orchestrator)
     }
 
@@ -281,7 +281,7 @@ async fn handle_sigterm(
 /// Handle a connection with shutdown awareness
 async fn handle_connection_with_shutdown(
     stream: UnixStream,
-    orchestrator: Arc<Mutex<Orchestrator>>,
+    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
     event_emitter: Arc<EventEmitter>,
     mut shutdown_rx: watch::Receiver<bool>,
     active_connections: Arc<AtomicUsize>,
@@ -362,7 +362,7 @@ async fn handle_connection_with_shutdown(
 async fn handle_watch_connection(
     mut stream: UnixStream,
     task_id: Uuid,
-    orchestrator: Arc<Mutex<Orchestrator>>,
+    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
     event_emitter: Arc<EventEmitter>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

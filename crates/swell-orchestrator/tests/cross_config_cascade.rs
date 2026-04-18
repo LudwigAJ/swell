@@ -220,12 +220,12 @@ async fn test_execution_controller_respects_loaded_max_iterations() {
     assert_eq!(max_iterations, 5);
 
     // Create ExecutionController with the loaded value
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(ToolRegistry::new());
 
     let controller = ExecutionController::with_max_iterations(
-        orchestrator.clone(),
+        Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
         max_iterations,
@@ -353,12 +353,12 @@ async fn test_execution_controller_enforces_cascade_max_iterations() {
     assert_eq!(max_iterations, 7);
 
     // Create ExecutionController with the loaded value
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(ToolRegistry::new());
 
     let controller = ExecutionController::with_max_iterations(
-        orchestrator.clone(),
+        Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
         max_iterations,
@@ -369,7 +369,7 @@ async fn test_execution_controller_enforces_cascade_max_iterations() {
 
     // Also verify with_all_settings works with the loaded value
     let controller2 = ExecutionController::with_all_settings(
-        orchestrator.clone(),
+        Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
         swell_validation::ValidationPipeline::new(),

@@ -16,7 +16,7 @@ use crate::{
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use swell_core::traits::Agent;
 use swell_core::{
     AgentContext, AgentResult, AgentRole, LlmMessage, Plan, StreamEvent, SwellError, ToolOutput,
@@ -192,7 +192,7 @@ struct PendingToolCall {
 
 /// Manages concurrent task execution with up to 6 agents
 pub struct ExecutionController {
-    orchestrator: Arc<Orchestrator>,
+    orchestrator: Weak<Orchestrator>,
     llm: Arc<dyn LlmBackend>,
     tool_registry: Arc<ToolRegistry>,
     /// The high-level validation orchestrator for task completion validation.
@@ -248,7 +248,7 @@ impl ExecutionController {
     /// - Creates a `ValidationOrchestrator` with default gates (lint, test, security).
     /// - This is the production entry point: runtime success depends on `ValidationOrchestrator`.
     pub fn new(
-        orchestrator: Arc<Orchestrator>,
+        orchestrator: Weak<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
     ) -> Self {
@@ -277,7 +277,7 @@ impl ExecutionController {
 
     /// Create a new ExecutionController with a custom validation pipeline.
     pub fn with_pipeline(
-        orchestrator: Arc<Orchestrator>,
+        orchestrator: Weak<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
         validation_pipeline: ValidationPipeline,
@@ -313,7 +313,7 @@ impl ExecutionController {
     /// * `tool_registry` - The tool registry for tool execution
     /// * `max_iterations` - Maximum iterations for the turn loop (hard cap, separate from validation retries)
     pub fn with_max_iterations(
-        orchestrator: Arc<Orchestrator>,
+        orchestrator: Weak<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
         max_iterations: u32,
@@ -343,7 +343,7 @@ impl ExecutionController {
 
     /// Create a new ExecutionController with custom validation pipeline and max_iterations.
     pub fn with_pipeline_and_max_iterations(
-        orchestrator: Arc<Orchestrator>,
+        orchestrator: Weak<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
         validation_pipeline: ValidationPipeline,
@@ -383,7 +383,7 @@ impl ExecutionController {
     /// * `context_compaction_threshold` - Token threshold for triggering context compaction
     /// * `tail_message_count` - Number of tail messages to always preserve
     pub fn with_all_settings(
-        orchestrator: Arc<Orchestrator>,
+        orchestrator: Weak<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
         validation_pipeline: ValidationPipeline,
@@ -427,7 +427,7 @@ impl ExecutionController {
     /// * `session_limits` - Session resource limits (max turns, wall clock timeout, etc.)
     #[allow(clippy::too_many_arguments)]
     pub fn with_resource_limits(
-        orchestrator: Arc<Orchestrator>,
+        orchestrator: Weak<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
         validation_pipeline: ValidationPipeline,
@@ -457,6 +457,19 @@ impl ExecutionController {
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
         }
+    }
+
+    /// Upgrade the weak back-pointer to the owning [`Orchestrator`].
+    ///
+    /// The weak reference is populated by [`Arc::new_cyclic`] inside
+    /// [`Orchestrator::new`], and the [`Orchestrator`] owns this
+    /// `ExecutionController` via `Arc<ExecutionController>`. So any live
+    /// `ExecutionController` has a live owning `Orchestrator`, and the weak
+    /// upgrade always succeeds.
+    fn orchestrator(&self) -> Arc<Orchestrator> {
+        self.orchestrator
+            .upgrade()
+            .expect("ExecutionController outlives Orchestrator — Arc::new_cyclic invariant violated")
     }
 
     /// Get a reference to the resource tracker
@@ -668,14 +681,14 @@ impl ExecutionController {
         info!(task_id = %task_id, "Starting task execution");
 
         // Get the task and its estimated files for lock acquisition
-        let task = self.orchestrator.get_task(task_id).await?;
+        let task = self.orchestrator().get_task(task_id).await?;
         let estimated_files = task.enrichment.enriched_files.clone();
 
         // Step 0: Acquire file locks before execution
         // This prevents concurrent edits to the same files across tasks
         if !estimated_files.is_empty() {
             match self
-                .orchestrator
+                .orchestrator()
                 .acquire_task_locks(task_id, None, estimated_files.clone())
                 .await
             {
@@ -714,7 +727,7 @@ impl ExecutionController {
         }
 
         // Ensure locks are released when task finishes (success, failure, or panic)
-        let file_lock_manager = self.orchestrator.file_lock_manager().clone();
+        let file_lock_manager = self.orchestrator().file_lock_manager().clone();
         let task_id_for_cleanup = task_id;
 
         // Step 1: Planning - run PlannerAgent if task doesn't have a plan
@@ -753,7 +766,7 @@ impl ExecutionController {
                 })?;
 
                 // Set the plan on the task so start_task can proceed
-                self.orchestrator.set_plan(task_id, plan).await?;
+                self.orchestrator().set_plan(task_id, plan).await?;
 
                 info!(task_id = %task_id, "PlannerAgent completed successfully, plan set on task");
             } else {
@@ -781,10 +794,10 @@ impl ExecutionController {
         }
 
         // Step 2: Transition through states to executing
-        self.orchestrator.start_task(task_id).await?;
+        self.orchestrator().start_task(task_id).await?;
 
         // Get updated task after planning
-        let task = self.orchestrator.get_task(task_id).await?;
+        let task = self.orchestrator().get_task(task_id).await?;
 
         // Step 2a: Check if we need to spawn a FeatureLead for complex tasks
         if let Some(ref plan) = task.plan {
@@ -795,10 +808,10 @@ impl ExecutionController {
                     "Task exceeds complexity threshold, spawning FeatureLead"
                 );
 
-                let parent_orch = self.orchestrator.clone();
+                let parent_orch = self.orchestrator().clone();
 
                 match self
-                    .orchestrator
+                    .orchestrator()
                     .spawn_feature_lead(task_id, plan.clone(), parent_orch)
                 {
                     Ok(lead) => {
@@ -833,7 +846,7 @@ impl ExecutionController {
             self.llm.clone(),
             self.tool_registry.clone(),
         )
-        .with_checkpoint_manager(self.orchestrator.checkpoint_manager());
+        .with_checkpoint_manager(self.orchestrator().checkpoint_manager());
 
         let session_id = Uuid::new_v4();
         let context = AgentContext {
@@ -880,7 +893,7 @@ impl ExecutionController {
                 let request_id = self.uncertainty_manager.create_request(event).await;
 
                 // Emit the structured clarification request event for observers
-                self.orchestrator.emit_uncertainty_clarification(
+                self.orchestrator().emit_uncertainty_clarification(
                     task_id,
                     Uuid::nil(),
                     AgentRole::Generator,
@@ -897,7 +910,7 @@ impl ExecutionController {
                 );
 
                 // Pause the task state machine
-                if let Err(e) = self.orchestrator.pause_task(task_id, reason.clone()).await {
+                if let Err(e) = self.orchestrator().pause_task(task_id, reason.clone()).await {
                     warn!(
                         task_id = %task_id,
                         error = %e,
@@ -919,7 +932,7 @@ impl ExecutionController {
                             "Clarification received — resuming execution"
                         );
                         // Resume from Paused state
-                        if let Err(e) = self.orchestrator.resume_task(task_id).await {
+                        if let Err(e) = self.orchestrator().resume_task(task_id).await {
                             warn!(
                                 task_id = %task_id,
                                 error = %e,
@@ -939,12 +952,12 @@ impl ExecutionController {
         }
 
         // Step 4: Start validation phase
-        self.orchestrator.start_validation(task_id).await?;
+        self.orchestrator().start_validation(task_id).await?;
 
         // Step 5: Run ValidationOrchestrator to validate task completion.
         // VAL-WIRING-004: Runtime success depends on ValidationOrchestrator validation,
         // not only local default validation. This is the audited production entry point.
-        let task = self.orchestrator.get_task(task_id).await?;
+        let task = self.orchestrator().get_task(task_id).await?;
         let changed_files = task.enrichment.enriched_files.clone();
         let validation_input = TaskCompletionInput {
             task_id,
@@ -1008,7 +1021,7 @@ impl ExecutionController {
         };
 
         // Step 7: Complete the task with validation result
-        self.orchestrator
+        self.orchestrator()
             .complete_task(task_id, result.clone())
             .await?;
 
@@ -1020,7 +1033,7 @@ impl ExecutionController {
         // For now, this is stubbed pending backlog integration.
 
         // Cleanup: Remove FeatureLead from orchestrator and local cache
-        let _ = self.orchestrator.remove_feature_lead(task_id).await;
+        let _ = self.orchestrator().remove_feature_lead(task_id).await;
         if let Ok(mut leads) = self.feature_leads.write() {
             leads.remove(&task_id);
         }
@@ -1607,7 +1620,7 @@ mod tests {
         let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
         assert_eq!(controller.max_concurrent, MAX_CONCURRENT_AGENTS);
     }
 
@@ -1616,16 +1629,14 @@ mod tests {
         let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         // Create some tasks
-        let task1 = controller
-            .orchestrator
+        let task1 = orchestrator
             .create_task("Task 1".to_string(), vec![])
             .await
             .unwrap();
-        let task2 = controller
-            .orchestrator
+        let task2 = orchestrator
             .create_task("Task 2".to_string(), vec![])
             .await
             .unwrap();
@@ -1688,7 +1699,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         let controller = ExecutionController::with_max_iterations(
-            Arc::new(orchestrator),
+            Arc::downgrade(&orchestrator),
             mock_llm,
             tool_registry,
             5,
@@ -1703,7 +1714,7 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         assert_eq!(controller.max_iterations(), DEFAULT_MAX_ITERATIONS);
     }
@@ -1718,7 +1729,7 @@ mod tests {
         let validation_pipeline = ValidationPipeline::new();
 
         let controller = ExecutionController::with_pipeline_and_max_iterations(
-            Arc::new(orchestrator),
+            Arc::downgrade(&orchestrator),
             mock_llm,
             tool_registry,
             validation_pipeline,
@@ -1754,7 +1765,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         let mut controller = ExecutionController::with_max_iterations(
-            Arc::new(orchestrator),
+            Arc::downgrade(&orchestrator),
             mock_llm,
             tool_registry,
             50, // High max_iterations so it doesn't trigger
@@ -1786,7 +1797,7 @@ mod tests {
 
         // Set max_iterations to 2
         let mut controller = ExecutionController::with_max_iterations(
-            Arc::new(orchestrator),
+            Arc::downgrade(&orchestrator),
             mock_llm,
             tool_registry,
             2,
@@ -1814,7 +1825,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         let mut controller = ExecutionController::with_max_iterations(
-            Arc::new(orchestrator),
+            Arc::downgrade(&orchestrator),
             mock_llm,
             tool_registry,
             50,
@@ -1840,7 +1851,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         ExecutionController::with_all_settings(
-            Arc::new(orchestrator),
+            Arc::downgrade(&orchestrator),
             mock_llm,
             tool_registry,
             ValidationPipeline::new(),
@@ -2226,7 +2237,7 @@ mod tests {
             )
             .await;
 
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         let result = controller
             .execute_tool("deny_test_tool", serde_json::json!({}))
@@ -2279,7 +2290,7 @@ mod tests {
             )
             .await;
 
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         let result = controller
             .execute_tool("deny_test_tool", serde_json::json!({}))
@@ -2328,7 +2339,7 @@ mod tests {
             )
             .await;
 
-        let controller = ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         let result = controller
             .execute_tool("deny_test_tool", serde_json::json!({}))
@@ -2361,7 +2372,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         let mut controller =
-            ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         // Trigger FullStop before calling execute_turn_loop
         controller
@@ -2406,7 +2417,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         let mut controller =
-            ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         // Trigger FullStop
         controller
@@ -2455,7 +2466,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         let mut controller =
-            ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         // Even though we set a low level (Throttle), FullStop should take precedence
         controller
@@ -2495,7 +2506,7 @@ mod tests {
         let tool_registry = Arc::new(ToolRegistry::new());
 
         let mut controller =
-            ExecutionController::new(Arc::new(orchestrator), mock_llm, tool_registry);
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         // Trigger NetworkKill
         controller

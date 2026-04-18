@@ -238,7 +238,7 @@ pub use worker_pool::{
 // Re-export web search tools from swell-tools for convenience
 pub use swell_tools::web_search::{DomainSearchTool, FetchPageTool, WebSearchTool};
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use swell_core::{
     AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult,
 };
@@ -387,8 +387,9 @@ pub struct Orchestrator {
     llm_backend: Arc<dyn swell_llm::LlmBackend>,
     /// Execution controller that runs the Planner → Generator → Evaluator pipeline.
     /// Constructed with the injected LLM backend and tool registry for production use.
-    /// Wrapped in RwLock to break the construction cycle (ExecutionController needs Arc<Orchestrator>).
-    execution_controller: Arc<RwLock<Option<Arc<ExecutionController>>>>,
+    /// The construction cycle is broken by giving ExecutionController a
+    /// `Weak<Orchestrator>` back-pointer (populated via `Arc::new_cyclic`).
+    execution_controller: Arc<ExecutionController>,
 }
 
 impl Orchestrator {
@@ -403,28 +404,17 @@ impl Orchestrator {
     ///
     /// # Arguments
     /// * `llm` - The LLM backend to use for agent execution
-    pub fn new(llm: Arc<dyn swell_llm::LlmBackend>) -> Self {
+    ///
+    /// # Returns
+    /// * `Arc<Orchestrator>` - wrapped in `Arc` because `ExecutionController`
+    ///   holds a `Weak<Orchestrator>` back-pointer, which requires the
+    ///   orchestrator to live inside an `Arc` from the moment it is constructed.
+    pub fn new(llm: Arc<dyn swell_llm::LlmBackend>) -> Arc<Self> {
         let tool_registry = Arc::new(ToolRegistry::new());
+        let llm_for_controller = Arc::clone(&llm);
+        let tool_registry_for_controller = Arc::clone(&tool_registry);
 
-        let state_machine = Arc::new(RwLock::new(TaskStateMachine::new()));
-        let agent_pool = Arc::new(RwLock::new(AgentPool::new()));
-        let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
-        let checkpoint_manager = Arc::new(CheckpointManager::new(checkpoint_store));
-        let feature_lead_manager = Arc::new(RwLock::new(FeatureLeadManager::new()));
-        let novelty_checker = Arc::new(RwLock::new(NoveltyChecker::new()));
-        let file_lock_manager = Arc::new(FileLockManager::new());
-        let non_novel_detector = Arc::new(RwLock::new(NonNovelRetryDetector::new()));
-        let (tx, _rx) = broadcast::channel(100);
-        let mcp_manager = Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap());
-        let frozen_registry = FrozenRequirementRegistry::new(vec![]);
-
-        // First, create a stub execution controller with a placeholder to break the cycle.
-        // This stub is only used during the initial Construction of ExecutionController.
-        let execution_controller_placeholder: Arc<RwLock<Option<Arc<ExecutionController>>>> =
-            Arc::new(RwLock::new(None));
-
-        // Build a preliminary orchestrator with the stub to satisfy ExecutionController's Arc<Orchestrator> requirement
-        let preliminary = Self {
+        Arc::new_cyclic(|weak_self: &Weak<Orchestrator>| Self {
             state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
             agent_pool: Arc::new(RwLock::new(AgentPool::new())),
             checkpoint_manager: Arc::new(CheckpointManager::new(Arc::new(
@@ -437,47 +427,13 @@ impl Orchestrator {
             file_lock_manager: Arc::new(FileLockManager::new()),
             non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
             frozen_registry: FrozenRequirementRegistry::new(vec![]),
-            llm_backend: llm.clone(),
-            execution_controller: Arc::clone(&execution_controller_placeholder),
-        };
-
-        // Now create the real execution controller using the preliminary orchestrator's Arc
-        let preliminary_arc = Arc::new(preliminary);
-        let execution_controller = Arc::new(ExecutionController::new(
-            Arc::clone(&preliminary_arc),
-            llm.clone(),
-            Arc::clone(&tool_registry),
-        ));
-
-        // Build the final orchestrator with the real execution controller
-        // Wrap in RwLock<Option<_>> to maintain the field type
-        let wrapped_execution_controller: Arc<RwLock<Option<Arc<ExecutionController>>>> =
-            Arc::new(RwLock::new(Some(execution_controller.clone())));
-        let final_orchestrator = Self {
-            state_machine: Arc::clone(&state_machine),
-            agent_pool: Arc::clone(&agent_pool),
-            checkpoint_manager: Arc::clone(&checkpoint_manager),
-            event_sender: tx,
-            feature_lead_manager: Arc::clone(&feature_lead_manager),
-            mcp_manager: Arc::clone(&mcp_manager),
-            novelty_checker: Arc::clone(&novelty_checker),
-            file_lock_manager: Arc::clone(&file_lock_manager),
-            non_novel_detector: Arc::clone(&non_novel_detector),
-            frozen_registry,
             llm_backend: llm,
-            execution_controller: wrapped_execution_controller,
-        };
-
-        // Fill in the placeholder with the final execution controller
-        // and update the preliminary's execution_controller so any references to it are correct
-        {
-            let mut guard = execution_controller_placeholder
-                .try_write()
-                .expect("Failed to write to execution_controller placeholder");
-            *guard = Some(execution_controller.clone());
-        }
-
-        final_orchestrator
+            execution_controller: Arc::new(ExecutionController::new(
+                weak_self.clone(),
+                llm_for_controller,
+                tool_registry_for_controller,
+            )),
+        })
     }
 
     /// Create a new orchestrator without LLM backend for testing purposes.
@@ -485,80 +441,9 @@ impl Orchestrator {
     /// This constructor is only available in test context or with test-support feature.
     /// Production code should use [`Self::new`] with a proper LLM backend.
     #[cfg(any(test, feature = "test-support"))]
-    pub fn new_for_test() -> Self {
-        let tool_registry = Arc::new(ToolRegistry::new());
+    pub fn new_for_test() -> Arc<Self> {
         let mock_llm: Arc<dyn swell_llm::LlmBackend> = Arc::new(swell_llm::MockLlm::new("test"));
-
-        let state_machine = Arc::new(RwLock::new(TaskStateMachine::new()));
-        let agent_pool = Arc::new(RwLock::new(AgentPool::new()));
-        let checkpoint_store = Arc::new(InMemoryCheckpointStore::new());
-        let checkpoint_manager = Arc::new(CheckpointManager::new(checkpoint_store));
-        let feature_lead_manager = Arc::new(RwLock::new(FeatureLeadManager::new()));
-        let novelty_checker = Arc::new(RwLock::new(NoveltyChecker::new()));
-        let file_lock_manager = Arc::new(FileLockManager::new());
-        let non_novel_detector = Arc::new(RwLock::new(NonNovelRetryDetector::new()));
-        let (tx, _rx) = broadcast::channel(100);
-        let mcp_manager = Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap());
-        let frozen_registry = FrozenRequirementRegistry::new(vec![]);
-
-        // First, create a stub execution controller with a placeholder to break the cycle.
-        let execution_controller_placeholder: Arc<RwLock<Option<Arc<ExecutionController>>>> =
-            Arc::new(RwLock::new(None));
-
-        // Build a preliminary orchestrator with the stub to satisfy ExecutionController's Arc<Orchestrator> requirement
-        let preliminary = Self {
-            state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
-            agent_pool: Arc::new(RwLock::new(AgentPool::new())),
-            checkpoint_manager: Arc::new(CheckpointManager::new(Arc::new(
-                InMemoryCheckpointStore::new(),
-            ))),
-            event_sender: broadcast::channel(100).0,
-            feature_lead_manager: Arc::new(RwLock::new(FeatureLeadManager::new())),
-            mcp_manager: Arc::new(McpConfigManager::new_from_str(r#"{"servers": []}"#).unwrap()),
-            novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
-            file_lock_manager: Arc::new(FileLockManager::new()),
-            non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
-            frozen_registry: FrozenRequirementRegistry::new(vec![]),
-            llm_backend: mock_llm.clone(),
-            execution_controller: Arc::clone(&execution_controller_placeholder),
-        };
-
-        // Now create the real execution controller using the preliminary orchestrator's Arc
-        let preliminary_arc = Arc::new(preliminary);
-        let execution_controller = Arc::new(ExecutionController::new(
-            Arc::clone(&preliminary_arc),
-            mock_llm.clone(),
-            Arc::clone(&tool_registry),
-        ));
-
-        // Build the final orchestrator with the real execution controller
-        // Wrap in RwLock<Option<_>> to maintain the field type
-        let wrapped_execution_controller: Arc<RwLock<Option<Arc<ExecutionController>>>> =
-            Arc::new(RwLock::new(Some(execution_controller.clone())));
-        let final_orchestrator = Self {
-            state_machine: Arc::clone(&state_machine),
-            agent_pool: Arc::clone(&agent_pool),
-            checkpoint_manager: Arc::clone(&checkpoint_manager),
-            event_sender: tx,
-            feature_lead_manager: Arc::clone(&feature_lead_manager),
-            mcp_manager: Arc::clone(&mcp_manager),
-            novelty_checker: Arc::clone(&novelty_checker),
-            file_lock_manager: Arc::clone(&file_lock_manager),
-            non_novel_detector: Arc::clone(&non_novel_detector),
-            frozen_registry,
-            llm_backend: mock_llm,
-            execution_controller: wrapped_execution_controller,
-        };
-
-        // Fill in the placeholder with the final execution controller
-        {
-            let mut guard = execution_controller_placeholder
-                .try_write()
-                .expect("Failed to write to execution_controller placeholder");
-            *guard = Some(execution_controller.clone());
-        }
-
-        final_orchestrator
+        Self::new(mock_llm)
     }
 
     /// Get the LLM backend.
@@ -571,12 +456,10 @@ impl Orchestrator {
     /// Get the execution controller.
     ///
     /// The execution controller runs the Planner → Generator → Evaluator pipeline
-    /// for tasks that reach the Ready state.
-    pub fn execution_controller(&self) -> Option<Arc<ExecutionController>> {
-        self.execution_controller
-            .try_read()
-            .ok()
-            .and_then(|guard| guard.clone())
+    /// for tasks that reach the Ready state. Always present after construction —
+    /// no `Option` wrapper.
+    pub fn execution_controller(&self) -> Arc<ExecutionController> {
+        Arc::clone(&self.execution_controller)
     }
 
     /// Subscribe to orchestrator events.

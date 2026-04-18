@@ -45,7 +45,7 @@ fn create_multi_turn_scenario(num_turns: usize) -> Vec<ScenarioStep> {
 #[tokio::test]
 async fn test_cost_tracker_accumulates_llm_costs() {
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create a CostTracker with a reasonable budget
@@ -72,7 +72,7 @@ async fn test_cost_tracker_accumulates_llm_costs() {
 
     // Create ExecutionController
     let controller = ExecutionController::with_max_iterations(
-        orchestrator.clone(),
+        Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
         10, // max iterations
@@ -172,7 +172,7 @@ async fn test_stopping_conditions_enforces_budget() {
 #[tokio::test]
 async fn test_execution_halts_when_budget_exceeded() {
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create a mock LLM that returns many responses to ensure we hit the budget
@@ -182,7 +182,7 @@ async fn test_execution_halts_when_budget_exceeded() {
     // Create ExecutionController with very low max_iterations to simulate budget hal
     // Actually, we need to test that cost-based stopping works, not iteration-based
     let controller = ExecutionController::with_max_iterations(
-        orchestrator.clone(),
+        Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
         50, // high max iterations - we want cost to be the limiting factor

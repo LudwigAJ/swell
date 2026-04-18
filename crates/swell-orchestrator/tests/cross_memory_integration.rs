@@ -387,14 +387,14 @@ async fn test_execution_controller_with_memory_context() {
     let capturing_mock = Arc::new(CapturingMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
 
     // Create tool registry
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create ExecutionController
     let controller =
-        ExecutionController::new(orchestrator.clone(), capturing_mock.clone(), tool_registry);
+        ExecutionController::new(Arc::downgrade(&orchestrator), capturing_mock.clone(), tool_registry);
 
     // Create a task with FullAuto autonomy and pre-existing plan
     let task = orchestrator

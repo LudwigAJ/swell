@@ -68,7 +68,7 @@ impl OrchestratorBuilder {
     ///
     /// Note: `checkpoint_manager` is accepted for API compatibility but is ignored
     /// in the current implementation since tests don't need custom checkpoint managers.
-    pub fn build(self) -> Orchestrator {
+    pub fn build(self) -> Arc<Orchestrator> {
         if let Some(llm) = self.llm_backend {
             return Orchestrator::new(llm);
         }

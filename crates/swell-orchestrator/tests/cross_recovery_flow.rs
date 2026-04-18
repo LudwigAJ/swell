@@ -506,7 +506,7 @@ async fn test_execution_continues_after_tool_failure() {
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
     // Create orchestrator and tool registry
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Register a tool that fails with network error
@@ -521,7 +521,7 @@ async fn test_execution_continues_after_tool_failure() {
 
     // Create ExecutionController
     let mut controller = ExecutionController::with_max_iterations(
-        orchestrator.clone(),
+        Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
         10,
@@ -605,7 +605,7 @@ async fn test_multiple_failure_types_recovery() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Register tools that fail with different error types
@@ -628,7 +628,7 @@ async fn test_multiple_failure_types_recovery() {
         .await;
 
     let mut controller = ExecutionController::with_max_iterations(
-        orchestrator.clone(),
+        Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
         10,
@@ -697,7 +697,7 @@ async fn test_git_commit_network_failure_recovery() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create a recipe registry with recipes for different failure classes
@@ -750,7 +750,7 @@ async fn test_git_commit_network_failure_recovery() {
         .await;
 
     let mut controller = ExecutionController::with_max_iterations(
-        orchestrator.clone(),
+        Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
         10,
@@ -956,9 +956,9 @@ async fn test_full_recovery_flow() {
     ));
 
     // Step 6: Execute with the tool and verify continuation
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let mut controller =
-        ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
+        ExecutionController::with_max_iterations(Arc::downgrade(&orchestrator), mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,
@@ -1020,7 +1020,7 @@ async fn test_recovery_flow_permission_denied() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create a permission-denied tool
@@ -1034,7 +1034,7 @@ async fn test_recovery_flow_permission_denied() {
         .await;
 
     let mut controller =
-        ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
+        ExecutionController::with_max_iterations(Arc::downgrade(&orchestrator), mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,
@@ -1089,7 +1089,7 @@ async fn test_recovery_flow_timeout() {
 
     let mock_llm = Arc::new(ScenarioMockLlm::new("claude-sonnet", scenario));
 
-    let orchestrator = Arc::new(OrchestratorBuilder::new().build());
+    let orchestrator = OrchestratorBuilder::new().build();
     let tool_registry = Arc::new(ToolRegistry::new());
 
     let timeout_tool = FailingTestTool::new("slow_tool", "timeout");
@@ -1120,7 +1120,7 @@ async fn test_recovery_flow_timeout() {
     ));
 
     let mut controller =
-        ExecutionController::with_max_iterations(orchestrator, mock_llm, tool_registry, 10);
+        ExecutionController::with_max_iterations(Arc::downgrade(&orchestrator), mock_llm, tool_registry, 10);
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,

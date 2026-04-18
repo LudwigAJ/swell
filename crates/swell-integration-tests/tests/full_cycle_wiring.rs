@@ -143,8 +143,7 @@ async fn wiring_orchestrator_holds_execution_controller() {
 
     // The orchestrator must expose an ExecutionController
     let orch = daemon.orchestrator();
-    let exec_controller = orch.lock().await.execution_controller()
-        .expect("orchestrator must hold execution_controller when constructed with with_llm");
+    let exec_controller = orch.lock().await.execution_controller();
 
     // The ExecutionController's LLM must be the EXACT Arc we provided
     // NOTE: ExecutionController doesn't expose llm() directly, but we can verify
@@ -226,8 +225,7 @@ async fn wiring_validation_orchestrator_blocks_done_on_failure() {
 
     // Get the execution controller from the orchestrator
     let orch = daemon.orchestrator();
-    let exec_controller = orch.lock().await.execution_controller()
-        .expect("orchestrator must hold execution_controller when constructed with with_llm");
+    let exec_controller = orch.lock().await.execution_controller();
 
     // Verify that ExecutionController has a ValidationOrchestrator field.
     // This is the key assertion: the wiring from Tier 1.3 must exist.

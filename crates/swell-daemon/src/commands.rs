@@ -43,7 +43,7 @@ use uuid::Uuid;
 /// - Orchestrator errors
 pub async fn handle_command(
     command: CliCommand,
-    orchestrator: Arc<Mutex<Orchestrator>>,
+    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
     event_emitter: Arc<EventEmitter>,
     active_connections: Arc<AtomicUsize>,
     start_time: std::time::Instant,
@@ -700,8 +700,8 @@ mod tests {
         }
     }
 
-    fn create_test_orchestrator() -> Arc<Mutex<Orchestrator>> {
-        Arc::new(Mutex::new(Orchestrator::new()))
+    fn create_test_orchestrator() -> Arc<Mutex<Arc<Orchestrator>>> {
+        Arc::new(Mutex::new(Orchestrator::new_for_test()))
     }
 
     fn create_test_event_emitter() -> Arc<EventEmitter> {
@@ -1406,7 +1406,7 @@ mod tests {
 
     // --- Operator Intervention Tests ---
 
-    fn create_test_task_in_executing_state(orch: &Arc<Mutex<Orchestrator>>) -> Uuid {
+    fn create_test_task_in_executing_state(orch: &Arc<Mutex<Arc<Orchestrator>>>) -> Uuid {
         let task_id = futures::executor::block_on(async {
             orch.lock()
                 .await
@@ -1429,7 +1429,7 @@ mod tests {
         task_id
     }
 
-    fn create_test_task_in_validating_state(orch: &Arc<Mutex<Orchestrator>>) -> Uuid {
+    fn create_test_task_in_validating_state(orch: &Arc<Mutex<Arc<Orchestrator>>>) -> Uuid {
         let task_id = futures::executor::block_on(async {
             orch.lock()
                 .await

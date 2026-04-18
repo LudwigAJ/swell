@@ -564,7 +564,7 @@ mod tests {
         let plan = create_test_plan_with_steps(20);
         orchestrator.set_plan(parent_task.id, plan).await.unwrap();
 
-        let parent_orch = Arc::new(orchestrator);
+        let parent_orch = orchestrator.clone();
         let lead = FeatureLead::new(
             parent_task.id,
             "Test Feature".to_string(),
@@ -590,7 +590,7 @@ mod tests {
         let step_ids: Vec<Uuid> = plan.steps.iter().take(5).map(|s| s.id).collect();
         orchestrator.set_plan(parent_task.id, plan).await.unwrap();
 
-        let parent_orch = Arc::new(orchestrator);
+        let parent_orch = orchestrator.clone();
         let mut lead = FeatureLead::new(
             parent_task.id,
             "Test Feature".to_string(),
@@ -617,7 +617,7 @@ mod tests {
         let step_ids: Vec<Uuid> = plan.steps.iter().take(10).map(|s| s.id).collect();
         orchestrator.set_plan(parent_task.id, plan).await.unwrap();
 
-        let parent_orch = Arc::new(orchestrator);
+        let parent_orch = orchestrator.clone();
         let mut lead = FeatureLead::new(
             parent_task.id,
             "Test Feature".to_string(),
@@ -645,7 +645,7 @@ mod tests {
     fn test_feature_lead_manager_register() {
         let mut manager = FeatureLeadManager::new();
         let orchestrator = OrchestratorBuilder::new().build();
-        let parent_orch = Arc::new(orchestrator);
+        let parent_orch = orchestrator.clone();
 
         let lead = FeatureLead::new(
             Uuid::new_v4(),
@@ -665,7 +665,7 @@ mod tests {
     fn test_feature_lead_manager_remove() {
         let mut manager = FeatureLeadManager::new();
         let orchestrator = OrchestratorBuilder::new().build();
-        let parent_orch = Arc::new(orchestrator);
+        let parent_orch = orchestrator.clone();
 
         let lead = FeatureLead::new(
             Uuid::new_v4(),
@@ -685,7 +685,7 @@ mod tests {
     fn test_feature_lead_manager_active_task_ids() {
         let mut manager = FeatureLeadManager::new();
         let orchestrator = OrchestratorBuilder::new().build();
-        let parent_orch = Arc::new(orchestrator);
+        let parent_orch = orchestrator.clone();
 
         let task1 = Uuid::new_v4();
         let task2 = Uuid::new_v4();
@@ -813,7 +813,7 @@ mod tests {
         let step_ids: Vec<Uuid> = plan.steps.iter().take(10).map(|s| s.id).collect();
         orchestrator.set_plan(parent_task.id, plan).await.unwrap();
 
-        let parent_orch = Arc::new(orchestrator);
+        let parent_orch = orchestrator.clone();
         let lead = FeatureLead::new(
             parent_task.id,
             "Test Feature".to_string(),
@@ -839,7 +839,7 @@ mod tests {
         let step_ids: Vec<Uuid> = plan.steps.iter().map(|s| s.id).collect();
         orchestrator.set_plan(parent_task.id, plan).await.unwrap();
 
-        let parent_orch = Arc::new(orchestrator);
+        let parent_orch = orchestrator.clone();
         let mut lead = FeatureLead::new(
             parent_task.id,
             "Test Feature".to_string(),
