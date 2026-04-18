@@ -237,7 +237,12 @@ pub use worker_pool::{
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
 };
 pub use swell_core::wiring::WiringReport;
-pub use wiring::{CostGuard, PreToolHookManager};
+pub use wiring::{
+    AgentPoolReport, CheckpointManagerReport, CostGuard, ExecutionControllerReport,
+    FeatureLeadManagerReport, FileLockManagerReport, FrozenRequirementRegistryReport,
+    LlmBackendReport, McpConfigManagerReport, NonNovelRetryDetectorReport,
+    NoveltyCheckerReport, PreToolHookManager, TaskStateMachineReport,
+};
 
 // Re-export web search tools from swell-tools for convenience
 pub use swell_tools::web_search::{DomainSearchTool, FetchPageTool, WebSearchTool};
@@ -470,6 +475,112 @@ impl Orchestrator {
     /// Returns a receiver that will receive all subsequent events.
     pub fn subscribe(&self) -> broadcast::Receiver<OrchestratorEvent> {
         self.event_sender.subscribe()
+    }
+
+    /// Returns a wiring manifest of all load-bearing subsystems.
+    ///
+    /// This method collects a wiring report from every subsystem field in the
+    /// [`Orchestrator`], including:
+    /// - Internal subsystems ([`TaskStateMachine`], [`AgentPool`], [`CheckpointManager`], etc.)
+    /// - Wired external subsystems ([`ExecutionController`], LLM backend, etc.)
+    /// - Tier-2 stubs ([`CostGuard`], [`PreToolHookManager`]) that return [`WiringState::Disabled`]
+    ///
+    /// Returns a vector of [`Box<dyn WiringReport>`] where each entry has
+    /// [`WiringReport::name()`], [`WiringReport::identity()`], and [`WiringReport::state()`]
+    /// populated.
+    ///
+    /// The return vector length equals the number of subsystem fields, and each
+    /// entry's `name()`, `identity()`, and `state()` methods are fully populated.
+    ///
+    /// [`WiringState::Disabled`]: https://docs.rs/swell-core/latest/swell_core/wiring/enum.WiringState.html
+    pub fn wiring_manifest(&self) -> Vec<Box<dyn swell_core::wiring::WiringReport>> {
+        // Collect all subsystem wiring reports
+        let mut reports: Vec<Box<dyn swell_core::wiring::WiringReport>> = Vec::new();
+
+        // TaskStateMachine - read the inner TaskStateMachine to report on it
+        // We use a blocking read on the RwLock, which is acceptable here since
+        // WiringReport::identity() only needs pointer identity
+        {
+            reports.push(Box::new(TaskStateMachineReport::new(Arc::clone(
+                &self.state_machine,
+            ))));
+        }
+
+        // AgentPool
+        {
+            reports.push(Box::new(AgentPoolReport::new(Arc::clone(
+                &self.agent_pool,
+            ))));
+        }
+
+        // CheckpointManager
+        {
+            reports.push(Box::new(CheckpointManagerReport::new(Arc::clone(
+                &self.checkpoint_manager,
+            ))));
+        }
+
+        // FeatureLeadManager
+        {
+            reports.push(Box::new(FeatureLeadManagerReport::new(Arc::clone(
+                &self.feature_lead_manager,
+            ))));
+        }
+
+        // McpConfigManager
+        {
+            reports.push(Box::new(McpConfigManagerReport::new(Arc::clone(
+                &self.mcp_manager,
+            ))));
+        }
+
+        // NoveltyChecker
+        {
+            reports.push(Box::new(NoveltyCheckerReport::new(Arc::clone(
+                &self.novelty_checker,
+            ))));
+        }
+
+        // FileLockManager
+        {
+            reports.push(Box::new(FileLockManagerReport::new(Arc::clone(
+                &self.file_lock_manager,
+            ))));
+        }
+
+        // NonNovelRetryDetector
+        {
+            reports.push(Box::new(NonNovelRetryDetectorReport::new(Arc::clone(
+                &self.non_novel_detector,
+            ))));
+        }
+
+        // FrozenRequirementRegistry
+        {
+            reports.push(Box::new(FrozenRequirementRegistryReport::new(
+                self.frozen_registry.clone(),
+            )));
+        }
+
+        // LLM backend
+        {
+            reports.push(Box::new(LlmBackendReport::new(self.llm_backend.clone())));
+        }
+
+        // ExecutionController
+        {
+            reports.push(Box::new(ExecutionControllerReport::new(Arc::clone(
+                &self.execution_controller,
+            ))));
+        }
+
+        // Tier-2 stubs (always Disabled)
+        {
+            reports.push(Box::new(wiring::CostGuard));
+            reports.push(Box::new(wiring::PreToolHookManager));
+        }
+
+        reports
     }
 
     /// Emit a drift warning event when actual file modifications exceed planned scope.
@@ -2292,5 +2403,179 @@ mod tests {
         // Release locks for task that has none
         let released_count = orchestrator.release_task_locks(fake_task_id).await;
         assert_eq!(released_count, 0);
+    }
+
+    // ========================================================================
+    // Wiring Manifest Tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn test_wiring_manifest_returns_all_subsystems() {
+        use swell_core::wiring::{WiringReport, WiringState};
+
+        let orchestrator = OrchestratorBuilder::new().build();
+
+        let manifest = orchestrator.wiring_manifest();
+
+        // Verify we have reports for all expected subsystems
+        let names: Vec<_> = manifest.iter().map(|r| r.name()).collect();
+
+        // Should include: TaskStateMachine, AgentPool, CheckpointManager,
+        // FeatureLeadManager, McpConfigManager, NoveltyChecker, FileLockManager,
+        // NonNovelRetryDetector, FrozenRequirementRegistry, LlmBackend,
+        // ExecutionController, CostGuard, PreToolHookManager
+        assert!(
+            names.contains(&"TaskStateMachine"),
+            "Missing TaskStateMachine in manifest"
+        );
+        assert!(
+            names.contains(&"AgentPool"),
+            "Missing AgentPool in manifest"
+        );
+        assert!(
+            names.contains(&"CheckpointManager"),
+            "Missing CheckpointManager in manifest"
+        );
+        assert!(
+            names.contains(&"FeatureLeadManager"),
+            "Missing FeatureLeadManager in manifest"
+        );
+        assert!(
+            names.contains(&"McpConfigManager"),
+            "Missing McpConfigManager in manifest"
+        );
+        assert!(
+            names.contains(&"NoveltyChecker"),
+            "Missing NoveltyChecker in manifest"
+        );
+        assert!(
+            names.contains(&"FileLockManager"),
+            "Missing FileLockManager in manifest"
+        );
+        assert!(
+            names.contains(&"NonNovelRetryDetector"),
+            "Missing NonNovelRetryDetector in manifest"
+        );
+        assert!(
+            names.contains(&"FrozenRequirementRegistry"),
+            "Missing FrozenRequirementRegistry in manifest"
+        );
+        assert!(names.contains(&"LlmBackend"), "Missing LlmBackend in manifest");
+        assert!(
+            names.contains(&"ExecutionController"),
+            "Missing ExecutionController in manifest"
+        );
+        assert!(names.contains(&"CostGuard"), "Missing CostGuard in manifest");
+        assert!(
+            names.contains(&"PreToolHookManager"),
+            "Missing PreToolHookManager in manifest"
+        );
+
+        // Verify total count: 13 subsystems (12 wired + 2 Tier-2 stubs)
+        // Wait - let's count from the manifest:
+        // 1. TaskStateMachine
+        // 2. AgentPool
+        // 3. CheckpointManager
+        // 4. FeatureLeadManager
+        // 5. McpConfigManager
+        // 6. NoveltyChecker
+        // 7. FileLockManager
+        // 8. NonNovelRetryDetector
+        // 9. FrozenRequirementRegistry
+        // 10. LlmBackend
+        // 11. ExecutionController
+        // 12. CostGuard
+        // 13. PreToolHookManager
+        // Actually looking at the code, I see we're also including the Orchestrator itself
+        // Let's check the actual count:
+        let total_count = manifest.len();
+        assert!(
+            total_count >= 13,
+            "Expected at least 13 subsystems, got {total_count}: {names:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_wiring_manifest_tier2_stubs_return_disabled() {
+        use swell_core::wiring::{WiringReport, WiringState};
+
+        let orchestrator = OrchestratorBuilder::new().build();
+
+        let manifest = orchestrator.wiring_manifest();
+
+        // Find CostGuard and PreToolHookManager and verify they're Disabled
+        for report in manifest.iter() {
+            match report.name() {
+                "CostGuard" => {
+                    assert!(
+                        matches!(report.state(), WiringState::Disabled(msg) if msg.contains("Tier 2.1")),
+                        "CostGuard should be Disabled with Tier 2.1 reason"
+                    );
+                }
+                "PreToolHookManager" => {
+                    assert!(
+                        matches!(report.state(), WiringState::Disabled(msg) if msg.contains("Tier 2.2")),
+                        "PreToolHookManager should be Disabled with Tier 2.2 reason"
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wiring_manifest_each_entry_has_populated_fields() {
+        use swell_core::wiring::WiringReport;
+
+        let orchestrator = OrchestratorBuilder::new().build();
+
+        let manifest = orchestrator.wiring_manifest();
+
+        for report in manifest.iter() {
+            // name() should be non-empty static string
+            let name = report.name();
+            assert!(
+                !name.is_empty(),
+                "WiringReport name() should not be empty"
+            );
+
+            // identity() should be non-empty
+            let identity = report.identity();
+            assert!(
+                !identity.is_empty(),
+                "WiringReport identity() should not be empty for {}",
+                name
+            );
+
+            // state() should be populated (we already know this from type)
+            let _state = report.state();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_wiring_manifest_returns_correct_count() {
+        let orchestrator = OrchestratorBuilder::new().build();
+
+        let manifest = orchestrator.wiring_manifest();
+
+        // Based on the Orchestrator struct fields:
+        // 11 wired subsystems + 2 Tier-2 stubs = 13 total
+        // Let me count:
+        // 1. state_machine: Arc<RwLock<TaskStateMachine>>
+        // 2. agent_pool: Arc<RwLock<AgentPool>>
+        // 3. checkpoint_manager: Arc<CheckpointManager>
+        // 4. event_sender: broadcast::Sender<OrchestratorEvent> - NOT a subsystem, skip
+        // 5. feature_lead_manager: Arc<RwLock<FeatureLeadManager>>
+        // 6. mcp_manager: Arc<McpConfigManager>
+        // 7. novelty_checker: Arc<RwLock<NoveltyChecker>>
+        // 8. file_lock_manager: Arc<FileLockManager>
+        // 9. non_novel_detector: Arc<RwLock<NonNovelRetryDetector>>
+        // 10. frozen_registry: FrozenRequirementRegistry
+        // 11. llm_backend: Arc<dyn LlmBackend>
+        // 12. execution_controller: Arc<ExecutionController>
+        // 13. CostGuard (Tier-2 stub)
+        // 14. PreToolHookManager (Tier-2 stub)
+        // Total: 13 entries
+        assert_eq!(manifest.len(), 13, "Expected 13 subsystems in manifest");
     }
 }
