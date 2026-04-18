@@ -173,7 +173,7 @@ impl BranchName {
     }
 
     /// Create a BranchName from a string slice.
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_string(s: &str) -> Self {
         Self(s.to_string())
     }
 
@@ -199,7 +199,7 @@ impl FromStr for BranchName {
     type Err = std::convert::Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self::from_str(s))
+        Ok(Self::from_string(s))
     }
 }
 
@@ -219,7 +219,7 @@ impl CommitSha {
     }
 
     /// Create a CommitSha from a string slice.
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_string(s: &str) -> Self {
         Self(s.to_string())
     }
 
@@ -239,7 +239,7 @@ impl FromStr for CommitSha {
     type Err = std::convert::Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self::from_str(s))
+        Ok(Self::from_string(s))
     }
 }
 
@@ -397,7 +397,7 @@ impl SocketPath {
     }
 
     /// Create a SocketPath from a string slice.
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_string(s: &str) -> Self {
         Self(PathBuf::from(s))
     }
 
@@ -417,7 +417,7 @@ impl FromStr for SocketPath {
     type Err = std::convert::Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Self::from_str(s))
+        Ok(Self::from_string(s))
     }
 }
 
@@ -488,8 +488,8 @@ mod tests {
     }
 
     #[test]
-    fn test_branch_name_from_str() {
-        let name = BranchName::from_str("main");
+    fn test_branch_name_from_string() {
+        let name = BranchName::from_string("main");
         assert_eq!(name.as_str(), "main");
     }
 

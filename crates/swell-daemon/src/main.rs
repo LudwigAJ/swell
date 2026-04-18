@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use swell_core::ids::SocketPath;
 use swell_core::init_tracing;
 use swell_core::opentelemetry::{init_tracer_provider, OtelConfig};
 use swell_daemon::dashboard::{start_dashboard_server, DashboardState};
@@ -14,8 +15,8 @@ use tracing::{info, warn};
 /// API keys are read from `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
 fn construct_llm_backend() -> Arc<dyn LlmBackend> {
     let provider = std::env::var("SWELL_PROVIDER").unwrap_or_else(|_| "anthropic".to_string());
-    let model = std::env::var("SWELL_MODEL")
-        .unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string());
+    let model =
+        std::env::var("SWELL_MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string());
 
     match provider.as_str() {
         "anthropic" => {
@@ -85,8 +86,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let socket_path =
-        std::env::var("SWELL_SOCKET").unwrap_or_else(|_| "/tmp/swell-daemon.sock".to_string());
+    let socket_path = SocketPath::from_string(
+        &std::env::var("SWELL_SOCKET").unwrap_or_else(|_| "/tmp/swell-daemon.sock".to_string()),
+    );
 
     // Dashboard server port (default 3100)
     let dashboard_port: u16 = std::env::var("SWELL_DASHBOARD_PORT")
