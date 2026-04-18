@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
 use swell_core::traits::Agent;
+use swell_core::TaskId;
 use swell_core::{
     AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, Plan, StreamEvent, SwellError,
     ToolOutput, ToolResultContent, ValidationResult,
@@ -217,9 +218,9 @@ pub struct ExecutionController {
     /// Number of tail (most recent) messages to always preserve during compaction.
     tail_message_count: usize,
     /// Frozen specs indexed by task_id, created at execution start
-    frozen_specs: std::sync::RwLock<HashMap<uuid::Uuid, FrozenSpecRef>>,
+    frozen_specs: std::sync::RwLock<HashMap<TaskId, FrozenSpecRef>>,
     /// Active FeatureLeads for complex tasks
-    feature_leads: std::sync::RwLock<HashMap<uuid::Uuid, FeatureLead>>,
+    feature_leads: std::sync::RwLock<HashMap<TaskId, FeatureLead>>,
     /// Drift detector for comparing actual vs planned file modifications
     drift_detector: DriftDetector,
     /// Files modified during the current execution session
@@ -493,7 +494,7 @@ impl ExecutionController {
     }
 
     /// Get the frozen spec for a task, if it exists
-    pub fn get_frozen_spec(&self, task_id: uuid::Uuid) -> Option<FrozenSpecRef> {
+    pub fn get_frozen_spec(&self, task_id: TaskId) -> Option<FrozenSpecRef> {
         self.frozen_specs
             .read()
             .ok()
@@ -509,7 +510,7 @@ impl ExecutionController {
     }
 
     /// Check if a task has an active FeatureLead
-    pub fn has_feature_lead(&self, task_id: uuid::Uuid) -> bool {
+    pub fn has_feature_lead(&self, task_id: TaskId) -> bool {
         self.feature_leads
             .read()
             .map(|map| map.contains_key(&task_id))
@@ -517,7 +518,7 @@ impl ExecutionController {
     }
 
     /// Get the FeatureLead for a task, if any
-    pub fn get_feature_lead(&self, task_id: uuid::Uuid) -> Option<FeatureLead> {
+    pub fn get_feature_lead(&self, task_id: TaskId) -> Option<FeatureLead> {
         self.feature_leads
             .read()
             .ok()
@@ -576,7 +577,7 @@ impl ExecutionController {
     /// * `None` if drift is within acceptable limits
     pub fn check_drift(
         &self,
-        task_id: uuid::Uuid,
+        task_id: TaskId,
         estimated_files: &[String],
     ) -> Option<DriftReport> {
         let actual_files = self.get_modified_files();
@@ -677,7 +678,7 @@ impl ExecutionController {
     /// 3. EvaluatorAgent to validate the output using actual validation gates
     ///
     /// For complex tasks (>15 steps), a FeatureLead sub-orchestrator may be spawned.
-    pub async fn execute_task(&self, task_id: uuid::Uuid) -> Result<ValidationResult, SwellError> {
+    pub async fn execute_task(&self, task_id: TaskId) -> Result<ValidationResult, SwellError> {
         info!(task_id = %task_id, "Starting task execution");
 
         // Get the task and its estimated files for lock acquisition
@@ -1538,7 +1539,7 @@ impl ExecutionController {
     /// Execute multiple tasks in parallel, respecting max concurrent agents
     pub async fn execute_batch(
         &self,
-        task_ids: Vec<uuid::Uuid>,
+        task_ids: Vec<TaskId>,
     ) -> Vec<Result<ValidationResult, SwellError>> {
         info!(count = task_ids.len(), "Starting batch execution");
 

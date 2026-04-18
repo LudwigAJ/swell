@@ -16,6 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use swell_core::TaskId;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -55,7 +56,7 @@ pub struct NoveltyCheckResult {
     /// File overlap ratio with the most overlapping task (0.0-1.0)
     pub max_file_overlap: f32,
     /// ID of the task that makes this a duplicate (if not novel)
-    pub duplicate_of: Option<Uuid>,
+    pub duplicate_of: Option<TaskId>,
     /// Reason for rejection (if not novel)
     pub rejection_reason: Option<String>,
 }
@@ -74,7 +75,7 @@ impl NoveltyCheckResult {
 
     /// Create a result indicating the task is a duplicate
     pub fn duplicate(
-        duplicate_of: Uuid,
+        duplicate_of: TaskId,
         reason: String,
         max_similarity: f32,
         max_file_overlap: f32,
@@ -92,7 +93,7 @@ impl NoveltyCheckResult {
 /// Tracks an existing task for novelty comparison
 #[derive(Debug, Clone)]
 pub struct TrackedTask {
-    pub id: Uuid,
+    pub id: TaskId,
     pub description: String,
     pub affected_files: Vec<String>,
     pub is_failure_derived: bool,
@@ -101,7 +102,7 @@ pub struct TrackedTask {
 impl TrackedTask {
     /// Create from a description and affected files
     pub fn new(
-        id: Uuid,
+        id: TaskId,
         description: String,
         affected_files: Vec<String>,
         is_failure_derived: bool,
@@ -233,7 +234,7 @@ impl NoveltyChecker {
     }
 
     /// Unregister a task (e.g., when task is completed or cancelled)
-    pub fn untrack_task(&mut self, task_id: Uuid) {
+    pub fn untrack_task(&mut self, task_id: TaskId) {
         if let Some(pos) = self.tracked_tasks.iter().position(|t| t.id == task_id) {
             let removed = self.tracked_tasks.remove(pos);
             debug!(
@@ -374,7 +375,7 @@ mod tests {
 
         // Track an existing task
         checker.track_task(TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Add user authentication to the login page".to_string(),
             vec!["src/auth.rs".to_string()],
             false,
@@ -404,7 +405,7 @@ mod tests {
 
         // Track an existing task with specific files
         checker.track_task(TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Implement login feature".to_string(),
             vec![
                 "src/auth.rs".to_string(),
@@ -443,7 +444,7 @@ mod tests {
 
         // Track an existing task
         checker.track_task(TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Fix type error in auth.ts".to_string(),
             vec!["src/auth.ts".to_string()],
             true, // is_failure_derived
@@ -466,7 +467,7 @@ mod tests {
 
         // Track an existing task with specific files
         checker.track_task(TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Fix type error in auth.ts".to_string(),
             vec![
                 "src/auth.ts".to_string(),
@@ -517,7 +518,7 @@ mod tests {
     #[test]
     fn test_track_and_untrack_task() {
         let mut checker = NoveltyChecker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         assert_eq!(checker.tracked_count(), 0);
 
@@ -540,13 +541,13 @@ mod tests {
         let mut checker = NoveltyChecker::new();
 
         checker.track_task(TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Task 1".to_string(),
             vec![],
             false,
         ));
         checker.track_task(TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Task 2".to_string(),
             vec![],
             false,
@@ -567,7 +568,7 @@ mod tests {
 
         let mut checker_with_task = NoveltyChecker::with_config(config);
         checker_with_task.track_task(TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Existing task".to_string(),
             vec!["src/auth.rs".to_string()],
             false,
@@ -664,7 +665,7 @@ mod tests {
     #[test]
     fn test_tracked_task_creation() {
         let task = TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Test description".to_string(),
             vec!["file1.rs".to_string(), "file2.rs".to_string()],
             false,
@@ -677,7 +678,7 @@ mod tests {
 
     #[test]
     fn test_tracked_task_failure_derived() {
-        let task = TrackedTask::new(Uuid::new_v4(), "Fix error".to_string(), vec![], true);
+        let task = TrackedTask::new(TaskId::new(), "Fix error".to_string(), vec![], true);
 
         assert!(task.is_failure_derived);
     }
@@ -741,7 +742,7 @@ mod tests {
         let mut checker = NoveltyChecker::new();
 
         checker.track_task(TrackedTask::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Implement login feature".to_string(),
             vec![],
             false,

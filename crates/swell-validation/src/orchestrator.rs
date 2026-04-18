@@ -32,7 +32,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use swell_core::{SwellError, ValidationContext, ValidationMessage, ValidationOutcome};
+use swell_core::{SwellError, TaskId, ValidationContext, ValidationMessage, ValidationOutcome};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -40,7 +40,7 @@ use tracing::{debug, info, warn};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskCompletionInput {
     /// Unique identifier for the task
-    pub task_id: uuid::Uuid,
+    pub task_id: TaskId,
     /// Path to the workspace where changes were made
     pub workspace_path: String,
     /// List of files that were changed

@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
+use swell_core::{AgentId, TaskId};
 
 /// A file lock representing exclusive access to a file path.
 #[derive(Debug, Clone)]
@@ -24,14 +25,14 @@ pub struct FileLock {
     /// File path being locked
     pub path: String,
     /// Task ID that owns this lock
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Agent ID that acquired this lock
-    pub agent_id: Option<Uuid>,
+    pub agent_id: Option<AgentId>,
 }
 
 impl FileLock {
     /// Create a new file lock
-    pub fn new(path: String, task_id: Uuid, agent_id: Option<Uuid>) -> Self {
+    pub fn new(path: String, task_id: TaskId, agent_id: Option<AgentId>) -> Self {
         Self {
             id: Uuid::new_v4(),
             path,
@@ -41,12 +42,12 @@ impl FileLock {
     }
 
     /// Check if this lock is held by a specific task
-    pub fn is_held_by(&self, task_id: Uuid) -> bool {
+    pub fn is_held_by(&self, task_id: TaskId) -> bool {
         self.task_id == task_id
     }
 
     /// Check if this lock is held by a specific agent
-    pub fn is_held_by_agent(&self, agent_id: Uuid) -> bool {
+    pub fn is_held_by_agent(&self, agent_id: AgentId) -> bool {
         self.agent_id == Some(agent_id)
     }
 }
@@ -59,7 +60,7 @@ pub enum LockAcquisitionResult {
     /// Lock is held by another task (conflict)
     Conflict {
         existing_lock: FileLock,
-        requested_by: Uuid,
+        requested_by: TaskId,
     },
     /// Lock is already held by the same task (re-acquisition)
     AlreadyHeld { existing_lock: FileLock },
@@ -87,9 +88,9 @@ pub struct LockEvent {
     /// File path
     pub path: String,
     /// Task ID
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Agent ID (if applicable)
-    pub agent_id: Option<Uuid>,
+    pub agent_id: Option<AgentId>,
     /// Timestamp (Unix epoch millis)
     pub timestamp: i64,
 }
@@ -123,7 +124,7 @@ impl FileLockManager {
     }
 
     /// Check if a file is locked by a specific task
-    pub async fn is_locked_by(&self, path: &str, task_id: Uuid) -> bool {
+    pub async fn is_locked_by(&self, path: &str, task_id: TaskId) -> bool {
         self.locks
             .read()
             .await
@@ -138,7 +139,7 @@ impl FileLockManager {
     }
 
     /// Get all active locks for a task
-    pub async fn get_task_locks(&self, task_id: Uuid) -> Vec<FileLock> {
+    pub async fn get_task_locks(&self, task_id: TaskId) -> Vec<FileLock> {
         self.locks
             .read()
             .await
@@ -161,8 +162,8 @@ impl FileLockManager {
     pub async fn acquire(
         &self,
         path: String,
-        task_id: Uuid,
-        agent_id: Option<Uuid>,
+        task_id: TaskId,
+        agent_id: Option<AgentId>,
     ) -> LockAcquisitionResult {
         let mut locks = self.locks.write().await;
 
@@ -222,7 +223,7 @@ impl FileLockManager {
     /// Release a lock on a file path.
     ///
     /// Returns the released lock if it existed and was released, or None if no lock was held.
-    pub async fn release(&self, path: &str, task_id: Uuid) -> Option<FileLock> {
+    pub async fn release(&self, path: &str, task_id: TaskId) -> Option<FileLock> {
         let mut locks = self.locks.write().await;
 
         // Check if locked by this task
@@ -263,7 +264,7 @@ impl FileLockManager {
     /// Release all locks held by a task.
     ///
     /// Returns the number of locks released.
-    pub async fn release_all_for_task(&self, task_id: Uuid) -> usize {
+    pub async fn release_all_for_task(&self, task_id: TaskId) -> usize {
         let mut locks = self.locks.write().await;
         let mut released_count = 0;
 
@@ -324,7 +325,7 @@ impl FileLockManager {
     }
 
     /// Check if acquiring a lock would conflict
-    pub async fn would_conflict(&self, path: &str, task_id: Uuid) -> Option<FileLock> {
+    pub async fn would_conflict(&self, path: &str, task_id: TaskId) -> Option<FileLock> {
         let locks = self.locks.read().await;
 
         if let Some(existing_lock) = locks.get(path) {
@@ -355,8 +356,8 @@ impl FileLockManager {
         event_type: LockEventType,
         lock_id: Uuid,
         path: String,
-        task_id: Uuid,
-        agent_id: Option<Uuid>,
+        task_id: TaskId,
+        agent_id: Option<AgentId>,
     ) {
         let event = LockEvent {
             event_type,
@@ -413,14 +414,15 @@ pub enum FileLockError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use swell_core::newtypes::{AgentId, TaskId};
 
     // --- FileLock Tests ---
 
     #[test]
     fn test_file_lock_creation() {
         let path = "/path/to/file.rs".to_string();
-        let task_id = Uuid::new_v4();
-        let agent_id = Some(Uuid::new_v4());
+        let task_id = TaskId::new_v4();
+        let agent_id = Some(AgentId::new_v4());
 
         let lock = FileLock::new(path.clone(), task_id, agent_id);
 
@@ -432,8 +434,8 @@ mod tests {
 
     #[test]
     fn test_file_lock_is_held_by() {
-        let task_id = Uuid::new_v4();
-        let other_task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
+        let other_task_id = TaskId::new_v4();
 
         let lock = FileLock::new("test.rs".to_string(), task_id, None);
 
@@ -443,10 +445,10 @@ mod tests {
 
     #[test]
     fn test_file_lock_is_held_by_agent() {
-        let agent_id = Uuid::new_v4();
-        let other_agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new_v4();
+        let other_agent_id = AgentId::new_v4();
 
-        let lock = FileLock::new("test.rs".to_string(), Uuid::new_v4(), Some(agent_id));
+        let lock = FileLock::new("test.rs".to_string(), TaskId::new_v4(), Some(agent_id));
 
         assert!(lock.is_held_by_agent(agent_id));
         assert!(!lock.is_held_by_agent(other_agent_id));
@@ -468,7 +470,7 @@ mod tests {
     #[tokio::test]
     async fn test_acquire_lock_success() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         let result = manager.acquire(path.clone(), task_id, None).await;
@@ -488,8 +490,8 @@ mod tests {
     #[tokio::test]
     async fn test_acquire_lock_conflict() {
         let manager = FileLockManager::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new_v4();
+        let task2 = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         // First task acquires lock
@@ -518,7 +520,7 @@ mod tests {
     #[tokio::test]
     async fn test_acquire_lock_already_held() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         // First acquisition
@@ -543,7 +545,7 @@ mod tests {
     #[tokio::test]
     async fn test_acquire_multiple_different_files() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
 
         let result1 = manager.acquire("file1.rs".to_string(), task_id, None).await;
         let result2 = manager.acquire("file2.rs".to_string(), task_id, None).await;
@@ -561,7 +563,7 @@ mod tests {
     #[tokio::test]
     async fn test_release_lock_success() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         manager.acquire(path.clone(), task_id, None).await;
@@ -577,7 +579,7 @@ mod tests {
     #[tokio::test]
     async fn test_release_lock_not_found() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
 
         let released = manager.release("/nonexistent.rs", task_id).await;
 
@@ -587,8 +589,8 @@ mod tests {
     #[tokio::test]
     async fn test_release_lock_not_holder() {
         let manager = FileLockManager::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new_v4();
+        let task2 = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         manager.acquire(path.clone(), task1, None).await;
@@ -604,8 +606,8 @@ mod tests {
     #[tokio::test]
     async fn test_release_all_for_task() {
         let manager = FileLockManager::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new_v4();
+        let task2 = TaskId::new_v4();
 
         manager.acquire("file1.rs".to_string(), task1, None).await;
         manager.acquire("file2.rs".to_string(), task1, None).await;
@@ -621,7 +623,7 @@ mod tests {
     #[tokio::test]
     async fn test_release_all_for_task_no_locks() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
 
         let released_count = manager.release_all_for_task(task_id).await;
 
@@ -633,7 +635,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_lock() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         let result = manager.acquire(path.clone(), task_id, None).await;
@@ -660,8 +662,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_task_locks() {
         let manager = FileLockManager::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new_v4();
+        let task2 = TaskId::new_v4();
 
         manager.acquire("file1.rs".to_string(), task1, None).await;
         manager.acquire("file2.rs".to_string(), task1, None).await;
@@ -677,8 +679,8 @@ mod tests {
     #[tokio::test]
     async fn test_is_locked_by() {
         let manager = FileLockManager::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new_v4();
+        let task2 = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         manager.acquire(path.clone(), task1, None).await;
@@ -690,8 +692,8 @@ mod tests {
     #[tokio::test]
     async fn test_would_conflict() {
         let manager = FileLockManager::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new_v4();
+        let task2 = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         manager.acquire(path.clone(), task1, None).await;
@@ -710,7 +712,7 @@ mod tests {
     #[tokio::test]
     async fn test_force_release() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         manager.acquire(path.clone(), task_id, None).await;
@@ -736,8 +738,8 @@ mod tests {
     #[tokio::test]
     async fn test_stats() {
         let manager = FileLockManager::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new_v4();
+        let task2 = TaskId::new_v4();
 
         manager.acquire("file1.rs".to_string(), task1, None).await;
         manager.acquire("file2.rs".to_string(), task1, None).await;
@@ -764,7 +766,7 @@ mod tests {
     #[tokio::test]
     async fn test_history_records_events() {
         let manager = FileLockManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
         let path = "/path/to/file.rs".to_string();
 
         manager.acquire(path.clone(), task_id, None).await;
@@ -793,8 +795,8 @@ mod tests {
         use std::sync::Arc;
 
         let manager = Arc::new(FileLockManager::new());
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new_v4();
+        let task2 = TaskId::new_v4();
 
         // Simulate concurrent acquisition attempts
         let manager1 = manager.clone();
@@ -832,7 +834,7 @@ mod tests {
         use std::sync::Arc;
 
         let manager = Arc::new(FileLockManager::new());
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
 
         // Acquire multiple different files concurrently
         let paths = vec!["file1.rs", "file2.rs", "file3.rs", "file4.rs", "file5.rs"];
@@ -896,7 +898,7 @@ mod tests {
         let err = FileLockError::NotFound("/path/file.rs".to_string());
         assert_eq!(err.to_string(), "Lock not found for file '/path/file.rs'");
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new_v4();
         let err = FileLockError::NotHolder(task_id, "/path/file.rs".to_string());
         assert!(err.to_string().contains("does not hold lock"));
     }

@@ -12,7 +12,9 @@ use swell_core::{
     Plan, PlanStep, RiskLevel, StepStatus, SwellError,
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
-use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, GeneratorAgent, Orchestrator};
+use swell_orchestrator::{
+    builder::OrchestratorBuilder, ExecutionController, GeneratorAgent, Orchestrator,
+};
 use swell_tools::ToolRegistry;
 use uuid::Uuid;
 
@@ -393,8 +395,11 @@ async fn test_execution_controller_with_memory_context() {
     let tool_registry = Arc::new(ToolRegistry::new());
 
     // Create ExecutionController
-    let controller =
-        ExecutionController::new(Arc::downgrade(&orchestrator), capturing_mock.clone(), tool_registry);
+    let controller = ExecutionController::new(
+        Arc::downgrade(&orchestrator),
+        capturing_mock.clone(),
+        tool_registry,
+    );
 
     // Create a task with FullAuto autonomy and pre-existing plan
     let task = orchestrator

@@ -11,8 +11,8 @@ use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::{
     AgentContext, AgentId, AgentResult, AgentRole, LlmBackend, LlmConfig, LlmMessage, LlmRole,
-    MemoryBlock, Plan, PlanStep, RiskLevel, StepStatus, SwellError, ToolCallResult, ToolOutput,
-    ToolResultContent, ValidationGate,
+    MemoryBlock, Plan, PlanStep, RiskLevel, StepStatus, SwellError, TaskId, ToolCallResult,
+    ToolOutput, ToolResultContent, ValidationGate,
 };
 use swell_state::CheckpointManager;
 use swell_tools::ToolRegistry;
@@ -63,7 +63,7 @@ pub struct AgentHandoff {
     /// Target agent role that should consume this handoff
     pub to_role: AgentRole,
     /// Task ID this handoff relates to
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// What was done - summary of completed work
     pub what_was_done: String,
     /// Where artifacts are - file paths and locations
@@ -91,7 +91,7 @@ pub struct HandoffArtifact {
 
 impl AgentHandoff {
     /// Create a new handoff from one agent to another
-    pub fn new(from_role: AgentRole, to_role: AgentRole, task_id: Uuid) -> Self {
+    pub fn new(from_role: AgentRole, to_role: AgentRole, task_id: TaskId) -> Self {
         Self {
             from_role,
             to_role,
@@ -162,7 +162,7 @@ pub struct AgentComment {
     /// Agent role that generated this comment
     pub agent_role: AgentRole,
     /// Task ID this comment relates to
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Type of comment
     pub comment_type: AgentCommentType,
     /// The comment message
@@ -190,7 +190,7 @@ impl AgentComment {
     /// Create a new comment
     pub fn new(
         agent_role: AgentRole,
-        task_id: Uuid,
+        task_id: TaskId,
         comment_type: AgentCommentType,
         message: &str,
     ) -> Self {
@@ -267,7 +267,7 @@ pub struct PooledAgent {
     id: AgentId,
     role: AgentRole,
     model: String,
-    current_task: Option<Uuid>,
+    current_task: Option<TaskId>,
 }
 
 impl AgentPool {
@@ -295,7 +295,7 @@ impl AgentPool {
     }
 
     /// Reserve an agent for a task
-    pub fn reserve(&mut self, task_id: Uuid, role: AgentRole) -> Result<AgentId, SwellError> {
+    pub fn reserve(&mut self, task_id: TaskId, role: AgentRole) -> Result<AgentId, SwellError> {
         // Find an available agent of the right role
         let agent_id = self
             .agents
@@ -329,7 +329,7 @@ impl AgentPool {
     }
 
     /// Get agent's current task
-    pub fn get_task(&self, agent_id: AgentId) -> Option<Uuid> {
+    pub fn get_task(&self, agent_id: AgentId) -> Option<TaskId> {
         self.agents.get(&agent_id).and_then(|a| a.current_task)
     }
 
@@ -629,7 +629,7 @@ impl Agent for PlannerAgent {
         // Build the Plan struct
         let plan = Plan {
             id: Uuid::new_v4(),
-            task_id: context.task.id,
+            task_id: context.task.id.as_uuid(),
             steps,
             total_estimated_tokens,
             risk_assessment,
@@ -1105,7 +1105,7 @@ impl Agent for GeneratorAgent {
             // Create a simple plan from task description
             Plan {
                 id: Uuid::new_v4(),
-                task_id: context.task.id,
+                task_id: context.task.id.as_uuid(),
                 steps: vec![PlanStep {
                     id: Uuid::new_v4(),
                     description: context.task.description.clone(),

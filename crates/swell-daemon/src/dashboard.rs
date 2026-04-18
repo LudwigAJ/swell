@@ -37,7 +37,8 @@ use uuid::Uuid;
 use crate::events::EventEmitter;
 use crate::server::Daemon;
 use swell_core::{
-    get_last_llm_model, get_total_llm_tokens, AgentRole, DaemonEvent, DataResponse, Task, TaskState,
+    get_last_llm_model, get_total_llm_tokens, AgentId, AgentRole, CorrelationId, DaemonEvent, DataResponse, Task,
+    TaskId, TaskState,
 };
 
 /// Dashboard API state shared across all request handlers
@@ -50,7 +51,7 @@ pub struct DashboardState {
     /// Cost tracking state
     cost_state: Arc<RwLock<CostState>>,
     /// Agent registry for dashboard
-    agents: Arc<RwLock<HashMap<Uuid, AgentInfo>>>,
+    agents: Arc<RwLock<HashMap<AgentId, AgentInfo>>>,
 }
 
 impl DashboardState {
@@ -91,7 +92,7 @@ impl DashboardState {
     }
 
     /// Register an agent
-    pub async fn register_agent(&self, id: Uuid, role: AgentRole, model: String) {
+    pub async fn register_agent(&self, id: AgentId, role: AgentRole, model: String) {
         let mut agents = self.agents.write().await;
         agents.insert(
             id,
@@ -106,7 +107,7 @@ impl DashboardState {
     }
 
     /// Update agent's current task
-    pub async fn update_agent_task(&self, agent_id: Uuid, task_id: Option<Uuid>) {
+    pub async fn update_agent_task(&self, agent_id: AgentId, task_id: Option<Uuid>) {
         let mut agents = self.agents.write().await;
         if let Some(agent) = agents.get_mut(&agent_id) {
             agent.current_task = task_id;
@@ -162,7 +163,7 @@ pub struct ModelCost {
 /// Agent information for dashboard
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentInfo {
-    pub id: Uuid,
+    pub id: AgentId,
     pub role: AgentRole,
     pub model: String,
     pub current_task: Option<Uuid>,
@@ -175,38 +176,38 @@ pub struct AgentInfo {
 pub enum DashboardEvent {
     /// A task was created
     TaskCreated {
-        id: Uuid,
+        id: TaskId,
         description: String,
-        correlation_id: Uuid,
+        correlation_id: CorrelationId,
     },
     /// Task state changed
     TaskStateChanged {
-        id: Uuid,
+        id: TaskId,
         state: TaskState,
-        correlation_id: Uuid,
+        correlation_id: CorrelationId,
     },
     /// Task progress update
     TaskProgress {
-        id: Uuid,
+        id: TaskId,
         message: String,
-        correlation_id: Uuid,
+        correlation_id: CorrelationId,
     },
     /// Task completed
     TaskCompleted {
-        id: Uuid,
+        id: TaskId,
         pr_url: Option<String>,
-        correlation_id: Uuid,
+        correlation_id: CorrelationId,
     },
     /// Task failed
     TaskFailed {
-        id: Uuid,
+        id: TaskId,
         error: String,
-        correlation_id: Uuid,
+        correlation_id: CorrelationId,
     },
     /// Agent registered
-    AgentRegistered { id: Uuid, role: String },
+    AgentRegistered { id: AgentId, role: String },
     /// Agent task assigned
-    AgentTaskAssigned { agent_id: Uuid, task_id: Uuid },
+    AgentTaskAssigned { agent_id: AgentId, task_id: TaskId },
     /// Cost update
     CostUpdated {
         total_tokens: u64,
@@ -384,7 +385,7 @@ impl From<DaemonEvent> for DashboardEvent {
                 total_tasks,
                 ..
             } => DashboardEvent::TaskProgress {
-                id: Uuid::nil(),
+                id: TaskId::nil(),
                 message: format!(
                     "Daemon health: {} tasks, {}s uptime",
                     total_tasks, uptime_seconds
@@ -398,7 +399,7 @@ impl From<DaemonEvent> for DashboardEvent {
                 source_file,
                 correlation_id,
             } => DashboardEvent::TaskProgress {
-                id: Uuid::nil(),
+                id: TaskId::nil(),
                 message: format!(
                     "Config '{}' = {} (from: {:?})",
                     key,
@@ -413,7 +414,7 @@ impl From<DaemonEvent> for DashboardEvent {
                 count,
                 correlation_id,
             } => DashboardEvent::TaskProgress {
-                id: Uuid::nil(),
+                id: TaskId::nil(),
                 message: format!(
                     "Memory query returned {} results ({} bytes)",
                     count,
@@ -442,7 +443,7 @@ impl From<DaemonEvent> for DashboardEvent {
                     )
                 };
                 DashboardEvent::TaskProgress {
-                    id: task_id.unwrap_or(Uuid::nil()),
+                    id: task_id.unwrap_or_else(|| TaskId::nil()),
                     message: summary,
                     correlation_id,
                 }
@@ -450,7 +451,7 @@ impl From<DaemonEvent> for DashboardEvent {
             // DataResponse - handle typed query responses in dashboard
             DaemonEvent::DataResponse(data) => match *data {
                 DataResponse::TaskList { tasks, .. } => DashboardEvent::TaskProgress {
-                    id: Uuid::nil(),
+                    id: TaskId::nil(),
                     message: format!("Task list: {} tasks", tasks.len()),
                     correlation_id: Uuid::nil(),
                 },
@@ -460,17 +461,17 @@ impl From<DaemonEvent> for DashboardEvent {
                     correlation_id: Uuid::nil(),
                 },
                 DataResponse::ConfigValue { key, value, .. } => DashboardEvent::TaskProgress {
-                    id: Uuid::nil(),
+                    id: TaskId::nil(),
                     message: format!("Config '{}' = {}", key, value),
                     correlation_id: Uuid::nil(),
                 },
                 DataResponse::MemoryResults { count, .. } => DashboardEvent::TaskProgress {
-                    id: Uuid::nil(),
+                    id: TaskId::nil(),
                     message: format!("Memory results: {} items", count),
                     correlation_id: Uuid::nil(),
                 },
                 DataResponse::CostData { total_cost_usd, .. } => DashboardEvent::TaskProgress {
-                    id: Uuid::nil(),
+                    id: TaskId::nil(),
                     message: format!("Cost data: ${:.4}", total_cost_usd),
                     correlation_id: Uuid::nil(),
                 },
@@ -479,7 +480,7 @@ impl From<DaemonEvent> for DashboardEvent {
                     version,
                     ..
                 } => DashboardEvent::TaskProgress {
-                    id: Uuid::nil(),
+                    id: TaskId::nil(),
                     message: format!("Daemon health: {}s uptime, v{}", uptime_seconds, version),
                     correlation_id: Uuid::nil(),
                 },
@@ -530,7 +531,7 @@ async fn list_tasks(
 /// GET /api/tasks/:id - Get task details
 async fn get_task(
     State(state): State<AppState>,
-    Path(task_id): Path<Uuid>,
+    Path(task_id): Path<TaskId>,
 ) -> Result<Json<Task>, StatusCode> {
     let orch_arc = state.daemon.orchestrator();
     let orchestrator = orch_arc.lock().await;
@@ -765,7 +766,7 @@ mod tests {
     #[tokio::test]
     async fn test_agent_registration() {
         let state = create_test_dashboard_state();
-        let agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
 
         state
             .register_agent(agent_id, AgentRole::Planner, "claude-sonnet-4".to_string())

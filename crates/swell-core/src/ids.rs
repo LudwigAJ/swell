@@ -39,6 +39,11 @@ impl TaskId {
         Self(uuid)
     }
 
+    /// Create a nil (zero) TaskId.
+    pub fn nil() -> Self {
+        Self(Uuid::nil())
+    }
+
     /// Get the underlying UUID.
     pub fn as_uuid(&self) -> Uuid {
         self.0

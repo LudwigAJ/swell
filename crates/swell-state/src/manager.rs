@@ -2,7 +2,7 @@
 
 use chrono::Utc;
 use std::sync::Arc;
-use swell_core::{Checkpoint, CheckpointStore, SwellError, Task};
+use swell_core::{Checkpoint, CheckpointStore, SwellError, Task, TaskId};
 use uuid::Uuid;
 
 /// High-level state manager for orchestrating task state
@@ -31,7 +31,7 @@ impl StateManager {
     }
 
     /// Restore a task from the latest checkpoint
-    pub async fn restore_task(&self, task_id: Uuid) -> Result<Option<Task>, SwellError> {
+    pub async fn restore_task(&self, task_id: TaskId) -> Result<Option<Task>, SwellError> {
         let checkpoint = self.checkpoint_store.load_latest(task_id).await?;
 
         match checkpoint {
@@ -45,18 +45,18 @@ impl StateManager {
     }
 
     /// Check if a task has a checkpoint
-    pub async fn has_checkpoint(&self, task_id: Uuid) -> Result<bool, SwellError> {
+    pub async fn has_checkpoint(&self, task_id: TaskId) -> Result<bool, SwellError> {
         let checkpoint = self.checkpoint_store.load_latest(task_id).await?;
         Ok(checkpoint.is_some())
     }
 
     /// Get checkpoint history for a task
-    pub async fn get_history(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
+    pub async fn get_history(&self, task_id: TaskId) -> Result<Vec<Checkpoint>, SwellError> {
         self.checkpoint_store.list(task_id).await
     }
 
     /// Prune old checkpoints, keeping only the latest N
-    pub async fn prune_history(&self, task_id: Uuid, keep: usize) -> Result<(), SwellError> {
+    pub async fn prune_history(&self, task_id: TaskId, keep: usize) -> Result<(), SwellError> {
         self.checkpoint_store.prune(task_id, keep).await
     }
 }

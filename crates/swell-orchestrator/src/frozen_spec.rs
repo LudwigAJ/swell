@@ -15,6 +15,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use swell_core::TaskId;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -93,7 +94,7 @@ pub struct FrozenSpec {
     /// Unique identifier for this frozen spec
     pub id: Uuid,
     /// The task this spec belongs to
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Original task description at snapshot time
     pub description: String,
     /// Original plan at snapshot time (if any)
@@ -122,7 +123,7 @@ impl FrozenSpec {
 
     /// Create a FrozenSpec with explicit values (for testing)
     pub fn new(
-        task_id: Uuid,
+        task_id: TaskId,
         description: String,
         plan: Option<swell_core::Plan>,
         scope: swell_core::TaskScope,
@@ -139,7 +140,7 @@ impl FrozenSpec {
     }
 
     /// Get the task ID this spec belongs to
-    pub fn task_id(&self) -> Uuid {
+    pub fn task_id(&self) -> TaskId {
         self.task_id
     }
 

@@ -12,7 +12,7 @@
 
 use crate::Orchestrator;
 use std::sync::Arc;
-use swell_core::{AgentContext, AgentResult, Plan, PlanStep, SwellError};
+use swell_core::{AgentContext, AgentResult, Plan, PlanStep, SwellError, TaskId};
 use tracing::info;
 use uuid::Uuid;
 
@@ -33,7 +33,7 @@ pub struct FeatureLead {
     /// Unique ID for this FeatureLead
     pub id: Uuid,
     /// ID of the parent orchestrator task
-    pub parent_task_id: Uuid,
+    pub parent_task_id: TaskId,
     /// Name/description of the feature being managed
     pub feature_name: String,
     /// Steps assigned to this FeatureLead
@@ -80,7 +80,7 @@ impl FeatureLead {
     /// * `assigned_steps` - IDs of plan steps assigned to this lead
     /// * `parent_orchestrator` - Reference to the root orchestrator
     pub fn new(
-        parent_task_id: Uuid,
+        parent_task_id: TaskId,
         feature_name: String,
         assigned_steps: Vec<Uuid>,
         parent_orchestrator: Arc<Orchestrator>,
@@ -318,7 +318,7 @@ pub trait FeatureLeadSpawner {
     /// Spawn a FeatureLead for a given task and plan.
     fn spawn_feature_lead(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         plan: Plan,
         parent_orchestrator: Arc<Orchestrator>,
     ) -> Result<FeatureLead, SwellError>;
@@ -327,14 +327,14 @@ pub trait FeatureLeadSpawner {
     fn get_active_feature_leads(&self) -> Vec<FeatureLead>;
 
     /// Check if a task has an active FeatureLead.
-    fn has_feature_lead(&self, task_id: Uuid) -> bool;
+    fn has_feature_lead(&self, task_id: TaskId) -> bool;
 }
 
 /// Manages multiple FeatureLeads for complex task handling.
 #[derive(Debug, Default)]
 pub struct FeatureLeadManager {
     /// Active FeatureLeads indexed by parent task ID
-    active_leads: std::collections::HashMap<Uuid, FeatureLead>,
+    active_leads: std::collections::HashMap<TaskId, FeatureLead>,
 }
 
 impl FeatureLeadManager {
@@ -351,17 +351,17 @@ impl FeatureLeadManager {
     }
 
     /// Get a FeatureLead by parent task ID.
-    pub fn get(&self, task_id: &Uuid) -> Option<&FeatureLead> {
+    pub fn get(&self, task_id: &TaskId) -> Option<&FeatureLead> {
         self.active_leads.get(task_id)
     }
 
     /// Get a mutable FeatureLead by parent task ID.
-    pub fn get_mut(&mut self, task_id: &Uuid) -> Option<&mut FeatureLead> {
+    pub fn get_mut(&mut self, task_id: &TaskId) -> Option<&mut FeatureLead> {
         self.active_leads.get_mut(task_id)
     }
 
     /// Remove a FeatureLead after completion.
-    pub fn remove(&mut self, task_id: &Uuid) -> Option<FeatureLead> {
+    pub fn remove(&mut self, task_id: &TaskId) -> Option<FeatureLead> {
         self.active_leads.remove(task_id)
     }
 
@@ -376,7 +376,7 @@ impl FeatureLeadManager {
     }
 
     /// Get all parent task IDs with active FeatureLeads.
-    pub fn active_task_ids(&self) -> Vec<Uuid> {
+    pub fn active_task_ids(&self) -> Vec<TaskId> {
         self.active_leads.keys().cloned().collect()
     }
 }
@@ -384,7 +384,7 @@ impl FeatureLeadManager {
 impl FeatureLeadSpawner for Orchestrator {
     fn spawn_feature_lead(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         plan: Plan,
         parent_orchestrator: Arc<Orchestrator>,
     ) -> Result<FeatureLead, SwellError> {
@@ -438,7 +438,7 @@ impl FeatureLeadSpawner for Orchestrator {
             .collect()
     }
 
-    fn has_feature_lead(&self, task_id: Uuid) -> bool {
+    fn has_feature_lead(&self, task_id: TaskId) -> bool {
         let manager = self.feature_lead_manager.blocking_read();
         manager.get(&task_id).is_some()
     }
@@ -451,8 +451,8 @@ impl FeatureLeadSpawner for Orchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swell_core::{PlanStep, RiskLevel, StepStatus};
     use crate::OrchestratorBuilder;
+    use swell_core::{PlanStep, RiskLevel, StepStatus};
 
     fn create_test_plan_with_steps(step_count: usize) -> Plan {
         let steps: Vec<PlanStep> = (0..step_count)

@@ -6,7 +6,7 @@
 use chrono::Utc;
 use std::collections::HashMap;
 use std::sync::Arc;
-use swell_core::{Checkpoint, CheckpointStore, SwellError, Task, TaskState};
+use swell_core::{Checkpoint, CheckpointStore, SwellError, Task, TaskId, TaskState};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -95,13 +95,13 @@ impl CheckpointManager {
     }
 
     /// Check if a task has any checkpoints (can be restored).
-    pub async fn has_checkpoint(&self, task_id: Uuid) -> Result<bool, SwellError> {
+    pub async fn has_checkpoint(&self, task_id: TaskId) -> Result<bool, SwellError> {
         let checkpoint = self.checkpoint_store.load_latest(task_id).await?;
         Ok(checkpoint.is_some())
     }
 
     /// Get the latest state for a task.
-    pub async fn get_latest_state(&self, task_id: Uuid) -> Result<Option<TaskState>, SwellError> {
+    pub async fn get_latest_state(&self, task_id: TaskId) -> Result<Option<TaskState>, SwellError> {
         let checkpoint = self.checkpoint_store.load_latest(task_id).await?;
         Ok(checkpoint.map(|cp| cp.state))
     }
@@ -211,7 +211,7 @@ impl CheckpointManager {
     /// Restore a task from the latest checkpoint.
     ///
     /// Returns the task if found, None if no checkpoint exists.
-    pub async fn restore(&self, task_id: Uuid) -> Result<Option<Task>, SwellError> {
+    pub async fn restore(&self, task_id: TaskId) -> Result<Option<Task>, SwellError> {
         let checkpoint = self.checkpoint_store.load_latest(task_id).await?;
 
         match checkpoint {
@@ -255,14 +255,14 @@ impl CheckpointManager {
     }
 
     /// List all checkpoints for a task.
-    pub async fn list_checkpoints(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
+    pub async fn list_checkpoints(&self, task_id: TaskId) -> Result<Vec<Checkpoint>, SwellError> {
         self.checkpoint_store.list(task_id).await
     }
 
     /// Get checkpoint history with metadata parsed.
     pub async fn get_history(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
     ) -> Result<Vec<(Checkpoint, CheckpointMetadata)>, SwellError> {
         let checkpoints = self.checkpoint_store.list(task_id).await?;
 

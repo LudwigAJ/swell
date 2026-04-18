@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
-use swell_core::{AgentId, Plan, PriorAttempt, SwellError, Task, TaskState};
+use swell_core::{AgentId, Plan, PriorAttempt, SwellError, Task, TaskId, TaskState};
 use tracing::{info, warn};
 
 use crate::task_enrichment::{
@@ -19,7 +19,7 @@ pub struct TaskStateMachine {
     /// DashMap provides sharded concurrent access - reads to different tasks
     /// don't block each other. The RwLock inside each task allows writes
     /// to individual tasks without locking the entire state machine.
-    tasks: DashMap<uuid::Uuid, Arc<RwLock<Task>>>,
+    tasks: DashMap<TaskId, Arc<RwLock<Task>>>,
 }
 
 impl TaskStateMachine {
@@ -57,22 +57,22 @@ impl TaskStateMachine {
     }
 
     /// Get a task by ID (read-only clone)
-    pub fn get_task(&self, id: uuid::Uuid) -> Result<Task, SwellError> {
+    pub fn get_task(&self, id: TaskId) -> Result<Task, SwellError> {
         self.tasks
             .get(&id)
             .map(|r| r.read().unwrap().clone())
-            .ok_or(SwellError::TaskNotFound(id))
+            .ok_or(SwellError::TaskNotFound(id.as_uuid()))
     }
 
     /// Withdraw a task from the registry for mutation, then re-insert it.
     /// This allows mutable access to a task while maintaining fine-grained locking.
     /// Returns the result of the closure, flattening any nested errors.
-    pub fn with_task_mut<F, R>(&self, id: uuid::Uuid, f: F) -> Result<R, SwellError>
+    pub fn with_task_mut<F, R>(&self, id: TaskId, f: F) -> Result<R, SwellError>
     where
         F: FnOnce(&mut Task) -> Result<R, SwellError>,
     {
         // Get the Arc<RwLock<Task>> for this task
-        let entry = self.tasks.get(&id).ok_or(SwellError::TaskNotFound(id))?;
+        let entry = self.tasks.get(&id).ok_or(SwellError::TaskNotFound(id.as_uuid()))?;
 
         // Clone the Arc so we can release the DashMap read lock before acquiring task write lock
         let task_arc = entry.value().clone();
@@ -87,7 +87,7 @@ impl TaskStateMachine {
     }
 
     /// Transition task to ENRICHED state
-    pub fn enrich_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn enrich_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Created => {
                 // Apply deterministic enrichment before transitioning
@@ -132,7 +132,7 @@ impl TaskStateMachine {
     /// This state is entered when:
     /// - Planning has completed ( Enriched state)
     /// - The task's autonomy level requires plan approval (L1 Supervised or L2 Guided)
-    pub fn awaiting_approval_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn awaiting_approval_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Enriched => {
                 if task.plan.is_none() {
@@ -154,7 +154,7 @@ impl TaskStateMachine {
     ///
     /// This is called after user approval via `swell approve`.
     /// Transitions AwaitingApproval → Ready → Assigned → Executing in one atomic operation.
-    pub fn approve_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn approve_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::AwaitingApproval => {
                 task.transition_to(TaskState::Ready);
@@ -172,7 +172,7 @@ impl TaskStateMachine {
     }
 
     /// Transition task to READY state (plan approved)
-    pub fn ready_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn ready_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Enriched => {
                 if task.plan.is_none() {
@@ -197,7 +197,7 @@ impl TaskStateMachine {
     }
 
     /// Assign task to an agent
-    pub fn assign_task(&self, id: uuid::Uuid, agent_id: AgentId) -> Result<(), SwellError> {
+    pub fn assign_task(&self, id: TaskId, agent_id: AgentId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Ready => {
                 task.assigned_agent = Some(agent_id);
@@ -212,7 +212,7 @@ impl TaskStateMachine {
     }
 
     /// Start executing the task
-    pub fn start_execution(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn start_execution(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Assigned => {
                 task.transition_to(TaskState::Executing);
@@ -226,7 +226,7 @@ impl TaskStateMachine {
     }
 
     /// Start validation phase
-    pub fn start_validation(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn start_validation(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Executing => {
                 task.transition_to(TaskState::Validating);
@@ -240,7 +240,7 @@ impl TaskStateMachine {
     }
 
     /// Mark task as accepted (validation passed)
-    pub fn accept_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn accept_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Validating => {
                 task.transition_to(TaskState::Accepted);
@@ -258,7 +258,7 @@ impl TaskStateMachine {
     /// Can be called from:
     /// - Validating: validation gate rejected the task
     /// - AwaitingApproval: user explicitly rejected via `swell reject`
-    pub fn reject_task(&self, id: uuid::Uuid, reason: String) -> Result<(), SwellError> {
+    pub fn reject_task(&self, id: TaskId, reason: String) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Validating => {
                 task.transition_to(TaskState::Rejected);
@@ -279,7 +279,7 @@ impl TaskStateMachine {
     }
 
     /// Transition from Rejected back to Ready for retry (orchestrator manages this)
-    pub fn retry_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn retry_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Rejected => {
                 task.transition_to(TaskState::Ready);
@@ -294,7 +294,7 @@ impl TaskStateMachine {
     }
 
     /// Mark task as failed (unrecoverable)
-    pub fn fail_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn fail_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| {
             task.transition_to(TaskState::Failed);
             Ok(())
@@ -302,7 +302,7 @@ impl TaskStateMachine {
     }
 
     /// Pause a task (operator intervention)
-    pub fn pause_task(&self, id: uuid::Uuid, reason: String) -> Result<(), SwellError> {
+    pub fn pause_task(&self, id: TaskId, reason: String) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Executing | TaskState::Validating => {
                 task.paused_reason = Some(reason);
@@ -318,7 +318,7 @@ impl TaskStateMachine {
     }
 
     /// Resume a paused task
-    pub fn resume_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn resume_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| {
             match task.state {
                 TaskState::Paused => {
@@ -339,7 +339,7 @@ impl TaskStateMachine {
     /// Inject instructions into a task
     pub fn inject_instruction(
         &self,
-        id: uuid::Uuid,
+        id: TaskId,
         instruction: String,
     ) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| {
@@ -367,7 +367,7 @@ impl TaskStateMachine {
     /// Modify task scope boundaries
     pub fn modify_scope(
         &self,
-        id: uuid::Uuid,
+        id: TaskId,
         new_scope: swell_core::TaskScope,
     ) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| {
@@ -382,7 +382,7 @@ impl TaskStateMachine {
     }
 
     /// Restore original scope (revert modify_scope)
-    pub fn restore_original_scope(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn restore_original_scope(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| {
             if let Some(original) = task.original_scope.take() {
                 task.current_scope = original;
@@ -397,7 +397,7 @@ impl TaskStateMachine {
     }
 
     /// Escalate task to human
-    pub fn escalate_task(&self, id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn escalate_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| {
             task.transition_to(TaskState::Escalated);
             warn!(task_id = %id, "Task escalated to human");
@@ -406,7 +406,7 @@ impl TaskStateMachine {
     }
 
     /// Set plan for task
-    pub fn set_plan(&self, id: uuid::Uuid, plan: Plan) -> Result<(), SwellError> {
+    pub fn set_plan(&self, id: TaskId, plan: Plan) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| {
             task.plan = Some(plan);
             Ok(())
@@ -414,7 +414,7 @@ impl TaskStateMachine {
     }
 
     /// Check if task can proceed (dependencies satisfied)
-    pub fn can_proceed(&self, id: uuid::Uuid) -> Result<bool, SwellError> {
+    pub fn can_proceed(&self, id: TaskId) -> Result<bool, SwellError> {
         let task = self.get_task(id)?;
         for dep_id in &task.dependencies {
             let dep = self.get_task(*dep_id)?;
@@ -453,7 +453,7 @@ impl TaskStateMachine {
     }
 
     /// Remove a task from the registry
-    pub fn remove_task(&self, id: uuid::Uuid) -> Option<Task> {
+    pub fn remove_task(&self, id: TaskId) -> Option<Task> {
         self.tasks
             .remove(&id)
             .map(|(_, task_arc)| task_arc.read().unwrap().clone())

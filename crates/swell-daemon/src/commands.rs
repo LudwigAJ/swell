@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use swell_core::{
-    get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, DataResponse, FailureClass,
-    TaskState,
+    get_last_llm_model, get_total_llm_tokens, AgentId, CliCommand, DaemonEvent, DataResponse,
+    FailureClass, TaskId, TaskState,
 };
 use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
@@ -1423,7 +1423,7 @@ mod tests {
             let mut sm_guard = sm.write().await;
             sm_guard.enrich_task(task_id).unwrap();
             sm_guard.ready_task(task_id).unwrap();
-            sm_guard.assign_task(task_id, Uuid::new_v4()).unwrap();
+            sm_guard.assign_task(task_id, AgentId::new()).unwrap();
             sm_guard.start_execution(task_id).unwrap();
         });
         task_id
@@ -1446,7 +1446,7 @@ mod tests {
             let mut sm_guard = sm.write().await;
             sm_guard.enrich_task(task_id).unwrap();
             sm_guard.ready_task(task_id).unwrap();
-            sm_guard.assign_task(task_id, Uuid::new_v4()).unwrap();
+            sm_guard.assign_task(task_id, AgentId::new()).unwrap();
             sm_guard.start_execution(task_id).unwrap();
             sm_guard.start_validation(task_id).unwrap();
         });

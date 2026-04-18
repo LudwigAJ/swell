@@ -3,7 +3,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
-use swell_core::{Checkpoint, CheckpointStore, SwellError};
+use swell_core::{Checkpoint, CheckpointStore, SwellError, TaskId};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -92,11 +92,11 @@ impl CheckpointStore for SqliteCheckpointStore {
         Ok(row.and_then(|r| self.row_to_checkpoint(r).ok()))
     }
 
-    async fn load_latest(&self, task_id: Uuid) -> Result<Option<Checkpoint>, SwellError> {
+    async fn load_latest(&self, task_id: TaskId) -> Result<Option<Checkpoint>, SwellError> {
         let row = sqlx::query(
             "SELECT * FROM checkpoints WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
         )
-        .bind(task_id.to_string())
+        .bind(task_id.as_uuid().to_string())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -104,10 +104,10 @@ impl CheckpointStore for SqliteCheckpointStore {
         Ok(row.and_then(|r| self.row_to_checkpoint(r).ok()))
     }
 
-    async fn list(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
+    async fn list(&self, task_id: TaskId) -> Result<Vec<Checkpoint>, SwellError> {
         let rows =
             sqlx::query("SELECT * FROM checkpoints WHERE task_id = ? ORDER BY created_at ASC")
-                .bind(task_id.to_string())
+                .bind(task_id.as_uuid().to_string())
                 .fetch_all(&self.pool)
                 .await
                 .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -120,7 +120,7 @@ impl CheckpointStore for SqliteCheckpointStore {
         Ok(checkpoints)
     }
 
-    async fn prune(&self, task_id: Uuid, keep: usize) -> Result<(), SwellError> {
+    async fn prune(&self, task_id: TaskId, keep: usize) -> Result<(), SwellError> {
         // Keep the latest `keep` checkpoints
         sqlx::query(
             r#"
@@ -134,8 +134,8 @@ impl CheckpointStore for SqliteCheckpointStore {
             )
             "#,
         )
-        .bind(task_id.to_string())
-        .bind(task_id.to_string())
+        .bind(task_id.as_uuid().to_string())
+        .bind(task_id.as_uuid().to_string())
         .bind(keep as i64)
         .execute(&self.pool)
         .await
@@ -156,8 +156,10 @@ impl SqliteCheckpointStore {
 
         Ok(Checkpoint {
             id: Uuid::parse_str(&id_str).map_err(|e| SwellError::DatabaseError(e.to_string()))?,
-            task_id: Uuid::parse_str(&task_id_str)
-                .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
+            task_id: TaskId::from_uuid(
+                Uuid::parse_str(&task_id_str)
+                    .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
+            ),
             state: serde_json::from_str(&state_str)
                 .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
             snapshot: serde_json::from_str(&snapshot_str)

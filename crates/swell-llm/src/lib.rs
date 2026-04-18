@@ -32,8 +32,8 @@ pub use retry::{calculate_backoff, is_retryable_status, LlmRetryConfig};
 pub use router::{
     CostOptimizer, ModelRoute, ModelRouter, ModelRouterBuilder, RouteConfig, TaskType,
 };
-pub use traits::*;
 pub use swell_core::wiring::WiringReport;
+pub use traits::*;
 
 use std::sync::Arc;
 use swell_core::{LlmBackend as CoreLlmBackend, SwellError};

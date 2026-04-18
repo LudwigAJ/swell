@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::cost_tracking::ModelCostInfo;
-use crate::ids::AgentId;
+use crate::ids::{AgentId, TaskId};
 
 /// Task lifecycle states as defined in the orchestrator spec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,7 +95,7 @@ impl std::fmt::Display for TaskState {
 /// A unit of work to be executed by the orchestrator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
-    pub id: Uuid,
+    pub id: TaskId,
     pub description: String,
     pub state: TaskState,
     pub source: TaskSource,
@@ -103,8 +103,8 @@ pub struct Task {
     pub updated_at: DateTime<Utc>,
     pub assigned_agent: Option<AgentId>,
     pub plan: Option<Plan>,
-    pub dependencies: Vec<Uuid>,
-    pub dependents: Vec<Uuid>,
+    pub dependencies: Vec<TaskId>,
+    pub dependents: Vec<TaskId>,
     pub iteration_count: u32,
     pub token_budget: u64,
     pub tokens_used: u64,
@@ -352,7 +352,7 @@ impl Task {
     pub fn new(description: String) -> Self {
         let now = Utc::now();
         Self {
-            id: Uuid::new_v4(),
+            id: TaskId::new(),
             description,
             state: TaskState::Created,
             source: TaskSource::UserRequest,
@@ -381,7 +381,7 @@ impl Task {
     pub fn with_autonomy_level(description: String, autonomy_level: AutonomyLevel) -> Self {
         let now = Utc::now();
         Self {
-            id: Uuid::new_v4(),
+            id: TaskId::new(),
             description,
             state: TaskState::Created,
             source: TaskSource::UserRequest,
@@ -626,41 +626,41 @@ pub enum CliCommand {
         description: String,
     },
     TaskApprove {
-        task_id: Uuid,
+        task_id: TaskId,
     },
     TaskReject {
-        task_id: Uuid,
+        task_id: TaskId,
         reason: String,
     },
     TaskCancel {
-        task_id: Uuid,
+        task_id: TaskId,
     },
     TaskList,
     TaskWatch {
-        task_id: Uuid,
+        task_id: TaskId,
     },
     /// Pause a task (operator intervention)
     TaskPause {
-        task_id: Uuid,
+        task_id: TaskId,
         reason: String,
     },
     /// Resume a paused task (operator intervention)
     TaskResume {
-        task_id: Uuid,
+        task_id: TaskId,
     },
     /// Inject instructions into a running task (operator intervention)
     TaskInjectInstruction {
-        task_id: Uuid,
+        task_id: TaskId,
         instruction: String,
     },
     /// Modify task scope boundaries (operator intervention)
     TaskModifyScope {
-        task_id: Uuid,
+        task_id: TaskId,
         scope: TaskScope,
     },
     /// Get full task details by ID
     TaskGet {
-        task_id: Uuid,
+        task_id: TaskId,
     },
     /// Get daemon health status including active connections, task counts, cost, and MCP health
     DaemonStatus,
@@ -685,7 +685,7 @@ pub enum CliCommand {
     /// Query cost data for a specific task or aggregate across all tasks
     CostQuery {
         /// Task ID to query cost for. If None, returns aggregate cost across all tasks.
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
     },
 }
 
@@ -733,26 +733,26 @@ pub enum FailureClass {
 #[serde(tag = "type", content = "payload")]
 pub enum DaemonEvent {
     TaskCreated {
-        id: Uuid,
+        id: TaskId,
         correlation_id: CorrelationId,
     },
     TaskStateChanged {
-        id: Uuid,
+        id: TaskId,
         state: TaskState,
         correlation_id: CorrelationId,
     },
     TaskProgress {
-        id: Uuid,
+        id: TaskId,
         message: String,
         correlation_id: CorrelationId,
     },
     TaskCompleted {
-        id: Uuid,
+        id: TaskId,
         pr_url: Option<String>,
         correlation_id: CorrelationId,
     },
     TaskFailed {
-        id: Uuid,
+        id: TaskId,
         error: String,
         failure_class: Option<FailureClass>,
         correlation_id: CorrelationId,
@@ -764,7 +764,7 @@ pub enum DaemonEvent {
     },
     /// A tool invocation started during agent execution
     ToolInvocationStarted {
-        id: Uuid,
+        id: TaskId,
         tool_name: String,
         arguments: serde_json::Value,
         turn_number: u32,
@@ -772,7 +772,7 @@ pub enum DaemonEvent {
     },
     /// A tool invocation completed during agent execution
     ToolInvocationCompleted {
-        id: Uuid,
+        id: TaskId,
         tool_name: String,
         success: bool,
         duration_ms: u64,
@@ -781,14 +781,14 @@ pub enum DaemonEvent {
     },
     /// An agent turn started
     AgentTurnStarted {
-        id: Uuid,
+        id: TaskId,
         agent_role: String,
         turn_number: u32,
         correlation_id: CorrelationId,
     },
     /// An agent turn completed
     AgentTurnCompleted {
-        id: Uuid,
+        id: TaskId,
         agent_role: String,
         turn_number: u32,
         action_taken: String,
@@ -798,13 +798,13 @@ pub enum DaemonEvent {
     },
     /// A validation step started
     ValidationStepStarted {
-        id: Uuid,
+        id: TaskId,
         step_name: String,
         correlation_id: CorrelationId,
     },
     /// A validation step completed
     ValidationStepCompleted {
-        id: Uuid,
+        id: TaskId,
         step_name: String,
         passed: bool,
         duration_ms: u64,
@@ -812,7 +812,7 @@ pub enum DaemonEvent {
     },
     /// Full task details returned by TaskGet command
     TaskDetails {
-        id: Uuid,
+        id: TaskId,
         /// JSON serialized Task object containing all task fields
         task_json: String,
         correlation_id: CorrelationId,
@@ -861,7 +861,7 @@ pub enum DaemonEvent {
     /// Cost query results for a task or aggregate
     CostQueryResult {
         /// Task ID queried (None if aggregate)
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
         /// Total input tokens
         total_input_tokens: u64,
         /// Total output tokens
@@ -929,7 +929,7 @@ pub enum DataResponse {
     /// Cost data response - returned by CostQuery
     CostData {
         /// Task ID queried (None if aggregate across all tasks)
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
         /// Total input tokens used
         total_input_tokens: u64,
         /// Total output tokens generated
@@ -1428,7 +1428,7 @@ mod tests {
 
     #[test]
     fn test_daemon_event_task_failed_with_failure_class() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = Uuid::new_v4();
         let event = DaemonEvent::TaskFailed {
             id: task_id,
@@ -1458,7 +1458,7 @@ mod tests {
 
     #[test]
     fn test_daemon_event_task_failed_without_failure_class() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = Uuid::new_v4();
         let event = DaemonEvent::TaskFailed {
             id: task_id,
@@ -1526,7 +1526,7 @@ mod tests {
 
     #[test]
     fn test_daemon_event_all_variants_serde() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = Uuid::new_v4();
 
         let events = vec![
@@ -1581,7 +1581,7 @@ mod tests {
     fn test_correlation_id_links_related_events() {
         // All events in a task lifecycle should share the same correlation_id
         let correlation_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let created = DaemonEvent::TaskCreated {
             id: task_id,
@@ -1639,8 +1639,8 @@ mod tests {
     fn test_different_tasks_have_different_correlation_ids() {
         let correlation_id_1 = Uuid::new_v4();
         let correlation_id_2 = Uuid::new_v4();
-        let task_id_1 = Uuid::new_v4();
-        let task_id_2 = Uuid::new_v4();
+        let task_id_1 = TaskId::new();
+        let task_id_2 = TaskId::new();
 
         let event_1 = DaemonEvent::TaskFailed {
             id: task_id_1,
@@ -1681,11 +1681,11 @@ mod tests {
         use std::collections::HashMap;
 
         let correlation_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Test TaskList roundtrip
         let tasks = vec![Task {
-            id: Uuid::new_v4(),
+            id: TaskId::new(),
             description: "Test task 1".to_string(),
             state: TaskState::Created,
             source: TaskSource::UserRequest,
@@ -1885,7 +1885,7 @@ mod tests {
         // Verify DataResponse wraps correctly in DaemonEvent
         let correlation_id = Uuid::new_v4();
         let task = Task {
-            id: Uuid::new_v4(),
+            id: TaskId::new(),
             description: "Test".to_string(),
             state: TaskState::Created,
             source: TaskSource::UserRequest,

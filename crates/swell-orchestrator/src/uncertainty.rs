@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use swell_core::TaskId;
 use uuid::Uuid;
 
 use serde::{Deserialize, Serialize};
@@ -85,7 +86,7 @@ pub struct UncertaintyClarificationEvent {
     /// Unique identifier for this clarification request
     pub request_id: Uuid,
     /// Task requiring clarification
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Agent that generated the uncertainty
     pub agent_id: Option<AgentId>,
     /// Agent role that generated the uncertainty
@@ -114,7 +115,7 @@ impl UncertaintyClarificationEvent {
     /// Create a new clarification event with the given parameters.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        task_id: Uuid,
+        task_id: TaskId,
         agent_id: Option<AgentId>,
         agent_role: AgentRole,
         confidence_score: f64,
@@ -416,7 +417,7 @@ impl UncertaintyManager {
     }
 
     /// Get pending requests for a specific task.
-    pub async fn get_pending_for_task(&self, task_id: Uuid) -> Vec<UncertaintyClarificationEvent> {
+    pub async fn get_pending_for_task(&self, task_id: TaskId) -> Vec<UncertaintyClarificationEvent> {
         let pending = self.pending_requests.read().await;
         pending
             .values()
@@ -432,7 +433,7 @@ impl UncertaintyManager {
     }
 
     /// Clear all pending requests (used when task is cancelled).
-    pub async fn clear_task(&self, task_id: Uuid) {
+    pub async fn clear_task(&self, task_id: TaskId) {
         let mut pending = self.pending_requests.write().await;
         pending.retain(|_, e| e.task_id != task_id);
     }

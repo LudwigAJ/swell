@@ -17,7 +17,11 @@ async fn create_test_controller() -> swell_orchestrator::ExecutionController {
     let mock_llm = Arc::new(swell_llm::MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(swell_tools::ToolRegistry::new());
 
-    swell_orchestrator::ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry)
+    swell_orchestrator::ExecutionController::new(
+        Arc::downgrade(&orchestrator),
+        mock_llm,
+        tool_registry,
+    )
 }
 
 // ========================================================================
@@ -288,8 +292,11 @@ async fn test_orchestrator_emits_drift_warning_event() {
     // Setup controller with the same orchestrator
     let mock_llm = Arc::new(swell_llm::MockLlm::new("claude-sonnet"));
     let tool_registry = Arc::new(swell_tools::ToolRegistry::new());
-    let controller =
-        swell_orchestrator::ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+    let controller = swell_orchestrator::ExecutionController::new(
+        Arc::downgrade(&orchestrator),
+        mock_llm,
+        tool_registry,
+    );
 
     // Track files with 60% drift (5 actual vs 3 planned)
     controller.track_file_modification("src/a.rs");

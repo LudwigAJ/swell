@@ -20,7 +20,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use swell_core::{CorrelationId, DaemonEvent, FailureClass, Task, TaskState};
+use swell_core::{CorrelationId, DaemonEvent, FailureClass, Task, TaskId, TaskState};
 use tokio::sync::{broadcast, RwLock};
 use uuid::Uuid;
 
@@ -36,7 +36,7 @@ pub struct EventLogEntry {
     /// The correlation ID linking related events
     pub correlation_id: CorrelationId,
     /// The task ID this event pertains to (if applicable)
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// The actual event data
     pub event: DaemonEvent,
 }
@@ -46,7 +46,7 @@ impl EventLogEntry {
     fn new(
         sequence: u64,
         correlation_id: CorrelationId,
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
         event: DaemonEvent,
     ) -> Self {
         Self {
@@ -83,7 +83,7 @@ impl ImmutableEventLog {
     fn record(
         &mut self,
         correlation_id: CorrelationId,
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
         event: DaemonEvent,
     ) -> EventLogEntry {
         let entry = EventLogEntry::new(self.next_sequence, correlation_id, task_id, event);
@@ -101,7 +101,7 @@ impl ImmutableEventLog {
     }
 
     /// Get all events for a specific task ID
-    pub fn get_by_task_id(&self, task_id: Uuid) -> Vec<&EventLogEntry> {
+    pub fn get_by_task_id(&self, task_id: TaskId) -> Vec<&EventLogEntry> {
         self.entries
             .iter()
             .filter(|e| e.task_id == Some(task_id))
@@ -117,7 +117,7 @@ impl ImmutableEventLog {
     /// Returns events with sequence > given_sequence for the specified task.
     pub fn get_events_since_for_task(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         since_sequence: u64,
     ) -> Vec<&EventLogEntry> {
         self.entries
@@ -221,7 +221,7 @@ impl EventEmitter {
     /// Emit a TaskStateChanged event and record it in the log
     pub async fn emit_task_state_changed(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         state: TaskState,
         correlation_id: CorrelationId,
     ) -> DaemonEvent {
@@ -251,7 +251,7 @@ impl EventEmitter {
     /// Emit a TaskProgress event and record it in the log
     pub async fn emit_task_progress(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         message: String,
         correlation_id: CorrelationId,
     ) -> DaemonEvent {
@@ -279,7 +279,7 @@ impl EventEmitter {
     /// Emit a TaskCompleted event and record it in the log
     pub async fn emit_task_completed(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         pr_url: Option<String>,
         correlation_id: CorrelationId,
     ) -> DaemonEvent {
@@ -306,7 +306,7 @@ impl EventEmitter {
     /// Emit a TaskFailed event and record it in the log
     pub async fn emit_task_failed(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         error: String,
         failure_class: Option<FailureClass>,
         correlation_id: CorrelationId,
@@ -363,7 +363,7 @@ impl EventEmitter {
     /// Emit a ToolInvocationStarted event and record it in the log
     pub async fn emit_tool_invocation_started(
         &self,
-        id: Uuid,
+        id: TaskId,
         tool_name: String,
         arguments: serde_json::Value,
         turn_number: u32,
@@ -396,7 +396,7 @@ impl EventEmitter {
     /// Emit a ToolInvocationCompleted event and record it in the log
     pub async fn emit_tool_invocation_completed(
         &self,
-        id: Uuid,
+        id: TaskId,
         tool_name: String,
         success: bool,
         duration_ms: u64,
@@ -433,7 +433,7 @@ impl EventEmitter {
     /// Emit an AgentTurnStarted event and record it in the log
     pub async fn emit_agent_turn_started(
         &self,
-        id: Uuid,
+        id: TaskId,
         agent_role: String,
         turn_number: u32,
         correlation_id: CorrelationId,
@@ -465,7 +465,7 @@ impl EventEmitter {
     #[allow(clippy::too_many_arguments)]
     pub async fn emit_agent_turn_completed(
         &self,
-        id: Uuid,
+        id: TaskId,
         agent_role: String,
         turn_number: u32,
         action_taken: String,
@@ -505,7 +505,7 @@ impl EventEmitter {
     /// Emit a ValidationStepStarted event and record it in the log
     pub async fn emit_validation_step_started(
         &self,
-        id: Uuid,
+        id: TaskId,
         step_name: String,
         correlation_id: CorrelationId,
     ) -> DaemonEvent {
@@ -533,7 +533,7 @@ impl EventEmitter {
     /// Emit a ValidationStepCompleted event and record it in the log
     pub async fn emit_validation_step_completed(
         &self,
-        id: Uuid,
+        id: TaskId,
         step_name: String,
         passed: bool,
         duration_ms: u64,
@@ -582,7 +582,7 @@ impl EventEmitter {
     }
 
     /// Get all events for a task ID
-    pub async fn get_events_by_task_id(&self, task_id: Uuid) -> Vec<DaemonEvent> {
+    pub async fn get_events_by_task_id(&self, task_id: TaskId) -> Vec<DaemonEvent> {
         let log = self.log.read().await;
         log.get_by_task_id(task_id)
             .into_iter()
@@ -606,7 +606,7 @@ impl EventEmitter {
     /// Returns events with sequence > since_sequence for the specified task.
     pub async fn get_events_since_for_task(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         since_sequence: u64,
     ) -> Vec<DaemonEvent> {
         let log = self.log.read().await;
@@ -657,7 +657,7 @@ mod tests {
     async fn test_event_emitter_records_task_state_changed() {
         let emitter = EventEmitter::new();
         let correlation_id = EventEmitter::new_correlation_id();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let event = emitter
             .emit_task_state_changed(task_id, TaskState::Executing, correlation_id)
@@ -683,7 +683,7 @@ mod tests {
     async fn test_event_emitter_records_task_progress() {
         let emitter = EventEmitter::new();
         let correlation_id = EventEmitter::new_correlation_id();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let message = "Processing step 1/3".to_string();
 
         let event = emitter
@@ -710,7 +710,7 @@ mod tests {
     async fn test_event_emitter_records_task_completed() {
         let emitter = EventEmitter::new();
         let correlation_id = EventEmitter::new_correlation_id();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let pr_url = Some("https://github.com/example/pr/123".to_string());
 
         let event = emitter
@@ -737,7 +737,7 @@ mod tests {
     async fn test_event_emitter_records_task_failed() {
         let emitter = EventEmitter::new();
         let correlation_id = EventEmitter::new_correlation_id();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let error = "Validation failed".to_string();
 
         let event = emitter
@@ -791,7 +791,7 @@ mod tests {
     #[tokio::test]
     async fn test_correlation_id_links_events() {
         let emitter = EventEmitter::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = EventEmitter::new_correlation_id();
 
         // Emit multiple events with the same correlation ID
@@ -813,7 +813,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_events_by_task_id() {
         let emitter = EventEmitter::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = EventEmitter::new_correlation_id();
 
         // Emit events for a specific task
@@ -854,7 +854,7 @@ mod tests {
     async fn test_immutable_event_log_records_in_order() {
         let emitter = EventEmitter::new();
         let correlation_id = EventEmitter::new_correlation_id();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         emitter
             .emit_task_created(&Task::new("Test".to_string()))
@@ -963,7 +963,7 @@ mod tests {
     #[tokio::test]
     async fn test_event_emitter_subscribe() {
         let emitter = EventEmitter::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = EventEmitter::new_correlation_id();
 
         // Subscribe before emitting
@@ -993,7 +993,7 @@ mod tests {
     #[tokio::test]
     async fn test_event_emitter_subscribe_multiple_receivers() {
         let emitter = EventEmitter::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = EventEmitter::new_correlation_id();
 
         // Subscribe multiple receivers

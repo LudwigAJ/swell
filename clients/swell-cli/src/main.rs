@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::time::Duration;
 use swell_cli::repl;
 use swell_cli::CliError;
-use swell_core::{CliCommand, DaemonEvent, DataResponse, Task};
+use swell_core::{CliCommand, DaemonEvent, DataResponse, Task, TaskId};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::signal::unix::{signal, SignalKind};
@@ -75,7 +75,7 @@ async fn main() {
                 Err(CliError::MissingArgument("task-id".to_string()))
             } else {
                 match Uuid::parse_str(&args[2]) {
-                    Ok(task_id) => watch_task(&socket_path, task_id).await,
+                    Ok(uuid) => watch_task(&socket_path, TaskId::from_uuid(uuid)).await,
                     Err(e) => Err(CliError::InvalidUuid(e.to_string())),
                 }
             }
@@ -85,7 +85,8 @@ async fn main() {
                 Err(CliError::MissingArgument("task-id".to_string()))
             } else {
                 match Uuid::parse_str(&args[2]) {
-                    Ok(task_id) => {
+                    Ok(uuid) => {
+                        let task_id = TaskId::from_uuid(uuid);
                         // Confirmation prompt before approving
                         if !confirm(&format!(
                             "Are you sure you want to approve task {}?",
@@ -106,7 +107,8 @@ async fn main() {
                 Err(CliError::MissingArgument("task-id".to_string()))
             } else {
                 match Uuid::parse_str(&args[2]) {
-                    Ok(task_id) => {
+                    Ok(uuid) => {
+                        let task_id = TaskId::from_uuid(uuid);
                         // Parse optional --reason flag
                         let reason = if args.len() > 4 && args[3] == "--reason" {
                             args[4..].join(" ")
@@ -133,7 +135,8 @@ async fn main() {
                 Err(CliError::MissingArgument("task-id".to_string()))
             } else {
                 match Uuid::parse_str(&args[2]) {
-                    Ok(task_id) => {
+                    Ok(uuid) => {
+                        let task_id = TaskId::from_uuid(uuid);
                         // Confirmation prompt before cancelling
                         if !confirm(&format!(
                             "Are you sure you want to cancel task {}?",
@@ -154,7 +157,8 @@ async fn main() {
                 Err(CliError::MissingArgument("task-id".to_string()))
             } else {
                 match Uuid::parse_str(&args[2]) {
-                    Ok(task_id) => {
+                    Ok(uuid) => {
+                        let task_id = TaskId::from_uuid(uuid);
                         let reason = if args.len() > 4 && args[3] == "--reason" {
                             args[4..].join(" ")
                         } else {
@@ -172,7 +176,8 @@ async fn main() {
                 Err(CliError::MissingArgument("task-id".to_string()))
             } else {
                 match Uuid::parse_str(&args[2]) {
-                    Ok(task_id) => {
+                    Ok(uuid) => {
+                        let task_id = TaskId::from_uuid(uuid);
                         let cmd = CliCommand::TaskResume { task_id };
                         send_command(&socket_path, cmd).await
                     }
@@ -187,7 +192,8 @@ async fn main() {
                 ))
             } else {
                 match Uuid::parse_str(&args[2]) {
-                    Ok(task_id) => {
+                    Ok(uuid) => {
+                        let task_id = TaskId::from_uuid(uuid);
                         let instruction = args[3..].join(" ");
                         let cmd = CliCommand::TaskInjectInstruction {
                             task_id,
@@ -204,7 +210,8 @@ async fn main() {
                 Err(CliError::MissingArgument("task-id".to_string()))
             } else {
                 match Uuid::parse_str(&args[2]) {
-                    Ok(task_id) => {
+                    Ok(uuid) => {
+                        let task_id = TaskId::from_uuid(uuid);
                         // Parse scope arguments: swell scope <task-id> --files file1.rs file2.rs --dirs src tests
                         let mut files = Vec::new();
                         let mut directories = Vec::new();
@@ -319,7 +326,7 @@ async fn send_command(socket_path: &str, cmd: CliCommand) -> Result<(), CliError
 }
 
 /// Watch a task and stream events until Ctrl+C or terminal state
-async fn watch_task(socket_path: &str, task_id: Uuid) -> Result<(), CliError> {
+async fn watch_task(socket_path: &str, task_id: TaskId) -> Result<(), CliError> {
     // Check if socket file exists before trying to connect
     if !std::path::Path::new(socket_path).exists() {
         return Err(CliError::SocketNotFound(socket_path.to_string()));
@@ -452,7 +459,7 @@ fn handle_event(event: &DaemonEvent) {
             pr_url,
             correlation_id: _,
         } => {
-            if *id == Uuid::nil() {
+            if *id == TaskId::nil() {
                 // This is a list response
                 if let Some(json) = pr_url {
                     println!("{}", json);

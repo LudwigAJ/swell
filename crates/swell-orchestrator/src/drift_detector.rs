@@ -8,13 +8,14 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use swell_core::TaskId;
 use uuid::Uuid;
 
 /// Drift detection result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DriftReport {
     /// Task ID this report is for
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Estimated file count from plan
     pub estimated_files: usize,
     /// Actual file count that were modified
@@ -98,7 +99,7 @@ impl DriftDetector {
     /// A DriftReport with drift analysis
     pub fn detect_drift(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         estimated_files: &[String],
         actual_files: &[String],
     ) -> DriftReport {
@@ -163,7 +164,7 @@ impl DriftDetector {
     /// A DriftReport with step-level analysis
     pub fn detect_drift_with_steps(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         plan_steps: &[(Uuid, Vec<String>)], // (step_id, affected_files)
         actual_files: &[String],
     ) -> DriftReport {
@@ -225,8 +226,8 @@ mod tests {
     use super::*;
 
     // Helper to create a test task ID
-    fn test_task_id() -> Uuid {
-        Uuid::new_v4()
+    fn test_task_id() -> TaskId {
+        TaskId::new()
     }
 
     // --- DriftDetector Creation Tests ---

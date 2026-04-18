@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 use std::time::Duration;
+use swell_core::ids::SocketPath;
 use swell_core::{CliCommand, DaemonEvent, TaskState};
 use swell_llm::{LlmBackend, MockLlm};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -166,7 +167,7 @@ async fn test_daemon_accepts_connection() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Give daemon time to start
@@ -248,7 +249,7 @@ async fn test_task_create_sends_correct_json() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start
@@ -292,7 +293,7 @@ async fn test_task_watch_receives_state_transitions() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start
@@ -348,7 +349,7 @@ async fn test_task_create_then_watch_same_channel() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start
@@ -399,7 +400,7 @@ async fn test_invalid_command_returns_error() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start
@@ -464,7 +465,7 @@ async fn test_task_watch_nonexistent_returns_error() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start
@@ -505,7 +506,7 @@ async fn test_task_state_transitions_are_observable() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start
@@ -610,7 +611,7 @@ async fn test_concurrent_connections() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start
@@ -656,7 +657,7 @@ async fn test_task_reject_wrong_state_returns_error() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start
@@ -712,7 +713,7 @@ async fn test_task_reject_nonexistent_returns_error() {
     let socket_str = socket_path.to_string_lossy().to_string();
 
     // Start daemon in background
-    let daemon = swell_daemon::Daemon::new(socket_str.clone(), test_llm());
+    let daemon = swell_daemon::Daemon::new(SocketPath::from_string(&socket_str), test_llm());
     let daemon_handle = tokio::spawn(async move { daemon.run().await });
 
     // Wait for daemon to start

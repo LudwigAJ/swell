@@ -957,8 +957,12 @@ async fn test_full_recovery_flow() {
 
     // Step 6: Execute with the tool and verify continuation
     let orchestrator = OrchestratorBuilder::new().build();
-    let mut controller =
-        ExecutionController::with_max_iterations(Arc::downgrade(&orchestrator), mock_llm, tool_registry, 10);
+    let mut controller = ExecutionController::with_max_iterations(
+        Arc::downgrade(&orchestrator),
+        mock_llm,
+        tool_registry,
+        10,
+    );
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,
@@ -1033,8 +1037,12 @@ async fn test_recovery_flow_permission_denied() {
         )
         .await;
 
-    let mut controller =
-        ExecutionController::with_max_iterations(Arc::downgrade(&orchestrator), mock_llm, tool_registry, 10);
+    let mut controller = ExecutionController::with_max_iterations(
+        Arc::downgrade(&orchestrator),
+        mock_llm,
+        tool_registry,
+        10,
+    );
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,
@@ -1119,8 +1127,12 @@ async fn test_recovery_flow_timeout() {
         })
     ));
 
-    let mut controller =
-        ExecutionController::with_max_iterations(Arc::downgrade(&orchestrator), mock_llm, tool_registry, 10);
+    let mut controller = ExecutionController::with_max_iterations(
+        Arc::downgrade(&orchestrator),
+        mock_llm,
+        tool_registry,
+        10,
+    );
 
     let messages = vec![swell_llm::LlmMessage {
         role: swell_llm::LlmRole::User,

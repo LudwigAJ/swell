@@ -15,7 +15,7 @@
 //! - [`CheckpointStore`] - State persistence
 //! - [`ValidationGate`] - Quality assurance steps
 
-use crate::{AgentId, AgentRole, Plan, StreamEvent, SwellError, Task, TaskState, TurnSummaryEvent};
+use crate::{AgentId, AgentRole, Plan, StreamEvent, SwellError, Task, TaskId, TaskState, TurnSummaryEvent};
 use async_trait::async_trait;
 use futures::Stream;
 use serde::{Deserialize, Serialize};
@@ -625,7 +625,7 @@ pub struct SandboxOutput {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Checkpoint {
     pub id: Uuid,
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub state: TaskState,
     pub snapshot: serde_json::Value,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -639,16 +639,16 @@ pub trait CheckpointStore: Send + Sync {
     async fn save(&self, checkpoint: Checkpoint) -> Result<Uuid, SwellError>;
 
     /// Load the latest checkpoint for a task
-    async fn load_latest(&self, task_id: Uuid) -> Result<Option<Checkpoint>, SwellError>;
+    async fn load_latest(&self, task_id: TaskId) -> Result<Option<Checkpoint>, SwellError>;
 
     /// Load a specific checkpoint by ID
     async fn load(&self, id: Uuid) -> Result<Option<Checkpoint>, SwellError>;
 
     /// List all checkpoints for a task
-    async fn list(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError>;
+    async fn list(&self, task_id: TaskId) -> Result<Vec<Checkpoint>, SwellError>;
 
     /// Delete old checkpoints, keeping only the latest N
-    async fn prune(&self, task_id: Uuid, keep: usize) -> Result<(), SwellError>;
+    async fn prune(&self, task_id: TaskId, keep: usize) -> Result<(), SwellError>;
 }
 
 // ============================================================================
@@ -673,7 +673,7 @@ pub trait ValidationGate: Send + Sync {
 /// Context for validation
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ValidationContext {
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub workspace_path: String,
     pub changed_files: Vec<String>,
     pub plan: Option<Plan>,
@@ -719,33 +719,33 @@ pub struct ValidationArtifact {
 #[serde(tag = "type", content = "data")]
 pub enum Event {
     TaskCreated {
-        task_id: Uuid,
+        task_id: TaskId,
     },
     TaskStateChanged {
-        task_id: Uuid,
+        task_id: TaskId,
         from: TaskState,
         to: TaskState,
     },
     TaskProgress {
-        task_id: Uuid,
+        task_id: TaskId,
         message: String,
     },
     TaskCompleted {
-        task_id: Uuid,
+        task_id: TaskId,
         pr_url: Option<String>,
     },
     TaskFailed {
-        task_id: Uuid,
+        task_id: TaskId,
         error: String,
     },
     AgentStarted {
         agent_id: AgentId,
         role: AgentRole,
-        task_id: Uuid,
+        task_id: TaskId,
     },
     AgentFinished {
         agent_id: AgentId,
-        task_id: Uuid,
+        task_id: TaskId,
         success: bool,
     },
     ToolExecuted {
@@ -754,11 +754,11 @@ pub enum Event {
         duration_ms: u64,
     },
     ValidationStarted {
-        task_id: Uuid,
+        task_id: TaskId,
         gate: &'static str,
     },
     ValidationCompleted {
-        task_id: Uuid,
+        task_id: TaskId,
         gate: &'static str,
         passed: bool,
     },

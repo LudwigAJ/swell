@@ -20,7 +20,7 @@
 
 use regex::Regex;
 use swell_core::{
-    Plan, PlanStep, RiskLevel, StepStatus, Task, TaskSource, TaskState, ValidationResult,
+    Plan, PlanStep, RiskLevel, StepStatus, Task, TaskId, TaskSource, TaskState, ValidationResult,
 };
 use uuid::Uuid;
 
@@ -68,7 +68,7 @@ pub struct FollowUpProposal {
     /// Unique identifier for this proposal
     pub id: Uuid,
     /// The parent task this follows up on
-    pub parent_task_id: Uuid,
+    pub parent_task_id: TaskId,
     /// Description of the proposed task
     pub description: String,
     /// Rationale explaining why this follow-up is needed
@@ -89,11 +89,11 @@ impl FollowUpProposal {
     /// Convert proposal to a new Task
     pub fn into_task(self) -> Task {
         Task {
-            id: Uuid::new_v4(),
+            id: TaskId::new(),
             description: self.description,
             state: TaskState::Created,
             source: TaskSource::FailureDerived {
-                original_task_id: self.parent_task_id,
+                original_task_id: self.parent_task_id.as_uuid(),
                 failure_signal: format!("{:?}", self.opportunity_type),
             },
             created_at: chrono::Utc::now(),
@@ -135,7 +135,7 @@ impl FollowUpProposal {
 
         Plan {
             id: Uuid::new_v4(),
-            task_id: self.parent_task_id,
+            task_id: self.parent_task_id.as_uuid(),
             steps,
             total_estimated_tokens: self.estimate_tokens(),
             risk_assessment: format!("{:?} opportunity", self.opportunity_type),
@@ -566,7 +566,7 @@ impl FollowUpGenerator {
 
         FollowUpProposal {
             id: Uuid::new_v4(),
-            parent_task_id: Uuid::nil(), // Will be set by caller
+            parent_task_id: TaskId::nil(), // Will be set by caller
             description: opp.description.clone(),
             rationale,
             opportunity_type: opp.opportunity_type,

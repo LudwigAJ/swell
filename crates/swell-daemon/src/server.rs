@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use swell_core::ids::SocketPath;
 use swell_core::wiring::WiringState;
-use swell_core::{CliCommand, DaemonEvent, TaskState};
+use swell_core::{CliCommand, DaemonEvent, TaskId, TaskState};
 use swell_llm::LlmBackend;
 use swell_memory::recall::RecallService;
 use swell_memory::SqliteMemoryStore;
@@ -476,7 +476,7 @@ async fn handle_connection_with_shutdown(
 /// Sends the current state immediately, then polls for new events and streams them.
 async fn handle_watch_connection(
     mut stream: UnixStream,
-    task_id: Uuid,
+    task_id: TaskId,
     orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
     event_emitter: Arc<EventEmitter>,
     mut shutdown_rx: watch::Receiver<bool>,

@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use std::hash::Hash;
-use swell_core::{Checkpoint, CheckpointStore, SwellError};
+use swell_core::{Checkpoint, CheckpointStore, SwellError, TaskId};
 use uuid::Uuid;
 
 /// Event types for event-sourced checkpoint storage
@@ -217,10 +217,10 @@ impl PostgresCheckpointStore {
     }
 
     /// Get the next sequence number for a task
-    async fn get_next_sequence(&self, task_id: Uuid) -> Result<i64, SwellError> {
+    async fn get_next_sequence(&self, task_id: TaskId) -> Result<i64, SwellError> {
         let result: Option<i64> =
             sqlx::query_scalar("SELECT MAX(sequence) FROM checkpoint_events WHERE task_id = $1")
-                .bind(task_id)
+                .bind(task_id.as_uuid())
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -229,11 +229,11 @@ impl PostgresCheckpointStore {
     }
 
     /// Get the event hash of the previous event for a task
-    async fn get_previous_hash(&self, task_id: Uuid) -> Result<Option<String>, SwellError> {
+    async fn get_previous_hash(&self, task_id: TaskId) -> Result<Option<String>, SwellError> {
         let hash: Option<String> = sqlx::query_scalar(
             "SELECT event_hash FROM checkpoint_events WHERE task_id = $1 ORDER BY sequence DESC LIMIT 1"
         )
-        .bind(task_id)
+        .bind(task_id.as_uuid())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -279,7 +279,7 @@ impl CheckpointStore for PostgresCheckpointStore {
 
         let event = CheckpointEvent {
             id: checkpoint.id,
-            task_id: checkpoint.task_id,
+            task_id: checkpoint.task_id.as_uuid(),
             event_type: CheckpointEventType::CheckpointCreated,
             state: checkpoint.state,
             snapshot: checkpoint.snapshot.clone(),
@@ -318,7 +318,7 @@ impl CheckpointStore for PostgresCheckpointStore {
         Ok(row.and_then(|r| self.row_to_checkpoint(r).ok()))
     }
 
-    async fn load_latest(&self, task_id: Uuid) -> Result<Option<Checkpoint>, SwellError> {
+    async fn load_latest(&self, task_id: TaskId) -> Result<Option<Checkpoint>, SwellError> {
         // Use materialized view for efficient lookup
         let row = sqlx::query(
             r#"
@@ -327,7 +327,7 @@ impl CheckpointStore for PostgresCheckpointStore {
             WHERE task_id = $1
             "#,
         )
-        .bind(task_id)
+        .bind(task_id.as_uuid())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -341,7 +341,7 @@ impl CheckpointStore for PostgresCheckpointStore {
 
             return Ok(Some(Checkpoint {
                 id,
-                task_id,
+                task_id,  // Already TaskId
                 state: serde_json::from_value(state)
                     .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
                 snapshot,
@@ -354,7 +354,7 @@ impl CheckpointStore for PostgresCheckpointStore {
         let row = sqlx::query(
             "SELECT id, task_id, state, snapshot, created_at, metadata FROM checkpoint_events WHERE task_id = $1 ORDER BY sequence DESC LIMIT 1",
         )
-        .bind(task_id)
+        .bind(task_id.as_uuid())
         .fetch_optional(&self.pool)
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -362,11 +362,11 @@ impl CheckpointStore for PostgresCheckpointStore {
         Ok(row.and_then(|r| self.row_to_checkpoint(r).ok()))
     }
 
-    async fn list(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
+    async fn list(&self, task_id: TaskId) -> Result<Vec<Checkpoint>, SwellError> {
         let rows = sqlx::query(
             "SELECT id, task_id, state, snapshot, created_at, metadata, sequence FROM checkpoint_events WHERE task_id = $1 ORDER BY sequence ASC",
         )
-        .bind(task_id)
+        .bind(task_id.as_uuid())
         .fetch_all(&self.pool)
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -379,7 +379,7 @@ impl CheckpointStore for PostgresCheckpointStore {
         Ok(checkpoints)
     }
 
-    async fn prune(&self, task_id: Uuid, keep: usize) -> Result<(), SwellError> {
+    async fn prune(&self, task_id: TaskId, keep: usize) -> Result<(), SwellError> {
         // For event sourcing, pruning means marking old events as superseded
         // We don't actually delete events (append-only), but we can record a prune event
 
@@ -396,7 +396,7 @@ impl CheckpointStore for PostgresCheckpointStore {
             LIMIT 1 OFFSET $2
             "#,
         )
-        .bind(task_id)
+        .bind(task_id.as_uuid())
         .bind(keep as i64)
         .fetch_optional(&self.pool)
         .await
@@ -409,7 +409,7 @@ impl CheckpointStore for PostgresCheckpointStore {
 
             let prune_event = CheckpointEvent {
                 id: Uuid::new_v4(),
-                task_id,
+                task_id: task_id.as_uuid(),
                 event_type: CheckpointEventType::CheckpointsPruned,
                 state: swell_core::TaskState::Created, // Placeholder
                 snapshot: serde_json::json!({
@@ -445,7 +445,7 @@ impl PostgresCheckpointStore {
 
         Ok(Checkpoint {
             id,
-            task_id,
+            task_id: TaskId::from_uuid(task_id),
             state: serde_json::from_value(state)
                 .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
             snapshot,

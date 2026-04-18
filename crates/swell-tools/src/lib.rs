@@ -42,9 +42,9 @@ pub mod tools;
 pub mod trust_policy;
 pub mod vault;
 pub mod web_search;
+pub mod wiring;
 pub mod worktree_isolation;
 pub mod worktree_pool;
-pub mod wiring;
 
 pub use auto_masking::{
     AutoMasker, MaskSecrets, MaskingConfig, MaskingResult, MaskingStats, SecretPattern,
@@ -96,7 +96,6 @@ pub use mcp_config::{
     McpConfigManager, McpReconnectConfig, McpServerConfig, McpServerHealth, McpServerState,
     McpServersConfig,
 };
-pub use swell_core::wiring::WiringReport;
 pub use mcp_lsp::{
     LspBridgeManager, LspDefinitionTool, LspDiagnostic, LspDiagnosticsTool, LspHover, LspHoverTool,
     LspLanguage, LspLocation, LspPosition, LspRange, LspReferencesTool, LspRegistry,
@@ -136,6 +135,7 @@ pub use self_healing_ci::{
     FailureCategory, FixType, RootCause,
 };
 pub use skill::{register_skills_from_workspace, SkillDiscovery, SkillInfo, SkillTool};
+pub use swell_core::wiring::WiringReport;
 pub use trust_policy::{TrustError, TrustPolicy, TrustResolver, TrustStatus};
 pub use vault::{
     AwsCredentials, DatabaseCredentials, DynamicSecretResponse, DynamicSecretType, VaultClient,

@@ -36,7 +36,7 @@ pub trait MemoryBlockLoader: Send + Sync {
         store: &dyn MemoryStore,
         repository_scope: &str,
         user_id: Option<&str>,
-        task_id: Option<Uuid>,
+        task_id: Option<swell_core::TaskId>,
     ) -> Result<MemoryBlocks, SwellError>;
 }
 
@@ -57,7 +57,7 @@ impl MemoryBlockLoader for DefaultBlockLoader {
         store: &dyn MemoryStore,
         repository_scope: &str,
         user_id: Option<&str>,
-        task_id: Option<Uuid>,
+        task_id: Option<swell_core::TaskId>,
     ) -> Result<MemoryBlocks, SwellError> {
         let mut blocks = MemoryBlocks::default();
 

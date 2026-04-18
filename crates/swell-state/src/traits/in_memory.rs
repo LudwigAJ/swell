@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use swell_core::{Checkpoint, CheckpointStore, SwellError};
+use swell_core::{Checkpoint, CheckpointStore, SwellError, TaskId};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -30,7 +30,7 @@ impl InMemoryCheckpointStore {
 impl CheckpointStore for InMemoryCheckpointStore {
     async fn save(&self, checkpoint: Checkpoint) -> Result<Uuid, SwellError> {
         let id = checkpoint.id;
-        let task_id = checkpoint.task_id;
+        let task_uuid = checkpoint.task_id.as_uuid();
 
         self.checkpoints
             .write()
@@ -39,15 +39,15 @@ impl CheckpointStore for InMemoryCheckpointStore {
         self.by_task
             .write()
             .await
-            .entry(task_id)
+            .entry(task_uuid)
             .or_insert_with(Vec::new)
             .push(id);
 
         Ok(id)
     }
 
-    async fn load_latest(&self, task_id: Uuid) -> Result<Option<Checkpoint>, SwellError> {
-        let ids = self.by_task.read().await.get(&task_id).cloned();
+    async fn load_latest(&self, task_id: TaskId) -> Result<Option<Checkpoint>, SwellError> {
+        let ids = self.by_task.read().await.get(&task_id.as_uuid()).cloned();
 
         match ids {
             Some(ids) if !ids.is_empty() => {
@@ -62,8 +62,8 @@ impl CheckpointStore for InMemoryCheckpointStore {
         Ok(self.checkpoints.read().await.get(&id).cloned())
     }
 
-    async fn list(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
-        let ids = self.by_task.read().await.get(&task_id).cloned();
+    async fn list(&self, task_id: TaskId) -> Result<Vec<Checkpoint>, SwellError> {
+        let ids = self.by_task.read().await.get(&task_id.as_uuid()).cloned();
 
         match ids {
             Some(ids) => {
@@ -78,11 +78,11 @@ impl CheckpointStore for InMemoryCheckpointStore {
         }
     }
 
-    async fn prune(&self, task_id: Uuid, keep: usize) -> Result<(), SwellError> {
+    async fn prune(&self, task_id: TaskId, keep: usize) -> Result<(), SwellError> {
         let mut by_task = self.by_task.write().await;
         let mut checkpoints = self.checkpoints.write().await;
 
-        if let Some(ids) = by_task.get_mut(&task_id) {
+        if let Some(ids) = by_task.get_mut(&task_id.as_uuid()) {
             if ids.len() > keep {
                 let to_remove: Vec<Uuid> = ids.drain(0..ids.len() - keep).collect();
                 for id in to_remove {

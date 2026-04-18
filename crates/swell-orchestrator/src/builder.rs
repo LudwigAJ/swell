@@ -65,10 +65,7 @@ impl OrchestratorBuilder {
     ///
     /// When set, the orchestrator uses the provided checkpoint manager instead of
     /// creating a default in-memory store.
-    pub fn with_checkpoint_manager(
-        mut self,
-        checkpoint_manager: Arc<CheckpointManager>,
-    ) -> Self {
+    pub fn with_checkpoint_manager(mut self, checkpoint_manager: Arc<CheckpointManager>) -> Self {
         self.checkpoint_manager = Some(checkpoint_manager);
         self
     }
@@ -114,8 +111,6 @@ mod tests {
         let mock_llm: Arc<dyn LlmBackend> = Arc::new(MockLlm::new("test-model"));
 
         // Both can be chained
-        let _orchestrator = OrchestratorBuilder::new()
-            .with_llm(mock_llm)
-            .build();
+        let _orchestrator = OrchestratorBuilder::new().with_llm(mock_llm).build();
     }
 }

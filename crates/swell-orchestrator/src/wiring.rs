@@ -12,8 +12,8 @@
 
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
 use swell_core::wiring::{WiringReport, WiringState};
+use tokio::sync::RwLock;
 
 use crate::agents::AgentPool;
 use crate::feature_leads::FeatureLeadManager;

@@ -249,7 +249,7 @@ pub use swell_tools::web_search::{DomainSearchTool, FetchPageTool, WebSearchTool
 
 use std::sync::{Arc, Weak};
 use swell_core::{
-    AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskState, ValidationResult,
+    AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskId, TaskState, ValidationResult,
 };
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
 use swell_tools::{mcp_config::{McpConfigManager, McpServerHealth}, ToolRegistry};
@@ -263,9 +263,9 @@ pub const MAX_CONCURRENT_AGENTS: usize = 6;
 /// Events emitted by the orchestrator
 #[derive(Debug, Clone)]
 pub enum OrchestratorEvent {
-    TaskCreated(Uuid),
+    TaskCreated(TaskId),
     TaskStateChanged {
-        task_id: Uuid,
+        task_id: TaskId,
         from: TaskState,
         to: TaskState,
     },
@@ -276,21 +276,21 @@ pub enum OrchestratorEvent {
     },
     AgentStarted {
         agent_id: AgentId,
-        task_id: Uuid,
+        task_id: TaskId,
     },
     AgentFinished {
         agent_id: AgentId,
-        task_id: Uuid,
+        task_id: TaskId,
     },
     ExecutionProgress {
-        task_id: Uuid,
+        task_id: TaskId,
         message: String,
     },
     /// Drift warning emitted when actual file modifications exceed planned scope.
     /// This indicates the task may be experiencing scope creep or the plan
     /// underestimated the required changes.
     DriftWarning {
-        task_id: Uuid,
+        task_id: TaskId,
         /// Percentage of drift: (actual - estimated) / estimated * 100
         drift_percentage: f64,
         /// Files that were modified but were not in the plan
@@ -303,7 +303,7 @@ pub enum OrchestratorEvent {
     /// Session hygiene alert emitted when acceptance ratio drops below threshold.
     /// This indicates the task may be stuck in a failure loop and needs intervention.
     SessionHygieneAlert {
-        task_id: Uuid,
+        task_id: TaskId,
         /// Number of attempts made
         attempts: usize,
         /// Number of successful acceptances
@@ -321,7 +321,7 @@ pub enum OrchestratorEvent {
     /// The agent pauses execution and waits for clarification before resuming.
     UncertaintyClarificationRequest {
         /// Task requiring clarification
-        task_id: Uuid,
+        task_id: TaskId,
         /// Agent that is uncertain
         agent_id: AgentId,
         /// Agent role that generated the uncertainty
@@ -341,7 +341,7 @@ pub enum OrchestratorEvent {
     /// This forces a strategy change (model switch, approach change, or escalation).
     NonNovelRetryRejection {
         /// Task that was rejected
-        task_id: Uuid,
+        task_id: TaskId,
         /// Similarity score to the most similar prior attempt (0.0-1.0)
         similarity: f32,
         /// Iteration number of the most similar prior attempt
@@ -355,7 +355,7 @@ pub enum OrchestratorEvent {
     /// This indicates a complete LLM outage and the orchestrator should pause.
     ModelExhausted {
         /// Task that was being processed
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
         /// The error from the last failed model
         last_error: String,
         /// Names of models that were tried in order
@@ -365,7 +365,7 @@ pub enum OrchestratorEvent {
     /// This indicates a critical error and the orchestrator should pause.
     LlmCallFailed {
         /// Task that was being processed
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
         /// The model that failed
         model: String,
         /// Error message or panic description
@@ -596,7 +596,7 @@ impl Orchestrator {
     /// * `actual_file_count` - Number of files actually modified
     pub fn emit_drift_warning(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         drift_percentage: f64,
         unexpected_files: Vec<String>,
         planned_file_count: usize,
@@ -628,7 +628,7 @@ impl Orchestrator {
     #[allow(clippy::too_many_arguments)]
     pub fn emit_uncertainty_clarification(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         agent_id: AgentId,
         agent_role: AgentRole,
         reason: String,
@@ -670,12 +670,12 @@ impl Orchestrator {
                     if result.max_similarity > 0.85 {
                         return Err(SwellError::DuplicateTask(
                             result.max_similarity,
-                            duplicate_of,
+                            duplicate_of.as_uuid(),
                         ));
                     } else {
                         return Err(SwellError::DuplicateTaskByFileOverlap(
                             result.max_file_overlap * 100.0,
-                            duplicate_of,
+                            duplicate_of.as_uuid(),
                         ));
                     }
                 }
@@ -739,12 +739,12 @@ impl Orchestrator {
                     if result.max_similarity > 0.85 {
                         return Err(SwellError::DuplicateTask(
                             result.max_similarity,
-                            duplicate_of,
+                            duplicate_of.as_uuid(),
                         ));
                     } else {
                         return Err(SwellError::DuplicateTaskByFileOverlap(
                             result.max_file_overlap * 100.0,
-                            duplicate_of,
+                            duplicate_of.as_uuid(),
                         ));
                     }
                 }
@@ -789,7 +789,7 @@ impl Orchestrator {
     }
 
     /// Get a task by ID
-    pub async fn get_task(&self, id: Uuid) -> Result<Task, SwellError> {
+    pub async fn get_task(&self, id: TaskId) -> Result<Task, SwellError> {
         let sm = self.state_machine.read().await;
         sm.get_task(id)
     }
@@ -816,7 +816,7 @@ impl Orchestrator {
     }
 
     /// Assign a task to an available agent
-    pub async fn assign_task(&self, task_id: Uuid, role: AgentRole) -> Result<AgentId, SwellError> {
+    pub async fn assign_task(&self, task_id: TaskId, role: AgentRole) -> Result<AgentId, SwellError> {
         let agent_id = {
             let mut pool = self.agent_pool.write().await;
             pool.reserve(task_id, role)?
@@ -834,7 +834,7 @@ impl Orchestrator {
     }
 
     /// Release an agent back to the pool
-    pub async fn release_agent(&self, agent_id: AgentId, task_id: Uuid) {
+    pub async fn release_agent(&self, agent_id: AgentId, task_id: TaskId) {
         {
             let mut pool = self.agent_pool.write().await;
             pool.release(agent_id)
@@ -857,7 +857,7 @@ impl Orchestrator {
     }
 
     /// Set a plan for a task
-    pub async fn set_plan(&self, task_id: Uuid, plan: Plan) -> Result<(), SwellError> {
+    pub async fn set_plan(&self, task_id: TaskId, plan: Plan) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
         sm.set_plan(task_id, plan)
     }
@@ -870,7 +870,7 @@ impl Orchestrator {
     ///
     /// If the task is already in AwaitingApproval (after approval was granted),
     /// this will continue with the execution flow.
-    pub async fn start_task(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub async fn start_task(&self, task_id: TaskId) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
 
         // Only enrich if task is in Created state (not after retry)
@@ -928,7 +928,7 @@ impl Orchestrator {
     ///
     /// This is called by the daemon when user approves via `swell approve <id>`.
     /// Transitions: AwaitingApproval → Ready → Assigned → Executing
-    pub async fn approve_task(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub async fn approve_task(&self, task_id: TaskId) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
 
         let task = sm.get_task(task_id)?;
@@ -967,7 +967,7 @@ impl Orchestrator {
     /// Can be called from:
     /// - AwaitingApproval: user explicitly rejected the plan
     /// - Validating: validation gate rejected the task
-    pub async fn reject_task(&self, task_id: Uuid, reason: String) -> Result<(), SwellError> {
+    pub async fn reject_task(&self, task_id: TaskId, reason: String) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
         sm.reject_task(task_id, reason)?;
         info!(task_id = %task_id, "Task rejected");
@@ -975,7 +975,7 @@ impl Orchestrator {
     }
 
     /// Transition to validating state
-    pub async fn start_validation(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub async fn start_validation(&self, task_id: TaskId) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
         sm.start_validation(task_id)
     }
@@ -983,7 +983,7 @@ impl Orchestrator {
     /// Complete task with validation result
     pub async fn complete_task(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         result: ValidationResult,
     ) -> Result<(), SwellError> {
         let sm = self.state_machine.read().await;
@@ -1090,7 +1090,7 @@ impl Orchestrator {
     /// Returns the result if non-novel detection is applicable.
     async fn check_non_novel_retry(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         current_iteration: u32,
     ) -> Option<NonNovelRetryResult> {
         // Only check for retries (not initial attempt)
@@ -1142,7 +1142,7 @@ impl Orchestrator {
 
     /// Record the diff for the current task attempt.
     /// This should be called after task execution completes but before validation.
-    pub async fn record_attempt_diff(&self, task_id: Uuid, diff: String) -> Result<(), SwellError> {
+    pub async fn record_attempt_diff(&self, task_id: TaskId, diff: String) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
 
         sm.with_task_mut(task_id, |task| {
@@ -1214,7 +1214,7 @@ impl Orchestrator {
     /// Restore a task from its latest checkpoint
     ///
     /// Returns the restored task if a checkpoint exists, or None if no checkpoint found.
-    pub async fn restore_task(&self, task_id: Uuid) -> Result<Option<Task>, SwellError> {
+    pub async fn restore_task(&self, task_id: TaskId) -> Result<Option<Task>, SwellError> {
         // Restore from checkpoint
         let restored_task = self.checkpoint_manager.restore(task_id).await?;
 
@@ -1246,14 +1246,14 @@ impl Orchestrator {
     }
 
     /// Check if a task has any checkpoints
-    pub async fn has_checkpoint(&self, task_id: Uuid) -> Result<bool, SwellError> {
+    pub async fn has_checkpoint(&self, task_id: TaskId) -> Result<bool, SwellError> {
         self.checkpoint_manager.has_checkpoint(task_id).await
     }
 
     /// Get checkpoint history for a task
     pub async fn get_checkpoint_history(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
     ) -> Result<Vec<Checkpoint>, SwellError> {
         self.checkpoint_manager.list_checkpoints(task_id).await
     }
@@ -1278,7 +1278,7 @@ impl Orchestrator {
     /// Check if a task has an active FeatureLead.
     ///
     /// Returns true if the task has a spawned FeatureLead sub-orchestrator.
-    pub async fn has_feature_lead(&self, task_id: Uuid) -> bool {
+    pub async fn has_feature_lead(&self, task_id: TaskId) -> bool {
         let manager = self.feature_lead_manager.read().await;
         manager.get(&task_id).is_some()
     }
@@ -1287,7 +1287,7 @@ impl Orchestrator {
     ///
     /// Returns Some(FeatureLead) if the task has an active sub-orchestrator,
     /// None otherwise.
-    pub async fn get_feature_lead(&self, task_id: Uuid) -> Option<FeatureLead> {
+    pub async fn get_feature_lead(&self, task_id: TaskId) -> Option<FeatureLead> {
         let manager = self.feature_lead_manager.read().await;
         manager.get(&task_id).cloned()
     }
@@ -1295,7 +1295,7 @@ impl Orchestrator {
     /// Remove a FeatureLead after completion.
     ///
     /// Called when a FeatureLead has finished its work and should be cleaned up.
-    pub async fn remove_feature_lead(&self, task_id: Uuid) -> Option<FeatureLead> {
+    pub async fn remove_feature_lead(&self, task_id: TaskId) -> Option<FeatureLead> {
         let mut manager = self.feature_lead_manager.write().await;
         manager.remove(&task_id)
     }
@@ -1305,13 +1305,13 @@ impl Orchestrator {
     // ========================================================================
 
     /// Pause a task (operator-initiated)
-    pub async fn pause_task(&self, task_id: Uuid, reason: String) -> Result<(), SwellError> {
+    pub async fn pause_task(&self, task_id: TaskId, reason: String) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
         sm.pause_task(task_id, reason)
     }
 
     /// Resume a paused task
-    pub async fn resume_task(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub async fn resume_task(&self, task_id: TaskId) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
         sm.resume_task(task_id)
     }
@@ -1319,7 +1319,7 @@ impl Orchestrator {
     /// Inject instructions into a task
     pub async fn inject_instruction(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         instruction: String,
     ) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
@@ -1329,7 +1329,7 @@ impl Orchestrator {
     /// Modify task scope boundaries
     pub async fn modify_scope(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         new_scope: swell_core::TaskScope,
     ) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
@@ -1337,7 +1337,7 @@ impl Orchestrator {
     }
 
     /// Restore original scope (revert modify_scope)
-    pub async fn restore_original_scope(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub async fn restore_original_scope(&self, task_id: TaskId) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
         sm.restore_original_scope(task_id)
     }
@@ -1345,7 +1345,7 @@ impl Orchestrator {
     /// Get injected instructions for a task
     pub async fn get_injected_instructions(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
     ) -> Result<Vec<String>, SwellError> {
         let sm = self.state_machine.read().await;
         let task = sm.get_task(task_id)?;
@@ -1353,7 +1353,7 @@ impl Orchestrator {
     }
 
     /// Get current scope for a task
-    pub async fn get_task_scope(&self, task_id: Uuid) -> Result<swell_core::TaskScope, SwellError> {
+    pub async fn get_task_scope(&self, task_id: TaskId) -> Result<swell_core::TaskScope, SwellError> {
         let sm = self.state_machine.read().await;
         let task = sm.get_task(task_id)?;
         Ok(task.current_scope.clone())
@@ -1389,8 +1389,8 @@ impl Orchestrator {
     /// - `Err(LockAcquisitionResult::Conflict)` - One or more files locked by another task
     pub async fn acquire_task_locks(
         &self,
-        task_id: Uuid,
-        agent_id: Option<Uuid>,
+        task_id: TaskId,
+        agent_id: Option<AgentId>,
         files: Vec<String>,
     ) -> Result<Vec<FileLock>, LockAcquisitionResult> {
         let mut acquired_locks = Vec::new();
@@ -1437,7 +1437,7 @@ impl Orchestrator {
     ///
     /// # Returns
     /// The number of locks released
-    pub async fn release_task_locks(&self, task_id: Uuid) -> usize {
+    pub async fn release_task_locks(&self, task_id: TaskId) -> usize {
         self.file_lock_manager.release_all_for_task(task_id).await
     }
 
@@ -1455,7 +1455,7 @@ impl Orchestrator {
     /// - `Some(FileLock)` - The first conflicting lock found
     pub async fn check_lock_conflicts(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         files: Vec<String>,
     ) -> Option<FileLock> {
         for file_path in files {
@@ -1477,7 +1477,7 @@ impl Orchestrator {
     ///
     /// # Returns
     /// List of all active locks held by the task
-    pub async fn get_task_locks(&self, task_id: Uuid) -> Vec<FileLock> {
+    pub async fn get_task_locks(&self, task_id: TaskId) -> Vec<FileLock> {
         self.file_lock_manager.get_task_locks(task_id).await
     }
 
@@ -1565,7 +1565,7 @@ mod tests {
     use super::*;
     use swell_core::{AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, ValidationResult};
 
-    fn create_test_plan(task_id: Uuid) -> Plan {
+    fn create_test_plan(task_id: TaskId) -> Plan {
         Plan {
             id: Uuid::new_v4(),
             task_id,

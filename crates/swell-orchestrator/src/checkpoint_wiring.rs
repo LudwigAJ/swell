@@ -24,7 +24,7 @@
 
 use std::sync::Arc;
 
-use swell_core::{AgentId, Checkpoint, CheckpointStore, Plan, SwellError, Task, TaskState};
+use swell_core::{AgentId, Checkpoint, CheckpointStore, Plan, SwellError, Task, TaskId, TaskState};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -56,7 +56,7 @@ pub struct CheckpointingTaskStateMachine<S: CheckpointStore> {
     /// The checkpoint store for persistence
     checkpoint_store: Arc<S>,
     /// Track checkpoint counts per task for metadata
-    checkpoint_counts: RwLock<std::collections::HashMap<Uuid, usize>>,
+    checkpoint_counts: RwLock<std::collections::HashMap<TaskId, usize>>,
 }
 
 impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
@@ -75,7 +75,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Get the checkpoint count for a task.
-    pub async fn checkpoint_count(&self, task_id: Uuid) -> usize {
+    pub async fn checkpoint_count(&self, task_id: TaskId) -> usize {
         let counts = self.checkpoint_counts.read().await;
         counts.get(&task_id).copied().unwrap_or(0)
     }
@@ -139,12 +139,12 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Get a task by ID.
-    pub fn get_task(&self, id: Uuid) -> Result<Task, SwellError> {
+    pub fn get_task(&self, id: TaskId) -> Result<Task, SwellError> {
         self.inner.get_task(id)
     }
 
     /// Transition task to ENRICHED state and checkpoint.
-    pub async fn enrich_task(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn enrich_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.enrich_task(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "enrich").await?;
@@ -152,7 +152,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Transition task to READY state (plan approved) and checkpoint.
-    pub async fn ready_task(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn ready_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.ready_task(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "ready").await?;
@@ -160,7 +160,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Assign task to an agent and checkpoint.
-    pub async fn assign_task(&self, id: Uuid, agent_id: AgentId) -> Result<(), SwellError> {
+    pub async fn assign_task(&self, id: TaskId, agent_id: AgentId) -> Result<(), SwellError> {
         self.inner.assign_task(id, agent_id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "assign").await?;
@@ -168,7 +168,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Start executing the task and checkpoint.
-    pub async fn start_execution(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn start_execution(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.start_execution(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "start_execution").await?;
@@ -176,7 +176,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Start validation phase and checkpoint.
-    pub async fn start_validation(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn start_validation(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.start_validation(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "start_validation").await?;
@@ -184,7 +184,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Mark task as accepted and checkpoint.
-    pub async fn accept_task(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn accept_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.accept_task(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "accept").await?;
@@ -192,7 +192,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Mark task as rejected and checkpoint.
-    pub async fn reject_task(&self, id: Uuid, reason: String) -> Result<(), SwellError> {
+    pub async fn reject_task(&self, id: TaskId, reason: String) -> Result<(), SwellError> {
         self.inner.reject_task(id, reason)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "reject").await?;
@@ -200,7 +200,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Retry a rejected task and checkpoint.
-    pub async fn retry_task(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn retry_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.retry_task(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "retry").await?;
@@ -208,7 +208,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Mark task as failed and checkpoint.
-    pub async fn fail_task(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn fail_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.fail_task(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "fail").await?;
@@ -216,7 +216,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Pause a task and checkpoint.
-    pub async fn pause_task(&self, id: Uuid, reason: String) -> Result<(), SwellError> {
+    pub async fn pause_task(&self, id: TaskId, reason: String) -> Result<(), SwellError> {
         self.inner.pause_task(id, reason)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "pause").await?;
@@ -224,7 +224,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Resume a paused task and checkpoint.
-    pub async fn resume_task(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn resume_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.resume_task(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "resume").await?;
@@ -232,7 +232,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Escalate task and checkpoint.
-    pub async fn escalate_task(&self, id: Uuid) -> Result<(), SwellError> {
+    pub async fn escalate_task(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.escalate_task(id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "escalate").await?;
@@ -240,31 +240,31 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Set plan for task (no checkpoint needed for plan setting alone).
-    pub fn set_plan(&self, id: Uuid, plan: Plan) -> Result<(), SwellError> {
+    pub fn set_plan(&self, id: TaskId, plan: Plan) -> Result<(), SwellError> {
         self.inner.set_plan(id, plan)
     }
 
     /// Inject instructions into a task.
-    pub fn inject_instruction(&self, id: Uuid, instruction: String) -> Result<(), SwellError> {
+    pub fn inject_instruction(&self, id: TaskId, instruction: String) -> Result<(), SwellError> {
         self.inner.inject_instruction(id, instruction)
     }
 
     /// Modify task scope boundaries.
     pub fn modify_scope(
         &self,
-        id: Uuid,
+        id: TaskId,
         new_scope: swell_core::TaskScope,
     ) -> Result<(), SwellError> {
         self.inner.modify_scope(id, new_scope)
     }
 
     /// Restore original scope.
-    pub fn restore_original_scope(&self, id: Uuid) -> Result<(), SwellError> {
+    pub fn restore_original_scope(&self, id: TaskId) -> Result<(), SwellError> {
         self.inner.restore_original_scope(id)
     }
 
     /// Check if task can proceed (dependencies satisfied).
-    pub fn can_proceed(&self, id: Uuid) -> Result<bool, SwellError> {
+    pub fn can_proceed(&self, id: TaskId) -> Result<bool, SwellError> {
         self.inner.can_proceed(id)
     }
 
@@ -284,12 +284,12 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Remove a task from the registry.
-    pub fn remove_task(&self, id: Uuid) -> Option<Task> {
+    pub fn remove_task(&self, id: TaskId) -> Option<Task> {
         self.inner.remove_task(id)
     }
 
     /// Load the latest checkpoint for a task and restore it.
-    pub async fn restore_from_latest(&self, task_id: Uuid) -> Result<Option<Task>, SwellError> {
+    pub async fn restore_from_latest(&self, task_id: TaskId) -> Result<Option<Task>, SwellError> {
         let checkpoint = self.checkpoint_store.load_latest(task_id).await?;
 
         if let Some(cp) = checkpoint {
@@ -312,7 +312,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// List all checkpoints for a task.
-    pub async fn list_checkpoints(&self, task_id: Uuid) -> Result<Vec<Checkpoint>, SwellError> {
+    pub async fn list_checkpoints(&self, task_id: TaskId) -> Result<Vec<Checkpoint>, SwellError> {
         self.checkpoint_store.list(task_id).await
     }
 }
