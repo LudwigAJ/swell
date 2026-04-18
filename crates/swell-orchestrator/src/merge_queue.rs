@@ -44,6 +44,7 @@ use crate::tiered_merge::{MergeEligibility, MergeStrategy, TieredMerge};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use swell_core::ids::{BranchName, CommitSha};
 use thiserror::Error;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -131,7 +132,7 @@ pub struct MergeResult {
     /// PR identifier that was merged
     pub pr_id: String,
     /// SHA of the merge commit (if successful)
-    pub merge_sha: Option<String>,
+    pub merge_sha: Option<CommitSha>,
     /// Message describing the result
     pub message: String,
     /// Time taken for the merge operation
@@ -140,7 +141,7 @@ pub struct MergeResult {
 
 impl MergeResult {
     /// Create a successful merge result
-    pub fn success(pr_id: String, merge_sha: String, duration_ms: u64) -> Self {
+    pub fn success(pr_id: String, merge_sha: CommitSha, duration_ms: u64) -> Self {
         Self {
             success: true,
             pr_id,
@@ -170,9 +171,9 @@ pub struct MergeQueueEntry {
     /// PR number (e.g., "123")
     pub pr_number: String,
     /// Branch name of the PR
-    pub branch: String,
+    pub branch: BranchName,
     /// Base branch (target)
-    pub base_branch: String,
+    pub base_branch: BranchName,
     /// Stack ID this PR belongs to (for stacked PRs)
     pub stack_id: Option<Uuid>,
     /// Current merge status
@@ -197,8 +198,8 @@ impl MergeQueueEntry {
     /// Create a new merge queue entry
     pub fn new(
         pr_number: String,
-        branch: String,
-        base_branch: String,
+        branch: BranchName,
+        base_branch: BranchName,
         stack_id: Option<Uuid>,
     ) -> Self {
         let now = Utc::now();
@@ -449,7 +450,7 @@ impl MergeProvider for GitHubMergeProvider {
 
         Ok(MergeResult::success(
             entry.pr_number.clone(),
-            format!("sha-{}", Uuid::new_v4()),
+            CommitSha::new(format!("sha-{}", Uuid::new_v4())),
             duration_ms,
         ))
     }
@@ -576,7 +577,7 @@ impl MergeProvider for MergifyProvider {
 
         Ok(MergeResult::success(
             entry.pr_number.clone(),
-            format!("sha-{}", Uuid::new_v4()),
+            CommitSha::new(format!("sha-{}", Uuid::new_v4())),
             duration_ms,
         ))
     }
@@ -655,7 +656,7 @@ impl MergeProvider for StubMergeProvider {
 
         Ok(MergeResult::success(
             entry.pr_number.clone(),
-            format!("stub-sha-{}", Uuid::new_v4()),
+            CommitSha::new(format!("stub-sha-{}", Uuid::new_v4())),
             duration_ms,
         ))
     }
@@ -991,7 +992,7 @@ impl MergeQueue {
             let last_entry = stack_entries.last().unwrap();
             Ok(MergeResult::success(
                 last_entry.pr_number.clone(),
-                format!("atomic-stack-{}", stack_id),
+                CommitSha::new(format!("atomic-stack-{}", stack_id)),
                 0, // Duration would be accumulated in real implementation
             ))
         } else {
@@ -1122,14 +1123,14 @@ mod tests {
     fn test_merge_queue_entry_creation() {
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "feat/my-branch".to_string(),
-            "main".to_string(),
+            BranchName::new("feat/my-branch".to_string()),
+            BranchName::new("main".to_string()),
             Some(Uuid::new_v4()),
         );
 
         assert_eq!(entry.pr_number, "123");
-        assert_eq!(entry.branch, "feat/my-branch");
-        assert_eq!(entry.base_branch, "main");
+        assert_eq!(entry.branch, BranchName::new("feat/my-branch".to_string()));
+        assert_eq!(entry.base_branch, BranchName::new("main".to_string()));
         assert_eq!(entry.status, MergeStatus::Queued);
         assert_eq!(entry.priority, 50);
         assert_eq!(entry.merge_attempts, 0);
@@ -1140,8 +1141,8 @@ mod tests {
     fn test_merge_queue_entry_set_status() {
         let mut entry = MergeQueueEntry::new(
             "123".to_string(),
-            "feat/my-branch".to_string(),
-            "main".to_string(),
+            BranchName::new("feat/my-branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
 
@@ -1158,8 +1159,8 @@ mod tests {
     fn test_merge_queue_entry_record_merge_attempt_success() {
         let mut entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
 
@@ -1173,8 +1174,8 @@ mod tests {
     fn test_merge_queue_entry_record_merge_attempt_failure() {
         let mut entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
 
@@ -1189,8 +1190,8 @@ mod tests {
     fn test_merge_queue_entry_can_be_merged() {
         let mut entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
 
@@ -1245,11 +1246,18 @@ mod tests {
 
     #[test]
     fn test_merge_result_success() {
-        let result = MergeResult::success("123".to_string(), "sha-abc".to_string(), 150);
+        let result = MergeResult::success(
+            "123".to_string(),
+            CommitSha::new("sha-abc".to_string()),
+            150,
+        );
 
         assert!(result.success);
         assert_eq!(result.pr_id, "123");
-        assert_eq!(result.merge_sha, Some("sha-abc".to_string()));
+        assert_eq!(
+            result.merge_sha,
+            Some(CommitSha::new("sha-abc".to_string()))
+        );
         assert_eq!(result.duration_ms, 150);
     }
 
@@ -1280,8 +1288,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "feat/my-branch".to_string(),
-            "main".to_string(),
+            BranchName::new("feat/my-branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
 
@@ -1304,20 +1312,20 @@ mod tests {
 
         let entry1 = MergeQueueEntry::new(
             "1".to_string(),
-            "branch1".to_string(),
-            "main".to_string(),
+            BranchName::new("branch1".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         let entry2 = MergeQueueEntry::new(
             "2".to_string(),
-            "branch2".to_string(),
-            "main".to_string(),
+            BranchName::new("branch2".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         let entry3 = MergeQueueEntry::new(
             "3".to_string(),
-            "branch3".to_string(),
-            "main".to_string(),
+            BranchName::new("branch3".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
 
@@ -1332,8 +1340,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         queue.add_pr(entry).unwrap();
@@ -1359,8 +1367,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         queue.add_pr(entry).unwrap();
@@ -1384,24 +1392,24 @@ mod tests {
 
         let mut entry1 = MergeQueueEntry::new(
             "1".to_string(),
-            "branch1".to_string(),
-            "main".to_string(),
+            BranchName::new("branch1".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry1.priority = 10;
 
         let mut entry2 = MergeQueueEntry::new(
             "2".to_string(),
-            "branch2".to_string(),
-            "main".to_string(),
+            BranchName::new("branch2".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry2.priority = 100;
 
         let mut entry3 = MergeQueueEntry::new(
             "3".to_string(),
-            "branch3".to_string(),
-            "main".to_string(),
+            BranchName::new("branch3".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry3.priority = 50;
@@ -1424,24 +1432,24 @@ mod tests {
 
         let mut entry1 = MergeQueueEntry::new(
             "1".to_string(),
-            "branch1".to_string(),
-            "main".to_string(),
+            BranchName::new("branch1".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry1.set_status(MergeStatus::Queued);
 
         let mut entry2 = MergeQueueEntry::new(
             "2".to_string(),
-            "branch2".to_string(),
-            "main".to_string(),
+            BranchName::new("branch2".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry2.set_status(MergeStatus::AtHead);
 
         let mut entry3 = MergeQueueEntry::new(
             "3".to_string(),
-            "branch3".to_string(),
-            "main".to_string(),
+            BranchName::new("branch3".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry3.set_status(MergeStatus::Merged);
@@ -1462,8 +1470,8 @@ mod tests {
 
         let mut entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry.set_status(MergeStatus::AtHead);
@@ -1497,8 +1505,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         queue.add_pr(entry).unwrap();
@@ -1524,8 +1532,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         queue.add_pr(entry).unwrap();
@@ -1541,8 +1549,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         queue.add_pr(entry).unwrap();
@@ -1558,8 +1566,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         queue.add_pr(entry).unwrap();
@@ -1627,8 +1635,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
 
@@ -1652,8 +1660,8 @@ mod tests {
 
         let entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
 
@@ -1692,8 +1700,8 @@ mod tests {
 
         let mut entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry.set_status(MergeStatus::AtHead);
@@ -1709,8 +1717,8 @@ mod tests {
 
         let mut entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry.set_status(MergeStatus::AtHead);
@@ -1728,8 +1736,8 @@ mod tests {
         // Entry that can be merged
         let mut entry1 = MergeQueueEntry::new(
             "1".to_string(),
-            "branch1".to_string(),
-            "main".to_string(),
+            BranchName::new("branch1".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry1.set_status(MergeStatus::AtHead);
@@ -1738,8 +1746,8 @@ mod tests {
         // Entry that cannot be merged
         let mut entry2 = MergeQueueEntry::new(
             "2".to_string(),
-            "branch2".to_string(),
-            "main".to_string(),
+            BranchName::new("branch2".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry2.set_status(MergeStatus::Queued);
@@ -1762,8 +1770,8 @@ mod tests {
 
         let mut entry = MergeQueueEntry::new(
             "123".to_string(),
-            "branch".to_string(),
-            "main".to_string(),
+            BranchName::new("branch".to_string()),
+            BranchName::new("main".to_string()),
             None,
         );
         entry.set_status(MergeStatus::AtHead);
