@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use swell_core::wiring::WiringState;
 use swell_core::{CliCommand, DaemonEvent, TaskState};
 use swell_llm::LlmBackend;
 use swell_memory::recall::RecallService;
@@ -110,6 +111,116 @@ impl Daemon {
         Arc::clone(&self.recall_service)
     }
 
+    /// Print the wiring manifest to stderr and structured logs.
+    ///
+    /// This emits:
+    /// - A `[wiring]` block header to stderr with version info
+    /// - One line per subsystem with name, identity, and state (enabled/DEGRADED/DISABLED)
+    /// - A wiring-check summary line to stderr
+    ///
+    /// If `SWELL_STRICT=1` is set and any subsystem is Degraded or Disabled,
+    /// this prints an error message and exits with code 1 before the socket is bound.
+    async fn print_wiring_manifest(&self) {
+        use std::io::Write;
+
+        let orchestrator = self.orchestrator.lock().await;
+        let manifest = orchestrator.wiring_manifest();
+
+        // Collect affected subsystems for SWELL_STRICT=1
+        let degraded_or_disabled: Vec<_> = manifest
+            .iter()
+            .filter(|r| {
+                let state = r.state();
+                matches!(state, WiringState::Degraded(_) | WiringState::Disabled(_))
+            })
+            .map(|r| (r.name().to_string(), r.state()))
+            .collect();
+
+        // Emit structured tracing events with target "wiring" for each subsystem
+        for report in manifest.iter() {
+            let state = report.state();
+            let state_str = match &state {
+                WiringState::Enabled => "enabled".to_string(),
+                WiringState::Degraded(reason) => format!("DEGRADED({reason})"),
+                WiringState::Disabled(reason) => format!("DISABLED({reason})"),
+            };
+
+            // Emit structured tracing event with target "wiring"
+            tracing::info!(
+                target: "wiring",
+                subsystem = report.name(),
+                identity = report.identity(),
+                state = %state_str,
+                "subsystem wiring state"
+            );
+        }
+
+        // Print plain-text banner to stderr (exactly once at startup)
+        let stderr = std::io::stderr();
+        let mut handle = stderr.lock();
+
+        // Banner header
+        let _ = writeln!(handle);
+        let _ = writeln!(handle, "╔══════════════════════════════════════════════════════════════════════════════════════════════════════════════╗");
+        let _ = writeln!(handle, "║                                      [wiring] SWELL Daemon Startup                                           ║");
+        let _ = writeln!(handle, "╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════╣");
+        for report in manifest.iter() {
+            let state = report.state();
+            let state_str = match &state {
+                WiringState::Enabled => "enabled".to_string(),
+                WiringState::Degraded(reason) => format!("DEGRADED({reason})"),
+                WiringState::Disabled(reason) => format!("DISABLED({reason})"),
+            };
+            let _ = writeln!(
+                handle,
+                "║  {:<20} {:<40} {:<30}",
+                report.name(),
+                report.identity(),
+                state_str
+            );
+        }
+        let _ = writeln!(handle, "╠══════════════════════════════════════════════════════════════════════════════════════════════════════════════╣");
+
+        // Wiring check summary
+        let total = manifest.len();
+        let degraded_count = degraded_or_disabled
+            .iter()
+            .filter(|(_, s)| matches!(s, WiringState::Degraded(_)))
+            .count();
+        let disabled_count = degraded_or_disabled
+            .iter()
+            .filter(|(_, s)| matches!(s, WiringState::Disabled(_)))
+            .count();
+        let _ = writeln!(
+            handle,
+            "║  [wiring-check] {} total, {} degraded, {} disabled",
+            total, degraded_count, disabled_count
+        );
+        let _ = writeln!(handle, "╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════╝");
+        let _ = writeln!(handle);
+
+        // SWELL_STRICT=1: exit if any subsystem is degraded or disabled
+        if std::env::var("SWELL_STRICT").as_deref() == Ok("1") && !degraded_or_disabled.is_empty() {
+                let _ = writeln!(
+                    std::io::stderr(),
+                    "ERROR: SWELL_STRICT=1: The following subsystems are degraded or disabled:"
+                );
+                for (name, state) in &degraded_or_disabled {
+                    let _ = writeln!(
+                        std::io::stderr(),
+                        "  - {}: {}",
+                        name,
+                        match state {
+                            WiringState::Enabled => unreachable!(),
+                            WiringState::Degraded(r) => format!("DEGRADED({r})"),
+                            WiringState::Disabled(r) => format!("DISABLED({r})"),
+                        }
+                    );
+                }
+                std::process::exit(1);
+        }
+    }
+
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Remove existing socket file
         if std::path::Path::new(&self.socket_path).exists() {
@@ -136,6 +247,9 @@ impl Daemon {
                 warn!(error = %e, path = %memory_db_path.display(), "Failed to initialize memory store, MemoryQuery will not be available");
             }
         }
+
+        // Print wiring manifest at startup (exactly once, before binding socket)
+        self.print_wiring_manifest().await;
 
         let listener = UnixListener::bind(&self.socket_path)?;
         info!(path = %self.socket_path, "Daemon listening");

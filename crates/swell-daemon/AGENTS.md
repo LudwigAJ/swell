@@ -217,6 +217,42 @@ fn test_event_correlation() {
 }
 ```
 
+## Wiring Manifest
+
+At startup, the daemon prints a wiring manifest to stderr (exactly once, before binding the socket) and emits structured logging events with `tracing::info!(target: "wiring", ...)` for each subsystem.
+
+**Output format:**
+```
+╔══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║                                      [wiring] SWELL Daemon Startup                                           ║
+╠══════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║  TaskStateMachine        Arc<RwLock<TaskStateMachine>>            Enabled                                  ║
+║  AgentPool               AgentPool                                 Enabled                                  ║
+║  CheckpointManager       CheckpointManager                         Enabled                                  ║
+║  ...
+╠══════════════════════════════════════════════════════════════════════════════════════════════════════╣
+║  [wiring-check] 13 total, 0 degraded, 2 disabled
+╚══════════════════════════════════════════════════════════════════════════════════════════════════════╝
+```
+
+**Three-part output:**
+1. `[wiring]` block — one line per subsystem showing name, identity, and state (enabled/DEGRADED/DISABLED)
+2. Config provenance — the `.swell/settings.json` and `.swell/crates.json` paths if present
+3. `wiring-check` summary — counts of total, degraded, and disabled subsystems
+
+**Structured tracing:** Each subsystem also emits:
+```rust
+tracing::info!(
+    target: "wiring",
+    subsystem = "TaskStateMachine",
+    identity = "Arc<RwLock<TaskStateMachine>>",
+    state = "enabled",
+    "subsystem wiring state"
+);
+```
+
+**SWELL_STRICT=1:** If the environment variable `SWELL_STRICT=1` is set and any subsystem is `Degraded` or `Disabled`, the daemon prints an error message to stderr listing the affected subsystems and exits with code 1 before binding the socket.
+
 ## Dependencies
 
 ```toml
