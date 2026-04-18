@@ -20,7 +20,7 @@ This crate handles:
 
 ```rust
 pub struct Daemon {
-    orchestrator: Arc<Mutex<Orchestrator>>,
+    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
     event_emitter: Arc<EventEmitter>,
     socket_path: String,
     shutdown_flag: Arc<AtomicBool>,
@@ -30,9 +30,9 @@ pub struct Daemon {
 }
 
 impl Daemon {
-    pub fn new(socket_path: String) -> Self;
+    pub fn new(socket_path: String, llm: Arc<dyn LlmBackend>) -> Self;
     pub fn event_emitter(&self) -> Arc<EventEmitter>;
-    pub fn orchestrator(&self) -> Arc<Mutex<Orchestrator>>;
+    pub fn orchestrator(&self) -> Arc<Mutex<Arc<Orchestrator>>>;
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
     fn request_shutdown(&self);
     fn is_shutting_down(&self) -> bool;
@@ -85,7 +85,7 @@ pub enum DashboardEvent {
 // Command handlers exported for use by the daemon
 pub async fn handle_command(
     command: CliCommand,
-    orchestrator: Arc<Mutex<Orchestrator>>,
+    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
     event_emitter: Arc<EventEmitter>,
 ) -> DaemonEvent;
 ```

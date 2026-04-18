@@ -48,36 +48,48 @@ jobs:
         run: |
           set -euo pipefail
           SRC=crates/swell-orchestrator/src
+          LIB=crates/swell-orchestrator/src/lib.rs
           fail=0
-          check() {
+          check_path() {
             local pattern="$1"
             local desc="$2"
-            if rg --no-messages "$pattern" "$SRC" > /dev/null; then
+            local path="$3"
+            if rg --no-messages "$pattern" "$path" > /dev/null; then
               echo "ANTIPATTERN FOUND ($desc): $pattern"
-              rg -n "$pattern" "$SRC" || true
+              rg -n "$pattern" "$path" || true
               fail=1
             fi
           }
 
-          # Constructor refactor: no Option-wrapped subsystems
-          check 'Arc<Mutex<Option<'                                'Option-wrapped subsystem (Mutex)'
-          check 'Arc<RwLock<Option<'                               'Option-wrapped subsystem (RwLock)'
-          check 'llm_backend: Option<'                             'Optional llm_backend'
-          check 'execution_controller: Arc<RwLock<Option<'         'Optional execution_controller'
-          check 'execution_controller\(\).*-> Option<'             'Optional accessor return'
+          # Constructor-refactor shape rules apply to Orchestrator (lib.rs).
+          # The cfg-gated test builder (builder.rs) is explicitly allowed to
+          # use Option<_> + with_* setters for fake injection in tests.
+          # Agent constructors in agents.rs have unrelated with_llm methods.
+          check_path 'Arc<Mutex<Option<(ExecutionController|ValidationOrchestrator|WorktreePool|PostToolHookManager|LlmBackend|CheckpointManager|FileLockManager|McpConfigManager)' \
+                     'Option-wrapped subsystem (Mutex) on Orchestrator' "$LIB"
+          check_path 'Arc<RwLock<Option<(ExecutionController|ValidationOrchestrator|WorktreePool|PostToolHookManager|LlmBackend|CheckpointManager|FileLockManager|McpConfigManager)' \
+                     'Option-wrapped subsystem (RwLock) on Orchestrator' "$LIB"
+          check_path 'llm_backend: Option<'                         'Optional llm_backend on Orchestrator' "$LIB"
+          check_path 'execution_controller: Arc<RwLock<Option<'     'Optional execution_controller on Orchestrator' "$LIB"
+          check_path 'execution_controller\(\).*-> Option<'         'Optional execution_controller() accessor' "$LIB"
 
-          # Constructor refactor: no Default impls on required subsystems
-          check 'impl Default for (ExecutionController|ValidationOrchestrator|WorktreePool|PostToolHookManager)' 'Default impl on required subsystem'
+          # No Default impls on required subsystems (whole crate).
+          check_path 'impl Default for (ExecutionController|ValidationOrchestrator|WorktreePool|PostToolHookManager)' \
+                     'Default impl on required subsystem' "$SRC"
 
-          # Constructor refactor: no with_* setters (use constructor injection)
-          check 'fn with_(llm|checkpoint_manager)'                 'with_* setter'
+          # No with_* setters on Orchestrator itself — only on the cfg-gated
+          # OrchestratorBuilder. Agent types may keep their with_llm methods.
+          # Uses multiline so the `impl Orchestrator {` block boundary is respected.
+          check_path '(?s)impl Orchestrator \{[^}]*fn with_(llm|checkpoint_manager)' \
+                     'with_* setter on Orchestrator' "$LIB"
 
           # e770933 floor: no unsafe escape hatches for the
-          # Orchestrator ↔ ExecutionController cycle
-          check '\*const Orchestrator'                             'raw pointer to Orchestrator'
-          check 'unsafe impl (Sync|Send) for ExecutionController'  'unsafe Send/Sync on ExecutionController'
-          check 'Arc::from_raw'                                    'Arc::from_raw (ownership reconstitution)'
-          check 'std::ptr::null'                                   'std::ptr::null placeholder'
+          # Orchestrator ↔ ExecutionController cycle (whole crate).
+          check_path '\*const Orchestrator'                         'raw pointer to Orchestrator' "$SRC"
+          check_path 'unsafe impl (Sync|Send) for ExecutionController' \
+                     'unsafe Send/Sync on ExecutionController' "$SRC"
+          check_path 'Arc::from_raw'                                'Arc::from_raw (ownership reconstitution)' "$SRC"
+          check_path 'std::ptr::null'                               'std::ptr::null placeholder' "$SRC"
 
           if [ "$fail" -ne 0 ]; then
             echo ""

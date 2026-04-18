@@ -15,6 +15,34 @@ This crate handles:
 
 **Depends on:** `swell-core`, `swell-llm`, `swell-state`, `swell-tools`, `swell-validation`
 
+## Binding rule — production-required subsystems
+
+> **All production-required subsystems of `Orchestrator` must be
+> constructor parameters of `Orchestrator::new`, not `Option<_>` fields
+> with `with_*` setters.** The test-only `OrchestratorBuilder` may accept
+> them optionally for fake injection. If a new subsystem is not yet
+> implemented in production, do not add it as a field. Add it in the
+> same PR that wires it end-to-end.
+
+This rule was established by the constructor refactor (`plan/structural-refactors/01_orchestrator_constructor/`) — the full rationale and anti-pattern catalogue live in `02_target_architecture.md`.
+
+### Forbidden shapes (enforced by CI `antipattern-gate` in `.github/workflows/ci.yml`)
+
+- `Arc<Mutex<Option<T>>>` / `Arc<RwLock<Option<T>>>` on a required subsystem — structurally equivalent to an `Option` field.
+- `llm_backend: Option<…>` or `execution_controller: Arc<RwLock<Option<…>>>` — flip to required `Arc<T>`.
+- `execution_controller() -> Option<…>` accessor — return `Arc<T>` directly.
+- `impl Default for (ExecutionController | ValidationOrchestrator | WorktreePool | PostToolHookManager)` — back-door `Option::None`.
+- `fn with_llm` / `fn with_checkpoint_manager` on `Orchestrator` — setters live **only** on `OrchestratorBuilder` (cfg-gated `test-support`).
+- `*const Orchestrator`, `unsafe impl Sync/Send for ExecutionController`, `Arc::from_raw`, `std::ptr::null` — the parent↔child cycle is resolved via `Arc::new_cyclic` + `Weak<Orchestrator>`. No unsafe escape hatches. (Floor established post-`e770933`.)
+
+### The cycle
+
+`Orchestrator` owns `Arc<ExecutionController>`; `ExecutionController` holds `Weak<Orchestrator>` and upgrades on demand. The `.upgrade()` is guaranteed to succeed because `Orchestrator` outlives every `ExecutionController` — the strong count is ≥ 1 for any reachable controller.
+
+## Test-only `OrchestratorBuilder`
+
+Lives at `src/builder.rs`, gated by `#[cfg(any(test, feature = "test-support"))]`. Production binaries build with `--no-default-features` and CI (`build-no-default-features` job) verifies the `OrchestratorBuilder` symbol is absent from the release artifact.
+
 ## Public API
 
 ### Orchestrator (`lib.rs`)
@@ -29,8 +57,13 @@ pub struct Orchestrator {
 }
 
 impl Orchestrator {
-    pub fn new() -> Self;
-    pub fn with_checkpoint_manager(checkpoint_manager: Arc<CheckpointManager>) -> Self;
+    /// Production constructor. Returns `Arc<Self>` because the
+    /// `Orchestrator ↔ ExecutionController` cycle is resolved via
+    /// `Arc::new_cyclic` + `Weak<Orchestrator>`. See
+    /// `plan/structural-refactors/01_orchestrator_constructor/` for the
+    /// rationale; this is the one intentional signature deviation from
+    /// the doc (which specifies `-> Self`).
+    pub fn new(llm: Arc<dyn LlmBackend>) -> Arc<Self>;
     pub fn subscribe(&self) -> broadcast::Receiver<OrchestratorEvent>;
 
     // Task lifecycle

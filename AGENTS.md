@@ -125,6 +125,8 @@ Agent Skills loader following the [agentskills.io](https://agentskills.io) stand
 ### swell-orchestrator
 Coordinates task planning and execution flow.
 
+> **Binding rule:** All production-required subsystems of `Orchestrator` must be constructor parameters of `Orchestrator::new`, not `Option<_>` fields with `with_*` setters. Setters live only on the `#[cfg(any(test, feature = "test-support"))]`-gated `OrchestratorBuilder`. The full rule, anti-pattern catalogue, and the `Orchestrator::new(llm) -> Arc<Self>` signature deviation (forced by `Arc::new_cyclic` for the `Orchestrator ↔ ExecutionController` cycle) are documented in `crates/swell-orchestrator/AGENTS.md`. CI jobs `build-no-default-features` and `antipattern-gate` enforce this; see `.github/workflows/ci.yml` and `plan/structural-refactors/01_orchestrator_constructor/`.
+
 **Key Modules:**
 - `orchestrator.rs` - Main orchestration loop
 - `scheduler.rs` - Task queue and dependency management

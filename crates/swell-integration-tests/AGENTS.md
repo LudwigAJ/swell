@@ -15,6 +15,13 @@ in CI, and never wired in. Unit tests cannot catch orphans because they load
 the module they test. Integration tests here cross the daemon boundary and
 refuse to go green until the wires exist.
 
+> Cross-ref: the `Orchestrator` constructor policy (required-subsystem rule,
+> antipattern catalogue, `Arc::new_cyclic` signature deviation) lives in
+> `crates/swell-orchestrator/AGENTS.md`. Wiring tests here consume
+> `OrchestratorBuilder` under `--features swell-orchestrator/test-support`,
+> which is cfg-gated out of production by the `build-no-default-features` CI
+> job.
+
 ## Test binaries
 
 ### `prompt_integration_tests.rs`
