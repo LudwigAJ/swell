@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use swell_core::ids::SocketPath;
 use swell_core::wiring::WiringState;
 use swell_core::{CliCommand, DaemonEvent, TaskState};
 use swell_llm::LlmBackend;
@@ -28,7 +29,7 @@ const SHUTDOWN_BROADCAST_INTERVAL_SECS: u64 = 1;
 pub struct Daemon {
     orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
     event_emitter: Arc<EventEmitter>,
-    socket_path: String,
+    socket_path: SocketPath,
     /// Flag indicating shutdown has been requested
     shutdown_flag: Arc<AtomicBool>,
     /// Counter for active connections
@@ -52,7 +53,7 @@ impl Daemon {
     /// # Arguments
     /// * `socket_path` - Path to the Unix socket for client connections
     /// * `llm` - The LLM backend to use for agent execution
-    pub fn new(socket_path: String, llm: Arc<dyn LlmBackend>) -> Self {
+    pub fn new(socket_path: SocketPath, llm: Arc<dyn LlmBackend>) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
             orchestrator: Arc::new(Mutex::new(Orchestrator::new(llm))),
@@ -201,30 +202,30 @@ impl Daemon {
 
         // SWELL_STRICT=1: exit if any subsystem is degraded or disabled
         if std::env::var("SWELL_STRICT").as_deref() == Ok("1") && !degraded_or_disabled.is_empty() {
+            let _ = writeln!(
+                std::io::stderr(),
+                "ERROR: SWELL_STRICT=1: The following subsystems are degraded or disabled:"
+            );
+            for (name, state) in &degraded_or_disabled {
                 let _ = writeln!(
                     std::io::stderr(),
-                    "ERROR: SWELL_STRICT=1: The following subsystems are degraded or disabled:"
+                    "  - {}: {}",
+                    name,
+                    match state {
+                        WiringState::Enabled => unreachable!(),
+                        WiringState::Degraded(r) => format!("DEGRADED({r})"),
+                        WiringState::Disabled(r) => format!("DISABLED({r})"),
+                    }
                 );
-                for (name, state) in &degraded_or_disabled {
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "  - {}: {}",
-                        name,
-                        match state {
-                            WiringState::Enabled => unreachable!(),
-                            WiringState::Degraded(r) => format!("DEGRADED({r})"),
-                            WiringState::Disabled(r) => format!("DISABLED({r})"),
-                        }
-                    );
-                }
-                std::process::exit(1);
+            }
+            std::process::exit(1);
         }
     }
 
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Remove existing socket file
-        if std::path::Path::new(&self.socket_path).exists() {
-            std::fs::remove_file(&self.socket_path)?;
+        if std::path::Path::new(self.socket_path.as_path_buf()).exists() {
+            std::fs::remove_file(self.socket_path.as_path_buf())?;
         }
 
         // Initialize the memory recall service
@@ -251,7 +252,7 @@ impl Daemon {
         // Print wiring manifest at startup (exactly once, before binding socket)
         self.print_wiring_manifest().await;
 
-        let listener = UnixListener::bind(&self.socket_path)?;
+        let listener = UnixListener::bind(self.socket_path.as_path_buf().as_path())?;
         info!(path = %self.socket_path, "Daemon listening");
 
         // Spawn SIGTERM handler
@@ -360,8 +361,8 @@ impl Daemon {
 
     /// Remove the socket file
     async fn cleanup_socket(&self) {
-        if std::path::Path::new(&self.socket_path).exists() {
-            match std::fs::remove_file(&self.socket_path) {
+        if std::path::Path::new(self.socket_path.as_path_buf()).exists() {
+            match std::fs::remove_file(self.socket_path.as_path_buf()) {
                 Ok(()) => info!(path = %self.socket_path, "Socket file removed"),
                 Err(e) => {
                     warn!(path = %self.socket_path, error = %e, "Failed to remove socket file")
