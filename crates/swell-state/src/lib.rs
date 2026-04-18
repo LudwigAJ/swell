@@ -47,7 +47,7 @@ mod tests {
 
         let checkpoint = swell_core::Checkpoint {
             id: uuid::Uuid::new_v4(),
-            task_id: uuid::Uuid::new_v4(),
+            task_id: swell_core::TaskId::new(),
             state: swell_core::TaskState::Created,
             snapshot: serde_json::json!({"test": true}),
             created_at: chrono::Utc::now(),

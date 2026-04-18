@@ -453,7 +453,7 @@ mod tests {
         assert!(manager.has_checkpoint(task.id).await.unwrap());
 
         // Non-existent task
-        assert!(!manager.has_checkpoint(Uuid::new_v4()).await.unwrap());
+        assert!(!manager.has_checkpoint(TaskId::new()).await.unwrap());
     }
 
     #[tokio::test]

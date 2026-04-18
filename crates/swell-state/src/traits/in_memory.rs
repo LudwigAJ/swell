@@ -113,7 +113,7 @@ mod tests {
 
         let checkpoint = Checkpoint {
             id: Uuid::new_v4(),
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             state: TaskState::Created,
             snapshot: serde_json::json!({"key": "value"}),
             created_at: Utc::now(),
@@ -130,7 +130,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_latest() {
         let store = InMemoryCheckpointStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         for i in 0..3 {
             let checkpoint = Checkpoint {
@@ -151,7 +151,7 @@ mod tests {
     #[tokio::test]
     async fn test_prune() {
         let store = InMemoryCheckpointStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         for i in 0..5 {
             let checkpoint = Checkpoint {

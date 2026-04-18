@@ -570,7 +570,7 @@ mod postgres_integration_tests {
         };
 
         let store = PostgresCheckpointStore::new(&db_url).await.unwrap();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let checkpoint = Checkpoint {
             id: Uuid::new_v4(),
@@ -597,7 +597,7 @@ mod postgres_integration_tests {
         };
 
         let store = PostgresCheckpointStore::new(&db_url).await.unwrap();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Save multiple checkpoints
         for i in 0..3 {
@@ -624,7 +624,7 @@ mod postgres_integration_tests {
         };
 
         let store = PostgresCheckpointStore::new(&db_url).await.unwrap();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Save 3 checkpoints
         for i in 0..3 {
@@ -655,7 +655,7 @@ mod postgres_integration_tests {
         };
 
         let store = PostgresCheckpointStore::new(&db_url).await.unwrap();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Save 5 checkpoints
         for i in 0..5 {

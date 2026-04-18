@@ -189,7 +189,7 @@ mod tests {
 
         let checkpoint = Checkpoint {
             id: Uuid::new_v4(),
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             state: TaskState::Created,
             snapshot: serde_json::json!({"test": true}),
             created_at: Utc::now(),
@@ -209,7 +209,7 @@ mod tests {
         let url = format!("sqlite:{}?mode=rwc", db_path.display());
 
         let store = SqliteCheckpointStore::new(&url).await.unwrap();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         for i in 0..3 {
             let checkpoint = Checkpoint {
