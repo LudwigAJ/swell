@@ -2,6 +2,19 @@
 //!
 //! This module provides a builder pattern for constructing [`Orchestrator`] instances.
 //! It is only available during tests or when the `test-support` feature is enabled.
+//!
+//! # Production-build invariant
+//!
+//! `OrchestratorBuilder` must **never** be reachable from a default-feature
+//! build. A doctest cannot enforce this cleanly because this module is itself
+//! gated by `#[cfg(any(test, feature = "test-support"))]` — when the gate is
+//! off, the doctest is not parsed at all.
+//!
+//! The invariant is instead enforced by the CI gate in
+//! `.github/workflows/ci.yml` (`build-no-default-features` job), which:
+//! 1. Builds the workspace with `--no-default-features --release`.
+//! 2. Greps the cargo JSON output for the `OrchestratorBuilder` symbol.
+//! 3. Fails the build if the symbol leaks into the production binary.
 
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::Arc;
