@@ -1,0 +1,27 @@
+{
+  "milestone": "refactor-02-wiring-manifest",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 10,
+    "passed": 10,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-WIRING-MANIFEST-001",
+    "VAL-WIRING-MANIFEST-002",
+    "VAL-WIRING-MANIFEST-003",
+    "VAL-WIRING-MANIFEST-004",
+    "VAL-WIRING-MANIFEST-005",
+    "VAL-WIRING-MANIFEST-006",
+    "VAL-WIRING-MANIFEST-007",
+    "VAL-WIRING-MANIFEST-008",
+    "VAL-WIRING-MANIFEST-009",
+    "VAL-WIRING-MANIFEST-010"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
