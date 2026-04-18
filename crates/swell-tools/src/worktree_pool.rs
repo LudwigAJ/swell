@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use swell_core::ids::WorktreeId;
 use swell_core::AgentId;
 use swell_core::SwellError;
 use tokio::sync::RwLock;
@@ -18,7 +19,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone)]
 pub struct Worktree {
     /// Unique identifier for this worktree
-    pub id: Uuid,
+    pub id: WorktreeId,
     /// Path to the worktree directory
     pub path: PathBuf,
     /// Agent this worktree is allocated to (if any)
@@ -33,7 +34,7 @@ pub struct Worktree {
 
 impl Worktree {
     /// Create a new worktree in unallocated state
-    fn new(id: Uuid, path: PathBuf) -> Self {
+    fn new(id: WorktreeId, path: PathBuf) -> Self {
         Self {
             id,
             path,
@@ -79,7 +80,7 @@ impl Worktree {
 #[derive(Debug, Clone)]
 pub struct WorktreeAllocation {
     /// Worktree ID
-    pub worktree_id: Uuid,
+    pub worktree_id: WorktreeId,
     /// Agent ID
     pub agent_id: AgentId,
     /// Task ID
@@ -204,7 +205,7 @@ impl WorktreePool {
 
     /// Create a single worktree
     async fn create_worktree_internal(&self, index: usize) -> Result<Worktree, SwellError> {
-        let id = Uuid::new_v4();
+        let id = WorktreeId::new();
         let name = format!("{}-{}", self.config.prefix, index);
         let path = self.config.worktree_dir.join(&name);
         let path_str = path.to_string_lossy().to_string();
@@ -426,7 +427,7 @@ impl WorktreePool {
     }
 
     /// Get a specific worktree by ID
-    pub async fn get_worktree(&self, id: Uuid) -> Option<Worktree> {
+    pub async fn get_worktree(&self, id: WorktreeId) -> Option<Worktree> {
         let worktrees = self.worktrees.read().await;
         worktrees.iter().find(|w| w.id == id).cloned()
     }
@@ -473,12 +474,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_worktree_state() {
-        let mut worktree = Worktree::new(Uuid::new_v4(), PathBuf::from("/tmp/test"));
+        let mut worktree = Worktree::new(WorktreeId::new(), PathBuf::from("/tmp/test"));
         worktree.ready = true;
         assert!(worktree.is_available());
         assert!(worktree.agent_id.is_none());
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
         let task_id = Uuid::new_v4();
         worktree.allocate(agent_id, task_id);
 
@@ -489,10 +490,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_worktree_release() {
-        let mut worktree = Worktree::new(Uuid::new_v4(), PathBuf::from("/tmp/test"));
+        let mut worktree = Worktree::new(WorktreeId::new(), PathBuf::from("/tmp/test"));
         worktree.ready = true;
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
         let task_id = Uuid::new_v4();
         worktree.allocate(agent_id, task_id);
         assert!(!worktree.is_available());
@@ -505,11 +506,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_allocation_record() {
-        let mut worktree = Worktree::new(Uuid::new_v4(), PathBuf::from("/tmp/test"));
+        let mut worktree = Worktree::new(WorktreeId::new(), PathBuf::from("/tmp/test"));
         worktree.branch = Some("test-branch".to_string());
         worktree.ready = true;
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
         let task_id = Uuid::new_v4();
         worktree.allocate(agent_id, task_id);
 
