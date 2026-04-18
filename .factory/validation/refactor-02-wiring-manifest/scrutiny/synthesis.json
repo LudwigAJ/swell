@@ -1,0 +1,45 @@
+{
+  "milestone": "refactor-02-wiring-manifest",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "check": { "passed": true, "command": "cargo check --workspace", "exitCode": 0 },
+    "fmt_check": { "passed": true, "command": "cargo fmt --all -- --check", "exitCode": 0 },
+    "test": { "passed": true, "command": "cargo test --workspace -- --test-threads=4", "exitCode": 0, "note": "401 tests passed" },
+    "clippy": { "passed": true, "command": "cargo clippy --workspace -- -D warnings", "exitCode": 0 },
+    "wiring_guardrails": { "passed": true, "command": "cargo test -p swell-integration-tests --test full_cycle_wiring", "exitCode": 0, "note": "4 passed, 7 ignored (blocked by Tier 1/2)" }
+  },
+  "reviewsSummary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add a 'Wiring Guardrail Tests' section documenting the naming convention `wiring_<subject>_<invariant>` and the use of `OrchestratorBuilder` production path. Currently this convention is only documented in `architecture.md` under '5. Wiring Guardrail Test Suite', making it harder for contributors to discover.",
+      "evidence": "Feature refactor-02-wiring-test-and-docs followed this convention but AGENTS.md had no reference to it.",
+      "isSystemic": false
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Document the canonical list of 13 subsystem names that must implement WiringReport: TaskStateMachine, AgentPool, CheckpointManager, FeatureLeadManager, McpConfigManager, NoveltyChecker, FileLockManager, NonNovelRetryDetector, FrozenRequirementRegistry, LlmBackend, ExecutionController, CostGuard, PreToolHookManager. Currently derived from source code inspection by workers.",
+      "evidence": "Feature refactor-02-wiring-test-and-docs hardcoded this list after reading source code. architecture.md describes the trait and method but not the concrete subsystem list.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "Add documentation for wrapper-pattern approach for Arc-wrapped subsystem fields in wiring.rs",
+      "reason": "Pattern is specific to this refactor and not general enough to warrant documentation as a reusable pattern"
+    },
+    {
+      "observation": "Add undocumented commands to services.yaml",
+      "reason": "The worker used only standard cargo commands already documented in services.yaml"
+    }
+  ],
+  "previousRound": null
+}
