@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
-use swell_core::{Plan, PriorAttempt, SwellError, Task, TaskState};
+use swell_core::{AgentId, Plan, PriorAttempt, SwellError, Task, TaskState};
 use tracing::{info, warn};
 
 use crate::task_enrichment::{
@@ -197,7 +197,7 @@ impl TaskStateMachine {
     }
 
     /// Assign task to an agent
-    pub fn assign_task(&self, id: uuid::Uuid, agent_id: uuid::Uuid) -> Result<(), SwellError> {
+    pub fn assign_task(&self, id: uuid::Uuid, agent_id: AgentId) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| match task.state {
             TaskState::Ready => {
                 task.assigned_agent = Some(agent_id);
@@ -537,7 +537,7 @@ mod tests {
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
 
-        let agent_id = uuid::Uuid::new_v4();
+        let agent_id = AgentId::new();
         sm.assign_task(task_id, agent_id).unwrap();
 
         let task = sm.get_task(task_id).unwrap();
@@ -552,7 +552,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
 
         let task = sm.get_task(task_id).unwrap();
@@ -566,7 +566,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
 
@@ -583,7 +583,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
 
         sm.pause_task(task_id, "Operator requested pause".to_string())
@@ -604,7 +604,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
 
@@ -629,7 +629,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.pause_task(task_id, "Test pause".to_string()).unwrap();
 
@@ -647,7 +647,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.pause_task(task_id, "Test pause".to_string()).unwrap();
@@ -693,7 +693,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
 
         let result = sm.pause_task(task_id, "Test".to_string());
         assert!(result.is_err());
@@ -706,7 +706,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
 
         let result = sm.resume_task(task_id);
@@ -726,7 +726,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        let agent_id = uuid::Uuid::new_v4();
+        let agent_id = AgentId::new();
         sm.assign_task(task_id, agent_id).unwrap();
         sm.start_execution(task_id).unwrap();
 
@@ -765,7 +765,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.accept_task(task_id).unwrap();
@@ -781,7 +781,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id, "Test rejection".to_string())
@@ -799,7 +799,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id, "Test rejection".to_string())
@@ -826,7 +826,7 @@ mod tests {
         // First cycle: Created → Enriched → Ready → Assigned → Executing → Validating → Rejected
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id, "Test rejection".to_string())
@@ -835,7 +835,7 @@ mod tests {
 
         // Retry: Rejected → Ready → Assigned → Executing → Validating → Rejected
         sm.retry_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id, "Test rejection".to_string())
@@ -844,7 +844,7 @@ mod tests {
 
         // Second retry
         sm.retry_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id, "Test rejection".to_string())
@@ -908,7 +908,7 @@ mod tests {
         let (task_id, _) = create_test_task_and_plan(&sm);
 
         // Try to assign without going through Ready
-        let result = sm.assign_task(task_id, uuid::Uuid::new_v4());
+        let result = sm.assign_task(task_id, AgentId::new());
         assert!(result.is_err());
     }
 
@@ -932,7 +932,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
 
         // Skip execution, try to start validation
         let result = sm.start_validation(task_id);
@@ -946,7 +946,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
 
         // Try to accept without validating
@@ -961,7 +961,7 @@ mod tests {
 
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
 
         let result = sm.reject_task(task_id, "Test rejection".to_string());
         assert!(result.is_err());
@@ -1202,7 +1202,7 @@ mod tests {
         assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Ready);
 
         // Ready -> Assigned
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         assert_eq!(sm.get_task(task_id).unwrap().state, TaskState::Assigned);
 
         // Assigned -> Executing
@@ -1389,7 +1389,7 @@ mod tests {
         // First, do a full cycle and reject
         sm.enrich_task(task_id).unwrap();
         sm.ready_task(task_id).unwrap();
-        sm.assign_task(task_id, uuid::Uuid::new_v4()).unwrap();
+        sm.assign_task(task_id, AgentId::new()).unwrap();
         sm.start_execution(task_id).unwrap();
         sm.start_validation(task_id).unwrap();
         sm.reject_task(task_id, "Test failure".to_string()).unwrap();

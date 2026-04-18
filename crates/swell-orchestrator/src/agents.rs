@@ -280,7 +280,7 @@ impl AgentPool {
 
     /// Register a new agent
     pub fn register(&mut self, role: AgentRole, model: String) -> AgentId {
-        let id = Uuid::new_v4();
+        let id = AgentId::new();
         self.agents.insert(
             id,
             PooledAgent {

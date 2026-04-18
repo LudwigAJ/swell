@@ -70,6 +70,8 @@
 
 use std::sync::Arc;
 
+use swell_core::ids::SocketPath;
+
 // -----------------------------------------------------------------------------
 // Tier 1.1 — LlmBackend is threaded from daemon into orchestrator.
 // Blocker: plan/audit-2026-04-16/04_tier1_blockers.md §1.1
@@ -85,9 +87,9 @@ use std::sync::Arc;
 /// Run: `cargo test -p swell-integration-tests --test full_cycle_wiring wiring_daemon_holds_llm_backend`
 #[tokio::test]
 async fn wiring_daemon_holds_llm_backend() {
+    use swell_daemon::Daemon;
     use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
     use swell_llm::LlmBackend;
-    use swell_daemon::Daemon;
     use tempfile::TempDir;
 
     // The ScenarioMockLlm stands in for AnthropicBackend / OpenAIBackend.
@@ -102,7 +104,7 @@ async fn wiring_daemon_holds_llm_backend() {
     let socket_path = temp_dir.path().join("swell-daemon.sock");
 
     // Daemon::new accepts an LlmBackend as second argument (Tier 1.1 wiring)
-    let daemon = Daemon::new(socket_path.to_string_lossy().to_string(), llm.clone());
+    let daemon = Daemon::new(SocketPath::new(socket_path.clone()), llm.clone());
 
     // The orchestrator must hold the EXACT Arc we provided — not a clone, not a new backend
     let orch = daemon.orchestrator();
@@ -123,9 +125,9 @@ async fn wiring_daemon_holds_llm_backend() {
 /// `llm` and `tool_registry` are the daemon-injected singletons.
 #[tokio::test]
 async fn wiring_orchestrator_holds_execution_controller() {
+    use swell_daemon::Daemon;
     use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
     use swell_llm::LlmBackend;
-    use swell_daemon::Daemon;
     use tempfile::TempDir;
 
     // The ScenarioMockLlm stands in for AnthropicBackend / OpenAIBackend.
@@ -139,7 +141,7 @@ async fn wiring_orchestrator_holds_execution_controller() {
     let socket_path = temp_dir.path().join("swell-daemon.sock");
 
     // Daemon::new accepts an LlmBackend as second argument (Tier 1.1 wiring)
-    let daemon = Daemon::new(socket_path.to_string_lossy().to_string(), llm.clone());
+    let daemon = Daemon::new(SocketPath::new(socket_path.clone()), llm.clone());
 
     // The orchestrator must expose an ExecutionController
     let orch = daemon.orchestrator();
@@ -201,10 +203,10 @@ async fn wiring_full_cycle_task_reaches_done() {
 /// failing validation causes the task to transition to `Failed`, NOT `Done`.
 #[tokio::test]
 async fn wiring_validation_orchestrator_blocks_done_on_failure() {
+    use swell_core::TaskState;
+    use swell_daemon::Daemon;
     use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
     use swell_llm::LlmBackend;
-    use swell_daemon::Daemon;
-    use swell_core::TaskState;
     use tempfile::TempDir;
 
     // Create a ScenarioMockLlm that returns "ok" for all steps
@@ -221,7 +223,7 @@ async fn wiring_validation_orchestrator_blocks_done_on_failure() {
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let socket_path = temp_dir.path().join("swell-daemon.sock");
 
-    let daemon = Daemon::new(socket_path.to_string_lossy().to_string(), llm.clone());
+    let daemon = Daemon::new(SocketPath::new(socket_path.clone()), llm.clone());
 
     // Get the execution controller from the orchestrator
     let orch = daemon.orchestrator();

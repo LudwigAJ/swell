@@ -916,7 +916,7 @@ impl Orchestrator {
 
         let task = sm.get_task(task_id)?;
         if task.state == TaskState::Ready {
-            sm.assign_task(task_id, Uuid::nil())?; // Will be reassigned when agent picks it up
+            sm.assign_task(task_id, AgentId::from_uuid(Uuid::nil()))?; // Will be reassigned when agent picks it up
         }
 
         sm.start_execution(task_id)?;
@@ -953,7 +953,7 @@ impl Orchestrator {
         // Now proceed with execution
         let task = sm.get_task(task_id)?;
         if task.state == TaskState::Ready {
-            sm.assign_task(task_id, Uuid::nil())?; // Will be reassigned when agent picks it up
+            sm.assign_task(task_id, AgentId::from_uuid(Uuid::nil()))?; // Will be reassigned when agent picks it up
         }
 
         sm.start_execution(task_id)?;
@@ -1651,7 +1651,7 @@ mod tests {
             .register_agent(AgentRole::Planner, "claude-sonnet".to_string())
             .await;
 
-        assert_ne!(agent_id, Uuid::nil());
+        assert_ne!(agent_id, AgentId::from_uuid(Uuid::nil()));
     }
 
     #[tokio::test]

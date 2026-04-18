@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 use std::time::Duration;
-use swell_core::{Plan, PlanStep, RiskLevel, StepStatus, TaskState};
+use swell_core::{AgentId, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
 use swell_orchestrator::state_machine::TaskStateMachine;
 
 /// Helper to create a test plan for a task.
@@ -184,7 +184,7 @@ fn test_concurrent_writes_different_tasks() {
                             result.err()
                         );
 
-                        let result = sm.assign_task(task_id, uuid::Uuid::new_v4());
+                        let result = sm.assign_task(task_id, AgentId::new());
                         assert!(
                             result.is_ok(),
                             "Thread {} failed to assign task {}: {:?}",
@@ -253,7 +253,7 @@ fn test_concurrent_mixed_operations() {
                         // Try to transition through states
                         let _ = sm.enrich_task(task_id);
                         let _ = sm.ready_task(task_id);
-                        let _ = sm.assign_task(task_id, uuid::Uuid::new_v4());
+                        let _ = sm.assign_task(task_id, AgentId::new());
                         let _ = sm.start_execution(task_id);
                         let _ = sm.start_validation(task_id);
 
@@ -316,7 +316,7 @@ fn test_same_task_concurrent_access_serialized() {
                             result.err()
                         );
 
-                        let result = sm.assign_task(task_id, uuid::Uuid::new_v4());
+                        let result = sm.assign_task(task_id, AgentId::new());
                         // May fail if another thread already assigned, that's ok
                         let _ = result;
                     }

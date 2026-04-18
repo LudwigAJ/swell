@@ -19,8 +19,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
 use swell_core::traits::Agent;
 use swell_core::{
-    AgentContext, AgentResult, AgentRole, LlmMessage, Plan, StreamEvent, SwellError, ToolOutput,
-    ToolResultContent, ValidationResult,
+    AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, Plan, StreamEvent, SwellError,
+    ToolOutput, ToolResultContent, ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
 use swell_tools::{
@@ -895,7 +895,7 @@ impl ExecutionController {
                 // Emit the structured clarification request event for observers
                 self.orchestrator().emit_uncertainty_clarification(
                     task_id,
-                    Uuid::nil(),
+                    AgentId::from_uuid(Uuid::nil()),
                     AgentRole::Generator,
                     reason.clone(),
                     "Generator completed but confidence is low".to_string(),

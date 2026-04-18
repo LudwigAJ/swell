@@ -8,8 +8,10 @@
 //! This test module validates VAL-OBS-008: Task interruption (pause/resume/redirect)
 
 use std::sync::Arc;
-use swell_core::{AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
-use swell_orchestrator::{builder::OrchestratorBuilder, checkpoint_wiring::CheckpointingTaskStateMachine, Orchestrator};
+use swell_core::{AgentId, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
+use swell_orchestrator::{
+    builder::OrchestratorBuilder, checkpoint_wiring::CheckpointingTaskStateMachine, Orchestrator,
+};
 use swell_state::traits::in_memory::InMemoryCheckpointStore;
 use uuid::Uuid;
 
@@ -279,7 +281,7 @@ async fn test_checkpointing_task_state_machine_pause_resume() {
     // Transition through enrich, ready, assign, execute
     sm.enrich_task(task_id).await.unwrap();
     sm.ready_task(task_id).await.unwrap();
-    sm.assign_task(task_id, Uuid::new_v4()).await.unwrap();
+    sm.assign_task(task_id, AgentId::new()).await.unwrap();
     sm.start_execution(task_id).await.unwrap();
 
     // Verify state is Executing
@@ -328,7 +330,7 @@ async fn test_checkpointing_inject_instruction_preserves_state() {
     // Transition through enrich, ready, assign, execute
     sm.enrich_task(task_id).await.unwrap();
     sm.ready_task(task_id).await.unwrap();
-    sm.assign_task(task_id, Uuid::new_v4()).await.unwrap();
+    sm.assign_task(task_id, AgentId::new()).await.unwrap();
     sm.start_execution(task_id).await.unwrap();
 
     // Inject instruction

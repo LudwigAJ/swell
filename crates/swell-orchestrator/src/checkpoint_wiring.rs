@@ -24,7 +24,7 @@
 
 use std::sync::Arc;
 
-use swell_core::{Checkpoint, CheckpointStore, Plan, SwellError, Task, TaskState};
+use swell_core::{AgentId, Checkpoint, CheckpointStore, Plan, SwellError, Task, TaskState};
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 use uuid::Uuid;
@@ -160,7 +160,7 @@ impl<S: CheckpointStore> CheckpointingTaskStateMachine<S> {
     }
 
     /// Assign task to an agent and checkpoint.
-    pub async fn assign_task(&self, id: Uuid, agent_id: Uuid) -> Result<(), SwellError> {
+    pub async fn assign_task(&self, id: Uuid, agent_id: AgentId) -> Result<(), SwellError> {
         self.inner.assign_task(id, agent_id)?;
         let task = self.inner.get_task(id)?;
         self.save_checkpoint(&task, "assign").await?;
@@ -395,7 +395,7 @@ mod tests {
         sm.enrich_task(task.id).await.unwrap();
         sm.ready_task(task.id).await.unwrap();
 
-        let agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
         sm.assign_task(task.id, agent_id).await.unwrap();
 
         // Verify checkpoints: create + enrich + ready + assign
@@ -413,7 +413,7 @@ mod tests {
         sm.set_plan(task.id, create_test_plan(task.id)).unwrap();
         sm.enrich_task(task.id).await.unwrap();
         sm.ready_task(task.id).await.unwrap();
-        sm.assign_task(task.id, Uuid::new_v4()).await.unwrap();
+        sm.assign_task(task.id, AgentId::new()).await.unwrap();
         sm.start_execution(task.id).await.unwrap();
 
         // Verify checkpoints: create + enrich + ready + assign + start_execution
@@ -431,7 +431,7 @@ mod tests {
         sm.set_plan(task.id, create_test_plan(task.id)).unwrap();
         sm.enrich_task(task.id).await.unwrap();
         sm.ready_task(task.id).await.unwrap();
-        sm.assign_task(task.id, Uuid::new_v4()).await.unwrap();
+        sm.assign_task(task.id, AgentId::new()).await.unwrap();
         sm.start_execution(task.id).await.unwrap();
         sm.start_validation(task.id).await.unwrap();
 
@@ -450,7 +450,7 @@ mod tests {
         sm.set_plan(task.id, create_test_plan(task.id)).unwrap();
         sm.enrich_task(task.id).await.unwrap();
         sm.ready_task(task.id).await.unwrap();
-        sm.assign_task(task.id, Uuid::new_v4()).await.unwrap();
+        sm.assign_task(task.id, AgentId::new()).await.unwrap();
         sm.start_execution(task.id).await.unwrap();
         sm.start_validation(task.id).await.unwrap();
         sm.accept_task(task.id).await.unwrap();
@@ -470,7 +470,7 @@ mod tests {
         sm.set_plan(task.id, create_test_plan(task.id)).unwrap();
         sm.enrich_task(task.id).await.unwrap();
         sm.ready_task(task.id).await.unwrap();
-        sm.assign_task(task.id, Uuid::new_v4()).await.unwrap();
+        sm.assign_task(task.id, AgentId::new()).await.unwrap();
         sm.start_execution(task.id).await.unwrap();
         sm.start_validation(task.id).await.unwrap();
         sm.reject_task(task.id, "Test rejection".to_string())
@@ -494,7 +494,7 @@ mod tests {
         sm.set_plan(task_id, create_test_plan(task_id)).unwrap();
         sm.enrich_task(task_id).await.unwrap();
         sm.ready_task(task_id).await.unwrap();
-        sm.assign_task(task_id, Uuid::new_v4()).await.unwrap();
+        sm.assign_task(task_id, AgentId::new()).await.unwrap();
         sm.start_execution(task_id).await.unwrap();
         sm.start_validation(task_id).await.unwrap();
         sm.accept_task(task_id).await.unwrap();
@@ -523,7 +523,7 @@ mod tests {
         sm.set_plan(task_id, create_test_plan(task_id)).unwrap();
         sm.enrich_task(task_id).await.unwrap();
         sm.ready_task(task_id).await.unwrap();
-        sm.assign_task(task_id, Uuid::new_v4()).await.unwrap();
+        sm.assign_task(task_id, AgentId::new()).await.unwrap();
         sm.start_execution(task_id).await.unwrap();
         sm.start_validation(task_id).await.unwrap();
         sm.accept_task(task_id).await.unwrap();
@@ -607,7 +607,7 @@ mod tests {
         sm.set_plan(task_id, create_test_plan(task_id)).unwrap();
         sm.enrich_task(task_id).await.unwrap();
         sm.ready_task(task_id).await.unwrap();
-        sm.assign_task(task_id, Uuid::new_v4()).await.unwrap();
+        sm.assign_task(task_id, AgentId::new()).await.unwrap();
         sm.start_execution(task_id).await.unwrap();
 
         // Verify the task has assigned_agent set
