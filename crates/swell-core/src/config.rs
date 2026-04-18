@@ -499,6 +499,7 @@ fn set_nested_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     fn create_temp_config(dir: &PathBuf, name: &str, content: &str) -> PathBuf {
@@ -509,6 +510,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_five_layer_precedence_ordering() {
         // Test that higher layers override lower layers
         let temp = TempDir::new().unwrap();
@@ -555,6 +557,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_higher_layer_overrides_lower_layer() {
         // Ensure no env var pollution from previous tests
         std::env::remove_var("SWELL_TIMEOUT");
@@ -587,6 +590,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_missing_layers_handled_gracefully() {
         // Ensure no leftover env var from previous tests
         std::env::remove_var("SWELL_TIMEOUT");
@@ -612,6 +616,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_env_override() {
         let temp = TempDir::new().unwrap();
         std::fs::create_dir_all(temp.path().join(".swell")).unwrap();
@@ -633,7 +638,14 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_loaded_entries_tracking() {
+        // Defensive: ensure no stale SWELL_TIMEOUT from a prior test slips in
+        // via env-var layer 5 and overwrites the file source on the "timeout"
+        // entry. Belt-and-braces; #[serial] already prevents concurrent
+        // set_var/remove_var from the sibling env-var tests in this file.
+        std::env::remove_var("SWELL_TIMEOUT");
+
         let temp = TempDir::new().unwrap();
 
         // Create two layers
@@ -693,6 +705,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_nested_env_var_override() {
         // Clean up any leftover env vars
         std::env::remove_var("SWELL_EXECUTION_MAX_ITERATIONS");

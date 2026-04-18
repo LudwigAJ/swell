@@ -62,3 +62,6 @@ opentelemetry-full = [
 tree-sitter-highlight = "0.24"
 tokio-test.workspace = true
 tempfile.workspace = true
+# Serialize tests that mutate process-global env vars (SWELL_*) to avoid
+# parallel-test races. Cargo runs tests in parallel by default.
+serial_test = "3"
