@@ -5,6 +5,7 @@ pub mod cost_tracking;
 pub mod dependency_graph;
 pub mod error;
 pub mod events;
+pub mod ids;
 pub mod kill_switch;
 pub mod langfuse;
 pub mod opentelemetry;
@@ -16,6 +17,9 @@ pub mod transcript;
 pub mod treesitter;
 pub mod types;
 pub mod wiring;
+
+// Re-export all newtype identifiers at crate root for convenient access
+pub use ids::*;
 
 pub use audit::{
     verify_audit_chain, AuditEntry, AuditEventKind, AuditGate, AuditLog, AuditPlane,

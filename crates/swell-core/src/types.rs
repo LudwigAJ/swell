@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::cost_tracking::ModelCostInfo;
+use crate::ids::AgentId;
 
 /// Task lifecycle states as defined in the orchestrator spec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -450,8 +451,6 @@ pub enum StepStatus {
 }
 
 /// Agent identifiers
-pub type AgentId = Uuid;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentRole {
@@ -479,7 +478,7 @@ pub struct Agent {
 impl Agent {
     pub fn new(role: AgentRole, model: String) -> Self {
         Self {
-            id: Uuid::new_v4(),
+            id: AgentId::new(),
             role,
             model,
             iteration_budget: 5,
