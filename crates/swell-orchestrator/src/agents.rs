@@ -629,7 +629,7 @@ impl Agent for PlannerAgent {
         // Build the Plan struct
         let plan = Plan {
             id: Uuid::new_v4(),
-            task_id: context.task.id.as_uuid(),
+            task_id: context.task.id,
             steps,
             total_estimated_tokens,
             risk_assessment,
@@ -1105,7 +1105,7 @@ impl Agent for GeneratorAgent {
             // Create a simple plan from task description
             Plan {
                 id: Uuid::new_v4(),
-                task_id: context.task.id.as_uuid(),
+                task_id: context.task.id,
                 steps: vec![PlanStep {
                     id: Uuid::new_v4(),
                     description: context.task.description.clone(),
@@ -6334,7 +6334,7 @@ impl Agent for DocWriterAgent {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use swell_core::{MemoryBlock, MemoryBlockType, Task};
+    use swell_core::{MemoryBlock, MemoryBlockType, Task, TaskId};
 
     // ========================================================================
     // AgentPool Tests
@@ -6356,7 +6356,7 @@ mod tests {
     async fn test_agent_pool_reserve() {
         let mut pool = AgentPool::new();
         let agent_id = pool.register(AgentRole::Generator, "claude-sonnet".to_string());
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let reserved = pool.reserve(task_id, AgentRole::Generator).unwrap();
         assert_eq!(reserved, agent_id);
@@ -6367,7 +6367,7 @@ mod tests {
     async fn test_agent_pool_release() {
         let mut pool = AgentPool::new();
         let agent_id = pool.register(AgentRole::Generator, "claude-sonnet".to_string());
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         pool.reserve(task_id, AgentRole::Generator).unwrap();
         assert_eq!(pool.available_count(AgentRole::Generator), 0);
@@ -8118,7 +8118,7 @@ fn deeply_nested() {
 
     #[test]
     fn test_agent_handoff_creation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let handoff = AgentHandoff::new(AgentRole::Planner, AgentRole::Generator, task_id);
 
         assert_eq!(handoff.from_role, AgentRole::Planner);
@@ -8131,7 +8131,7 @@ fn deeply_nested() {
 
     #[test]
     fn test_agent_handoff_builder_methods() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let handoff = AgentHandoff::new(AgentRole::Generator, AgentRole::Evaluator, task_id)
             .with_what_was_done("Implemented auth module")
             .with_artifact("src/auth/mod.rs", "Auth module implementation", true)
@@ -8151,7 +8151,7 @@ fn deeply_nested() {
 
     #[test]
     fn test_agent_handoff_serialization() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let handoff = AgentHandoff::new(AgentRole::Planner, AgentRole::Generator, task_id)
             .with_what_was_done("Created plan with 3 steps")
             .with_artifact("src/main.rs", "Main entry point", true)
@@ -8188,7 +8188,7 @@ fn deeply_nested() {
 
     #[test]
     fn test_agent_comment_creation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let comment = AgentComment::new(
             AgentRole::Planner,
             task_id,
@@ -8204,7 +8204,7 @@ fn deeply_nested() {
 
     #[test]
     fn test_agent_comment_with_metadata() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let comment = AgentComment::new(
             AgentRole::Generator,
             task_id,
@@ -8220,7 +8220,7 @@ fn deeply_nested() {
 
     #[test]
     fn test_agent_comment_serialization() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let comment = AgentComment::new(
             AgentRole::Evaluator,
             task_id,
@@ -8238,7 +8238,7 @@ fn deeply_nested() {
 
     #[test]
     fn test_agent_comment_all_types() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let start = AgentComment::new(AgentRole::Coder, task_id, AgentCommentType::Start, "Start");
         let blocker = AgentComment::new(

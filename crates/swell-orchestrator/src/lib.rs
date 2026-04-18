@@ -1634,7 +1634,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_task_returns_error_for_nonexistent() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
 
         let result = orchestrator.get_task(fake_id).await;
 
@@ -2139,7 +2139,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_nonexistent_task_returns_error() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let result = orchestrator.get_task(Uuid::new_v4()).await;
+        let result = orchestrator.get_task(TaskId::new()).await;
 
         assert!(matches!(result.unwrap_err(), SwellError::TaskNotFound(_)));
     }
@@ -2172,7 +2172,7 @@ mod tests {
     #[tokio::test]
     async fn test_acquire_task_locks_success() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
 
         let result = orchestrator
@@ -2191,8 +2191,8 @@ mod tests {
     #[tokio::test]
     async fn test_acquire_task_locks_conflict() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
         let files = vec!["file1.rs".to_string()];
 
         // Task1 acquires the lock
@@ -2213,7 +2213,7 @@ mod tests {
     #[tokio::test]
     async fn test_release_task_locks() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let files = vec!["file1.rs".to_string(), "file2.rs".to_string()];
 
         // Acquire locks
@@ -2236,8 +2236,8 @@ mod tests {
     #[tokio::test]
     async fn test_release_all_releases_partial_locks_on_conflict() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // Task1 acquires lock on file1
         orchestrator
@@ -2276,8 +2276,8 @@ mod tests {
     #[tokio::test]
     async fn test_check_lock_conflicts() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // Task1 acquires a lock
         orchestrator
@@ -2308,8 +2308,8 @@ mod tests {
     #[tokio::test]
     async fn test_lock_stats() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // No locks yet
         let stats = orchestrator.lock_stats().await;
@@ -2340,7 +2340,7 @@ mod tests {
     #[tokio::test]
     async fn test_same_task_re_acquires_lock() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let files = vec!["file1.rs".to_string()];
 
         // First acquisition
@@ -2369,8 +2369,8 @@ mod tests {
     #[tokio::test]
     async fn test_get_task_locks() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // Task1 acquires multiple locks
         orchestrator
@@ -2398,7 +2398,7 @@ mod tests {
     #[tokio::test]
     async fn test_release_non_existent_task_locks() {
         let orchestrator = OrchestratorBuilder::new().build();
-        let fake_task_id = Uuid::new_v4();
+        let fake_task_id = TaskId::new();
 
         // Release locks for task that has none
         let released_count = orchestrator.release_task_locks(fake_task_id).await;

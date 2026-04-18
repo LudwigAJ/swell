@@ -371,7 +371,7 @@ mod tests {
 
     #[test]
     fn test_frozen_spec_new_for_testing() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let spec = FrozenSpec::new(
             task_id,
             "Test description".to_string(),

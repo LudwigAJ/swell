@@ -469,7 +469,7 @@ mod tests {
 
         Plan {
             id: Uuid::new_v4(),
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             steps,
             total_estimated_tokens: step_count as u64 * 1000,
             risk_assessment: "Low risk".to_string(),
@@ -648,7 +648,7 @@ mod tests {
         let parent_orch = orchestrator.clone();
 
         let lead = FeatureLead::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Test Feature".to_string(),
             vec![Uuid::new_v4()],
             parent_orch,
@@ -668,7 +668,7 @@ mod tests {
         let parent_orch = orchestrator.clone();
 
         let lead = FeatureLead::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Test Feature".to_string(),
             vec![Uuid::new_v4()],
             parent_orch,
@@ -687,8 +687,8 @@ mod tests {
         let orchestrator = OrchestratorBuilder::new().build();
         let parent_orch = orchestrator.clone();
 
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         let lead1 = FeatureLead::new(
             task1,
@@ -730,7 +730,7 @@ mod tests {
 
         Plan {
             id: Uuid::new_v4(),
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             steps,
             total_estimated_tokens: step_count as u64 * 1000,
             risk_assessment: "Low risk".to_string(),

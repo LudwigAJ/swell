@@ -323,7 +323,7 @@ mod tests {
     use swell_state::traits::in_memory::InMemoryCheckpointStore;
 
     /// Helper to create a test plan for a task.
-    fn create_test_plan(task_id: Uuid) -> Plan {
+    fn create_test_plan(task_id: TaskId) -> Plan {
         Plan {
             id: Uuid::new_v4(),
             task_id,

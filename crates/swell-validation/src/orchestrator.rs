@@ -450,12 +450,12 @@ impl ValidationOrchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swell_core::{ValidationLevel, ValidationMessage};
+    use swell_core::{TaskId, ValidationLevel, ValidationMessage};
 
     /// Create a test input with minimal required fields
     fn create_test_input() -> TaskCompletionInput {
         TaskCompletionInput {
-            task_id: uuid::Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()
@@ -579,7 +579,7 @@ mod tests {
     #[tokio::test]
     async fn test_task_completion_input_serialization() {
         let input = TaskCompletionInput {
-            task_id: uuid::Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: "/tmp/workspace".to_string(),
             changed_files: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
             plan: None,

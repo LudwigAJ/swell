@@ -475,7 +475,7 @@ mod tests {
     use super::*;
     use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
 
-    fn create_test_plan(task_id: uuid::Uuid) -> Plan {
+    fn create_test_plan(task_id: TaskId) -> Plan {
         Plan {
             id: uuid::Uuid::new_v4(),
             task_id,
@@ -493,7 +493,7 @@ mod tests {
         }
     }
 
-    fn create_test_task_and_plan(sm: &TaskStateMachine) -> (uuid::Uuid, Plan) {
+    fn create_test_task_and_plan(sm: &TaskStateMachine) -> (TaskId, Plan) {
         let task = sm.create_task("Test task".to_string());
         let plan = create_test_plan(task.id);
         sm.set_plan(task.id, plan.clone()).unwrap();
@@ -1035,13 +1035,13 @@ mod tests {
     #[test]
     fn test_task_not_found_error() {
         let sm = TaskStateMachine::new();
-        let fake_id = uuid::Uuid::new_v4();
+        let fake_id = TaskId::new();
 
         let result = sm.get_task(fake_id);
         assert!(result.is_err());
 
         match result.unwrap_err() {
-            SwellError::TaskNotFound(id) => assert_eq!(id, fake_id),
+            SwellError::TaskNotFound(id) => assert_eq!(id, fake_id.as_uuid()),
             _ => panic!("Expected TaskNotFound"),
         }
     }

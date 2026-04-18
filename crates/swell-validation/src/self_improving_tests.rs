@@ -1381,7 +1381,6 @@ mod self_improving_tests {
     #[tokio::test]
     async fn test_test_value_gate() {
         use swell_core::ValidationGate;
-        use uuid::Uuid;
 
         let tracker = TestValueTracker::new(TestValueConfig::default());
         let gate = TestValueGate::new(tracker);
@@ -1397,7 +1396,7 @@ mod self_improving_tests {
             .unwrap();
 
         let context = swell_core::ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: swell_core::TaskId::new(),
             workspace_path: "/tmp".to_string(),
             changed_files: vec![],
             plan: None,

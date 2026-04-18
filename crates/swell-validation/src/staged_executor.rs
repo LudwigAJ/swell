@@ -923,11 +923,11 @@ impl StagedTestExecutor {
 #[cfg(test)]
 mod staged_executor_tests {
     use super::*;
-    use uuid::Uuid;
+    use swell_core::TaskId;
 
     fn create_test_context() -> ValidationContext {
         ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()

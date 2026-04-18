@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use swell_core::TaskId;
 use tracing::{debug, info};
-use uuid::Uuid;
 
 /// Configuration for novelty checking
 #[derive(Debug, Clone)]
@@ -650,7 +649,7 @@ mod tests {
 
     #[test]
     fn test_novelty_check_result_duplicate() {
-        let duplicate_id = Uuid::new_v4();
+        let duplicate_id = TaskId::new();
         let result =
             NoveltyCheckResult::duplicate(duplicate_id, "Too similar".to_string(), 0.9, 0.1);
 

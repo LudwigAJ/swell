@@ -32,7 +32,7 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
+use swell_core::{Plan, PlanStep, RiskLevel, StepStatus, TaskId};
 use uuid::Uuid;
 
 /// Request to create a test plan
@@ -1392,7 +1392,7 @@ impl TestPlanningEngine {
     }
 
     /// Convert test plan to planner format (Plan with PlanSteps)
-    pub fn to_plan(&self, test_plan: &TestPlan, task_id: Uuid) -> Plan {
+    pub fn to_plan(&self, test_plan: &TestPlan, task_id: TaskId) -> Plan {
         let steps: Vec<PlanStep> = test_plan
             .test_cases
             .iter()
@@ -1780,7 +1780,7 @@ diff --git a/src/auth.rs b/src/auth.rs
         };
 
         let test_plan = engine.create_test_plan(request).await.unwrap();
-        let plan = engine.to_plan(&test_plan, Uuid::new_v4());
+        let plan = engine.to_plan(&test_plan, TaskId::new());
 
         assert!(!plan.steps.is_empty());
         assert!(plan.risk_assessment.contains("Test plan"));

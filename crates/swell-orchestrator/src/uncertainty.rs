@@ -581,7 +581,7 @@ mod tests {
         let manager = UncertaintyManager::new();
 
         let event = UncertaintyClarificationEvent::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             None,
             swell_core::AgentRole::Generator,
             0.3,
@@ -601,7 +601,7 @@ mod tests {
         let manager = UncertaintyManager::new();
 
         let event = UncertaintyClarificationEvent::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             None,
             swell_core::AgentRole::Generator,
             0.3,

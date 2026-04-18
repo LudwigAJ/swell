@@ -263,10 +263,10 @@ impl TaskEnrichmentExt for Task {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
+    use swell_core::{Plan, PlanStep, RiskLevel, StepStatus, TaskId};
     use uuid::Uuid;
 
-    fn create_test_plan(task_id: Uuid) -> Plan {
+    fn create_test_plan(task_id: TaskId) -> Plan {
         Plan {
             id: Uuid::new_v4(),
             task_id,

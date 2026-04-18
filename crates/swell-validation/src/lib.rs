@@ -2130,14 +2130,14 @@ impl std::fmt::Debug for ValidationPipeline {
 #[cfg(test)]
 mod lint_gate_tests {
     use super::*;
-    use uuid::Uuid;
+    use swell_core::TaskId;
 
     #[tokio::test]
     async fn test_lint_gate_validate_returns_outcome() {
         // Test that LintGate.validate returns a ValidationOutcome
         let gate = LintGate::new();
         let context = ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()
@@ -2180,7 +2180,7 @@ mod lint_gate_tests {
     async fn test_lint_gate_new() {
         let gate = LintGate::new();
         let context = ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()
@@ -2199,7 +2199,7 @@ mod lint_gate_tests {
 #[cfg(test)]
 mod test_gate_tests {
     use super::*;
-    use uuid::Uuid;
+    use swell_core::TaskId;
 
     #[test]
     fn test_test_gate_name() {
@@ -2224,7 +2224,7 @@ mod test_gate_tests {
     async fn test_test_gate_validate_returns_outcome() {
         let gate = TestGate::new();
         let context = ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()
@@ -2333,7 +2333,7 @@ error: cannot find dependency `foo`
 #[cfg(test)]
 mod security_gate_tests {
     use super::*;
-    use uuid::Uuid;
+    use swell_core::TaskId;
 
     #[test]
     fn test_security_gate_name() {
@@ -2375,7 +2375,7 @@ mod security_gate_tests {
     async fn test_security_gate_validate_returns_outcome() {
         let gate = SecurityGate::new();
         let context = ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()
@@ -2630,7 +2630,7 @@ mod security_gate_tests {
 #[cfg(test)]
 mod ai_review_gate_tests {
     use super::*;
-    use uuid::Uuid;
+    use swell_core::TaskId;
 
     #[test]
     fn test_ai_review_gate_name() {
@@ -2667,7 +2667,7 @@ mod ai_review_gate_tests {
         // Test that AiReviewGate returns stub result when no LLM is configured
         let gate = AiReviewGate::new();
         let context = ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()
@@ -2895,7 +2895,7 @@ mod ai_review_gate_tests {
 #[cfg(test)]
 mod pipeline_tests {
     use super::*;
-    use swell_core::ValidationContext;
+    use swell_core::{TaskId, ValidationContext};
     use uuid::Uuid;
 
     /// A test gate that always passes with configurable messages
@@ -2978,7 +2978,7 @@ mod pipeline_tests {
 
     fn create_test_context() -> ValidationContext {
         ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: std::env::current_dir()
                 .unwrap()
                 .to_string_lossy()
@@ -3153,7 +3153,7 @@ mod pipeline_tests {
     async fn test_validation_context_contains_required_fields() {
         // Test that ValidationContext has all required fields
         let context = ValidationContext {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             workspace_path: "/test/workspace".to_string(),
             changed_files: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
             plan: None,
@@ -3170,7 +3170,7 @@ mod pipeline_tests {
     async fn test_validation_context_with_plan() {
         // Test ValidationContext with a plan
         let plan_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let context = ValidationContext {
             task_id,
             workspace_path: "/test/workspace".to_string(),

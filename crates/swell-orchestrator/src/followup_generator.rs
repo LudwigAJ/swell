@@ -135,7 +135,7 @@ impl FollowUpProposal {
 
         Plan {
             id: Uuid::new_v4(),
-            task_id: self.parent_task_id.as_uuid(),
+            task_id: self.parent_task_id,
             steps,
             total_estimated_tokens: self.estimate_tokens(),
             risk_assessment: format!("{:?} opportunity", self.opportunity_type),
@@ -853,7 +853,7 @@ mod tests {
     fn test_followup_proposal_into_task() {
         let proposal = FollowUpProposal {
             id: Uuid::new_v4(),
-            parent_task_id: Uuid::new_v4(),
+            parent_task_id: TaskId::new(),
             description: "Fix the bug".to_string(),
             rationale: "Validation errors must be fixed for task acceptance.".to_string(),
             opportunity_type: FollowUpOpportunityType::ValidationError,
@@ -875,7 +875,7 @@ mod tests {
     fn test_followup_proposal_create_plan() {
         let proposal = FollowUpProposal {
             id: Uuid::new_v4(),
-            parent_task_id: Uuid::new_v4(),
+            parent_task_id: TaskId::new(),
             description: "Test proposal".to_string(),
             rationale: "Additional test coverage improves confidence.".to_string(),
             opportunity_type: FollowUpOpportunityType::TestGap,

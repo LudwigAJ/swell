@@ -417,7 +417,7 @@ impl Task {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Plan {
     pub id: Uuid,
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub steps: Vec<PlanStep>,
     pub total_estimated_tokens: u64,
     pub risk_assessment: String,
