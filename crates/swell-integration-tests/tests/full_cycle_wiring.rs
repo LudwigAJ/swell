@@ -360,3 +360,64 @@ async fn wiring_turn_summary_events_emitted_per_iteration() {
 // NOTE: witness_orchestrator_does_not_hold_execution_controller was deleted here.
 // It failed because Orchestrator now holds ExecutionController (Tier 1.2 complete).
 // The invariant `wiring_orchestrator_holds_execution_controller` is now green.
+
+// -----------------------------------------------------------------------------
+// Refactor-02: Startup Wiring Manifest
+// Blocker: plan/audit-2026-04-16/ (not a Tier 1 blocker - this is refactor-02)
+// -----------------------------------------------------------------------------
+
+/// WIRING INVARIANT: the wiring manifest returned by `Orchestrator::wiring_manifest()`
+/// lists every required subsystem by name. This test uses the production path
+/// (`OrchestratorBuilder` via `test-support` feature) to ensure the manifest is
+/// populated through normal construction.
+///
+/// If a new subsystem is added to `Orchestrator` without implementing
+/// `WiringReport`, this test will fail — enforcing that every new subsystem
+/// must wire itself up.
+#[tokio::test]
+async fn wiring_manifest_reports_all_subsystems() {
+    use swell_core::wiring::WiringReport;
+    use swell_orchestrator::builder::OrchestratorBuilder;
+
+    // Use OrchestratorBuilder (production path via test-support feature)
+    let orchestrator = OrchestratorBuilder::new().build();
+
+    let manifest = orchestrator.wiring_manifest();
+
+    // Collect all subsystem names from the manifest
+    let names: Vec<&str> = manifest.iter().map(|r| r.name()).collect();
+
+    // Required subsystems that the manifest MUST contain.
+    // If any of these is missing, it means the WiringReport impl was not
+    // added when the subsystem was introduced — a wiring violation.
+    let required_subsystems = [
+        "TaskStateMachine",
+        "AgentPool",
+        "CheckpointManager",
+        "FeatureLeadManager",
+        "McpConfigManager",
+        "NoveltyChecker",
+        "FileLockManager",
+        "NonNovelRetryDetector",
+        "FrozenRequirementRegistry",
+        "LlmBackend",
+        "ExecutionController",
+        "CostGuard",
+        "PreToolHookManager",
+    ];
+
+    for required in required_subsystems {
+        assert!(
+            names.contains(&required),
+            "Manifest must contain '{required}' — missing WiringReport impl?"
+        );
+    }
+
+    // Verify total count: 13 subsystems (11 wired + 2 Tier-2 stubs)
+    assert_eq!(
+        manifest.len(),
+        13,
+        "Expected exactly 13 subsystems in manifest, got {}: {names:?}",
+        manifest.len()
+    );
+}
