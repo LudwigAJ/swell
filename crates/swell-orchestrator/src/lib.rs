@@ -886,17 +886,26 @@ impl Orchestrator {
             info!(task_id = %task_id, "Task accepted");
         } else {
             drop(sm); // Release read lock before acquiring write lock
-            let sm = self.state_machine.write().await;
 
-            // Get task state before rejecting
-            let task = sm.get_task(task_id)?;
-            let iteration_count = task.iteration_count;
-            let rejection_reason = "Validation failed".to_string();
+            // (1) Short write-lock: record the rejection and extract
+            //     iteration_count, then release before any further .await on
+            //     self.state_machine. tokio::sync::RwLock is non-reentrant —
+            //     awaiting a method that takes a read lock (e.g.
+            //     check_non_novel_retry) while a write guard is still alive
+            //     deadlocks the task.
+            let iteration_count = {
+                let sm = self.state_machine.write().await;
+                let task = sm.get_task(task_id)?;
+                let iteration_count = task.iteration_count;
+                let rejection_reason = "Validation failed".to_string();
 
-            sm.reject_task(task_id, rejection_reason.clone())?;
-            info!(task_id = %task_id, iteration_count = %iteration_count, "Task rejected");
+                sm.reject_task(task_id, rejection_reason)?;
+                info!(task_id = %task_id, iteration_count = %iteration_count, "Task rejected");
+                iteration_count
+            };
 
-            // Evaluate non-novel retry detection
+            // (2) No guard held — safe to await methods that take a read
+            //     lock on the same state_machine.
             let non_novel_result = self.check_non_novel_retry(task_id, iteration_count).await;
 
             if let Some(non_novel) = non_novel_result {
@@ -923,7 +932,8 @@ impl Orchestrator {
                     // Handle forced action based on type
                     match non_novel.forced_action {
                         Some(ForcedStrategyChange::Escalate) => {
-                            // Immediate escalation
+                            // (3) Short write-lock: immediate escalation.
+                            let sm = self.state_machine.write().await;
                             sm.escalate_task(task_id)?;
                             info!(task_id = %task_id, "Task escalated due to non-novel retry");
                         }
@@ -945,9 +955,11 @@ impl Orchestrator {
                 }
             }
 
-            // Evaluate retry policy for escalation decision
-            let retry_policy = RetryPolicy::new();
+            // (4) Retry-policy escalation: reacquire the write lock only if
+            //     we actually need to mutate state.
+            let sm = self.state_machine.write().await;
             if let Ok(task) = sm.get_task(task_id) {
+                let retry_policy = RetryPolicy::new();
                 let decision = retry_policy.evaluate_for_iteration(task.iteration_count);
                 if decision == RetryDecision::EscalateToHuman {
                     sm.escalate_task(task_id)?;
