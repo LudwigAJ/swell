@@ -265,8 +265,9 @@ fn budget_class_to_string(class: &BudgetClass) -> String {
 
 // Note: We cannot implement `From<DaemonError> for anyhow::Error` because anyhow
 // has a blanket impl `impl<E> From<E> for anyhow::Error where E: StdError`.
-// Users who need to convert can use: `anyhow::Error::new(daemon_error)` or
-// `daemon_error.map_err(|e| anyhow::Error::new(e))`.
+// However, DaemonError implements std::error::Error (via thiserror), so the blanket
+// impl already provides From<DaemonError> for anyhow::Error. Users can use:
+// `Err(daemon_error).map_err(|e| anyhow::Error::new(e))` or let the ? operator use the blanket impl.
 
 impl From<anyhow::Error> for DaemonError {
     fn from(err: anyhow::Error) -> Self {
