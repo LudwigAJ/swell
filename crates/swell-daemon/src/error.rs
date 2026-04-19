@@ -152,7 +152,10 @@ pub enum DaemonError {
     TaskNotFound(TaskId),
 
     #[error("Validation failed for task {task}: {reason}")]
-    ValidationFailed { task: TaskId, reason: ValidationReason },
+    ValidationFailed {
+        task: TaskId,
+        reason: ValidationReason,
+    },
 
     #[error("Hook denied: {hook} — {detail}")]
     HookDenied { hook: String, detail: String },
@@ -284,9 +287,7 @@ impl From<swell_core::SwellError> for DaemonError {
             swell_core::SwellError::ConfigError(msg) => {
                 DaemonError::Config(ConfigError::Message(msg))
             }
-            swell_core::SwellError::LlmError(msg) => {
-                DaemonError::Llm(LlmError::Message(msg))
-            }
+            swell_core::SwellError::LlmError(msg) => DaemonError::Llm(LlmError::Message(msg)),
             swell_core::SwellError::BudgetExceeded(msg) => {
                 // Parse budget class from message — use Internal as fallback
                 DaemonError::Internal(format!("Budget exceeded: {}", msg))
