@@ -15,7 +15,10 @@
 //! - [`CheckpointStore`] - State persistence
 //! - [`ValidationGate`] - Quality assurance steps
 
-use crate::{AgentId, AgentRole, Plan, StreamEvent, SwellError, Task, TaskId, TaskState, TurnSummaryEvent};
+use crate::{
+    AgentId, AgentRole, ids::SessionId, Plan, StreamEvent, SwellError, Task, TaskId, TaskState,
+    TurnSummaryEvent,
+};
 use async_trait::async_trait;
 use futures::Stream;
 use serde::{Deserialize, Serialize};
@@ -145,7 +148,7 @@ pub struct LlmToolDefinition {
 pub struct AgentContext {
     pub task: Task,
     pub memory_blocks: Vec<crate::MemoryBlock>,
-    pub session_id: Uuid,
+    pub session_id: SessionId,
     pub workspace_path: Option<String>,
 }
 

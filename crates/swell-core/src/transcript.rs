@@ -33,6 +33,8 @@ use std::collections::HashSet;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
+use crate::ids::SessionId;
+
 // ============================================================================
 // Event Type Discriminants
 // ============================================================================
@@ -313,14 +315,14 @@ pub struct TranscriptEvent {
     /// When the event occurred
     pub timestamp: DateTime<Utc>,
     /// Session ID grouping related events
-    pub session_id: Uuid,
+    pub session_id: SessionId,
     /// The structured payload for this event
     pub payload: TranscriptEventPayload,
 }
 
 impl TranscriptEvent {
     /// Create a new transcript event with a generated UUID and current timestamp
-    pub fn new(session_id: Uuid, payload: TranscriptEventPayload) -> Self {
+    pub fn new(session_id: SessionId, payload: TranscriptEventPayload) -> Self {
         Self {
             id: Uuid::new_v4(),
             event_type: payload.event_type(),
@@ -331,22 +333,22 @@ impl TranscriptEvent {
     }
 
     /// Create a new tool call event
-    pub fn tool_call(session_id: Uuid, payload: ToolCallPayload) -> Self {
+    pub fn tool_call(session_id: SessionId, payload: ToolCallPayload) -> Self {
         Self::new(session_id, TranscriptEventPayload::ToolCall(payload))
     }
 
     /// Create a new LLM response event
-    pub fn llm_response(session_id: Uuid, payload: LlmResponsePayload) -> Self {
+    pub fn llm_response(session_id: SessionId, payload: LlmResponsePayload) -> Self {
         Self::new(session_id, TranscriptEventPayload::LlmResponse(payload))
     }
 
     /// Create a new state transition event
-    pub fn state_transition(session_id: Uuid, payload: StateTransitionPayload) -> Self {
+    pub fn state_transition(session_id: SessionId, payload: StateTransitionPayload) -> Self {
         Self::new(session_id, TranscriptEventPayload::StateTransition(payload))
     }
 
     /// Create a new error event
-    pub fn error(session_id: Uuid, payload: ErrorPayload) -> Self {
+    pub fn error(session_id: SessionId, payload: ErrorPayload) -> Self {
         Self::new(session_id, TranscriptEventPayload::Error(payload))
     }
 }
@@ -427,22 +429,22 @@ impl TranscriptLog {
     }
 
     /// Append a tool call event
-    pub fn append_tool_call(&mut self, session_id: Uuid, payload: ToolCallPayload) {
+    pub fn append_tool_call(&mut self, session_id: SessionId, payload: ToolCallPayload) {
         self.append(TranscriptEvent::tool_call(session_id, payload));
     }
 
     /// Append an LLM response event
-    pub fn append_llm_response(&mut self, session_id: Uuid, payload: LlmResponsePayload) {
+    pub fn append_llm_response(&mut self, session_id: SessionId, payload: LlmResponsePayload) {
         self.append(TranscriptEvent::llm_response(session_id, payload));
     }
 
     /// Append a state transition event
-    pub fn append_state_transition(&mut self, session_id: Uuid, payload: StateTransitionPayload) {
+    pub fn append_state_transition(&mut self, session_id: SessionId, payload: StateTransitionPayload) {
         self.append(TranscriptEvent::state_transition(session_id, payload));
     }
 
     /// Append an error event
-    pub fn append_error(&mut self, session_id: Uuid, payload: ErrorPayload) {
+    pub fn append_error(&mut self, session_id: SessionId, payload: ErrorPayload) {
         self.append(TranscriptEvent::error(session_id, payload));
     }
 
@@ -490,7 +492,7 @@ impl TranscriptLog {
     }
 
     /// Get events for a specific session
-    pub fn for_session(&self, session_id: Uuid) -> Vec<&TranscriptEvent> {
+    pub fn for_session(&self, session_id: SessionId) -> Vec<&TranscriptEvent> {
         self.events
             .iter()
             .filter(|e| e.session_id == session_id)
@@ -593,8 +595,8 @@ mod tests {
     use super::*;
     use tokio::time::{timeout, Duration};
 
-    fn session_id() -> Uuid {
-        Uuid::new_v4()
+    fn session_id() -> SessionId {
+        SessionId::new()
     }
 
     #[test]
@@ -858,8 +860,8 @@ mod tests {
 
     #[test]
     fn test_transcript_log_for_session() {
-        let session1 = Uuid::new_v4();
-        let session2 = Uuid::new_v4();
+        let session1 = SessionId::new();
+        let session2 = SessionId::new();
 
         let mut log = TranscriptLog::new();
 

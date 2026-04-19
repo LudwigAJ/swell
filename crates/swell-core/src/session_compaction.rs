@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use uuid::Uuid;
 
+use crate::ids::SessionId;
 use crate::transcript::{TranscriptEvent, TranscriptEventPayload, TranscriptLog};
 
 /// A summary packet produced by session compaction.
@@ -37,7 +38,7 @@ pub struct ResumePacket {
     /// Unique identifier for this resume packet
     pub id: Uuid,
     /// Session ID this packet was created from
-    pub session_id: Uuid,
+    pub session_id: SessionId,
     /// When this packet was created
     pub created_at: DateTime<Utc>,
     /// Original task description (if available)
@@ -258,7 +259,7 @@ impl SessionCompactor {
     }
 
     /// Create a resume packet from a transcript log
-    pub fn compact(&self, session_id: Uuid, transcript: &TranscriptLog) -> ResumePacket {
+    pub fn compact(&self, session_id: SessionId, transcript: &TranscriptLog) -> ResumePacket {
         let events = transcript.events();
 
         // Extract components
@@ -292,7 +293,7 @@ impl SessionCompactor {
     /// Compact from a sequence of events (for streaming scenarios)
     pub fn compact_from_events(
         &self,
-        session_id: Uuid,
+        session_id: SessionId,
         events: &[TranscriptEvent],
     ) -> ResumePacket {
         // Extract components
@@ -678,13 +679,14 @@ impl SessionResumption {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::SessionId;
     use crate::transcript::{LlmResponsePayload, ToolCallPayload};
 
-    fn session_id() -> Uuid {
-        Uuid::new_v4()
+    fn session_id() -> SessionId {
+        SessionId::new()
     }
 
-    fn create_test_transcript() -> (Uuid, TranscriptLog) {
+    fn create_test_transcript() -> (SessionId, TranscriptLog) {
         let session = session_id();
         let mut log = TranscriptLog::new();
 

@@ -37,6 +37,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use uuid::Uuid;
 
+use swell_core::SessionId;
+
 /// A directed acyclic graph (DAG) for the work graph with rich node metadata.
 ///
 /// The work graph represents tasks as nodes with dependency edges (directed edges
@@ -155,7 +157,7 @@ pub struct WorkGraphNode {
 
     /// Agent session IDs that have worked on or are working on this task
     #[serde(default)]
-    pub agent_session_ids: Vec<Uuid>,
+    pub agent_session_ids: Vec<SessionId>,
 
     /// References to code changes associated with this task
     #[serde(default)]
@@ -285,7 +287,7 @@ pub struct NodeMetadata {
     pub spec_links: Vec<SpecLink>,
 
     /// Agent session IDs
-    pub agent_session_ids: Vec<Uuid>,
+    pub agent_session_ids: Vec<SessionId>,
 
     /// Code change references
     pub code_change_refs: Vec<CodeChangeRef>,
@@ -338,7 +340,7 @@ impl NodeMetadata {
     }
 
     /// Add an agent session ID
-    pub fn with_agent_session_id(mut self, session_id: Uuid) -> Self {
+    pub fn with_agent_session_id(mut self, session_id: SessionId) -> Self {
         self.agent_session_ids.push(session_id);
         self
     }
@@ -936,7 +938,7 @@ mod tests {
                     .with_status_color("#2196F3") // Blue
                     .with_complexity_weight(0.5)
                     .with_spec_link("req", "SPEC-002")
-                    .with_agent_session_id(Uuid::new_v4())
+                    .with_agent_session_id(SessionId::new())
                     .with_code_change_ref("commit", "abc123"),
                 vec![id_a],
             )
@@ -1249,7 +1251,7 @@ mod tests {
     fn test_metadata_fields_in_serialization() {
         let mut graph = WorkGraph::new();
         let node_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
 
         graph
             .add_node(
@@ -1408,8 +1410,8 @@ mod tests {
                     .with_complexity_weight(0.5)
                     .with_spec_link("spec", "https://example.com/spec")
                     .with_spec_link("ticket", "JIRA-123")
-                    .with_agent_session_id(Uuid::new_v4())
-                    .with_agent_session_id(Uuid::new_v4())
+                    .with_agent_session_id(SessionId::new())
+                    .with_agent_session_id(SessionId::new())
                     .with_code_change_ref("pr", "https://github.com/org/repo/pull/456")
                     .with_code_change_ref("commit", "abc789")
                     .with_test_result_ref("test_a", "passed")

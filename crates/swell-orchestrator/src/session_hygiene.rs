@@ -33,6 +33,8 @@ use std::collections::HashMap;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use swell_core::SessionId;
+
 /// Configuration for session hygiene behavior
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SessionHygieneConfig {
@@ -136,7 +138,7 @@ impl SessionHygieneConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProgressEvaluation {
     /// Session/Task ID
-    pub session_id: Uuid,
+    pub session_id: SessionId,
     /// Evaluation timestamp
     pub evaluated_at: DateTime<Utc>,
     /// Number of completed steps
@@ -165,7 +167,7 @@ impl ProgressEvaluation {
     /// Create a new progress evaluation
     /// checkpoint_interval_secs: the expected interval for a full cycle (default 3600 for 60 min)
     pub fn new(
-        session_id: Uuid,
+        session_id: SessionId,
         completed_steps: usize,
         total_steps: usize,
         elapsed_secs: u64,
@@ -238,7 +240,7 @@ impl ProgressEvaluation {
     }
 
     /// Create a minimal evaluation for sessions without step tracking
-    pub fn for_session(session_id: Uuid, elapsed_secs: u64, checkpoint_count: usize) -> Self {
+    pub fn for_session(session_id: SessionId, elapsed_secs: u64, checkpoint_count: usize) -> Self {
         Self::new(session_id, 0, 0, elapsed_secs, checkpoint_count, 3600) // Default 60 min interval
     }
 }
@@ -273,7 +275,7 @@ pub struct SessionCheckpoint {
     /// Checkpoint ID
     pub id: Uuid,
     /// Session/Task ID
-    pub session_id: Uuid,
+    pub session_id: SessionId,
     /// Checkpoint timestamp
     pub created_at: DateTime<Utc>,
     /// Elapsed time since session start (seconds)
@@ -286,7 +288,7 @@ pub struct SessionCheckpoint {
 
 impl SessionCheckpoint {
     /// Create a new checkpoint record
-    pub fn new(session_id: Uuid, elapsed_secs: u64, checkpoint_number: usize) -> Self {
+    pub fn new(session_id: SessionId, elapsed_secs: u64, checkpoint_number: usize) -> Self {
         Self {
             id: Uuid::new_v4(),
             session_id,
@@ -299,7 +301,7 @@ impl SessionCheckpoint {
 
     /// Create with a progress evaluation
     pub fn with_evaluation(
-        session_id: Uuid,
+        session_id: SessionId,
         elapsed_secs: u64,
         checkpoint_number: usize,
         evaluation: ProgressEvaluation,
@@ -323,7 +325,7 @@ impl SessionCheckpoint {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AcceptanceRatioEvaluation {
     /// Session/Task ID
-    pub session_id: Uuid,
+    pub session_id: SessionId,
     /// Evaluation timestamp
     pub evaluated_at: DateTime<Utc>,
     /// Number of attempts
@@ -390,19 +392,19 @@ pub struct AcceptanceSummary {
 pub struct SessionHygiene {
     config: SessionHygieneConfig,
     /// Session start times
-    session_start_times: HashMap<Uuid, DateTime<Utc>>,
+    session_start_times: HashMap<SessionId, DateTime<Utc>>,
     /// Last checkpoint times per session
-    last_checkpoint_times: HashMap<Uuid, DateTime<Utc>>,
+    last_checkpoint_times: HashMap<SessionId, DateTime<Utc>>,
     /// Checkpoint counts per session
-    checkpoint_counts: HashMap<Uuid, usize>,
+    checkpoint_counts: HashMap<SessionId, usize>,
     /// Completed checkpoints per session
-    checkpoints: HashMap<Uuid, Vec<SessionCheckpoint>>,
+    checkpoints: HashMap<SessionId, Vec<SessionCheckpoint>>,
     /// Attempt counts per session (for acceptance ratio tracking)
-    attempt_counts: HashMap<Uuid, usize>,
+    attempt_counts: HashMap<SessionId, usize>,
     /// Acceptance counts per session
-    acceptance_counts: HashMap<Uuid, usize>,
+    acceptance_counts: HashMap<SessionId, usize>,
     /// Evaluation cycle counts per session (for escalation tracking)
-    evaluation_cycles: HashMap<Uuid, usize>,
+    evaluation_cycles: HashMap<SessionId, usize>,
 }
 
 impl SessionHygiene {
@@ -435,7 +437,7 @@ impl SessionHygiene {
     // ========================================================================
 
     /// Start tracking a new session
-    pub fn start_session(&mut self, session_id: Uuid) {
+    pub fn start_session(&mut self, session_id: SessionId) {
         let now = Utc::now();
         self.session_start_times.insert(session_id, now);
         self.last_checkpoint_times.insert(session_id, now);
@@ -448,7 +450,7 @@ impl SessionHygiene {
     }
 
     /// Stop tracking a session (cleanup)
-    pub fn end_session(&mut self, session_id: Uuid) {
+    pub fn end_session(&mut self, session_id: SessionId) {
         self.session_start_times.remove(&session_id);
         self.last_checkpoint_times.remove(&session_id);
         self.checkpoint_counts.remove(&session_id);
@@ -460,21 +462,21 @@ impl SessionHygiene {
     }
 
     /// Get session elapsed time in seconds
-    pub fn get_session_elapsed_secs(&self, session_id: Uuid) -> Option<u64> {
+    pub fn get_session_elapsed_secs(&self, session_id: SessionId) -> Option<u64> {
         let start_time = self.session_start_times.get(&session_id)?;
         let elapsed = Utc::now() - *start_time;
         Some(elapsed.num_seconds() as u64)
     }
 
     /// Get time since last checkpoint in seconds
-    pub fn get_secs_since_last_checkpoint(&self, session_id: Uuid) -> Option<u64> {
+    pub fn get_secs_since_last_checkpoint(&self, session_id: SessionId) -> Option<u64> {
         let last_checkpoint = self.last_checkpoint_times.get(&session_id)?;
         let elapsed = Utc::now() - *last_checkpoint;
         Some(elapsed.num_seconds() as u64)
     }
 
     /// Get checkpoint count for a session
-    pub fn get_checkpoint_count(&self, session_id: Uuid) -> usize {
+    pub fn get_checkpoint_count(&self, session_id: SessionId) -> usize {
         self.checkpoint_counts
             .get(&session_id)
             .copied()
@@ -486,7 +488,7 @@ impl SessionHygiene {
     // ========================================================================
 
     /// Check if a session should be checkpointed based on interval
-    pub fn should_checkpoint(&self, session_id: Uuid) -> bool {
+    pub fn should_checkpoint(&self, session_id: SessionId) -> bool {
         if !self.config.auto_checkpoint_enabled {
             return false;
         }
@@ -504,7 +506,7 @@ impl SessionHygiene {
     /// Note: Explicit record_checkpoint calls bypass this check to allow
     /// multiple checkpoints in quick succession for testing purposes.
     /// Only should_checkpoint() enforces the minimum interval.
-    pub fn can_checkpoint(&self, session_id: Uuid) -> bool {
+    pub fn can_checkpoint(&self, session_id: SessionId) -> bool {
         // Explicit checkpoint calls always allowed
         // Only should_checkpoint() enforces minimum interval
         if let Some(count) = self.checkpoint_counts.get(&session_id) {
@@ -521,7 +523,7 @@ impl SessionHygiene {
     }
 
     /// Record a checkpoint for a session
-    pub fn record_checkpoint(&mut self, session_id: Uuid) -> Option<SessionCheckpoint> {
+    pub fn record_checkpoint(&mut self, session_id: SessionId) -> Option<SessionCheckpoint> {
         // Check if we can checkpoint
         if !self.can_checkpoint(session_id) {
             debug!(session_id = %session_id, "Cannot checkpoint yet, minimum interval not passed");
@@ -569,7 +571,7 @@ impl SessionHygiene {
     /// Record a checkpoint with progress evaluation
     pub fn record_checkpoint_with_evaluation(
         &mut self,
-        session_id: Uuid,
+        session_id: SessionId,
         completed_steps: usize,
         total_steps: usize,
     ) -> Option<(SessionCheckpoint, ProgressEvaluation)> {
@@ -625,7 +627,7 @@ impl SessionHygiene {
     /// Evaluate progress for a session
     pub fn evaluate_progress(
         &self,
-        session_id: Uuid,
+        session_id: SessionId,
         completed_steps: usize,
         total_steps: usize,
     ) -> Option<ProgressEvaluation> {
@@ -647,19 +649,19 @@ impl SessionHygiene {
     }
 
     /// Get the latest checkpoint for a session
-    pub fn get_latest_checkpoint(&self, session_id: Uuid) -> Option<&SessionCheckpoint> {
+    pub fn get_latest_checkpoint(&self, session_id: SessionId) -> Option<&SessionCheckpoint> {
         self.checkpoints.get(&session_id).and_then(|c| c.last())
     }
 
     /// Get all checkpoints for a session
-    pub fn get_checkpoints(&self, session_id: Uuid) -> Option<&Vec<SessionCheckpoint>> {
+    pub fn get_checkpoints(&self, session_id: SessionId) -> Option<&Vec<SessionCheckpoint>> {
         self.checkpoints.get(&session_id)
     }
 
     /// Get checkpoint history for a session with evaluations
     pub fn get_checkpoint_history(
         &self,
-        session_id: Uuid,
+        session_id: SessionId,
     ) -> Vec<(SessionCheckpoint, Option<ProgressEvaluation>)> {
         self.checkpoints
             .get(&session_id)
@@ -678,7 +680,7 @@ impl SessionHygiene {
 
     /// Record an attempt (e.g., a code generation attempt)
     /// Returns the new attempt count
-    pub fn record_attempt(&mut self, session_id: Uuid) -> usize {
+    pub fn record_attempt(&mut self, session_id: SessionId) -> usize {
         let count = self.attempt_counts.entry(session_id).or_insert(0);
         *count += 1;
         debug!(session_id = %session_id, attempts = *count, "Session hygiene: attempt recorded");
@@ -687,7 +689,7 @@ impl SessionHygiene {
 
     /// Record a successful acceptance (e.g., a code generation that passed validation)
     /// Returns the new acceptance count
-    pub fn record_acceptance(&mut self, session_id: Uuid) -> usize {
+    pub fn record_acceptance(&mut self, session_id: SessionId) -> usize {
         let count = self.acceptance_counts.entry(session_id).or_insert(0);
         *count += 1;
         debug!(session_id = %session_id, acceptances = *count, "Session hygiene: acceptance recorded");
@@ -696,7 +698,7 @@ impl SessionHygiene {
 
     /// Record both an attempt and its acceptance outcome in one call
     /// This is more efficient than calling record_attempt and record_acceptance separately
-    pub fn record_attempt_with_acceptance(&mut self, session_id: Uuid, accepted: bool) {
+    pub fn record_attempt_with_acceptance(&mut self, session_id: SessionId, accepted: bool) {
         self.record_attempt(session_id);
         if accepted {
             self.record_acceptance(session_id);
@@ -704,12 +706,12 @@ impl SessionHygiene {
     }
 
     /// Get the attempt count for a session
-    pub fn get_attempt_count(&self, session_id: Uuid) -> usize {
+    pub fn get_attempt_count(&self, session_id: SessionId) -> usize {
         self.attempt_counts.get(&session_id).copied().unwrap_or(0)
     }
 
     /// Get the acceptance count for a session
-    pub fn get_acceptance_count(&self, session_id: Uuid) -> usize {
+    pub fn get_acceptance_count(&self, session_id: SessionId) -> usize {
         self.acceptance_counts
             .get(&session_id)
             .copied()
@@ -718,7 +720,7 @@ impl SessionHygiene {
 
     /// Get the current acceptance ratio for a session
     /// Returns None if no attempts have been recorded
-    pub fn get_acceptance_ratio(&self, session_id: Uuid) -> Option<f64> {
+    pub fn get_acceptance_ratio(&self, session_id: SessionId) -> Option<f64> {
         let attempts = self.get_attempt_count(session_id);
         if attempts == 0 {
             return None;
@@ -732,7 +734,7 @@ impl SessionHygiene {
     /// None if not enough attempts have been made or tracking is disabled
     pub fn evaluate_acceptance_ratio(
         &mut self,
-        session_id: Uuid,
+        session_id: SessionId,
     ) -> Option<AcceptanceRatioEvaluation> {
         if !self.config.acceptance_tracking_enabled {
             return None;
@@ -824,7 +826,7 @@ impl SessionHygiene {
 
     /// Check if acceptance ratio should be evaluated at this checkpoint
     /// Returns true if checkpoint count has reached the evaluation threshold
-    pub fn should_evaluate_acceptance_ratio(&self, session_id: Uuid) -> bool {
+    pub fn should_evaluate_acceptance_ratio(&self, session_id: SessionId) -> bool {
         if !self.config.acceptance_tracking_enabled {
             return false;
         }
@@ -833,7 +835,7 @@ impl SessionHygiene {
     }
 
     /// Get the evaluation cycle count for a session
-    pub fn get_evaluation_cycle(&self, session_id: Uuid) -> usize {
+    pub fn get_evaluation_cycle(&self, session_id: SessionId) -> usize {
         self.evaluation_cycles
             .get(&session_id)
             .copied()
@@ -841,13 +843,13 @@ impl SessionHygiene {
     }
 
     /// Reset the evaluation cycle (e.g., after successful progress)
-    pub fn reset_evaluation_cycle(&mut self, session_id: Uuid) {
+    pub fn reset_evaluation_cycle(&mut self, session_id: SessionId) {
         self.evaluation_cycles.insert(session_id, 0);
         debug!(session_id = %session_id, "Session hygiene: evaluation cycle reset");
     }
 
     /// Get a summary of acceptance tracking for a session
-    pub fn get_acceptance_summary(&self, session_id: Uuid) -> Option<AcceptanceSummary> {
+    pub fn get_acceptance_summary(&self, session_id: SessionId) -> Option<AcceptanceSummary> {
         let attempts = self.get_attempt_count(session_id);
         let acceptances = self.get_acceptance_count(session_id);
         let ratio = self.get_acceptance_ratio(session_id);
@@ -887,7 +889,7 @@ impl SessionHygiene {
     }
 
     /// Check if session is being tracked
-    pub fn is_tracking(&self, session_id: Uuid) -> bool {
+    pub fn is_tracking(&self, session_id: SessionId) -> bool {
         self.session_start_times.contains_key(&session_id)
     }
 }
@@ -939,7 +941,7 @@ mod tests {
     #[test]
     fn test_progress_evaluation_basic() {
         let evaluation = ProgressEvaluation::new(
-            Uuid::new_v4(),
+            SessionId::new(),
             5,
             10,
             1800, // 30 minutes elapsed
@@ -959,7 +961,7 @@ mod tests {
     #[test]
     fn test_progress_evaluation_zero_total() {
         let evaluation = ProgressEvaluation::new(
-            Uuid::new_v4(),
+            SessionId::new(),
             0,
             0,
             1800, // 30 min elapsed
@@ -974,7 +976,7 @@ mod tests {
     #[test]
     fn test_progress_evaluation_behind() {
         let evaluation = ProgressEvaluation::new(
-            Uuid::new_v4(),
+            SessionId::new(),
             1,
             10,
             3600, // 60 minutes elapsed
@@ -993,7 +995,7 @@ mod tests {
 
     #[test]
     fn test_progress_evaluation_for_session() {
-        let evaluation = ProgressEvaluation::for_session(Uuid::new_v4(), 7200, 3);
+        let evaluation = ProgressEvaluation::for_session(SessionId::new(), 7200, 3);
 
         assert_eq!(evaluation.completed_steps, 0);
         assert_eq!(evaluation.total_steps, 0);
@@ -1027,7 +1029,7 @@ mod tests {
     fn test_start_and_end_session() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::default());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
 
         hygiene.start_session(session_id);
         assert_eq!(hygiene.active_session_count(), 1);
@@ -1042,7 +1044,7 @@ mod tests {
     fn test_get_session_elapsed_secs() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::default());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
 
         // Not tracking yet
         assert!(hygiene.get_session_elapsed_secs(session_id).is_none());
@@ -1058,7 +1060,7 @@ mod tests {
     fn test_should_checkpoint_not_tracked() {
         let hygiene = SessionHygiene::new(SessionHygieneConfig::default());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
 
         // Session not tracked
         assert!(!hygiene.should_checkpoint(session_id));
@@ -1068,7 +1070,7 @@ mod tests {
     fn test_should_checkpoint_interval_not_reached() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // 60 second interval
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // Just started, should not checkpoint yet
@@ -1079,7 +1081,7 @@ mod tests {
     fn test_record_checkpoint() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         let checkpoint = hygiene.record_checkpoint(session_id);
@@ -1094,7 +1096,7 @@ mod tests {
     fn test_record_checkpoint_updates_count() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         assert_eq!(hygiene.get_checkpoint_count(session_id), 0);
@@ -1110,7 +1112,7 @@ mod tests {
     fn test_get_latest_checkpoint() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // No checkpoints yet
@@ -1129,7 +1131,7 @@ mod tests {
     fn test_record_checkpoint_with_evaluation() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         let result = hygiene.record_checkpoint_with_evaluation(session_id, 3, 10);
@@ -1144,7 +1146,7 @@ mod tests {
     fn test_evaluate_progress() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::default());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         let evaluation = hygiene.evaluate_progress(session_id, 5, 10);
@@ -1161,7 +1163,7 @@ mod tests {
         config.progress_evaluation_enabled = false;
         let mut hygiene = SessionHygiene::new(config);
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         let evaluation = hygiene.evaluate_progress(session_id, 5, 10);
@@ -1172,7 +1174,7 @@ mod tests {
     fn test_get_checkpoints() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         hygiene.record_checkpoint(session_id);
@@ -1188,7 +1190,7 @@ mod tests {
     fn test_get_checkpoint_history() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         hygiene.record_checkpoint_with_evaluation(session_id, 1, 10);
@@ -1210,7 +1212,7 @@ mod tests {
         config.max_checkpoints_per_session = 3;
         let mut hygiene = SessionHygiene::new(config);
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // Create more checkpoints than max
@@ -1228,7 +1230,7 @@ mod tests {
     fn test_clear() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::default());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
         hygiene.record_checkpoint(session_id);
 
@@ -1245,7 +1247,7 @@ mod tests {
         config.auto_checkpoint_enabled = false;
         let hygiene = SessionHygiene::new(config);
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         // Even with session started, should not suggest checkpoint
         // (this test just verifies the flag works)
         assert!(!hygiene.should_checkpoint(session_id));
@@ -1257,7 +1259,7 @@ mod tests {
     fn test_session_hygiene_full_lifecycle() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
 
         // Start session
         hygiene.start_session(session_id);
@@ -1289,7 +1291,7 @@ mod tests {
     fn test_progress_evaluation_in_checkpoint() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // Record checkpoint with progress
@@ -1313,7 +1315,7 @@ mod tests {
     fn test_evaluate_progress_with_zero_total() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::default());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         let evaluation = hygiene.evaluate_progress(session_id, 0, 0);
@@ -1340,7 +1342,7 @@ mod tests {
     fn test_record_attempt() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         assert_eq!(hygiene.get_attempt_count(session_id), 0);
@@ -1356,7 +1358,7 @@ mod tests {
     fn test_record_acceptance() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         assert_eq!(hygiene.get_acceptance_count(session_id), 0);
@@ -1372,7 +1374,7 @@ mod tests {
     fn test_record_attempt_with_acceptance_accepted() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         hygiene.record_attempt_with_acceptance(session_id, true);
@@ -1385,7 +1387,7 @@ mod tests {
     fn test_record_attempt_with_acceptance_rejected() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         hygiene.record_attempt_with_acceptance(session_id, false);
@@ -1398,7 +1400,7 @@ mod tests {
     fn test_get_acceptance_ratio() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // No attempts yet
@@ -1419,7 +1421,7 @@ mod tests {
     fn test_get_acceptance_ratio_perfect() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // All accepted
@@ -1436,7 +1438,7 @@ mod tests {
     fn test_get_acceptance_ratio_zero() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // All rejected
@@ -1453,7 +1455,7 @@ mod tests {
     fn test_evaluate_acceptance_ratio_healthy() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // threshold = 0.5, min_attempts = 2
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // 2 acceptances out of 3 attempts = 0.667 > 0.5 (healthy)
@@ -1474,7 +1476,7 @@ mod tests {
     fn test_evaluate_acceptance_ratio_warning() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // threshold = 0.5
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // 1 acceptance out of 3 attempts = 0.333 < 0.5 (warning)
@@ -1495,7 +1497,7 @@ mod tests {
     fn test_evaluate_acceptance_ratio_critical() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // threshold = 0.5
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // 0 acceptances out of 3 attempts = 0.0 (critical)
@@ -1516,7 +1518,7 @@ mod tests {
     fn test_evaluate_acceptance_ratio_not_enough_attempts() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // min_attempts = 2
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // Only 1 attempt (less than min_attempts = 2)
@@ -1532,7 +1534,7 @@ mod tests {
         config.acceptance_tracking_enabled = false;
         let mut hygiene = SessionHygiene::new(config);
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         hygiene.record_attempt_with_acceptance(session_id, true);
@@ -1546,7 +1548,7 @@ mod tests {
     fn test_should_evaluate_acceptance_ratio() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // checkpoint count threshold = 1
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // No checkpoints yet
@@ -1561,7 +1563,7 @@ mod tests {
     fn test_evaluation_cycle_increment() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing()); // threshold = 0.5, max_cycles = 1
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         assert_eq!(hygiene.get_evaluation_cycle(session_id), 0);
@@ -1582,7 +1584,7 @@ mod tests {
     fn test_reset_evaluation_cycle() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // Increment cycle
@@ -1602,7 +1604,7 @@ mod tests {
         config.max_evaluation_cycles_before_escalation = 2;
         let mut hygiene = SessionHygiene::new(config);
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // First evaluation - below threshold, cycle = 1
@@ -1625,7 +1627,7 @@ mod tests {
     fn test_get_acceptance_summary() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // No attempts - should return None
@@ -1650,7 +1652,7 @@ mod tests {
     fn test_acceptance_ratio_integration() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         // Start with healthy ratio
@@ -1681,7 +1683,7 @@ mod tests {
     fn test_clear_acceptance_tracking() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         hygiene.record_attempt_with_acceptance(session_id, true);
@@ -1702,7 +1704,7 @@ mod tests {
     fn test_end_session_clears_tracking() {
         let mut hygiene = SessionHygiene::new(SessionHygieneConfig::testing());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         hygiene.start_session(session_id);
 
         hygiene.record_attempt_with_acceptance(session_id, true);

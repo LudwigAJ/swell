@@ -13,7 +13,7 @@ use serde_json::json;
 use std::sync::{Arc, Mutex};
 use swell_core::{
     traits::{Agent, Tool},
-    AgentContext, RiskLevel, SwellError, TaskId, ToolOutput, ToolResultContent,
+    AgentContext, RiskLevel, SessionId, SwellError, TaskId, ToolOutput, ToolResultContent,
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::agents::GeneratorAgent;
@@ -312,7 +312,7 @@ async fn test_generator_agent_executes_tool_via_react_loop() {
     let context = AgentContext {
         task,
         memory_blocks: vec![],
-        session_id: Uuid::new_v4(),
+        session_id: SessionId::new(),
         workspace_path: Some(".".to_string()),
     };
 
@@ -379,7 +379,7 @@ async fn test_generator_agent_handles_missing_tool() {
     let context = AgentContext {
         task,
         memory_blocks: vec![],
-        session_id: Uuid::new_v4(),
+        session_id: SessionId::new(),
         workspace_path: None,
     };
 
@@ -461,7 +461,7 @@ async fn test_generator_agent_multiple_tool_calls() {
     let context = AgentContext {
         task,
         memory_blocks: vec![],
-        session_id: Uuid::new_v4(),
+        session_id: SessionId::new(),
         workspace_path: None,
     };
 
@@ -526,7 +526,7 @@ async fn test_generator_agent_heuristic_fallback() {
     let context = AgentContext {
         task,
         memory_blocks: vec![],
-        session_id: Uuid::new_v4(),
+        session_id: SessionId::new(),
         workspace_path: None,
     };
 

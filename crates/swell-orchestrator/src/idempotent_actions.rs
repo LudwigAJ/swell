@@ -158,7 +158,7 @@ impl ActionExecution {
 ///
 /// ```ignore
 /// struct SetTaskStateAction {
-///     task_id: Uuid,
+///     task_id: TaskId,
 ///     new_state: TaskState,
 /// }
 ///

@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 pub use swell_core::{
     AgentContext, MemoryBlock, MemoryBlockType, MemoryEntry, MemoryStore, SwellError, TaskId,
+    SessionId,
 };
 
 /// Memory block labels for well-known blocks
@@ -126,7 +127,7 @@ impl ContextAssembler {
         &self,
         store: &dyn MemoryStore,
         task: swell_core::Task,
-        session_id: Uuid,
+        session_id: SessionId,
         workspace_path: Option<String>,
         repository_scope: &str,
         user_id: Option<&str>,
@@ -282,7 +283,11 @@ pub fn create_task_block(task_id: TaskId, context: &str) -> MemoryEntry {
 }
 
 /// Helper to create a Task memory entry with repository scope
-pub fn create_task_block_with_repo(task_id: TaskId, context: &str, repository: &str) -> MemoryEntry {
+pub fn create_task_block_with_repo(
+    task_id: TaskId,
+    context: &str,
+    repository: &str,
+) -> MemoryEntry {
     let now = chrono::Utc::now();
     MemoryEntry {
         id: Uuid::new_v4(),
@@ -374,7 +379,7 @@ mod tests {
             .assemble_context(
                 &store,
                 task.clone(),
-                Uuid::new_v4(),
+                SessionId::new(),
                 Some("/tmp".to_string()),
                 "test-repo",
                 Some("testuser"),
@@ -452,7 +457,7 @@ mod tests {
         store.store(task_block).await.unwrap();
 
         let assembler = ContextAssembler::with_default_loader();
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
 
         let context = assembler
             .assemble_context(

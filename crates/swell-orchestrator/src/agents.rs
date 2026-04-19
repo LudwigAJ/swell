@@ -6334,7 +6334,7 @@ impl Agent for DocWriterAgent {
 mod tests {
     use super::*;
     use chrono::Utc;
-    use swell_core::{MemoryBlock, MemoryBlockType, Task, TaskId};
+    use swell_core::{MemoryBlock, MemoryBlockType, SessionId, Task, TaskId};
 
     // ========================================================================
     // AgentPool Tests
@@ -6415,7 +6415,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some("/workspace".to_string()),
         };
 
@@ -6474,7 +6474,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks,
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some("/workspace".to_string()),
         };
 
@@ -6495,7 +6495,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: None,
         };
 
@@ -6515,7 +6515,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: None,
         };
 
@@ -6567,7 +6567,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some("/workspace".to_string()),
         };
 
@@ -6637,7 +6637,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some(".".to_string()),
         };
 
@@ -6667,7 +6667,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some("/my/workspace".to_string()),
         };
 
@@ -7219,7 +7219,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: None,
         };
 
@@ -7338,7 +7338,7 @@ mod tests {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: None,
         };
 
@@ -7501,7 +7501,7 @@ Then they should see all admin options
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: None,
         };
 
@@ -7525,7 +7525,7 @@ Then they should see all admin options
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: None,
         };
 
@@ -7560,7 +7560,7 @@ Then they should see all admin options
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some("/workspace".to_string()),
         };
 
@@ -7850,7 +7850,7 @@ fn deeply_nested() {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: None,
         };
 
@@ -8103,7 +8103,7 @@ fn deeply_nested() {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: None,
         };
 
@@ -8289,7 +8289,7 @@ fn deeply_nested() {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some(".".to_string()),
         };
 
@@ -8322,7 +8322,7 @@ fn deeply_nested() {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some(".".to_string()),
         };
 
@@ -8352,7 +8352,7 @@ fn deeply_nested() {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some(".".to_string()),
         };
 
@@ -8381,7 +8381,7 @@ fn deeply_nested() {
         let context = AgentContext {
             task,
             memory_blocks: vec![],
-            session_id: Uuid::new_v4(),
+            session_id: SessionId::new(),
             workspace_path: Some(".".to_string()),
         };
 

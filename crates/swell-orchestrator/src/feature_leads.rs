@@ -12,7 +12,7 @@
 
 use crate::Orchestrator;
 use std::sync::Arc;
-use swell_core::{AgentContext, AgentResult, Plan, PlanStep, SwellError, TaskId};
+use swell_core::{AgentContext, AgentResult, Plan, PlanStep, SessionId, SwellError, TaskId};
 use tracing::info;
 use uuid::Uuid;
 
@@ -198,7 +198,7 @@ impl FeatureLead {
             );
 
             // Create execution context
-            let session_id = Uuid::new_v4();
+            let session_id = SessionId::new();
             let mut task = parent_task.clone();
             task.description = step.description.clone();
 

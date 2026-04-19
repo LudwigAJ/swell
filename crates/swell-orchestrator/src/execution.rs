@@ -20,8 +20,8 @@ use std::sync::{Arc, Weak};
 use swell_core::traits::Agent;
 use swell_core::TaskId;
 use swell_core::{
-    AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, Plan, StreamEvent, SwellError,
-    ToolOutput, ToolResultContent, ValidationResult,
+    AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, Plan, SessionId, StreamEvent,
+    SwellError, ToolOutput, ToolResultContent, ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
 use swell_tools::{
@@ -468,9 +468,9 @@ impl ExecutionController {
     /// `ExecutionController` has a live owning `Orchestrator`, and the weak
     /// upgrade always succeeds.
     fn orchestrator(&self) -> Arc<Orchestrator> {
-        self.orchestrator
-            .upgrade()
-            .expect("ExecutionController outlives Orchestrator — Arc::new_cyclic invariant violated")
+        self.orchestrator.upgrade().expect(
+            "ExecutionController outlives Orchestrator — Arc::new_cyclic invariant violated",
+        )
     }
 
     /// Get a reference to the resource tracker
@@ -575,11 +575,7 @@ impl ExecutionController {
     /// # Returns
     /// * `Some(DriftReport)` if drift exceeds the threshold
     /// * `None` if drift is within acceptable limits
-    pub fn check_drift(
-        &self,
-        task_id: TaskId,
-        estimated_files: &[String],
-    ) -> Option<DriftReport> {
+    pub fn check_drift(&self, task_id: TaskId, estimated_files: &[String]) -> Option<DriftReport> {
         let actual_files = self.get_modified_files();
         let report = self
             .drift_detector
@@ -738,7 +734,7 @@ impl ExecutionController {
             // Run PlannerAgent with injected LLM backend
             let planner_llm = self.llm.clone();
             let planner = PlannerAgent::with_llm("claude-sonnet".to_string(), planner_llm);
-            let session_id = Uuid::new_v4();
+            let session_id = SessionId::new();
             let context = AgentContext {
                 task,
                 memory_blocks: Vec::new(),
@@ -849,7 +845,7 @@ impl ExecutionController {
         )
         .with_checkpoint_manager(self.orchestrator().checkpoint_manager());
 
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
         let context = AgentContext {
             task,
             memory_blocks: Vec::new(),
@@ -911,7 +907,11 @@ impl ExecutionController {
                 );
 
                 // Pause the task state machine
-                if let Err(e) = self.orchestrator().pause_task(task_id, reason.clone()).await {
+                if let Err(e) = self
+                    .orchestrator()
+                    .pause_task(task_id, reason.clone())
+                    .await
+                {
                     warn!(
                         task_id = %task_id,
                         error = %e,
@@ -1610,18 +1610,19 @@ impl Default for ExecutionConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::OrchestratorBuilder;
     use std::sync::Arc;
     use swell_core::traits::Tool;
     use swell_llm::MockLlm;
     use swell_tools::ToolRegistry;
-    use crate::OrchestratorBuilder;
 
     #[tokio::test]
     async fn test_execution_controller_creation() {
         let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
-        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+        let controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
         assert_eq!(controller.max_concurrent, MAX_CONCURRENT_AGENTS);
     }
 
@@ -1630,7 +1631,8 @@ mod tests {
         let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
-        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+        let controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         // Create some tasks
         let task1 = orchestrator
@@ -1715,7 +1717,8 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+        let controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         assert_eq!(controller.max_iterations(), DEFAULT_MAX_ITERATIONS);
     }
@@ -2238,7 +2241,8 @@ mod tests {
             )
             .await;
 
-        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+        let controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         let result = controller
             .execute_tool("deny_test_tool", serde_json::json!({}))
@@ -2291,7 +2295,8 @@ mod tests {
             )
             .await;
 
-        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+        let controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         let result = controller
             .execute_tool("deny_test_tool", serde_json::json!({}))
@@ -2340,7 +2345,8 @@ mod tests {
             )
             .await;
 
-        let controller = ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+        let controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         let result = controller
             .execute_tool("deny_test_tool", serde_json::json!({}))
