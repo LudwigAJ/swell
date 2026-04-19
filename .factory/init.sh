@@ -12,4 +12,4 @@ cargo check --workspace >/dev/null
 echo "Checking audit wiring guardrail test target exists..."
 cargo test -p swell-integration-tests --test full_cycle_wiring -- --list >/dev/null
 
-echo "Swell audit-recovery mission workspace ready."
+echo "Structural refactors Phase B+C mission workspace ready."

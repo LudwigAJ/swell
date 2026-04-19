@@ -341,7 +341,7 @@ impl CheckpointStore for PostgresCheckpointStore {
 
             return Ok(Some(Checkpoint {
                 id,
-                task_id,  // Already TaskId
+                task_id, // Already TaskId
                 state: serde_json::from_value(state)
                     .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
                 snapshot,

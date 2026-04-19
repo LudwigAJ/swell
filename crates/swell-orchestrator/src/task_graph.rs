@@ -32,7 +32,11 @@ impl TaskGraph {
     /// Add a task to the graph with its dependencies
     ///
     /// Returns an error if adding the task would create a circular dependency.
-    pub fn add_task(&mut self, task_id: TaskId, dependencies: Vec<TaskId>) -> Result<(), SwellError> {
+    pub fn add_task(
+        &mut self,
+        task_id: TaskId,
+        dependencies: Vec<TaskId>,
+    ) -> Result<(), SwellError> {
         // Check for circular dependency before adding
         if self.would_create_cycle(&task_id, &dependencies) {
             warn!(task_id = %task_id, ?dependencies, "Circular dependency detected");
@@ -444,7 +448,11 @@ impl TaskGraph {
     }
 
     /// Check if updating a task's dependencies would create a cycle
-    fn would_create_cycle_with_removal(&self, task_id: &TaskId, new_dependencies: &[TaskId]) -> bool {
+    fn would_create_cycle_with_removal(
+        &self,
+        task_id: &TaskId,
+        new_dependencies: &[TaskId],
+    ) -> bool {
         // Temporarily remove the task from the graph
         // and check if the new dependencies would create a cycle
 

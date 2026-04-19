@@ -16,7 +16,7 @@
 //! - [`ValidationGate`] - Quality assurance steps
 
 use crate::{
-    AgentId, AgentRole, ids::SessionId, Plan, StreamEvent, SwellError, Task, TaskId, TaskState,
+    ids::SessionId, AgentId, AgentRole, Plan, StreamEvent, SwellError, Task, TaskId, TaskState,
     TurnSummaryEvent,
 };
 use async_trait::async_trait;

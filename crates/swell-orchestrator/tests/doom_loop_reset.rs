@@ -8,8 +8,8 @@
 //! This test module validates VAL-OBS-010: Doom-loop detection and context reset
 
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use swell_core::TaskId;
+use tokio::sync::RwLock;
 
 /// Test that LoopBreaker detects doom loop and clears context.
 #[tokio::test]

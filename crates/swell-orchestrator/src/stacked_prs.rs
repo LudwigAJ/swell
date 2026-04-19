@@ -488,7 +488,12 @@ pub struct Pr {
 
 impl Pr {
     /// Create a new PR
-    pub fn new(id: String, pr_number: u32, base_branch: BranchName, files: Vec<PrFileChange>) -> Self {
+    pub fn new(
+        id: String,
+        pr_number: u32,
+        base_branch: BranchName,
+        files: Vec<PrFileChange>,
+    ) -> Self {
         let branch = format!("{}/pr-{}", base_branch, pr_number);
         let line_count: u32 = files.iter().map(|f| f.line_count).sum();
 
@@ -622,7 +627,10 @@ pub enum StackedPrError {
     },
 
     #[error("Invalid base branch: expected {expected}, got {actual}")]
-    InvalidBaseBranch { expected: BranchName, actual: BranchName },
+    InvalidBaseBranch {
+        expected: BranchName,
+        actual: BranchName,
+    },
 
     #[error("Cycle detected: PR {0} would create circular dependency")]
     CycleDetected(String),
@@ -1095,11 +1103,21 @@ mod tests {
         let mut stack = PrStack::new(TaskId::new(), BranchName::new("main"));
 
         stack
-            .add_pr(Pr::new("pr-1".to_string(), 1, BranchName::new("main"), vec![]))
+            .add_pr(Pr::new(
+                "pr-1".to_string(),
+                1,
+                BranchName::new("main"),
+                vec![],
+            ))
             .unwrap();
 
         stack
-            .add_pr(Pr::new("pr-2".to_string(), 2, BranchName::new("main"), vec![]))
+            .add_pr(Pr::new(
+                "pr-2".to_string(),
+                2,
+                BranchName::new("main"),
+                vec![],
+            ))
             .unwrap();
 
         let chain = stack.branch_chain();

@@ -473,8 +473,7 @@ mod tests {
     #[test]
     fn test_learned_pattern_creation() {
         let sequence = vec!["read_file".to_string(), "edit_file".to_string()];
-        let pattern =
-            LearnedPattern::new(sequence.clone(), TaskId::new(), "test-repo".to_string());
+        let pattern = LearnedPattern::new(sequence.clone(), TaskId::new(), "test-repo".to_string());
 
         assert_eq!(pattern.tool_sequence, sequence);
         assert_eq!(pattern.observation_count, 1);

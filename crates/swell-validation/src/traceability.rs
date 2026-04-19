@@ -1493,8 +1493,9 @@ pub mod sqlite_store {
                         id: Uuid::parse_str(&id)
                             .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
                         task_id: TaskId::from_uuid(
-                            Uuid::parse_str(&task_id)
-                                .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                            Uuid::parse_str(&task_id).map_err(|e| {
+                                TraceabilityError::SerializationError(e.to_string())
+                            })?,
                         ),
                         description,
                         created_at: DateTime::parse_from_rfc3339(&created_at)
@@ -1540,7 +1541,10 @@ pub mod sqlite_store {
             }
         }
 
-        async fn get_goals_for_task(&self, task_id: TaskId) -> Result<Vec<Goal>, TraceabilityError> {
+        async fn get_goals_for_task(
+            &self,
+            task_id: TaskId,
+        ) -> Result<Vec<Goal>, TraceabilityError> {
             let task_id_str = task_id.to_string();
 
             let rows: Vec<(String, String, String, String, String, String, String)> =

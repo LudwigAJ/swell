@@ -439,7 +439,11 @@ impl TranscriptLog {
     }
 
     /// Append a state transition event
-    pub fn append_state_transition(&mut self, session_id: SessionId, payload: StateTransitionPayload) {
+    pub fn append_state_transition(
+        &mut self,
+        session_id: SessionId,
+        payload: StateTransitionPayload,
+    ) {
         self.append(TranscriptEvent::state_transition(session_id, payload));
     }
 

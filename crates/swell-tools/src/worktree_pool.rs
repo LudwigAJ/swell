@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use swell_core::ids::{BranchName, TaskId};
 use swell_core::ids::WorktreeId;
+use swell_core::ids::{BranchName, TaskId};
 use swell_core::AgentId;
 use swell_core::SwellError;
 use tokio::sync::RwLock;
@@ -228,7 +228,10 @@ impl WorktreePool {
                 debug!(path = %path.display(), "Created worktree");
                 let mut worktree = Worktree::new(id, path);
                 worktree.ready = true;
-                worktree.branch = Some(BranchName::new(format!("worktree/{}/{}", self.config.prefix, id)));
+                worktree.branch = Some(BranchName::new(format!(
+                    "worktree/{}/{}",
+                    self.config.prefix, id
+                )));
                 Ok(worktree)
             }
             Ok(output) => {
@@ -237,7 +240,10 @@ impl WorktreePool {
                 if stderr.contains("already exists") {
                     let mut worktree = Worktree::new(id, path);
                     worktree.ready = true;
-                    worktree.branch = Some(BranchName::new(format!("worktree/{}/{}", self.config.prefix, id)));
+                    worktree.branch = Some(BranchName::new(format!(
+                        "worktree/{}/{}",
+                        self.config.prefix, id
+                    )));
                     Ok(worktree)
                 } else {
                     warn!(error = %stderr, "Failed to create worktree, marking as not ready");

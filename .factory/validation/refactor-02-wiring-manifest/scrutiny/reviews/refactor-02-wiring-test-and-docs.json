@@ -1,0 +1,31 @@
+{
+  "featureId": "refactor-02-wiring-test-and-docs",
+  "reviewedAt": "2026-04-18T12:55:00Z",
+  "commitId": "8308429997d0d6b3862d511de6fae583141a1fb3",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation fully covers the feature's requirements. A wiring test `wiring_manifest_reports_all_subsystems` was added to `full_cycle_wiring.rs` using `OrchestratorBuilder::new().build()` (production path via test-support feature) and asserts the manifest lists all 13 required subsystems by name. The AGENTS.md 'Wiring Manifest' section documents the three-part output format and SWELL_STRICT=1 exit behavior.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The worker followed the wiring guardrail test naming convention `wiring_<subject>_<invariant>` and used the production `OrchestratorBuilder` path (not mocks), consistent with the pattern established in `full_cycle_wiring.rs`. This convention is documented in `architecture.md` under '5. Wiring Guardrail Test Suite' but not in `AGENTS.md` — making it harder to discover for future contributors.",
+      "evidence": "architecture.md: 'wiring test pattern: `wiring_<subject>_<invariant>`' exists there but AGENTS.md has no such section."
+    },
+    {
+      "area": "library",
+      "observation": "The architecture.md documents the WiringReport trait design, WiringState enum, and the wiring_manifest method, but does not enumerate the 13 required subsystem names. The worker correctly derived them from source code inspection. Listing the canonical 13 names in architecture.md would spare future maintainers from re-extracting them.",
+      "evidence": "architecture.md 'Refactor 02' section describes the trait and method but not the concrete subsystem list; the test hardcodes ['TaskStateMachine', 'AgentPool', 'CheckpointManager', 'FeatureLeadManager', 'McpConfigManager', 'NoveltyChecker', 'FileLockManager', 'NonNovelRetryDetector', 'FrozenRequirementRegistry', 'LlmBackend', 'ExecutionController', 'CostGuard', 'PreToolHookManager'] which was obtained by reading source code."
+    },
+    {
+      "area": "services",
+      "observation": "The worker used only standard cargo commands already in services.yaml. No undocumented commands or services were started.",
+      "evidence": "services.yaml already contains wiring_guardrails command; worker used `cargo test -p swell-integration-tests --test full_cycle_wiring wiring_manifest_reports_all_subsystems` and `grep -A 40 'Wiring Manifest' crates/swell-daemon/AGENTS.md` — both covered."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation is complete and correct. The test `wiring_manifest_reports_all_subsystems` uses `OrchestratorBuilder` (production path) and asserts all 13 subsystem names are present in the wiring manifest. The AGENTS.md 'Wiring Manifest' section fully documents the three-part output format, SWELL_STRICT=1 behavior, and structured tracing format. No blocking issues found."
+}

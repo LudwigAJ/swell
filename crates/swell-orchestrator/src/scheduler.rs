@@ -14,8 +14,8 @@
 //! - [`WorkerPool`] - tracks active workers and their assignments
 
 use crate::SwellError;
-use swell_core::ids::TaskId;
 use std::collections::{BinaryHeap, HashSet};
+use swell_core::ids::TaskId;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 

@@ -12,10 +12,10 @@
 //! lock state. Locks are identified by unique IDs and track which task holds them.
 
 use std::collections::HashMap;
+use swell_core::{AgentId, TaskId};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
-use swell_core::{AgentId, TaskId};
 
 /// A file lock representing exclusive access to a file path.
 #[derive(Debug, Clone)]

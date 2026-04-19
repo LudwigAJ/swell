@@ -11,9 +11,9 @@
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
-use swell_core::ids::TaskId;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 

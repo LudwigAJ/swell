@@ -37,8 +37,8 @@ use uuid::Uuid;
 use crate::events::EventEmitter;
 use crate::server::Daemon;
 use swell_core::{
-    get_last_llm_model, get_total_llm_tokens, AgentId, AgentRole, CorrelationId, DaemonEvent, DataResponse, Task,
-    TaskId, TaskState,
+    get_last_llm_model, get_total_llm_tokens, AgentId, AgentRole, CorrelationId, DaemonEvent,
+    DataResponse, Task, TaskId, TaskState,
 };
 
 /// Dashboard API state shared across all request handlers

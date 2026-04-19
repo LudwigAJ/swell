@@ -6,13 +6,15 @@
 
 use std::sync::Arc;
 use std::time::Duration;
-use uuid::Uuid;
-use swell_core::{AgentRole, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskId, TaskState};
+use swell_core::{
+    AgentRole, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskId, TaskState,
+};
 use swell_orchestrator::{
     builder::OrchestratorBuilder, check_confidence_threshold, generate_suggested_options,
     ClarificationOption, ClarificationResponse, Orchestrator, UncertaintyClarificationEvent,
     UncertaintyManager,
 };
+use uuid::Uuid;
 // Use the full module path to disambiguate from agents::ConfidenceLevel
 use swell_orchestrator::uncertainty::ConfidenceLevel;
 

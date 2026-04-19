@@ -72,7 +72,10 @@ impl TaskStateMachine {
         F: FnOnce(&mut Task) -> Result<R, SwellError>,
     {
         // Get the Arc<RwLock<Task>> for this task
-        let entry = self.tasks.get(&id).ok_or(SwellError::TaskNotFound(id.as_uuid()))?;
+        let entry = self
+            .tasks
+            .get(&id)
+            .ok_or(SwellError::TaskNotFound(id.as_uuid()))?;
 
         // Clone the Arc so we can release the DashMap read lock before acquiring task write lock
         let task_arc = entry.value().clone();
@@ -337,11 +340,7 @@ impl TaskStateMachine {
     }
 
     /// Inject instructions into a task
-    pub fn inject_instruction(
-        &self,
-        id: TaskId,
-        instruction: String,
-    ) -> Result<(), SwellError> {
+    pub fn inject_instruction(&self, id: TaskId, instruction: String) -> Result<(), SwellError> {
         self.with_task_mut(id, |task| {
             // Can inject into any active state
             match task.state {

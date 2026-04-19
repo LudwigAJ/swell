@@ -16,8 +16,8 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use swell_core::TaskId;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use serde::{Deserialize, Serialize};
@@ -417,7 +417,10 @@ impl UncertaintyManager {
     }
 
     /// Get pending requests for a specific task.
-    pub async fn get_pending_for_task(&self, task_id: TaskId) -> Vec<UncertaintyClarificationEvent> {
+    pub async fn get_pending_for_task(
+        &self,
+        task_id: TaskId,
+    ) -> Vec<UncertaintyClarificationEvent> {
         let pending = self.pending_requests.read().await;
         pending
             .values()

@@ -11,8 +11,8 @@
 //! operations. Workers are identified by unique IDs and tracked through their
 //! lifecycle states.
 
-use swell_core::ids::TaskId;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info, warn};
 use uuid::Uuid;

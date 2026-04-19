@@ -539,10 +539,14 @@ pub trait EvidenceStore: Send + Sync {
     async fn get(&self, id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError>;
 
     /// Retrieve all evidence packs for a specific task, newest first.
-    async fn get_by_task_id(&self, task_id: TaskId) -> Result<Vec<EvidencePack>, EvidenceStoreError>;
+    async fn get_by_task_id(
+        &self,
+        task_id: TaskId,
+    ) -> Result<Vec<EvidencePack>, EvidenceStoreError>;
 
     /// Get the latest evidence pack for a task.
-    async fn get_latest(&self, task_id: TaskId) -> Result<Option<EvidencePack>, EvidenceStoreError>;
+    async fn get_latest(&self, task_id: TaskId)
+        -> Result<Option<EvidencePack>, EvidenceStoreError>;
 
     /// List all evidence pack IDs for a task (without loading full data).
     async fn list_ids(&self, task_id: TaskId) -> Result<Vec<Uuid>, EvidenceStoreError>;
@@ -582,7 +586,9 @@ impl std::error::Error for EvidenceStoreError {}
 impl From<EvidenceStoreError> for crate::SwellError {
     fn from(err: EvidenceStoreError) -> Self {
         match err {
-            EvidenceStoreError::NotFound(_) => crate::SwellError::TaskNotFound(TaskId::nil().as_uuid()),
+            EvidenceStoreError::NotFound(_) => {
+                crate::SwellError::TaskNotFound(TaskId::nil().as_uuid())
+            }
             EvidenceStoreError::StorageError(_) => {
                 crate::SwellError::DatabaseError(err.to_string())
             }

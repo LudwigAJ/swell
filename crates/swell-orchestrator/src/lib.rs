@@ -208,6 +208,7 @@ pub use subagent::{
     AgentTreeNode, SpawnReason, SpawnStats, Subagent, SubagentError, SubagentSpawner, SubagentTree,
     MAX_SUBAGENT_DEPTH,
 };
+pub use swell_core::wiring::WiringReport;
 pub use task_board::{
     create_task_board, CostBreakdownEntry, CostModel, SharedTaskBoard, TaskBoard, TaskBoardEntry,
     TaskBoardStats,
@@ -227,6 +228,12 @@ pub use value_scorer::{
     BlockingImpactScore, ComplexityScore, SpecAlignmentScore, TaskDependency, TaskScore,
     ValueScorer, ValueScorerConfig,
 };
+pub use wiring::{
+    AgentPoolReport, CheckpointManagerReport, CostGuard, ExecutionControllerReport,
+    FeatureLeadManagerReport, FileLockManagerReport, FrozenRequirementRegistryReport,
+    LlmBackendReport, McpConfigManagerReport, NonNovelRetryDetectorReport, NoveltyCheckerReport,
+    PreToolHookManager, TaskStateMachineReport,
+};
 pub use work_graph::{
     CodeChangeRef, GraphMetadata, NodeMetadata, NodeStatus, SpecLink, TestResultRef, WorkGraph,
     WorkGraphError, WorkGraphNode,
@@ -235,13 +242,6 @@ pub use worker_boot::{WorkerBoot, WorkerBootError, WorkerBootState};
 pub use worker_pool::{
     SemaphoreWorkerPool, Worker, WorkerPoolError, WorkerPoolStats, WorkerState,
     DEFAULT_WORKER_COUNT, MAX_WORKERS, MIN_WORKERS,
-};
-pub use swell_core::wiring::WiringReport;
-pub use wiring::{
-    AgentPoolReport, CheckpointManagerReport, CostGuard, ExecutionControllerReport,
-    FeatureLeadManagerReport, FileLockManagerReport, FrozenRequirementRegistryReport,
-    LlmBackendReport, McpConfigManagerReport, NonNovelRetryDetectorReport,
-    NoveltyCheckerReport, PreToolHookManager, TaskStateMachineReport,
 };
 
 // Re-export web search tools from swell-tools for convenience
@@ -252,7 +252,10 @@ use swell_core::{
     AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskId, TaskState, ValidationResult,
 };
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
-use swell_tools::{mcp_config::{McpConfigManager, McpServerHealth}, ToolRegistry};
+use swell_tools::{
+    mcp_config::{McpConfigManager, McpServerHealth},
+    ToolRegistry,
+};
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -508,9 +511,7 @@ impl Orchestrator {
 
         // AgentPool
         {
-            reports.push(Box::new(AgentPoolReport::new(Arc::clone(
-                &self.agent_pool,
-            ))));
+            reports.push(Box::new(AgentPoolReport::new(Arc::clone(&self.agent_pool))));
         }
 
         // CheckpointManager
@@ -816,7 +817,11 @@ impl Orchestrator {
     }
 
     /// Assign a task to an available agent
-    pub async fn assign_task(&self, task_id: TaskId, role: AgentRole) -> Result<AgentId, SwellError> {
+    pub async fn assign_task(
+        &self,
+        task_id: TaskId,
+        role: AgentRole,
+    ) -> Result<AgentId, SwellError> {
         let agent_id = {
             let mut pool = self.agent_pool.write().await;
             pool.reserve(task_id, role)?
@@ -1142,7 +1147,11 @@ impl Orchestrator {
 
     /// Record the diff for the current task attempt.
     /// This should be called after task execution completes but before validation.
-    pub async fn record_attempt_diff(&self, task_id: TaskId, diff: String) -> Result<(), SwellError> {
+    pub async fn record_attempt_diff(
+        &self,
+        task_id: TaskId,
+        diff: String,
+    ) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;
 
         sm.with_task_mut(task_id, |task| {
@@ -1353,7 +1362,10 @@ impl Orchestrator {
     }
 
     /// Get current scope for a task
-    pub async fn get_task_scope(&self, task_id: TaskId) -> Result<swell_core::TaskScope, SwellError> {
+    pub async fn get_task_scope(
+        &self,
+        task_id: TaskId,
+    ) -> Result<swell_core::TaskScope, SwellError> {
         let sm = self.state_machine.read().await;
         let task = sm.get_task(task_id)?;
         Ok(task.current_scope.clone())
@@ -2460,12 +2472,18 @@ mod tests {
             names.contains(&"FrozenRequirementRegistry"),
             "Missing FrozenRequirementRegistry in manifest"
         );
-        assert!(names.contains(&"LlmBackend"), "Missing LlmBackend in manifest");
+        assert!(
+            names.contains(&"LlmBackend"),
+            "Missing LlmBackend in manifest"
+        );
         assert!(
             names.contains(&"ExecutionController"),
             "Missing ExecutionController in manifest"
         );
-        assert!(names.contains(&"CostGuard"), "Missing CostGuard in manifest");
+        assert!(
+            names.contains(&"CostGuard"),
+            "Missing CostGuard in manifest"
+        );
         assert!(
             names.contains(&"PreToolHookManager"),
             "Missing PreToolHookManager in manifest"
@@ -2534,10 +2552,7 @@ mod tests {
         for report in manifest.iter() {
             // name() should be non-empty static string
             let name = report.name();
-            assert!(
-                !name.is_empty(),
-                "WiringReport name() should not be empty"
-            );
+            assert!(!name.is_empty(), "WiringReport name() should not be empty");
 
             // identity() should be non-empty
             let identity = report.identity();

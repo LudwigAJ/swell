@@ -5,8 +5,8 @@
 //!   (tool invocations, agent transitions, validation results) in real-time,
 //!   not just top-level task state transitions.
 
-use uuid::Uuid;
 use swell_core::{DaemonEvent, TaskId};
+use uuid::Uuid;
 
 // ============================================================================
 // Test: ToolInvocationStarted event serialization/deserialization

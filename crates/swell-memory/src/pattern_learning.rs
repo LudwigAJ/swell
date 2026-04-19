@@ -30,7 +30,11 @@ pub struct RejectionData {
 
 impl RejectionData {
     /// Create new rejection data
-    pub fn new(task_id: TaskId, task_description: String, rejection_reason: RejectionReason) -> Self {
+    pub fn new(
+        task_id: TaskId,
+        task_description: String,
+        rejection_reason: RejectionReason,
+    ) -> Self {
         Self {
             task_id,
             task_description,

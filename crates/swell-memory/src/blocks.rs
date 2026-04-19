@@ -8,8 +8,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 pub use swell_core::{
-    AgentContext, MemoryBlock, MemoryBlockType, MemoryEntry, MemoryStore, SwellError, TaskId,
-    SessionId,
+    AgentContext, MemoryBlock, MemoryBlockType, MemoryEntry, MemoryStore, SessionId, SwellError,
+    TaskId,
 };
 
 /// Memory block labels for well-known blocks

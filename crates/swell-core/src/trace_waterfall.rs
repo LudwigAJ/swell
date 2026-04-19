@@ -321,7 +321,9 @@ impl TraceWaterfallBuilder {
         Some(TraceWaterfall {
             trace_id: self.trace_id.clone()?,
             task_id: self.task_id.unwrap_or_else(TaskId::nil),
-            session_id: self.session_id.unwrap_or_else(|| SessionId::from_uuid(Uuid::nil())),
+            session_id: self
+                .session_id
+                .unwrap_or_else(|| SessionId::from_uuid(Uuid::nil())),
             start_time,
             end_time,
             total_duration_ms,
