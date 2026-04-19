@@ -1,0 +1,22 @@
+{
+  "milestone": "refactor-03-newtype-ids",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-NEWTYPE-003",
+    "VAL-NEWTYPE-006",
+    "VAL-NEWTYPE-010",
+    "VAL-NEWTYPE-013",
+    "VAL-NEWTYPE-014"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
