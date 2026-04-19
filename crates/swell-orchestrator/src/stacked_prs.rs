@@ -38,8 +38,8 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
-use swell_core::ids::TaskId;
 use std::collections::HashMap;
+use swell_core::ids::{BranchName, TaskId};
 use tracing::{debug, info};
 
 /// Maximum lines per PR (default: 200)
@@ -79,7 +79,7 @@ impl PrStackManager {
     }
 
     /// Create a new PR stack for a task
-    pub fn create_stack(&mut self, task_id: TaskId, base_branch: String) -> PrStack {
+    pub fn create_stack(&mut self, task_id: TaskId, base_branch: BranchName) -> PrStack {
         let stack = PrStack::new(task_id, base_branch.clone());
         info!(task_id = %task_id, base_branch = %base_branch, "Created new PR stack");
         self.stacks.insert(task_id, stack);
@@ -147,7 +147,7 @@ impl PrStackManager {
         &self,
         task_id: TaskId,
         changes: &[PrFileChange],
-        base_branch: &str,
+        base_branch: &BranchName,
     ) -> Vec<Pr> {
         let mut prs = Vec::new();
         let mut current_pr_changes: Vec<PrFileChange> = Vec::new();
@@ -168,7 +168,7 @@ impl PrStackManager {
                     let pr = Pr::new(
                         format!("pr-{}-{}", task_id, pr_number),
                         pr_number,
-                        base_branch.to_string(),
+                        base_branch.clone(),
                         std::mem::take(&mut current_pr_changes),
                     );
                     prs.push(pr);
@@ -190,7 +190,7 @@ impl PrStackManager {
                     let pr = Pr::new(
                         format!("pr-{}-{}", task_id, pr_number),
                         pr_number,
-                        base_branch.to_string(),
+                        base_branch.clone(),
                         std::mem::take(&mut current_pr_changes),
                     );
                     prs.push(pr);
@@ -212,7 +212,7 @@ impl PrStackManager {
             let pr = Pr::new(
                 format!("pr-{}-{}", task_id, pr_number),
                 pr_number,
-                base_branch.to_string(),
+                base_branch.clone(),
                 current_pr_changes,
             );
             prs.push(pr);
@@ -237,7 +237,7 @@ impl PrStackManager {
         change: &PrFileChange,
         task_id: TaskId,
         start_pr_number: u32,
-        base_branch: &str,
+        base_branch: &BranchName,
     ) -> Vec<Pr> {
         let mut prs = Vec::new();
         let lines = change.content.lines().collect::<Vec<_>>();
@@ -264,7 +264,7 @@ impl PrStackManager {
                 let pr = Pr::new(
                     format!("pr-{}-{}-{}", task_id, start_pr_number, chunk_num),
                     start_pr_number + chunk_num - 1,
-                    base_branch.to_string(),
+                    base_branch.clone(),
                     vec![chunk_change],
                 );
                 prs.push(pr);
@@ -288,7 +288,7 @@ impl PrStackManager {
             let pr = Pr::new(
                 format!("pr-{}-{}-{}", task_id, start_pr_number, chunk_num),
                 start_pr_number + chunk_num - 1,
-                base_branch.to_string(),
+                base_branch.clone(),
                 vec![chunk_change],
             );
             prs.push(pr);
@@ -387,7 +387,7 @@ pub struct PrStack {
     /// Task this stack belongs to
     pub task_id: TaskId,
     /// Base branch (e.g., "main")
-    pub base_branch: String,
+    pub base_branch: BranchName,
     /// PRs in the stack (ordered from base to head)
     pub prs: Vec<Pr>,
     /// When stack was created
@@ -396,7 +396,7 @@ pub struct PrStack {
 
 impl PrStack {
     /// Create a new PR stack
-    pub fn new(task_id: TaskId, base_branch: String) -> Self {
+    pub fn new(task_id: TaskId, base_branch: BranchName) -> Self {
         Self {
             task_id,
             base_branch,
@@ -461,7 +461,7 @@ impl PrStack {
 
     /// Get the stack as a list of branch names (for GitHub merge queue)
     pub fn branch_chain(&self) -> Vec<String> {
-        self.prs.iter().map(|pr| pr.branch.clone()).collect()
+        self.prs.iter().map(|pr| pr.branch.to_string()).collect()
     }
 }
 
@@ -473,9 +473,9 @@ pub struct Pr {
     /// PR number within the stack (1, 2, 3...)
     pub pr_number: u32,
     /// Branch name for this PR
-    pub branch: String,
+    pub branch: BranchName,
     /// Base branch this PR targets
-    pub base_branch: String,
+    pub base_branch: BranchName,
     /// Files changed in this PR
     pub files: Vec<PrFileChange>,
     /// PRs this one depends on (usually just the previous one)
@@ -488,14 +488,14 @@ pub struct Pr {
 
 impl Pr {
     /// Create a new PR
-    pub fn new(id: String, pr_number: u32, base_branch: String, files: Vec<PrFileChange>) -> Self {
+    pub fn new(id: String, pr_number: u32, base_branch: BranchName, files: Vec<PrFileChange>) -> Self {
         let branch = format!("{}/pr-{}", base_branch, pr_number);
         let line_count: u32 = files.iter().map(|f| f.line_count).sum();
 
         Self {
             id,
             pr_number,
-            branch,
+            branch: BranchName::new(branch),
             base_branch,
             files,
             depends_on: Vec::new(),
@@ -622,7 +622,7 @@ pub enum StackedPrError {
     },
 
     #[error("Invalid base branch: expected {expected}, got {actual}")]
-    InvalidBaseBranch { expected: String, actual: String },
+    InvalidBaseBranch { expected: BranchName, actual: BranchName },
 
     #[error("Cycle detected: PR {0} would create circular dependency")]
     CycleDetected(String),
@@ -677,12 +677,12 @@ mod tests {
             risk_level: FileChangeRisk::Low,
         }];
 
-        let pr = Pr::new("pr-1".to_string(), 1, "main".to_string(), files);
+        let pr = Pr::new("pr-1".to_string(), 1, BranchName::new("main"), files);
 
         assert_eq!(pr.id, "pr-1");
         assert_eq!(pr.pr_number, 1);
-        assert_eq!(pr.branch, "main/pr-1");
-        assert_eq!(pr.base_branch, "main");
+        assert_eq!(pr.branch.as_str(), "main/pr-1");
+        assert_eq!(pr.base_branch.as_str(), "main");
         assert_eq!(pr.line_count(), 10);
         assert!(pr.depends_on.is_empty());
     }
@@ -704,7 +704,7 @@ mod tests {
             },
         ];
 
-        let pr = Pr::new("pr-1".to_string(), 1, "main".to_string(), files);
+        let pr = Pr::new("pr-1".to_string(), 1, BranchName::new("main"), files);
 
         assert_eq!(pr.line_count(), 80);
         assert_eq!(pr.file_count(), 2);
@@ -720,7 +720,7 @@ mod tests {
             risk_level: FileChangeRisk::High,
         }];
 
-        let pr = Pr::new("pr-1".to_string(), 1, "main".to_string(), files);
+        let pr = Pr::new("pr-1".to_string(), 1, BranchName::new("main"), files);
 
         assert!(pr.has_high_risk_files());
     }
@@ -730,10 +730,10 @@ mod tests {
     #[test]
     fn test_stack_creation() {
         let task_id = TaskId::new();
-        let stack = PrStack::new(task_id, "main".to_string());
+        let stack = PrStack::new(task_id, BranchName::new("main"));
 
         assert_eq!(stack.task_id, task_id);
-        assert_eq!(stack.base_branch, "main");
+        assert_eq!(stack.base_branch.as_str(), "main");
         assert!(stack.is_empty());
         assert!(stack.head().is_none());
         assert!(stack.base().is_none());
@@ -741,12 +741,12 @@ mod tests {
 
     #[test]
     fn test_stack_add_pr() {
-        let mut stack = PrStack::new(TaskId::new(), "main".to_string());
+        let mut stack = PrStack::new(TaskId::new(), BranchName::new("main"));
 
         let pr = Pr::new(
             "pr-1".to_string(),
             1,
-            "main".to_string(),
+            BranchName::new("main"),
             vec![PrFileChange {
                 path: "test.rs".to_string(),
                 content: "// test".to_string(),
@@ -765,12 +765,12 @@ mod tests {
 
     #[test]
     fn test_stack_add_pr_wrong_base() {
-        let mut stack = PrStack::new(TaskId::new(), "main".to_string());
+        let mut stack = PrStack::new(TaskId::new(), BranchName::new("main"));
 
         let pr = Pr::new(
             "pr-1".to_string(),
             1,
-            "develop".to_string(), // Wrong base
+            BranchName::new("develop"), // Wrong base
             vec![],
         );
 
@@ -785,9 +785,9 @@ mod tests {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
 
-        let stack = manager.create_stack(task_id, "main".to_string());
+        let stack = manager.create_stack(task_id, BranchName::new("main"));
 
-        assert_eq!(stack.base_branch, "main");
+        assert_eq!(stack.base_branch.as_str(), "main");
         assert!(stack.is_empty());
     }
 
@@ -804,7 +804,7 @@ mod tests {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
 
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
         assert!(manager.get_stack(&task_id).is_some());
 
         let removed = manager.remove_stack(&task_id);
@@ -817,12 +817,12 @@ mod tests {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
 
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
 
         let pr = Pr::new(
             "pr-1".to_string(),
             1,
-            "main".to_string(),
+            BranchName::new("main"),
             vec![PrFileChange {
                 path: "test.rs".to_string(),
                 content: "// test".to_string(),
@@ -841,7 +841,7 @@ mod tests {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
 
-        let pr = Pr::new("pr-1".to_string(), 1, "main".to_string(), vec![]);
+        let pr = Pr::new("pr-1".to_string(), 1, BranchName::new("main"), vec![]);
 
         let result = manager.add_pr(task_id, pr);
         assert!(result.is_err());
@@ -854,7 +854,7 @@ mod tests {
         let pr = Pr::new(
             "pr-1".to_string(),
             1,
-            "main".to_string(),
+            BranchName::new("main"),
             vec![PrFileChange {
                 path: "test.rs".to_string(),
                 content: "// test".to_string(),
@@ -872,12 +872,12 @@ mod tests {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
 
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
 
         let pr = Pr::new(
             "pr-1".to_string(),
             1,
-            "main".to_string(),
+            BranchName::new("main"),
             vec![PrFileChange {
                 path: "test.rs".to_string(),
                 content: "// test".to_string(),
@@ -900,12 +900,12 @@ mod tests {
         });
         let task_id = TaskId::new();
 
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
 
         let pr = Pr::new(
             "pr-1".to_string(),
             1,
-            "main".to_string(),
+            BranchName::new("main"),
             vec![PrFileChange {
                 path: "test.rs".to_string(),
                 content: "// test".to_string(),
@@ -926,7 +926,7 @@ mod tests {
     fn test_split_small_changes_no_split() {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
 
         let changes = vec![
             PrFileChange {
@@ -954,7 +954,7 @@ mod tests {
     fn test_split_exceeds_limit() {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
 
         // Create changes that exceed 200 lines
         let changes = vec![PrFileChange {
@@ -974,7 +974,7 @@ mod tests {
     fn test_split_multiple_prs() {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
 
         // Create changes that will need multiple PRs
         let changes = vec![
@@ -1015,7 +1015,7 @@ mod tests {
     fn test_pr_dependencies_chain() {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
 
         let changes = vec![
             PrFileChange {
@@ -1056,12 +1056,12 @@ mod tests {
     fn test_total_lines() {
         let mut manager = PrStackManager::new();
         let task_id = TaskId::new();
-        manager.create_stack(task_id, "main".to_string());
+        manager.create_stack(task_id, BranchName::new("main"));
 
         let pr1 = Pr::new(
             "pr-1".to_string(),
             1,
-            "main".to_string(),
+            BranchName::new("main"),
             vec![PrFileChange {
                 path: "a.rs".to_string(),
                 content: "// a".to_string(),
@@ -1073,7 +1073,7 @@ mod tests {
         let pr2 = Pr::new(
             "pr-2".to_string(),
             2,
-            "main".to_string(),
+            BranchName::new("main"),
             vec![PrFileChange {
                 path: "b.rs".to_string(),
                 content: "// b".to_string(),
@@ -1092,14 +1092,14 @@ mod tests {
 
     #[test]
     fn test_branch_chain() {
-        let mut stack = PrStack::new(TaskId::new(), "main".to_string());
+        let mut stack = PrStack::new(TaskId::new(), BranchName::new("main"));
 
         stack
-            .add_pr(Pr::new("pr-1".to_string(), 1, "main".to_string(), vec![]))
+            .add_pr(Pr::new("pr-1".to_string(), 1, BranchName::new("main"), vec![]))
             .unwrap();
 
         stack
-            .add_pr(Pr::new("pr-2".to_string(), 2, "main".to_string(), vec![]))
+            .add_pr(Pr::new("pr-2".to_string(), 2, BranchName::new("main"), vec![]))
             .unwrap();
 
         let chain = stack.branch_chain();
@@ -1157,7 +1157,7 @@ mod tests {
         let result = Pr::new(
             "pr-1".to_string(),
             1,
-            "main".to_string(),
+            BranchName::new("main"),
             vec![], // Empty files
         );
 

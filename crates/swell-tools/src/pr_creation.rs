@@ -15,7 +15,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use swell_core::ids::TaskId;
+use swell_core::ids::{BranchName, TaskId};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -70,7 +70,7 @@ impl PrLabel {
 #[derive(Debug, Clone)]
 pub struct PrCreatorConfig {
     /// Default base branch for PRs (default: "main")
-    pub default_base_branch: String,
+    pub default_base_branch: BranchName,
     /// Whether to require validation evidence before PR creation
     pub require_validation: bool,
     /// Whether to add task metadata as PR body section
@@ -84,7 +84,7 @@ pub struct PrCreatorConfig {
 impl Default for PrCreatorConfig {
     fn default() -> Self {
         Self {
-            default_base_branch: "main".to_string(),
+            default_base_branch: BranchName::new("main"),
             require_validation: true,
             include_task_metadata: true,
             include_diff_stats: true,
@@ -105,7 +105,7 @@ pub struct PrMetadata {
     /// Extended description/rationale for the changes
     pub description: Option<String>,
     /// Base branch to create PR against
-    pub base_branch: Option<String>,
+    pub base_branch: Option<BranchName>,
     /// Labels to apply to the PR
     pub labels: Vec<PrLabel>,
     /// Custom metadata key-value pairs
@@ -145,8 +145,8 @@ impl PrMetadata {
     }
 
     /// Set the base branch
-    pub fn with_base_branch(mut self, base_branch: impl Into<String>) -> Self {
-        self.base_branch = Some(base_branch.into());
+    pub fn with_base_branch(mut self, base_branch: BranchName) -> Self {
+        self.base_branch = Some(base_branch);
         self
     }
 
@@ -174,8 +174,8 @@ impl PrMetadata {
     }
 
     /// Get the base branch
-    pub fn base_branch<'a>(&'a self, default: &'a str) -> &'a str {
-        self.base_branch.as_deref().unwrap_or(default)
+    pub fn base_branch(&self) -> BranchName {
+        self.base_branch.clone().unwrap_or_default()
     }
 }
 
@@ -312,9 +312,9 @@ pub struct PrResult {
     /// Whether it's a draft PR
     pub is_draft: bool,
     /// Branch name that was created
-    pub branch_name: String,
+    pub branch_name: BranchName,
     /// Base branch
-    pub base_branch: String,
+    pub base_branch: BranchName,
     /// Labels that were applied
     pub labels_applied: Vec<String>,
     /// Error message if creation failed
@@ -489,7 +489,7 @@ impl PrCreator {
         }
 
         let current_branch = self.get_current_branch(cwd).await?;
-        let base_branch = metadata.base_branch(&self.config.default_base_branch);
+        let base_branch = metadata.base_branch();
 
         // Build the PR body
         let mut body = String::new();
@@ -600,8 +600,8 @@ impl PrCreator {
             pr_url: Some(pr_url),
             created: true,
             is_draft,
-            branch_name: current_branch,
-            base_branch: base_branch.to_string(),
+            branch_name: BranchName::new(current_branch),
+            base_branch,
             labels_applied: label_args,
             error: None,
         };
@@ -609,7 +609,7 @@ impl PrCreator {
         // Track the PR
         {
             let mut prs = self.created_prs.write().await;
-            prs.insert(result.branch_name.clone(), result.clone());
+            prs.insert(result.branch_name.to_string(), result.clone());
         }
 
         info!(
@@ -630,7 +630,7 @@ impl PrCreator {
         cwd: &Path,
     ) -> Result<PrResult, PrCreationError> {
         let current_branch = self.get_current_branch(cwd).await?;
-        let base_branch = metadata.base_branch(&self.config.default_base_branch);
+        let base_branch = metadata.base_branch();
         let remote_url = self.get_remote_url(cwd).await?;
 
         // Build the PR body for reference
@@ -716,8 +716,8 @@ impl PrCreator {
             pr_url: None,
             created: false,
             is_draft: false,
-            branch_name: current_branch,
-            base_branch: base_branch.to_string(),
+            branch_name: BranchName::new(current_branch),
+            base_branch,
             labels_applied: metadata
                 .labels
                 .iter()
@@ -850,12 +850,12 @@ mod tests {
             .with_task_id(TaskId::new())
             .with_title("Critical bug fix")
             .with_description("Fixes the login issue")
-            .with_base_branch("develop")
+            .with_base_branch(BranchName::new("develop"))
             .with_label(PrLabel::TypeBugfix)
             .with_label(PrLabel::PriorityHigh);
 
         assert_eq!(meta.pr_title(), "Critical bug fix");
-        assert_eq!(meta.base_branch(&"main"), "develop");
+        assert_eq!(meta.base_branch().as_str(), "develop");
         assert_eq!(meta.labels.len(), 2);
     }
 
@@ -893,14 +893,14 @@ mod tests {
     #[test]
     fn test_pr_creator_config_default() {
         let config = PrCreatorConfig::default();
-        assert_eq!(config.default_base_branch, "main");
+        assert_eq!(config.default_base_branch.as_str(), "main");
         assert!(config.require_validation);
     }
 
     #[test]
     fn test_pr_creator_new() {
         let creator = PrCreator::new();
-        assert_eq!(creator.config().default_base_branch, "main");
+        assert_eq!(creator.config().default_base_branch.as_str(), "main");
     }
 
     #[test]

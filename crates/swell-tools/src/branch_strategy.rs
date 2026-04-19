@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use swell_core::ids::TaskId;
+use swell_core::ids::{BranchName, TaskId};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -89,7 +89,7 @@ impl BranchRequest {
 #[derive(Debug, Clone)]
 pub struct BranchResult {
     /// The full branch name created
-    pub branch_name: String,
+    pub branch_name: BranchName,
     /// The task ID associated with this branch
     pub task_id: TaskId,
     /// Whether this was a new branch or existing
@@ -375,7 +375,7 @@ impl BranchStrategy {
                 self.register_branch(branch_name.clone(), request.task_id)
                     .await;
                 return Ok(BranchResult {
-                    branch_name,
+                    branch_name: BranchName::new(branch_name),
                     task_id: request.task_id,
                     is_new: false,
                 });
@@ -396,7 +396,7 @@ impl BranchStrategy {
         );
 
         Ok(BranchResult {
-            branch_name,
+            branch_name: BranchName::new(branch_name),
             task_id: request.task_id,
             is_new: true,
         })

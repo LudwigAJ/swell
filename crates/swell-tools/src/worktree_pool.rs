@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use swell_core::ids::TaskId;
+use swell_core::ids::{BranchName, TaskId};
 use swell_core::ids::WorktreeId;
 use swell_core::AgentId;
 use swell_core::SwellError;
@@ -29,7 +29,7 @@ pub struct Worktree {
     /// Whether this worktree is ready for use
     pub ready: bool,
     /// Branch name for this worktree
-    pub branch: Option<String>,
+    pub branch: Option<BranchName>,
 }
 
 impl Worktree {
@@ -88,7 +88,7 @@ pub struct WorktreeAllocation {
     /// Path to the worktree
     pub path: PathBuf,
     /// Branch name
-    pub branch: String,
+    pub branch: BranchName,
     /// When the allocation was made
     pub allocated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -228,7 +228,7 @@ impl WorktreePool {
                 debug!(path = %path.display(), "Created worktree");
                 let mut worktree = Worktree::new(id, path);
                 worktree.ready = true;
-                worktree.branch = Some(format!("worktree/{}/{}", self.config.prefix, id));
+                worktree.branch = Some(BranchName::new(format!("worktree/{}/{}", self.config.prefix, id)));
                 Ok(worktree)
             }
             Ok(output) => {
@@ -237,7 +237,7 @@ impl WorktreePool {
                 if stderr.contains("already exists") {
                     let mut worktree = Worktree::new(id, path);
                     worktree.ready = true;
-                    worktree.branch = Some(format!("worktree/{}/{}", self.config.prefix, id));
+                    worktree.branch = Some(BranchName::new(format!("worktree/{}/{}", self.config.prefix, id)));
                     Ok(worktree)
                 } else {
                     warn!(error = %stderr, "Failed to create worktree, marking as not ready");
@@ -392,7 +392,7 @@ impl WorktreePool {
         }
 
         // Remove the branch
-        let branch_name = &allocation.branch;
+        let branch_name = allocation.branch.as_str();
         let result = tokio::process::Command::new("git")
             .args(["branch", "-D", branch_name])
             .current_dir(&self.config.base_repo)
@@ -507,7 +507,7 @@ mod tests {
     #[tokio::test]
     async fn test_allocation_record() {
         let mut worktree = Worktree::new(WorktreeId::new(), PathBuf::from("/tmp/test"));
-        worktree.branch = Some("test-branch".to_string());
+        worktree.branch = Some(BranchName::new("test-branch"));
         worktree.ready = true;
 
         let agent_id = AgentId::new();
@@ -520,7 +520,7 @@ mod tests {
         let allocation = allocation.unwrap();
         assert_eq!(allocation.agent_id, agent_id);
         assert_eq!(allocation.task_id, task_id);
-        assert_eq!(allocation.branch, "test-branch");
+        assert_eq!(allocation.branch.as_str(), "test-branch");
     }
 
     #[tokio::test]
