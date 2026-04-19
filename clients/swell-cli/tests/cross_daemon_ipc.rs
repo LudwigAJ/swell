@@ -14,7 +14,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 use swell_core::ids::SocketPath;
-use swell_core::{CliCommand, DaemonEvent, TaskState};
+use swell_core::{CliCommand, DaemonEvent, TaskId, TaskState};
 use swell_llm::{LlmBackend, MockLlm};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -84,7 +84,7 @@ async fn send_command(socket_path: &str, cmd: CliCommand) -> Result<DaemonEvent,
 /// Helper to start a watch connection and collect events
 async fn watch_task_events(
     socket_path: &str,
-    task_id: Uuid,
+    task_id: TaskId,
     max_events: usize,
     timeout_duration: Duration,
 ) -> Result<Vec<DaemonEvent>, String> {
@@ -269,7 +269,7 @@ async fn test_task_create_sends_correct_json() {
 
     match result.unwrap() {
         DaemonEvent::TaskCreated { id, correlation_id } => {
-            assert!(id != Uuid::nil(), "Task ID should be valid");
+            assert!(!id.is_nil(), "Task ID should be valid");
             assert!(
                 correlation_id != Uuid::nil(),
                 "Correlation ID should be valid"
@@ -472,7 +472,7 @@ async fn test_task_watch_nonexistent_returns_error() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Watch a non-existent task
-    let fake_id = Uuid::new_v4();
+    let fake_id = TaskId::new();
     let events = watch_task_events(&socket_str, fake_id, 1, Duration::from_secs(1))
         .await
         .expect("Watch should return events");
@@ -720,7 +720,7 @@ async fn test_task_reject_nonexistent_returns_error() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     // Try to reject a non-existent task
-    let fake_task_id = Uuid::new_v4();
+    let fake_task_id = TaskId::new();
     let reject_cmd = CliCommand::TaskReject {
         task_id: fake_task_id,
         reason: "Test reason".to_string(),

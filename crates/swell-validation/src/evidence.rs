@@ -931,7 +931,7 @@ mod tests {
     #[test]
     fn test_evidence_pack_builder() {
         let pack = EvidencePackBuilder::new()
-            .task_id(Uuid::new_v4())
+            .task_id(TaskId::new())
             .add_gate_result(GateEvidence {
                 name: "lint".to_string(),
                 passed: true,
@@ -975,7 +975,7 @@ mod tests {
     #[test]
     fn test_evidence_pack_failed_outcome() {
         let pack = EvidencePackBuilder::new()
-            .task_id(Uuid::new_v4())
+            .task_id(TaskId::new())
             .add_gate_result(GateEvidence {
                 name: "lint".to_string(),
                 passed: false,
@@ -995,7 +995,7 @@ mod tests {
     #[test]
     fn test_to_markdown() {
         let pack = EvidencePackBuilder::new()
-            .task_id(Uuid::new_v4())
+            .task_id(TaskId::new())
             .test_summary(TestEvidence {
                 total: 5,
                 passed: 4,
@@ -1020,7 +1020,7 @@ mod tests {
     #[test]
     fn test_to_summary_json() {
         let pack = EvidencePackBuilder::new()
-            .task_id(Uuid::new_v4())
+            .task_id(TaskId::new())
             .test_summary(TestEvidence {
                 total: 3,
                 passed: 3,
@@ -1082,7 +1082,7 @@ mod evidence_store_tests {
     #[tokio::test]
     async fn test_in_memory_store_basic_operations() {
         let store = InMemoryEvidenceStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Store evidence
         let evidence = create_test_evidence(task_id, true);
@@ -1123,7 +1123,7 @@ mod evidence_store_tests {
     #[tokio::test]
     async fn test_in_memory_store_multiple_evidences_per_task() {
         let store = InMemoryEvidenceStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Store multiple evidence packs
         let evidence1 = create_test_evidence(task_id, true);
@@ -1161,8 +1161,8 @@ mod evidence_store_tests {
     #[tokio::test]
     async fn test_in_memory_store_multiple_tasks() {
         let store = InMemoryEvidenceStore::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         let evidence1 = create_test_evidence(task1, true);
         let evidence2 = create_test_evidence(task2, false);
@@ -1181,7 +1181,7 @@ mod evidence_store_tests {
         assert_eq!(task2_evidence[0].task_id, task2);
 
         // task3 should have no evidence
-        let task3_evidence = store.get_by_task_id(Uuid::new_v4()).await.unwrap();
+        let task3_evidence = store.get_by_task_id(TaskId::new()).await.unwrap();
         assert!(task3_evidence.is_empty());
     }
 
@@ -1197,7 +1197,7 @@ mod evidence_store_tests {
         // This test demonstrates the concept: evidence packs are immutable
         // Once created and stored, they cannot be modified
         let store = InMemoryEvidenceStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let evidence = create_test_evidence(task_id, true);
         let original_id = evidence.id;
@@ -1224,7 +1224,7 @@ mod evidence_store_tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let evidence = create_test_evidence(task_id, true);
         let id = evidence.id;
 
@@ -1260,7 +1260,7 @@ mod evidence_store_tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Store multiple evidences
         let evidence1 = create_test_evidence(task_id, true);
@@ -1305,7 +1305,7 @@ mod evidence_store_tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let evidence = create_test_evidence(task_id, true);
         let id = evidence.id;
 
@@ -1329,7 +1329,7 @@ mod evidence_store_tests {
                 .unwrap(),
         );
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Test in-memory store through trait
         let evidence = create_test_evidence(task_id, true);

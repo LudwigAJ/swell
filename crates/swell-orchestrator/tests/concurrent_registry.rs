@@ -1,20 +1,21 @@
 //! Concurrent access tests for TaskStateMachine's DashMap-based storage.
 //!
-//! These tests verify that the DashMap<Uuid, Arc<RwLock<Task>>> storage
+//! These tests verify that the DashMap<TaskId, Arc<RwLock<Task>>> storage
 //! provides fine-grained concurrent access without global lock contention.
 
 use std::sync::Arc;
 use std::time::Duration;
-use swell_core::{AgentId, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
+use swell_core::{AgentId, Plan, PlanStep, RiskLevel, StepStatus, TaskId, TaskState};
 use swell_orchestrator::state_machine::TaskStateMachine;
+use uuid::Uuid;
 
 /// Helper to create a test plan for a task.
-fn create_test_plan(task_id: uuid::Uuid) -> Plan {
+fn create_test_plan(task_id: TaskId) -> Plan {
     Plan {
-        id: uuid::Uuid::new_v4(),
+        id: Uuid::new_v4(),
         task_id,
         steps: vec![PlanStep {
-            id: uuid::Uuid::new_v4(),
+            id: Uuid::new_v4(),
             description: "Test step".to_string(),
             affected_files: vec!["test.rs".to_string()],
             expected_tests: vec!["test_foo".to_string()],

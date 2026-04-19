@@ -503,7 +503,7 @@ mod tests {
     fn test_pattern_confidence_update() {
         let mut pattern = LearnedPattern::new(
             vec!["read_file".to_string()],
-            Uuid::new_v4(),
+            TaskId::new(),
             "test-repo".to_string(),
         );
 
@@ -526,7 +526,7 @@ mod tests {
     fn test_pattern_record_observation() {
         let mut pattern = LearnedPattern::new(
             vec!["shell".to_string()],
-            Uuid::new_v4(),
+            TaskId::new(),
             "test-repo".to_string(),
         );
 
@@ -539,7 +539,7 @@ mod tests {
     fn test_pattern_validation() {
         let mut pattern = LearnedPattern::new(
             vec!["shell".to_string()],
-            Uuid::new_v4(),
+            TaskId::new(),
             "test-repo".to_string(),
         );
 
@@ -719,7 +719,7 @@ mod tests {
     async fn test_learned_pattern_serialization() {
         let mut pattern = LearnedPattern::new(
             vec!["read_file".to_string(), "edit_file".to_string()],
-            Uuid::new_v4(),
+            TaskId::new(),
             "test-repo".to_string(),
         );
         pattern.description = Some("Read and modify files".to_string());
@@ -775,7 +775,7 @@ mod tests {
     async fn test_pattern_confidence_with_validation_boost() {
         let mut pattern = LearnedPattern::new(
             vec!["shell".to_string()],
-            Uuid::new_v4(),
+            TaskId::new(),
             "test-repo".to_string(),
         );
 

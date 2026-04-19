@@ -5,8 +5,8 @@
 //!   (tool invocations, agent transitions, validation results) in real-time,
 //!   not just top-level task state transitions.
 
-use swell_core::DaemonEvent;
 use uuid::Uuid;
+use swell_core::{DaemonEvent, TaskId};
 
 // ============================================================================
 // Test: ToolInvocationStarted event serialization/deserialization
@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 #[test]
 fn test_tool_invocation_started_serde() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::ToolInvocationStarted {
         id: task_id,
@@ -54,7 +54,7 @@ fn test_tool_invocation_started_serde() {
 
 #[test]
 fn test_tool_invocation_completed_serde() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::ToolInvocationCompleted {
         id: task_id,
@@ -96,7 +96,7 @@ fn test_tool_invocation_completed_serde() {
 
 #[test]
 fn test_tool_invocation_completed_failure() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::ToolInvocationCompleted {
         id: task_id,
@@ -124,7 +124,7 @@ fn test_tool_invocation_completed_failure() {
 
 #[test]
 fn test_agent_turn_started_serde() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::AgentTurnStarted {
         id: task_id,
@@ -161,7 +161,7 @@ fn test_agent_turn_started_serde() {
 
 #[test]
 fn test_agent_turn_completed_serde() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::AgentTurnCompleted {
         id: task_id,
@@ -208,7 +208,7 @@ fn test_agent_turn_completed_serde() {
 
 #[test]
 fn test_agent_turn_completed_no_tools() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::AgentTurnCompleted {
         id: task_id,
@@ -237,7 +237,7 @@ fn test_agent_turn_completed_no_tools() {
 
 #[test]
 fn test_validation_step_started_serde() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::ValidationStepStarted {
         id: task_id,
@@ -271,7 +271,7 @@ fn test_validation_step_started_serde() {
 
 #[test]
 fn test_validation_step_completed_passed() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::ValidationStepCompleted {
         id: task_id,
@@ -310,7 +310,7 @@ fn test_validation_step_completed_passed() {
 
 #[test]
 fn test_validation_step_completed_failed() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
     let event = DaemonEvent::ValidationStepCompleted {
         id: task_id,
@@ -347,7 +347,7 @@ fn test_validation_step_completed_failed() {
 
 #[test]
 fn test_per_turn_event_sequence_roundtrip() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
 
     let events = vec![
@@ -422,7 +422,7 @@ fn test_per_turn_event_sequence_roundtrip() {
 
 #[test]
 fn test_multiple_turns_tracked_independently() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
 
     let events = vec![
@@ -528,7 +528,7 @@ fn test_multiple_turns_tracked_independently() {
 
 #[test]
 fn test_correlation_id_links_per_turn_events() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id_1 = Uuid::new_v4();
     let correlation_id_2 = Uuid::new_v4();
 
@@ -585,7 +585,7 @@ fn test_correlation_id_links_per_turn_events() {
 
 #[test]
 fn test_validation_pipeline_sequence() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
 
     let events = vec![
@@ -693,7 +693,7 @@ fn test_validation_pipeline_sequence() {
 
 #[test]
 fn test_all_event_variants_have_unique_type_tags() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
 
     let events: Vec<DaemonEvent> = vec![

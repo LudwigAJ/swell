@@ -875,11 +875,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_session_resource_tracker_with_cost_record() {
-        use uuid::Uuid;
+        use swell_core::ids::TaskId;
 
         let mut tracker = SessionResourceTracker::with_default_limits();
 
-        let record = CostRecord::new(Uuid::new_v4(), "claude-3-5-sonnet".to_string(), 1000, 500);
+        let record = CostRecord::new(TaskId::new(), "claude-3-5-sonnet".to_string(), 1000, 500);
 
         tracker.record_cost_record(&record);
 

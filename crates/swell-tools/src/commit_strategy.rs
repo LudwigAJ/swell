@@ -945,7 +945,7 @@ mod tests {
         let message = request.build_message();
         assert!(message.contains("Implement new feature"));
         assert!(message.contains("Generated-by: swell/1.0.0"));
-        assert!(message.contains("Task-id: 550e8400-e29b-41d4-a716-446655440000"));
+        assert!(message.contains("Task-id: 00000000-0000-0000-0000-000000000000"));
         assert!(message.contains("Model: claude-sonnet-4-20250514"));
 
         // Stage and commit

@@ -2435,7 +2435,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_create_and_get_goal() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let goal = create_test_goal(task_id);
         let id = store.create_goal(goal.clone()).await.unwrap();
@@ -2448,7 +2448,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_goal_criteria_linking() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Create goal and criteria
         let goal = create_test_goal(task_id);
@@ -2471,7 +2471,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_criteria_test_linking() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Create chain: goal → criteria → test
         let goal = create_test_goal(task_id);
@@ -2497,7 +2497,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_test_result_linking() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Build chain
         let goal = create_test_goal(task_id);
@@ -2526,7 +2526,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_result_evidence_linking() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Build full chain
         let goal = create_test_goal(task_id);
@@ -2558,7 +2558,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_full_traceability_chain() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Build full chain
         let goal = create_test_goal(task_id);
@@ -2593,7 +2593,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_reverse_chain_from_evidence() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Build full chain
         let goal = create_test_goal(task_id);
@@ -2622,7 +2622,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_chain_counts() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Build chain
         let goal = create_test_goal(task_id);
@@ -2652,7 +2652,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_multiple_items_in_chain() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Create goal with multiple criteria, tests, and results
         let goal = create_test_goal(task_id);
@@ -2684,7 +2684,7 @@ mod traceability_tests {
     #[tokio::test]
     async fn test_get_goals_for_task() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Create multiple goals for same task
         let goal1 = create_test_goal(task_id);
@@ -2694,7 +2694,7 @@ mod traceability_tests {
         store.create_goal(goal2).await.unwrap();
 
         // Create goal for different task
-        let other_task_id = Uuid::new_v4();
+        let other_task_id = TaskId::new();
         let goal3 = create_test_goal(other_task_id);
         store.create_goal(goal3).await.unwrap();
 
@@ -2746,7 +2746,7 @@ mod sqlite_traceability_tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let goal = create_test_goal(task_id);
         let goal_id = store.create_goal(goal).await.unwrap();
 
@@ -2764,7 +2764,7 @@ mod sqlite_traceability_tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let goal = create_test_goal(task_id);
         let goal_id = store.create_goal(goal).await.unwrap();
 
@@ -2791,7 +2791,7 @@ mod sqlite_traceability_tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let goal = create_test_goal(task_id);
         let goal_id = store.create_goal(goal).await.unwrap();
 
@@ -2818,7 +2818,7 @@ mod sqlite_traceability_tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let goal = create_test_goal(task_id);
         let goal_id = store.create_goal(goal).await.unwrap();
 
@@ -2843,7 +2843,7 @@ mod sqlite_traceability_tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let goal = create_test_goal(task_id);
         let goal_id = store.create_goal(goal).await.unwrap();
 
@@ -2913,7 +2913,7 @@ mod sqlite_traceability_tests {
         // Note: This test uses InMemoryTraceabilityStore from traceability_tests scope,
         // where create_test_result has 2 args (passed: bool)
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Create goal (requirement)
         let goal = Goal::new("Test goal", task_id);
@@ -2974,7 +2974,7 @@ mod sqlite_traceability_tests {
     #[tokio::test]
     async fn test_detect_missing_links() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Create goal with criteria but NO tests (missing link!)
         let goal = Goal::new("Test goal", task_id);
@@ -2996,7 +2996,7 @@ mod sqlite_traceability_tests {
     #[tokio::test]
     async fn test_detect_no_missing_links_full_chain() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Build complete chain
         let goal = Goal::new("Complete chain goal", task_id);
@@ -3035,7 +3035,7 @@ mod sqlite_traceability_tests {
     #[tokio::test]
     async fn test_evidence_pack_code_locations() {
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let goal = Goal::new("Code locations test", task_id);
         let goal_id = store.create_goal(goal).await.unwrap();
@@ -3077,7 +3077,7 @@ mod sqlite_traceability_tests {
     async fn test_evidence_pack_bidirectional_traversal() {
         // Test that we can traverse both ways: requirement→tests and test→requirement
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let goal = Goal::new("Bidirectional test", task_id);
         let goal_id = store.create_goal(goal).await.unwrap();
@@ -3116,7 +3116,7 @@ mod sqlite_traceability_tests {
         // (while the NEWER result HAS evidence), ONLY the older result should be flagged.
         // This verifies the fix: we check each result's evidence individually, not test-level.
         let store = InMemoryTraceabilityStore::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let goal = Goal::new("Per-result evidence test", task_id);
         let goal_id = store.create_goal(goal).await.unwrap();

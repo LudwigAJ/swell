@@ -9,14 +9,14 @@
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use uuid::Uuid;
+use swell_core::TaskId;
 
 /// Test that LoopBreaker detects doom loop and clears context.
 #[tokio::test]
 async fn test_doom_loop_reset_clears_context() {
     // Create a shared tool loop tracker
     let tracker = Arc::new(RwLock::new(swell_tools::ToolLoopTracker::new()));
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Record 3 consecutive read_file failures (triggers same_tool_retry_threshold of 3)
     {
@@ -71,7 +71,7 @@ async fn test_doom_loop_reset_clears_context() {
 #[tokio::test]
 async fn test_loop_breaker_clears_repetitive_context() {
     let tracker = Arc::new(RwLock::new(swell_tools::ToolLoopTracker::new()));
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Record 5 consecutive shell failures (repetitive pattern)
     {
@@ -128,7 +128,7 @@ async fn test_loop_breaker_callback_fires() {
         }),
     ));
 
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Record 3 consecutive failures
     {
@@ -161,7 +161,7 @@ async fn test_loop_breaker_callback_fires() {
 #[tokio::test]
 async fn test_oscillation_triggers_loop_breaker() {
     let tracker = Arc::new(RwLock::new(swell_tools::ToolLoopTracker::new()));
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Record oscillation: read_file → edit_file → read_file → edit_file → read_file
     {
@@ -210,8 +210,8 @@ async fn test_oscillation_triggers_loop_breaker() {
 #[tokio::test]
 async fn test_doom_loop_independent_tasks() {
     let tracker = Arc::new(RwLock::new(swell_tools::ToolLoopTracker::new()));
-    let task1 = Uuid::new_v4();
-    let task2 = Uuid::new_v4();
+    let task1 = TaskId::new();
+    let task2 = TaskId::new();
 
     // Task 1: Has a doom loop (3 consecutive shell failures)
     {

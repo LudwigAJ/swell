@@ -795,7 +795,7 @@ mod tests {
     async fn test_different_tasks_independent() {
         let mut tracker = ToolLoopTracker::new();
 
-        let task1 = Uuid::new_v4();
+        let task1 = TaskId::new();
         let task2 = TaskId::new();
 
         // Task 1: Has a loop

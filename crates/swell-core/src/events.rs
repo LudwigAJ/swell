@@ -639,9 +639,9 @@ impl EventStore {
     }
 
     /// Get events by task_id
-    pub fn by_task_id(&self, task_id: &Uuid) -> Vec<&ObservableEvent> {
+    pub fn by_task_id(&self, task_id: &TaskId) -> Vec<&ObservableEvent> {
         self.by_task_id
-            .get(&task_id.to_string())
+            .get(&task_id.as_uuid().to_string())
             .map(|indices| indices.iter().map(|&i| &self.events[i]).collect())
             .unwrap_or_default()
     }
@@ -715,9 +715,9 @@ mod tests {
 
     #[test]
     fn test_observable_event_creation() {
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let event =
             ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
@@ -732,9 +732,9 @@ mod tests {
 
     #[test]
     fn test_observable_event_with_parent() {
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
         let parent_span_id = SpanId::generate();
 
         let event =
@@ -750,9 +750,9 @@ mod tests {
 
     #[test]
     fn test_observable_event_with_tool_invocation() {
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let tool_invocation = ToolInvocation::new(
             "file_read".to_string(),
@@ -774,9 +774,9 @@ mod tests {
 
     #[test]
     fn test_child_span_creation() {
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let event =
             ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
@@ -803,9 +803,9 @@ mod tests {
     #[test]
     fn test_outcome_serialization() {
         let event = ObservableEvent::with_generated_trace(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            AgentId::new(),
+            SessionId::new(),
+            TaskId::new(),
             Outcome::Success,
         );
 
@@ -816,9 +816,9 @@ mod tests {
     #[test]
     fn test_observable_event_serialization() {
         let event = ObservableEvent::with_generated_trace(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            AgentId::new(),
+            SessionId::new(),
+            TaskId::new(),
             Outcome::Success,
         );
 
@@ -904,9 +904,9 @@ mod tests {
 
     #[test]
     fn test_root_trace_id_propagation() {
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let event =
             ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
@@ -924,10 +924,10 @@ mod tests {
 
     #[test]
     fn test_propagate_root_trace_for_new_task() {
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id_1 = Uuid::new_v4();
-        let task_id_2 = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id_1 = TaskId::new();
+        let task_id_2 = TaskId::new();
 
         let event1 = ObservableEvent::with_generated_trace(
             agent_id,
@@ -961,9 +961,9 @@ mod tests {
 
     #[test]
     fn test_request_id_unique_per_span() {
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let event =
             ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
@@ -977,9 +977,9 @@ mod tests {
     #[test]
     fn test_correlation_ids_in_event_serialization() {
         let event = ObservableEvent::with_generated_trace(
-            Uuid::new_v4(),
-            Uuid::new_v4(),
-            Uuid::new_v4(),
+            AgentId::new(),
+            SessionId::new(),
+            TaskId::new(),
             Outcome::Success,
         );
 
@@ -1015,9 +1015,9 @@ mod tests {
     #[test]
     fn test_event_store_add_and_query_by_root_trace_id() {
         let mut store = EventStore::new();
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let event =
             ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
@@ -1035,10 +1035,10 @@ mod tests {
     #[test]
     fn test_event_store_query_by_cross_task_correlation_id() {
         let mut store = EventStore::new();
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id_1 = Uuid::new_v4();
-        let task_id_2 = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id_1 = TaskId::new();
+        let task_id_2 = TaskId::new();
 
         let event1 = ObservableEvent::with_generated_trace(
             agent_id,
@@ -1061,9 +1061,9 @@ mod tests {
     #[test]
     fn test_event_store_query_by_agent_session_id() {
         let mut store = EventStore::new();
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let event =
             ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
@@ -1081,9 +1081,9 @@ mod tests {
     #[test]
     fn test_event_store_query_by_request_id() {
         let mut store = EventStore::new();
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let event =
             ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
@@ -1099,9 +1099,9 @@ mod tests {
     #[test]
     fn test_event_store_query_by_task_id() {
         let mut store = EventStore::new();
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         let event =
             ObservableEvent::with_generated_trace(agent_id, session_id, task_id, Outcome::Success);
@@ -1118,9 +1118,9 @@ mod tests {
     #[test]
     fn test_event_store_all() {
         let mut store = EventStore::new();
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
 
         for _ in 0..5 {
             let event = ObservableEvent::with_generated_trace(
@@ -1143,7 +1143,7 @@ mod tests {
         let events = store.by_root_trace_id(&TraceId::generate());
         assert!(events.is_empty());
 
-        let events = store.by_task_id(&Uuid::new_v4());
+        let events = store.by_task_id(&TaskId::new());
         assert!(events.is_empty());
     }
 

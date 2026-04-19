@@ -782,7 +782,7 @@ mod tests {
     #[tokio::test]
     async fn test_daemon_event_to_dashboard_event() {
         let correlation_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let daemon_event = DaemonEvent::TaskStateChanged {
             id: task_id,

@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use swell_core::{
-    get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, DataResponse,
-    FailureClass, TaskState,
+    get_last_llm_model, get_total_llm_tokens, AgentId, CliCommand, DaemonEvent, DataResponse,
+    FailureClass, TaskId, TaskState,
 };
 use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
@@ -739,7 +739,7 @@ mod tests {
 
         match event {
             DaemonEvent::TaskCreated { id, correlation_id } => {
-                assert!(id != Uuid::nil());
+                assert!(!id.is_nil());
                 assert!(correlation_id != Uuid::nil());
             }
             other => panic!("Expected TaskCreated event, got: {:?}", other),
@@ -767,7 +767,7 @@ mod tests {
 
         match event {
             DaemonEvent::TaskCreated { id, correlation_id } => {
-                assert!(id != Uuid::nil());
+                assert!(!id.is_nil());
                 assert!(correlation_id != Uuid::nil());
             }
             other => panic!("Expected TaskCreated event, got: {:?}", other),
@@ -781,7 +781,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let command = CliCommand::TaskApprove { task_id: fake_id };
 
         let event = handle_command(
@@ -854,7 +854,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let command = CliCommand::TaskReject {
             task_id: fake_id,
             reason: "Test rejection".to_string(),
@@ -928,7 +928,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let command = CliCommand::TaskCancel { task_id: fake_id };
 
         let event = handle_command(
@@ -1065,7 +1065,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let command = CliCommand::TaskWatch { task_id: fake_id };
 
         let event = handle_command(
@@ -1191,7 +1191,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_created_event_serializes_correctly() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = Uuid::new_v4();
         let event = DaemonEvent::TaskCreated {
             id: task_id,
@@ -1221,7 +1221,7 @@ mod tests {
     async fn test_task_state_changed_serializes_correctly() {
         let correlation_id = Uuid::new_v4();
         let event = DaemonEvent::TaskStateChanged {
-            id: Uuid::nil(),
+            id: TaskId::nil(),
             state: TaskState::Created,
             correlation_id,
         };
@@ -1313,7 +1313,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
 
         // Try to approve a non-existent task - should return an error with a correlation_id
         let command = CliCommand::TaskApprove { task_id: fake_id };
@@ -1368,7 +1368,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_task_watch_command() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let json = format!(
             r#"{{"type":"TaskWatch","payload":{{"task_id":"{}"}}}}"#,
             task_id
@@ -1385,7 +1385,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_task_reject_command() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let json = format!(
             r#"{{"type":"TaskReject","payload":{{"task_id":"{}","reason":"test reason"}}}}"#,
             task_id
@@ -1406,7 +1406,7 @@ mod tests {
 
     // --- Operator Intervention Tests ---
 
-    fn create_test_task_in_executing_state(orch: &Arc<Mutex<Arc<Orchestrator>>>) -> Uuid {
+    fn create_test_task_in_executing_state(orch: &Arc<Mutex<Arc<Orchestrator>>>) -> TaskId {
         let task_id = futures::executor::block_on(async {
             orch.lock()
                 .await
@@ -1429,7 +1429,7 @@ mod tests {
         task_id
     }
 
-    fn create_test_task_in_validating_state(orch: &Arc<Mutex<Arc<Orchestrator>>>) -> Uuid {
+    fn create_test_task_in_validating_state(orch: &Arc<Mutex<Arc<Orchestrator>>>) -> TaskId {
         let task_id = futures::executor::block_on(async {
             orch.lock()
                 .await
@@ -1460,7 +1460,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let command = CliCommand::TaskPause {
             task_id: fake_id,
             reason: "Operator requested".to_string(),
@@ -1588,7 +1588,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let command = CliCommand::TaskResume { task_id: fake_id };
 
         let event = handle_command(
@@ -1690,7 +1690,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let command = CliCommand::TaskInjectInstruction {
             task_id: fake_id,
             instruction: "Check the logs".to_string(),
@@ -1796,7 +1796,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let scope = swell_core::TaskScope {
             files: vec!["src/lib.rs".to_string()],
             directories: vec!["src".to_string()],
@@ -1903,7 +1903,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_task_pause_command() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let json = format!(
             r#"{{"type":"TaskPause","payload":{{"task_id":"{}","reason":"test pause"}}}}"#,
             task_id
@@ -1924,7 +1924,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_task_resume_command() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let json = format!(
             r#"{{"type":"TaskResume","payload":{{"task_id":"{}"}}}}"#,
             task_id
@@ -1941,7 +1941,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_task_inject_instruction_command() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let json = format!(
             r#"{{"type":"TaskInjectInstruction","payload":{{"task_id":"{}","instruction":"check logs"}}}}"#,
             task_id
@@ -1962,7 +1962,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_task_modify_scope_command() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let json = format!(
             r#"{{"type":"TaskModifyScope","payload":{{"task_id":"{}","scope":{{"files":["file1.rs"],"directories":["src"],"allowed_operations":[]}}}}}}"#,
             task_id
@@ -1985,7 +1985,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_task_get_command() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let json = format!(
             r#"{{"type":"TaskGet","payload":{{"task_id":"{}"}}}}"#,
             task_id
@@ -2005,7 +2005,7 @@ mod tests {
         let orch = create_test_orchestrator();
         let emitter = create_test_event_emitter();
         let active_connections = create_test_active_connections();
-        let fake_id = Uuid::new_v4();
+        let fake_id = TaskId::new();
         let command = CliCommand::TaskGet { task_id: fake_id };
 
         let event = handle_command(
@@ -2131,7 +2131,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_get_event_serialization() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let correlation_id = Uuid::new_v4();
         let event = DaemonEvent::TaskDetails {
             id: task_id,
@@ -2314,7 +2314,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_parse_cost_query_with_task_id() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let json = format!(
             r#"{{"type":"CostQuery","payload":{{"task_id":"{}"}}}}"#,
             task_id
@@ -2331,7 +2331,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cost_query_result_event_serialization() {
-        let task_id = Some(Uuid::new_v4());
+        let task_id = Some(TaskId::new());
         let correlation_id = Uuid::new_v4();
         let event = DaemonEvent::CostQueryResult {
             task_id,

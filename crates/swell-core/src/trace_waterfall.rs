@@ -541,9 +541,9 @@ mod tests {
         let trace_id = TraceId::generate();
         let span_id = SpanId::from_hex(span_id).unwrap();
         let parent_span_id = parent_span_id.map(|p| SpanId::from_hex(p).unwrap());
-        let agent_id = Uuid::new_v4();
-        let session_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
+        let session_id = SessionId::new();
+        let task_id = TaskId::new();
         let root_trace_id = trace_id.clone();
 
         let tool_invocation = tool_name.map(|name| {
@@ -595,7 +595,7 @@ mod tests {
             end_time: Utc::now(),
             duration_ms: 100,
             outcome: Outcome::Success,
-            agent_id: Some(Uuid::new_v4()),
+            agent_id: Some(AgentId::new()),
             tool_invocation: None,
             is_decision_point: false,
             children: Vec::new(),
@@ -948,7 +948,7 @@ mod tests {
                 .unwrap(),
             duration_ms,
             outcome: Outcome::Success,
-            agent_id: Some(Uuid::new_v4()),
+            agent_id: Some(AgentId::new()),
             tool_invocation: Some(ToolSpanDetails {
                 tool_name: "test_tool".to_string(),
                 arguments_summary: "{}".to_string(),

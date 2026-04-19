@@ -12,12 +12,12 @@
 //! ```rust
 //! use swell_core::cost_tracking::{CostTracker, CostBudget, ModelBreakdown};
 //! use swell_core::opentelemetry::pricing;
-//! use uuid::Uuid;
+//! use swell_core::TaskId;
 //!
 //! let mut tracker = CostTracker::new();
 //! tracker.set_task_budget(500_000); // 500k tokens per task
 //!
-//! let task_id = Uuid::new_v4();
+//! let task_id = TaskId::new();
 //!
 //! // Record a cost (input_tokens, output_tokens, model_name)
 //! tracker.record_task_cost(task_id, 1000, 500, "claude-3-5-sonnet").unwrap();
@@ -736,11 +736,12 @@ pub enum CostTrackerError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ids::TaskId;
 
     #[test]
     fn test_cost_record_creation() {
         let record = CostRecord::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "claude-3-5-sonnet".to_string(),
             1_000_000,
             500_000,
@@ -755,7 +756,7 @@ mod tests {
 
     #[test]
     fn test_model_breakdown() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut breakdown = ModelBreakdown::new();
 
         // Add a Sonnet call
@@ -780,7 +781,7 @@ mod tests {
 
     #[test]
     fn test_cost_summary() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut summary = CostSummary::new();
 
         let record1 = CostRecord::new(task_id, "claude-3-5-sonnet".to_string(), 1000, 500);
@@ -811,7 +812,7 @@ mod tests {
     #[test]
     fn test_cost_tracker_basic() {
         let mut tracker = CostTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         tracker.set_active_task(task_id);
 
         // Record some costs
@@ -847,7 +848,7 @@ mod tests {
     #[test]
     fn test_cost_tracker_record_task_cost() {
         let mut tracker = CostTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Record cost without setting active task
         let result = tracker.record_task_cost(task_id, 1000, 500, "gpt-4o");
@@ -861,7 +862,7 @@ mod tests {
     #[test]
     fn test_cost_tracker_warning_threshold() {
         let mut tracker = CostTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         tracker.set_active_task(task_id);
         tracker.set_task_budget(500_000); // 500k token budget
 
@@ -884,7 +885,7 @@ mod tests {
     #[test]
     fn test_cost_tracker_reset() {
         let mut tracker = CostTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         tracker.set_active_task(task_id);
 
         tracker
@@ -905,7 +906,7 @@ mod tests {
     #[test]
     fn test_cost_tracker_clear() {
         let mut tracker = CostTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         tracker.set_active_task(task_id);
 
         tracker
@@ -922,7 +923,7 @@ mod tests {
 
     #[test]
     fn test_budget_alert_creation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let warning = BudgetAlert::warning(task_id, 375_000, 500_000, 5.50);
         assert_eq!(warning.alert_type, BudgetAlertType::Warning);
@@ -941,7 +942,7 @@ mod tests {
     fn test_model_pricing() {
         // Test various models
         let record_sonnet = CostRecord::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "claude-3-5-sonnet".to_string(),
             1_000_000,
             1_000_000,
@@ -949,7 +950,7 @@ mod tests {
         assert!((record_sonnet.cost_usd - 18.0).abs() < 0.001); // $3 + $15
 
         let record_opus = CostRecord::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "claude-3-opus".to_string(),
             1_000_000,
             1_000_000,
@@ -958,7 +959,7 @@ mod tests {
 
         // gpt-4o-2024-08-06 matches the pricing check for GPT-4o
         let record_gpt4o = CostRecord::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "gpt-4o-2024-08-06".to_string(),
             1_000_000,
             1_000_000,
@@ -967,7 +968,7 @@ mod tests {
 
         // gpt-4o-mini matches the pricing check for GPT-4o Mini
         let record_gpt4o_mini = CostRecord::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "gpt-4o-mini".to_string(),
             1_000_000,
             1_000_000,
@@ -981,8 +982,8 @@ mod tests {
         // Verifies: Cost per model tracking, Aggregation by task and run,
         // Cost breakdown visualization (via serializable structures)
 
-        let task_id1 = Uuid::new_v4();
-        let task_id2 = Uuid::new_v4();
+        let task_id1 = TaskId::new();
+        let task_id2 = TaskId::new();
 
         let mut tracker = CostTracker::new();
 
@@ -1057,7 +1058,7 @@ mod tests {
     #[test]
     fn test_task_cost_summary_with_outcome() {
         // Test that get_task_summary_with_outcome returns both cost and outcome
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut tracker = CostTracker::new();
 
         // Record costs for the task
@@ -1089,9 +1090,9 @@ mod tests {
     #[test]
     fn test_cost_per_outcome_analysis() {
         // Test cost-per-outcome analysis across multiple tasks with different outcomes
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
-        let task3 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
+        let task3 = TaskId::new();
 
         let mut tracker = CostTracker::new();
 
@@ -1135,7 +1136,7 @@ mod tests {
     #[test]
     fn test_get_task_outcome() {
         // Test retrieving the outcome for a specific task
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut tracker = CostTracker::new();
 
         // Initially no outcome
@@ -1153,7 +1154,7 @@ mod tests {
     #[test]
     fn test_task_outcome_default() {
         // Test that default outcome is Completed
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut tracker = CostTracker::new();
 
         tracker
@@ -1168,7 +1169,7 @@ mod tests {
     #[test]
     fn test_reset_task_outcome() {
         // Test that reset_task_costs also removes the outcome
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut tracker = CostTracker::new();
 
         tracker

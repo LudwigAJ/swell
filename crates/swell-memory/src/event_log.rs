@@ -970,7 +970,7 @@ mod episodic {
         let (_temp_dir, log) = create_temp_log();
 
         let task_id = TaskId::new();
-        let agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
 
         log.log_decision(
             task_id,
@@ -1060,8 +1060,8 @@ mod episodic {
     fn test_replay_for_task() {
         let (_temp_dir, log) = create_temp_log();
 
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // Log events for task1
         log.log_state_transition(task1, "CREATED", "EXECUTING", None)
@@ -1103,8 +1103,8 @@ mod episodic {
             serde_json::json!({"model": "claude-3-5-sonnet"}),
         )
         .with_task_id(TaskId::new())
-        .with_session_id(Uuid::new_v4().into())
-        .with_agent_id(Uuid::new_v4().into())
+        .with_session_id(SessionId::new())
+        .with_agent_id(AgentId::new())
         .with_correlation_id(Uuid::new_v4());
 
         assert!(entry.task_id.is_some());
@@ -1257,7 +1257,7 @@ mod episodic {
             EventType::Decision,
             serde_json::json!({"decision": "test_decision"}),
         )
-        .with_agent_id(Uuid::new_v4().into());
+        .with_agent_id(AgentId::new());
         log.write_event(&entry2).unwrap();
 
         // Replay all events
@@ -1504,7 +1504,7 @@ mod episodic {
     fn test_replayable_event_log_replay_for_session() {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path().join("event_log");
-        let session_id = Uuid::new_v4();
+        let session_id = SessionId::new();
 
         let log = ReplayableEventLog::new(&base_path);
         log.init().unwrap();
@@ -1521,7 +1521,7 @@ mod episodic {
             EventType::Observation,
             serde_json::json!({"text": "other_session"}),
         )
-        .with_session_id(Uuid::new_v4()); // Different session
+        .with_session_id(SessionId::new()); // Different session
         log.write_event(&entry2).unwrap();
 
         // Replay for specific session

@@ -693,6 +693,7 @@ mod tests {
     use super::*;
     use crate::skill_extraction::SkillStep;
     use crate::SqliteMemoryStore;
+    use swell_core::ids::{AgentId, SessionId, TaskId};
 
     #[test]
     fn test_budget_default() {

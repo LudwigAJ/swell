@@ -472,7 +472,7 @@ mod tests {
         let task_id = TaskId::nil();
 
         let name = strategy.generate_branch_name(task_id, "fix bug in auth");
-        assert_eq!(name, "agent/550e8400/fix-bug-in-auth");
+        assert_eq!(name, "agent/00000000/fix-bug-in-auth");
     }
 
     #[tokio::test]

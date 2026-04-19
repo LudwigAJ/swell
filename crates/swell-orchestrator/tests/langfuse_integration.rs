@@ -5,6 +5,7 @@
 //! - One span created per agent turn within the trace
 //! - Generation events emitted for each LLM call
 
+use swell_core::ids::TaskId;
 use swell_core::langfuse::LangfuseConfig;
 use swell_orchestrator::LangfuseExporter;
 use uuid::Uuid;
@@ -31,7 +32,7 @@ fn create_test_exporter() -> LangfuseExporter {
 #[test]
 fn test_trace_per_task() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Before starting trace, no active traces
     assert!(!exporter.has_active_trace(task_id));
@@ -51,9 +52,9 @@ fn test_trace_per_task() {
 #[test]
 fn test_multiple_tasks_multiple_traces() {
     let exporter = create_test_exporter();
-    let task1 = Uuid::new_v4();
-    let task2 = Uuid::new_v4();
-    let task3 = Uuid::new_v4();
+    let task1 = TaskId::new();
+    let task2 = TaskId::new();
+    let task3 = TaskId::new();
 
     exporter.start_task_trace(task1, "Task 1");
     exporter.start_task_trace(task2, "Task 2");
@@ -70,7 +71,7 @@ fn test_multiple_tasks_multiple_traces() {
 #[test]
 fn test_span_per_turn() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     exporter.start_task_trace(task_id, "Multi-turn task");
 
@@ -95,7 +96,7 @@ fn test_span_per_turn() {
 #[test]
 fn test_turn_span_agent_name() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     exporter.start_task_trace(task_id, "Agent tracking test");
 
@@ -111,7 +112,7 @@ fn test_turn_span_agent_name() {
 #[test]
 fn test_generation_event_for_llm_call() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     exporter.start_task_trace(task_id, "LLM call tracking");
     exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -138,7 +139,7 @@ fn test_generation_event_for_llm_call() {
 #[test]
 fn test_generation_without_active_trace() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Try to emit generation without starting any trace
     let result = exporter.emit_llm_generation(
@@ -165,7 +166,7 @@ fn test_generation_without_active_trace() {
 #[test]
 fn test_multiple_generations_in_turn() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     exporter.start_task_trace(task_id, "Multi-generation test");
     exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -208,7 +209,7 @@ fn test_multiple_generations_in_turn() {
 #[tokio::test]
 async fn test_finalize_removes_trace() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     exporter.start_task_trace(task_id, "Finalize test");
     exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -234,7 +235,7 @@ async fn test_finalize_removes_trace() {
 #[should_panic(expected = "No active trace found")]
 fn test_turn_span_without_trace_panics() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // This should panic because no trace was started
     exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -245,7 +246,7 @@ fn test_turn_span_without_trace_panics() {
 #[tokio::test]
 async fn test_finalize_without_trace_returns_error() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     let result = exporter.finalize_task_trace(task_id, true).await;
     assert!(result.is_err());
@@ -263,7 +264,7 @@ fn test_concurrent_trace_creation() {
     use std::thread;
 
     let exporter = Arc::new(create_test_exporter());
-    let task_ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
+    let task_ids: Vec<TaskId> = (0..5).map(|_| TaskId::new()).collect();
 
     let handles: Vec<_> = task_ids
         .iter()
@@ -289,7 +290,7 @@ fn test_concurrent_trace_creation() {
 #[test]
 fn test_generation_token_tracking() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     exporter.start_task_trace(task_id, "Token tracking");
     exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -316,7 +317,7 @@ fn test_generation_token_tracking() {
 #[test]
 fn test_generation_provider_tracking() {
     let exporter = create_test_exporter();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     exporter.start_task_trace(task_id, "Provider tracking");
     exporter.start_turn_span(task_id, 1, "GeneratorAgent");

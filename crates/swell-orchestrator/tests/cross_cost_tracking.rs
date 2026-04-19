@@ -10,7 +10,7 @@
 use std::sync::Arc;
 use swell_core::{
     cost_tracking::{CostBudget, CostTracker, TaskOutcome},
-    AutonomyLevel,
+    AutonomyLevel, TaskId,
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::{
@@ -20,7 +20,6 @@ use swell_orchestrator::{
     ExecutionController, Orchestrator,
 };
 use swell_tools::ToolRegistry;
-use uuid::Uuid;
 
 /// Helper to create a scenario that makes multiple LLM calls
 /// to simulate a realistic multi-turn conversation.
@@ -223,7 +222,7 @@ async fn test_execution_halts_when_budget_exceeded() {
 #[test]
 fn test_cost_tracker_calculates_correct_pricing() {
     let mut tracker = CostTracker::new();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Record a cost with claude-3-5-sonnet model
     // 1M input + 500k output = $3 + $7.50 = $10.50
@@ -293,7 +292,7 @@ fn test_cost_budget_thresholds() {
 #[tokio::test]
 async fn test_cost_tracker_records_task_outcome() {
     let mut tracker = CostTracker::new();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Record costs
     tracker
@@ -367,8 +366,8 @@ fn test_stopping_condition_hard_limit_breached_content() {
 async fn test_cost_tracker_task_isolation() {
     let mut tracker = CostTracker::new();
 
-    let task1 = Uuid::new_v4();
-    let task2 = Uuid::new_v4();
+    let task1 = TaskId::new();
+    let task2 = TaskId::new();
 
     // Record different costs for each task
     tracker
@@ -410,7 +409,7 @@ async fn test_cost_tracker_task_isolation() {
 #[tokio::test]
 async fn test_cost_tracker_model_breakdown() {
     let mut tracker = CostTracker::new();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Record costs with different models
     tracker

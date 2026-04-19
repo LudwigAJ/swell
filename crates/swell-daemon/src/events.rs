@@ -882,8 +882,8 @@ mod tests {
         let emitter = EventEmitter::new();
         let correlation_id1 = EventEmitter::new_correlation_id();
         let correlation_id2 = EventEmitter::new_correlation_id();
-        let task_id1 = Uuid::new_v4();
-        let task_id2 = Uuid::new_v4();
+        let task_id1 = TaskId::new();
+        let task_id2 = TaskId::new();
 
         // Events with correlation_id1
         emitter

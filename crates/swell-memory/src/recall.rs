@@ -694,8 +694,8 @@ mod tests {
             .await
             .unwrap();
 
-        let session_id = Uuid::new_v4();
-        let agent_id = Uuid::new_v4();
+        let session_id = SessionId::new();
+        let agent_id = AgentId::new();
 
         // Store a conversation log
         let log = ConversationLog::new(
@@ -732,8 +732,8 @@ mod tests {
             .await
             .unwrap();
 
-        let session_id = Uuid::new_v4();
-        let agent_id = Uuid::new_v4();
+        let session_id = SessionId::new();
+        let agent_id = AgentId::new();
 
         // Store logs with different content
         let log1 = ConversationLog::new(
@@ -813,8 +813,8 @@ mod tests {
             .await
             .unwrap();
 
-        let session_id = Uuid::new_v4();
-        let agent_id = Uuid::new_v4();
+        let session_id = SessionId::new();
+        let agent_id = AgentId::new();
 
         // Create log in the past (2 hours ago)
         let mut log1 = ConversationLog::new(
@@ -869,8 +869,8 @@ mod tests {
             .unwrap();
 
         let service = RecallService::new(store.clone());
-        let session_id = Uuid::new_v4();
-        let agent_id = Uuid::new_v4();
+        let session_id = SessionId::new();
+        let agent_id = AgentId::new();
 
         // Log an interaction
         let log_id = service

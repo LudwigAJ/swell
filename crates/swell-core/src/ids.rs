@@ -48,6 +48,11 @@ impl TaskId {
     pub fn as_uuid(&self) -> Uuid {
         self.0
     }
+
+    /// Check if this is a nil (zero) TaskId.
+    pub fn is_nil(&self) -> bool {
+        self.0.is_nil()
+    }
 }
 
 impl Default for TaskId {
@@ -93,6 +98,11 @@ impl AgentId {
     /// Get the underlying UUID.
     pub fn as_uuid(&self) -> Uuid {
         self.0
+    }
+
+    /// Check if this is a nil (zero) AgentId.
+    pub fn is_nil(&self) -> bool {
+        self.0.is_nil()
     }
 }
 
@@ -363,6 +373,11 @@ impl SessionId {
     /// Get the underlying UUID.
     pub fn as_uuid(&self) -> Uuid {
         self.0
+    }
+
+    /// Check if this is a nil (zero) SessionId.
+    pub fn is_nil(&self) -> bool {
+        self.0.is_nil()
     }
 }
 

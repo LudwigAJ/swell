@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 use std::time::Duration;
+use uuid::Uuid;
 use swell_core::{AgentRole, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskId, TaskState};
 use swell_orchestrator::{
     builder::OrchestratorBuilder, check_confidence_threshold, generate_suggested_options,
@@ -14,7 +15,6 @@ use swell_orchestrator::{
 };
 // Use the full module path to disambiguate from agents::ConfidenceLevel
 use swell_orchestrator::uncertainty::ConfidenceLevel;
-use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -40,7 +40,7 @@ fn make_plan(task_id: TaskId) -> Plan {
 }
 
 /// Advance a task to Executing state and return its ID.
-async fn setup_executing_task(orchestrator: &Orchestrator) -> Uuid {
+async fn setup_executing_task(orchestrator: &Orchestrator) -> TaskId {
     let task = orchestrator
         .create_task_with_autonomy(
             "VAL-ORCH-014 test task".to_string(),
@@ -120,7 +120,7 @@ async fn test_configurable_threshold_medium_confidence_triggers_pause() {
 /// Test: pause event includes reason, current context, and suggested options.
 #[tokio::test]
 async fn test_clarification_event_contains_reason_context_and_options() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let confidence_score = 0.3_f64;
     let threshold = 0.5_f64;
     let reason = format!(
@@ -214,7 +214,7 @@ async fn test_agent_state_transitions_to_paused_on_low_confidence() {
 #[tokio::test]
 async fn test_clarification_event_emitted_and_pending() {
     let manager = UncertaintyManager::new();
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let confidence_score = 0.3_f64;
     let threshold = 0.5_f64;
 
@@ -260,7 +260,7 @@ async fn test_clarification_event_emitted_and_pending() {
 #[tokio::test]
 async fn test_execution_does_not_resume_until_clarification_injected() {
     let manager = Arc::new(UncertaintyManager::new());
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     let event = UncertaintyClarificationEvent::new(
         task_id,
@@ -439,8 +439,8 @@ async fn test_uncertainty_manager_stats() {
         )
     };
 
-    let id1 = manager.create_request(make_event(Uuid::new_v4())).await;
-    let id2 = manager.create_request(make_event(Uuid::new_v4())).await;
+    let id1 = manager.create_request(make_event(TaskId::new())).await;
+    let id2 = manager.create_request(make_event(TaskId::new())).await;
 
     let stats = manager.stats().await;
     assert_eq!(stats.pending_count, 2);
@@ -471,7 +471,7 @@ async fn test_uncertainty_manager_stats() {
 /// Test: clarification response carries reason and context.
 #[tokio::test]
 async fn test_clarification_event_reason_and_context_fields() {
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let event = UncertaintyClarificationEvent::new(
         task_id,
         None,

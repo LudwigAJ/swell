@@ -8,8 +8,8 @@
 //! - No warnings are emitted when modifications stay within planned files
 
 use std::sync::Arc;
+use swell_core::TaskId;
 use swell_orchestrator::builder::OrchestratorBuilder;
-use uuid::Uuid;
 
 /// Helper to create an ExecutionController for testing.
 async fn create_test_controller() -> swell_orchestrator::ExecutionController {
@@ -49,7 +49,7 @@ async fn test_drift_flagged_when_modifications_exceed_threshold() {
         "src/b.rs".to_string(),
         "src/c.rs".to_string(),
     ];
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Check drift - should detect >30% drift
     let report = controller.check_drift(task_id, &estimated);
@@ -89,7 +89,7 @@ async fn test_no_drift_flag_when_modifications_within_plan() {
         "src/b.rs".to_string(),
         "src/c.rs".to_string(),
     ];
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Check drift - returns None when drift is within limits
     let report = controller.check_drift(task_id, &estimated);
@@ -127,7 +127,7 @@ async fn test_no_drift_flag_at_exactly_threshold() {
     controller.track_file_modification("src/file11.rs"); // extra
     controller.track_file_modification("src/file12.rs"); // extra
 
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let report = controller.check_drift(task_id, &estimated);
 
     // 30% is at threshold, should NOT be flagged (exceeds requires > threshold)
@@ -154,7 +154,7 @@ async fn test_drift_flagged_just_over_threshold() {
         controller.track_file_modification(&format!("src/file{}.rs", i));
     }
 
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let report = controller.check_drift(task_id, &estimated);
 
     assert!(report.is_some(), "Drift at 40% should be flagged");
@@ -231,7 +231,7 @@ async fn test_drift_report_lists_unexpected_files() {
     controller.track_file_modification("src/d.rs");
     controller.track_file_modification("src/e.rs");
 
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let report = controller.check_drift(task_id, &estimated).unwrap();
 
     assert_eq!(report.extra_files.len(), 3);
@@ -259,7 +259,7 @@ async fn test_drift_report_lists_missing_files() {
     controller.track_file_modification("src/b.rs");
     controller.track_file_modification("src/c.rs");
 
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Get drift report directly from drift detector (negative drift = under-implementation)
     let actual_files = controller.get_modified_files();
@@ -310,7 +310,7 @@ async fn test_orchestrator_emits_drift_warning_event() {
         "src/b.rs".to_string(),
         "src/c.rs".to_string(),
     ];
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Check drift - this should trigger a warning
     let report = controller.check_drift(task_id, &estimated);
@@ -359,7 +359,7 @@ async fn test_drift_with_empty_plan() {
     let controller = create_test_controller().await;
 
     let estimated: Vec<String> = vec![];
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Track some files
     controller.track_file_modification("src/a.rs");
@@ -391,7 +391,7 @@ async fn test_no_drift_when_no_files_modified() {
         "src/b.rs".to_string(),
         "src/c.rs".to_string(),
     ];
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // No modifications - should not trigger drift warning
     let report = controller.check_drift(task_id, &estimated);
@@ -412,7 +412,7 @@ async fn test_no_drift_when_exact_match() {
         "src/b.rs".to_string(),
         "src/c.rs".to_string(),
     ];
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
 
     // Exact same files as plan
     controller.track_file_modification("src/a.rs");

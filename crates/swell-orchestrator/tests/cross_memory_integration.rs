@@ -6,6 +6,7 @@
 //! This validates VAL-CROSS-005: Memory integration in execution.
 
 use std::sync::Arc;
+use uuid::Uuid;
 use swell_core::traits::Agent;
 use swell_core::{
     AutonomyLevel, LlmBackend, LlmMessage, LlmRole, MemoryBlock, MemoryBlockType, MemoryEntry,
@@ -16,7 +17,6 @@ use swell_orchestrator::{
     builder::OrchestratorBuilder, ExecutionController, GeneratorAgent, Orchestrator,
 };
 use swell_tools::ToolRegistry;
-use uuid::Uuid;
 
 /// A capturing mock LLM that stores all prompts sent to it.
 ///
@@ -224,7 +224,7 @@ async fn test_generator_agent_receives_memory_context_in_prompt() {
     .with_memory_blocks(memory_blocks.clone()); // Pre-load memory into agent
 
     // Create a task with a plan
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let plan = create_test_plan(task_id);
     let task = swell_core::Task {
         id: task_id,
@@ -508,7 +508,7 @@ async fn test_memory_context_preserved_across_turns() {
         tool_registry,
     );
 
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let plan = create_test_plan(task_id);
     let task = swell_core::Task {
         id: task_id,
