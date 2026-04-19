@@ -252,6 +252,114 @@ CREATED → PLANNING → APPROVED → EXECUTING → VALIDATING → COMPLETED
 
 ---
 
+## Structural Refactors
+
+SWELL has completed three structural refactors to improve code quality, type safety, and observability:
+
+### Refactor 02: Startup Wiring Manifest (`plan/structural-refactors/02_wiring_manifest/`)
+
+At daemon startup, the system now prints a structured wiring manifest showing the status of every production subsystem:
+
+```
+[wiring] subsystem=llm_backend            state=enabled      identity=AnthropicBackend
+[wiring] subsystem=execution_controller  state=enabled      identity=Arc<ExecutionController>
+[wiring] subsystem=mcp_config_manager    state=enabled      identity=Arc<McpConfigManager>
+[wiring] subsystem=feature_lead_manager   state=enabled      identity=NoopFeatureLeadManager
+[wiring] subsystem=novelty_checker        state=enabled      identity=NoopNoveltyChecker
+[wiring] subsystem=file_lock_manager      state=enabled      identity=InMemoryFileLockManager
+[wiring] subsystem=frozen_requirement_registry state=enabled  identity=InMemoryFrozenRegistry
+[wiring] subsystem=non_novel_retry_detector state=enabled   identity=NonNovelRetryDetector
+[wiring] subsystem=checkpoint_manager    state=enabled      identity=InMemoryCheckpointManager
+[wiring] subsystem=agent_pool            state=enabled      identity=NoopAgentPool
+[wiring] subsystem=cost_guard            state=disabled     reason=Tier 2.1 not wired
+[wiring] subsystem=pre_tool_hook_manager state=disabled     reason=Tier 2.2 not wired
+[wiring] subsystem=session_autosave      state=disabled     reason=Tier 2.3 not wired
+[wiring-check] enabled=10 degraded=0 disabled=3
+```
+
+- **Trait**: `WiringReport` in `swell-core/src/wiring.rs` with `name()`, `identity()`, `state()` methods
+- **State enum**: `WiringState` with `Enabled`, `Degraded(String)`, `Disabled(String)` variants
+- **Manifest method**: `Orchestrator::wiring_manifest() -> Vec<Box<dyn WiringReport>>`
+- **Strict mode**: `SWELL_STRICT=1` causes daemon to exit non-zero if any subsystem is degraded/disabled
+- **Wiring tests**: `full_cycle_wiring.rs` tests verify all subsystems report correctly; 4 pass, 7 ignored (Tier 1/2 blockers)
+- **Documentation**: `crates/swell-daemon/AGENTS.md` documents the output format and strict mode behavior
+
+### Refactor 03: Newtype Domain IDs (`plan/structural-refactors/03_newtype_ids/`)
+
+Nine newtype wrappers replace raw `Uuid`/`String` for domain identifiers in `swell-core/src/ids.rs`:
+
+| Newtype | Inner Type | Used For |
+|---------|-----------|---------|
+| `TaskId` | `Uuid` | Task identifiers |
+| `AgentId` | `Uuid` | Agent identifiers |
+| `WorktreeId` | `Uuid` | Worktree identifiers |
+| `FeatureLeadId` | `Uuid` | Feature lead identifiers |
+| `CheckpointId` | `Uuid` | Checkpoint identifiers |
+| `SessionId` | `Uuid` | Session identifiers |
+| `CommitSha` | `String` | Git commit SHAs |
+| `BranchName` | `String` | Git branch names |
+| `SocketPath` | `PathBuf` | Unix socket paths |
+
+All newtypes have `#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]`, `#[serde(transparent)]`, named accessors (`from_uuid`/`as_uuid` or `from_str`/`as_str`), `Display`, and `FromStr`. No `From<Uuid>` or `From<String>` conversions exist — only named accessors.
+
+### Refactor 04: Structured Daemon Error Enum (`plan/structural-refactors/04_daemon_error/`)
+
+The daemon now uses a structured `DaemonError` enum instead of `anyhow::Result` for its public API:
+
+```rust
+// swell-daemon/src/error.rs
+#[derive(thiserror::Error, Debug)]
+pub enum DaemonError {
+    #[error("task not found: {0}")]
+    TaskNotFound(TaskId),
+
+    #[error("validation failed for task {task}: {reason}")]
+    ValidationFailed { task: TaskId, reason: ValidationReason },
+
+    #[error("hook {hook} denied: {detail}")]
+    HookDenied { hook: String, detail: String },
+
+    #[error("budget exceeded for task {task}: {class}")]
+    BudgetExceeded { task: TaskId, class: BudgetClass },
+
+    #[error("worktree allocation failed")]
+    WorktreeAllocFailed(#[from] WorktreeError),
+
+    #[error("commit failed for task {task}")]
+    CommitFailed { task: TaskId, source: GitError },
+
+    #[error("LLM error")]
+    Llm(#[from] LlmError),
+
+    #[error("config error: {0}")]
+    Config(#[from] ConfigError),
+
+    #[error("daemon is shutting down")]
+    ShuttingDown,
+
+    #[error("internal error: {0}")]
+    Internal(String),
+}
+```
+
+Sub-enums: `ValidationReason` (FrozenSpecMismatch, TestFailure, MultiAgentDisagreement, TimeoutExceeded, Other), `BudgetClass` (TokensExceeded, UsdExceeded, WallClockExceeded).
+
+- **Public API**: `pub type Result<T> = std::result::Result<T, DaemonError>` in `swell-daemon/src/lib.rs`
+- **Wire format**: `DaemonErrorWire` with `#[serde(tag = "kind")]`, `{"kind": "validation_failed", "task": "...", "reason": "..."}`
+- **Error matching**: No `err.to_string().contains()` in non-test code — all dispatch uses `matches!()` against variants
+- **From conversions**: `From<anyhow::Error> for DaemonError` (maps to `Internal`), `From<&DaemonError> for DaemonErrorWire`
+- **Tier-2 wiring tests**: Three `#[ignore]`-gated wiring tests can now use `matches!()` against `DaemonError` variants instead of string matching
+
+### Phase A Binding Rule
+
+All production-required subsystems of `Orchestrator` must be constructor parameters of `Orchestrator::new`, not `Option<_>` fields with `with_*` setters. This rule is enforced by two CI jobs:
+- **`build-no-default-features`**: Compiles with no default features, requiring all subsystems to be explicitly wired
+- **`antipattern-gate`**: Greps for `Option<...>` on production subsystem fields and `with_*` setters on `Orchestrator`
+
+Builder patterns (`OrchestratorBuilder` with `#[cfg(any(test, feature = "test-support"))]`) are allowed for test infrastructure. Fallback strategies when Tier-2 subsystems are unavailable: use `swell-integration-tests`, use the production constructor directly, or pass `--features` flags.
+
+---
+
 ## Troubleshooting
 
 ### Issue: "Connection refused" when running CLI commands
