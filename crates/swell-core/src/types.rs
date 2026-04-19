@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::cost_tracking::ModelCostInfo;
-use crate::ids::{AgentId, TaskId};
+use crate::ids::{AgentId, SessionId, TaskId};
 
 /// Task lifecycle states as defined in the orchestrator spec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -340,7 +340,7 @@ pub enum TaskSource {
     UserRequest,
     PlanDecomposition,
     FailureDerived {
-        original_task_id: Uuid,
+        original_task_id: TaskId,
         failure_signal: String,
     },
     SpecGap {
@@ -549,9 +549,9 @@ pub enum MemoryBlockType {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MemoryQueryScope {
     /// Filter by session ID
-    pub session_id: Option<Uuid>,
+    pub session_id: Option<SessionId>,
     /// Filter by task ID
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Filter by agent role
     pub agent_role: Option<String>,
 }

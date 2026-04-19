@@ -10,9 +10,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
 /// Metadata trailers for commit traceability
 #[derive(Debug, Clone, Default)]
@@ -20,7 +20,7 @@ pub struct CommitMetadata {
     /// Generator identification (e.g., "swell/1.0.0")
     pub generated_by: Option<String>,
     /// Task ID associated with this commit
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Model used to generate changes (e.g., "claude-sonnet-4-20250514")
     pub model: Option<String>,
     /// Custom additional trailers
@@ -40,7 +40,7 @@ impl CommitMetadata {
     }
 
     /// Set the task-id trailer
-    pub fn with_task_id(mut self, task_id: Uuid) -> Self {
+    pub fn with_task_id(mut self, task_id: TaskId) -> Self {
         self.task_id = Some(task_id);
         self
     }
@@ -141,7 +141,7 @@ impl CommitRequest {
     }
 
     /// Add task-id metadata
-    pub fn with_task_id(mut self, task_id: Uuid) -> Self {
+    pub fn with_task_id(mut self, task_id: TaskId) -> Self {
         self.metadata = self.metadata.with_task_id(task_id);
         self
     }
@@ -253,7 +253,7 @@ pub struct CommitInfo {
     /// The commit hash
     pub commit_hash: String,
     /// Associated task ID if any
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// When the commit was created
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -696,7 +696,7 @@ mod tests {
     async fn test_commit_metadata_with_values() {
         let meta = CommitMetadata::new()
             .with_generated_by("swell/1.0.0")
-            .with_task_id(Uuid::new_v4())
+            .with_task_id(TaskId::new())
             .with_model("claude-sonnet");
 
         assert!(!meta.is_empty());
@@ -716,7 +716,7 @@ mod tests {
 
     #[test]
     fn test_commit_request_full() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let request = CommitRequest::new("Fix authentication bug")
             .with_description("The login flow was failing due to missing token refresh")
             .with_task_id(task_id)
@@ -821,7 +821,7 @@ mod tests {
             "hash1".to_string(),
             CommitInfo {
                 commit_hash: "hash1".to_string(),
-                task_id: Some(Uuid::new_v4()),
+                task_id: Some(TaskId::new()),
                 created_at: chrono::Utc::now(),
             },
         );
@@ -931,7 +931,7 @@ mod tests {
             .await
             .unwrap();
 
-        let task_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let task_id = TaskId::nil();
 
         let strategy = CommitStrategy::new("swell/1.0.0");
 

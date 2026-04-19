@@ -14,6 +14,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use swell_core::TaskId;
 use uuid::Uuid;
 
 /// An evidence pack containing all validation data for a task
@@ -22,7 +23,7 @@ pub struct EvidencePack {
     /// Unique identifier for this evidence pack
     pub id: Uuid,
     /// Task ID this evidence is for
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// When this evidence was created
     pub created_at: DateTime<Utc>,
     /// Validation outcome summary
@@ -242,7 +243,7 @@ pub struct FlakinessEvidence {
 /// Builder for creating evidence packs
 #[derive(Debug, Default)]
 pub struct EvidencePackBuilder {
-    task_id: Option<Uuid>,
+    task_id: Option<TaskId>,
     gate_results: Vec<GateEvidence>,
     test_summary: Option<TestEvidence>,
     coverage: Option<CoverageEvidence>,
@@ -260,7 +261,7 @@ impl EvidencePackBuilder {
     }
 
     /// Set the task ID
-    pub fn task_id(mut self, id: Uuid) -> Self {
+    pub fn task_id(mut self, id: TaskId) -> Self {
         self.task_id = Some(id);
         self
     }
@@ -538,16 +539,16 @@ pub trait EvidenceStore: Send + Sync {
     async fn get(&self, id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError>;
 
     /// Retrieve all evidence packs for a specific task, newest first.
-    async fn get_by_task_id(&self, task_id: Uuid) -> Result<Vec<EvidencePack>, EvidenceStoreError>;
+    async fn get_by_task_id(&self, task_id: TaskId) -> Result<Vec<EvidencePack>, EvidenceStoreError>;
 
     /// Get the latest evidence pack for a task.
-    async fn get_latest(&self, task_id: Uuid) -> Result<Option<EvidencePack>, EvidenceStoreError>;
+    async fn get_latest(&self, task_id: TaskId) -> Result<Option<EvidencePack>, EvidenceStoreError>;
 
     /// List all evidence pack IDs for a task (without loading full data).
-    async fn list_ids(&self, task_id: Uuid) -> Result<Vec<Uuid>, EvidenceStoreError>;
+    async fn list_ids(&self, task_id: TaskId) -> Result<Vec<Uuid>, EvidenceStoreError>;
 
     /// Get total count of evidence packs for a task.
-    async fn count(&self, task_id: Uuid) -> Result<usize, EvidenceStoreError>;
+    async fn count(&self, task_id: TaskId) -> Result<usize, EvidenceStoreError>;
 
     /// Check if an evidence pack exists.
     async fn exists(&self, id: Uuid) -> Result<bool, EvidenceStoreError>;
@@ -581,7 +582,7 @@ impl std::error::Error for EvidenceStoreError {}
 impl From<EvidenceStoreError> for crate::SwellError {
     fn from(err: EvidenceStoreError) -> Self {
         match err {
-            EvidenceStoreError::NotFound(_) => crate::SwellError::TaskNotFound(uuid::Uuid::nil()),
+            EvidenceStoreError::NotFound(_) => crate::SwellError::TaskNotFound(TaskId::nil().as_uuid()),
             EvidenceStoreError::StorageError(_) => {
                 crate::SwellError::DatabaseError(err.to_string())
             }
@@ -603,7 +604,7 @@ mod mem_store {
     #[derive(Debug, Default)]
     pub struct InMemoryEvidenceStore {
         evidence: std::sync::RwLock<HashMap<Uuid, EvidencePack>>,
-        by_task: std::sync::RwLock<HashMap<Uuid, Vec<Uuid>>>,
+        by_task: std::sync::RwLock<HashMap<TaskId, Vec<Uuid>>>,
     }
 
     impl InMemoryEvidenceStore {
@@ -646,7 +647,7 @@ mod mem_store {
 
         async fn get_by_task_id(
             &self,
-            task_id: Uuid,
+            task_id: TaskId,
         ) -> Result<Vec<EvidencePack>, EvidenceStoreError> {
             let evidence_map = self.evidence.read().unwrap();
             let by_task = self.by_task.read().unwrap();
@@ -666,18 +667,18 @@ mod mem_store {
 
         async fn get_latest(
             &self,
-            task_id: Uuid,
+            task_id: TaskId,
         ) -> Result<Option<EvidencePack>, EvidenceStoreError> {
             let packs = self.get_by_task_id(task_id).await?;
             Ok(packs.into_iter().next())
         }
 
-        async fn list_ids(&self, task_id: Uuid) -> Result<Vec<Uuid>, EvidenceStoreError> {
+        async fn list_ids(&self, task_id: TaskId) -> Result<Vec<Uuid>, EvidenceStoreError> {
             let by_task = self.by_task.read().unwrap();
             Ok(by_task.get(&task_id).cloned().unwrap_or_default())
         }
 
-        async fn count(&self, task_id: Uuid) -> Result<usize, EvidenceStoreError> {
+        async fn count(&self, task_id: TaskId) -> Result<usize, EvidenceStoreError> {
             let by_task = self.by_task.read().unwrap();
             Ok(by_task.get(&task_id).map(|v| v.len()).unwrap_or(0))
         }
@@ -822,7 +823,7 @@ pub mod sqlite_store {
 
         async fn get_by_task_id(
             &self,
-            task_id: Uuid,
+            task_id: TaskId,
         ) -> Result<Vec<EvidencePack>, EvidenceStoreError> {
             let task_id_str = task_id.to_string();
 
@@ -850,7 +851,7 @@ pub mod sqlite_store {
 
         async fn get_latest(
             &self,
-            task_id: Uuid,
+            task_id: TaskId,
         ) -> Result<Option<EvidencePack>, EvidenceStoreError> {
             let task_id_str = task_id.to_string();
 
@@ -877,7 +878,7 @@ pub mod sqlite_store {
             }
         }
 
-        async fn list_ids(&self, task_id: Uuid) -> Result<Vec<Uuid>, EvidenceStoreError> {
+        async fn list_ids(&self, task_id: TaskId) -> Result<Vec<Uuid>, EvidenceStoreError> {
             let task_id_str = task_id.to_string();
 
             let rows: Vec<(String,)> = sqlx::query_as(
@@ -896,7 +897,7 @@ pub mod sqlite_store {
             Ok(ids)
         }
 
-        async fn count(&self, task_id: Uuid) -> Result<usize, EvidenceStoreError> {
+        async fn count(&self, task_id: TaskId) -> Result<usize, EvidenceStoreError> {
             let task_id_str = task_id.to_string();
 
             let row: (i64,) =
@@ -1050,7 +1051,7 @@ mod evidence_store_tests {
     use crate::evidence::sqlite_store::SqliteEvidenceStore;
 
     /// Helper to create a test evidence pack
-    fn create_test_evidence(task_id: Uuid, passed: bool) -> EvidencePack {
+    fn create_test_evidence(task_id: TaskId, passed: bool) -> EvidencePack {
         EvidencePackBuilder::new()
             .task_id(task_id)
             .test_summary(TestEvidence {

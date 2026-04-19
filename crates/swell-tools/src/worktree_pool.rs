@@ -8,12 +8,12 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use swell_core::ids::WorktreeId;
 use swell_core::AgentId;
 use swell_core::SwellError;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
 /// Individual worktree state
 #[derive(Debug, Clone)]
@@ -25,7 +25,7 @@ pub struct Worktree {
     /// Agent this worktree is allocated to (if any)
     pub agent_id: Option<AgentId>,
     /// Task this worktree is for (if any)
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Whether this worktree is ready for use
     pub ready: bool,
     /// Branch name for this worktree
@@ -51,7 +51,7 @@ impl Worktree {
     }
 
     /// Allocate this worktree to an agent
-    fn allocate(&mut self, agent_id: AgentId, task_id: Uuid) {
+    fn allocate(&mut self, agent_id: AgentId, task_id: TaskId) {
         self.agent_id = Some(agent_id);
         self.task_id = Some(task_id);
         debug!(
@@ -84,7 +84,7 @@ pub struct WorktreeAllocation {
     /// Agent ID
     pub agent_id: AgentId,
     /// Task ID
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Path to the worktree
     pub path: PathBuf,
     /// Branch name
@@ -94,7 +94,7 @@ pub struct WorktreeAllocation {
 }
 
 impl WorktreeAllocation {
-    fn new(worktree: &Worktree, agent_id: AgentId, task_id: Uuid) -> Option<Self> {
+    fn new(worktree: &Worktree, agent_id: AgentId, task_id: TaskId) -> Option<Self> {
         let branch = worktree.branch.clone()?;
         Some(Self {
             worktree_id: worktree.id,
@@ -142,7 +142,7 @@ pub struct WorktreePool {
     allocations: Arc<RwLock<AllocationsMap>>,
 }
 
-type AllocationsMap = HashMap<Uuid, WorktreeAllocation>;
+type AllocationsMap = HashMap<TaskId, WorktreeAllocation>;
 
 impl WorktreePool {
     /// Create a new worktree pool with the given configuration
@@ -259,7 +259,7 @@ impl WorktreePool {
     pub async fn allocate(
         &self,
         agent_id: AgentId,
-        task_id: Uuid,
+        task_id: TaskId,
     ) -> Result<WorktreeAllocation, SwellError> {
         // Find an available worktree
         let worktree_id = {
@@ -309,7 +309,7 @@ impl WorktreePool {
     }
 
     /// Release a worktree allocation after task completion
-    pub async fn release(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub async fn release(&self, task_id: TaskId) -> Result<(), SwellError> {
         let allocation = {
             let mut allocations = self.allocations.write().await;
             allocations.remove(&task_id)
@@ -348,7 +348,7 @@ impl WorktreePool {
 
     /// Release worktree by agent ID
     pub async fn release_by_agent(&self, agent_id: AgentId) -> Result<(), SwellError> {
-        let task_ids: Vec<Uuid> = {
+        let task_ids: Vec<TaskId> = {
             let allocations = self.allocations.read().await;
             allocations
                 .iter()
@@ -409,7 +409,7 @@ impl WorktreePool {
     }
 
     /// Get allocation info for a task
-    pub async fn get_allocation(&self, task_id: Uuid) -> Option<WorktreeAllocation> {
+    pub async fn get_allocation(&self, task_id: TaskId) -> Option<WorktreeAllocation> {
         let allocations = self.allocations.read().await;
         allocations.get(&task_id).cloned()
     }
@@ -433,7 +433,7 @@ impl WorktreePool {
     }
 
     /// Check if a task has an allocated worktree
-    pub async fn has_allocation(&self, task_id: Uuid) -> bool {
+    pub async fn has_allocation(&self, task_id: TaskId) -> bool {
         let allocations = self.allocations.read().await;
         allocations.contains_key(&task_id)
     }
@@ -480,7 +480,7 @@ mod tests {
         assert!(worktree.agent_id.is_none());
 
         let agent_id = AgentId::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         worktree.allocate(agent_id, task_id);
 
         assert!(!worktree.is_available());
@@ -494,7 +494,7 @@ mod tests {
         worktree.ready = true;
 
         let agent_id = AgentId::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         worktree.allocate(agent_id, task_id);
         assert!(!worktree.is_available());
 
@@ -511,7 +511,7 @@ mod tests {
         worktree.ready = true;
 
         let agent_id = AgentId::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         worktree.allocate(agent_id, task_id);
 
         let allocation = WorktreeAllocation::new(&worktree, agent_id, task_id);
@@ -533,7 +533,7 @@ mod tests {
     #[tokio::test]
     async fn test_has_allocation() {
         let pool = create_test_pool();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         assert!(!pool.has_allocation(task_id).await);
     }
 

@@ -10,13 +10,13 @@ use crate::{SqliteMemoryStore, SwellError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use swell_core::MemoryStore;
+use swell_core::{MemoryStore, TaskId};
 use uuid::Uuid;
 
 /// Represents data about a rejection/failure from validation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RejectionData {
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub task_description: String,
     pub rejection_reason: RejectionReason,
     pub validation_errors: Vec<ValidationError>,
@@ -30,7 +30,7 @@ pub struct RejectionData {
 
 impl RejectionData {
     /// Create new rejection data
-    pub fn new(task_id: Uuid, task_description: String, rejection_reason: RejectionReason) -> Self {
+    pub fn new(task_id: TaskId, task_description: String, rejection_reason: RejectionReason) -> Self {
         Self {
             task_id,
             task_description,
@@ -173,7 +173,7 @@ pub struct AntiPattern {
     pub is_promoted: bool,
     pub rejection_reasons: Vec<RejectionReason>,
     pub conventions: Vec<String>,
-    pub source_task_id: Uuid,
+    pub source_task_id: TaskId,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub metadata: serde_json::Value,
@@ -248,7 +248,7 @@ impl AntiPattern {
             is_promoted: false,
             rejection_reasons: Vec::new(),
             conventions: Vec::new(),
-            source_task_id: Uuid::nil(),
+            source_task_id: TaskId::nil(),
             created_at: now,
             updated_at: now,
             metadata: serde_json::json!({}),
@@ -369,7 +369,7 @@ impl AntiPatternType {
 /// An example of an anti-pattern with context
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AntiPatternExample {
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub before_code: Option<String>,
     pub after_code: Option<String>,
     pub error_message: String,
@@ -1202,7 +1202,7 @@ impl PatternLearningService {
 
 /// Create rejection data from a failed task
 pub fn create_rejection_data(
-    task_id: Uuid,
+    task_id: TaskId,
     task_description: String,
     rejection_reason: RejectionReason,
     validation_errors: Vec<ValidationError>,
@@ -1220,7 +1220,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_rejection_data_creation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut rejection = RejectionData::new(
             task_id,
             "Fix authentication bug".to_string(),
@@ -1249,7 +1249,7 @@ mod tests {
         );
 
         ap.add_example(AntiPatternExample {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             before_code: None,
             after_code: None,
             error_message: "Test failed: expected 200, got 404".to_string(),
@@ -1281,7 +1281,7 @@ mod tests {
         let analyzer = PatternLearningAnalyzer::with_default_config(store);
 
         let mut rejection = RejectionData::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Add new feature".to_string(),
             RejectionReason::TestFailure,
         );
@@ -1315,7 +1315,7 @@ mod tests {
         assert_eq!(reason.as_str(), "lint_failure");
 
         let mut rejection = RejectionData::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "test".to_string(),
             RejectionReason::LintFailure,
         );
@@ -1412,7 +1412,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_rejection_data() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let errors = vec![ValidationError {
             error_type: ValidationErrorType::TestFailed,
             message: "Failed".to_string(),
@@ -1443,7 +1443,7 @@ mod tests {
 
         // Add an example first (represents one observation)
         ap.add_example(AntiPatternExample {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             before_code: None,
             after_code: None,
             error_message: "Test failed".to_string(),
@@ -1508,7 +1508,7 @@ mod tests {
         // Add some examples but not enough for promotion
         for _ in 0..4 {
             ap.add_example(AntiPatternExample {
-                task_id: Uuid::new_v4(),
+                task_id: TaskId::new(),
                 before_code: None,
                 after_code: None,
                 error_message: "Test failed".to_string(),
@@ -1533,7 +1533,7 @@ mod tests {
         // Add 5 examples (this calls check_promotion but confidence is 0.0)
         for i in 0..5 {
             ap.add_example(AntiPatternExample {
-                task_id: Uuid::new_v4(),
+                task_id: TaskId::new(),
                 before_code: None,
                 after_code: None,
                 error_message: format!("Test failed {}", i),
@@ -1565,7 +1565,7 @@ mod tests {
         // Add 5 examples but with low confidence
         for _ in 0..5 {
             ap.add_example(AntiPatternExample {
-                task_id: Uuid::new_v4(),
+                task_id: TaskId::new(),
                 before_code: None,
                 after_code: None,
                 error_message: "Test failed".to_string(),

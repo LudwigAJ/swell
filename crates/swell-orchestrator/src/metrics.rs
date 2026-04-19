@@ -11,6 +11,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use swell_core::ids::TaskId;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -256,9 +257,9 @@ pub struct MetricsCollector {
     /// Alert thresholds
     thresholds: AlertThresholds,
     /// Task start times for duration tracking
-    task_start_times: std::collections::HashMap<Uuid, DateTime<Utc>>,
+    task_start_times: std::collections::HashMap<TaskId, DateTime<Utc>>,
     /// Task token usage tracking
-    task_costs: std::collections::HashMap<Uuid, u64>,
+    task_costs: std::collections::HashMap<TaskId, u64>,
 }
 
 impl MetricsCollector {
@@ -288,25 +289,25 @@ impl MetricsCollector {
     }
 
     /// Record a task starting
-    pub fn record_task_start(&mut self, task_id: Uuid) {
+    pub fn record_task_start(&mut self, task_id: TaskId) {
         self.task_start_times.insert(task_id, Utc::now());
         self.task_costs.insert(task_id, 0);
     }
 
     /// Record token usage for a task
-    pub fn record_task_cost(&mut self, task_id: Uuid, tokens: u64) {
+    pub fn record_task_cost(&mut self, task_id: TaskId, tokens: u64) {
         *self.task_costs.entry(task_id).or_insert(0) += tokens;
     }
 
     /// Record task completion
-    pub fn record_task_completed(&mut self, task_id: Uuid, accepted: bool) {
+    pub fn record_task_completed(&mut self, task_id: TaskId, accepted: bool) {
         self.task_start_times.remove(&task_id);
         self.task_costs.remove(&task_id);
         let _ = accepted; // Could be used for additional tracking
     }
 
     /// Record task rejection/failure
-    pub fn record_task_rejected(&mut self, task_id: Uuid) {
+    pub fn record_task_rejected(&mut self, task_id: TaskId) {
         self.task_start_times.remove(&task_id);
         self.task_costs.remove(&task_id);
     }
@@ -710,7 +711,7 @@ mod tests {
     #[test]
     fn test_metrics_collector_task_tracking() {
         let mut collector = MetricsCollector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         collector.record_task_start(task_id);
         collector.record_task_cost(task_id, 50_000);

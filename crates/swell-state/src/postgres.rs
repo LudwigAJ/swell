@@ -36,7 +36,7 @@ impl CheckpointEventType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckpointEvent {
     pub id: Uuid,
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub event_type: CheckpointEventType,
     pub state: swell_core::TaskState,
     pub snapshot: serde_json::Value,
@@ -253,7 +253,7 @@ impl PostgresCheckpointStore {
             "#,
         )
         .bind(event.id)
-        .bind(event.task_id)
+        .bind(event.task_id.as_uuid())
         .bind(event_type_str)
         .bind(serde_json::to_value(event.state).unwrap())
         .bind(serde_json::to_value(&event.snapshot).unwrap())
@@ -279,7 +279,7 @@ impl CheckpointStore for PostgresCheckpointStore {
 
         let event = CheckpointEvent {
             id: checkpoint.id,
-            task_id: checkpoint.task_id.as_uuid(),
+            task_id: checkpoint.task_id,
             event_type: CheckpointEventType::CheckpointCreated,
             state: checkpoint.state,
             snapshot: checkpoint.snapshot.clone(),
@@ -409,7 +409,7 @@ impl CheckpointStore for PostgresCheckpointStore {
 
             let prune_event = CheckpointEvent {
                 id: Uuid::new_v4(),
-                task_id: task_id.as_uuid(),
+                task_id,
                 event_type: CheckpointEventType::CheckpointsPruned,
                 state: swell_core::TaskState::Created, // Placeholder
                 snapshot: serde_json::json!({
@@ -437,7 +437,7 @@ impl CheckpointStore for PostgresCheckpointStore {
 impl PostgresCheckpointStore {
     fn row_to_checkpoint(&self, row: sqlx::postgres::PgRow) -> Result<Checkpoint, SwellError> {
         let id: Uuid = row.get("id");
-        let task_id: Uuid = row.get("task_id");
+        let task_id: TaskId = TaskId::from_uuid(row.get("task_id"));
         let state: serde_json::Value = row.get("state");
         let snapshot: serde_json::Value = row.get("snapshot");
         let created_at: DateTime<Utc> = row.get("created_at");
@@ -445,7 +445,7 @@ impl PostgresCheckpointStore {
 
         Ok(Checkpoint {
             id,
-            task_id: TaskId::from_uuid(task_id),
+            task_id,
             state: serde_json::from_value(state)
                 .map_err(|e| SwellError::DatabaseError(e.to_string()))?,
             snapshot,
@@ -490,7 +490,7 @@ mod tests {
     fn test_compute_event_hash_deterministic() {
         let event = CheckpointEvent {
             id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
-            task_id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+            task_id: TaskId::nil(),
             event_type: CheckpointEventType::CheckpointCreated,
             state: TaskState::Created,
             snapshot: serde_json::json!({"key": "value"}),
@@ -513,7 +513,7 @@ mod tests {
     fn test_compute_event_hash_changes_with_previous() {
         let event = CheckpointEvent {
             id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
-            task_id: Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+            task_id: TaskId::nil(),
             event_type: CheckpointEventType::CheckpointCreated,
             state: TaskState::Created,
             snapshot: serde_json::json!({"key": "value"}),
@@ -535,7 +535,7 @@ mod tests {
     fn test_checkpoint_event_serialization() {
         let event = CheckpointEvent {
             id: Uuid::new_v4(),
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             event_type: CheckpointEventType::CheckpointCreated,
             state: TaskState::Created,
             snapshot: serde_json::json!({"data": 42}),

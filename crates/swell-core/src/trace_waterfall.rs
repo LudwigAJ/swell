@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::events::{ObservableEvent, Outcome, SpanId, TraceId};
+use crate::ids::{AgentId, SessionId, TaskId};
 
 /// A span in the trace waterfall representing a unit of work.
 ///
@@ -48,7 +49,7 @@ pub struct TraceSpan {
     /// Outcome of this span's execution
     pub outcome: Outcome,
     /// Agent that executed this span (if applicable)
-    pub agent_id: Option<Uuid>,
+    pub agent_id: Option<AgentId>,
     /// Tool invocation details (if this is a tool span)
     pub tool_invocation: Option<ToolSpanDetails>,
     /// Whether this is a decision point
@@ -132,9 +133,9 @@ pub struct TraceWaterfall {
     /// Unique trace identifier
     pub trace_id: TraceId,
     /// Task identifier
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Session identifier
-    pub session_id: Uuid,
+    pub session_id: SessionId,
     /// When the trace started
     pub start_time: DateTime<Utc>,
     /// When the trace ended
@@ -182,8 +183,8 @@ struct SpanCountContext {
 pub struct TraceWaterfallBuilder {
     spans: Vec<TraceSpan>,
     trace_id: Option<TraceId>,
-    task_id: Option<Uuid>,
-    session_id: Option<Uuid>,
+    task_id: Option<TaskId>,
+    session_id: Option<SessionId>,
 }
 
 impl TraceWaterfallBuilder {
@@ -319,8 +320,8 @@ impl TraceWaterfallBuilder {
 
         Some(TraceWaterfall {
             trace_id: self.trace_id.clone()?,
-            task_id: self.task_id.unwrap_or(Uuid::nil()),
-            session_id: self.session_id.unwrap_or(Uuid::nil()),
+            task_id: self.task_id.unwrap_or_else(TaskId::nil),
+            session_id: self.session_id.unwrap_or_else(|| SessionId::from_uuid(Uuid::nil())),
             start_time,
             end_time,
             total_duration_ms,

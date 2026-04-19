@@ -19,6 +19,7 @@
 //!
 //! Agents at depth 2 cannot spawn further sub-agents.
 
+use swell_core::ids::TaskId;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -29,11 +30,11 @@ pub const MAX_SUBAGENT_DEPTH: u32 = 2;
 #[derive(Debug, thiserror::Error)]
 pub enum SubagentError {
     #[error("Maximum subagent depth ({max}) exceeded for task {task_id}")]
-    MaxDepthExceeded { task_id: Uuid, max: u32 },
+    MaxDepthExceeded { task_id: TaskId, max: u32 },
 
     #[error("Cannot spawn subagent at depth {depth} for task {task_id}: {reason}")]
     CannotSpawn {
-        task_id: Uuid,
+        task_id: TaskId,
         depth: u32,
         reason: String,
     },
@@ -76,7 +77,7 @@ pub struct Subagent {
     /// ID of the parent agent or orchestrator that spawned this
     pub parent_id: Option<Uuid>,
     /// ID of the task this subagent is working on
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Depth in the agent hierarchy (0 = root, 1 = first level, 2 = second level)
     pub depth: u32,
     /// Human-readable name for this subagent
@@ -93,7 +94,7 @@ pub struct Subagent {
 
 impl Subagent {
     /// Create a new subagent at the root level (depth 0)
-    pub fn new_root(task_id: Uuid, name: String, description: String) -> Self {
+    pub fn new_root(task_id: TaskId, name: String, description: String) -> Self {
         Self {
             id: Uuid::new_v4(),
             parent_id: None,
@@ -109,7 +110,7 @@ impl Subagent {
 
     /// Create a new first-level subagent (spawned by root)
     pub fn first_level(
-        task_id: Uuid,
+        task_id: TaskId,
         parent_id: Uuid,
         name: String,
         description: String,
@@ -130,7 +131,7 @@ impl Subagent {
 
     /// Create a new second-level subagent (spawned by first-level)
     pub fn second_level(
-        task_id: Uuid,
+        task_id: TaskId,
         parent_id: Uuid,
         name: String,
         description: String,
@@ -205,7 +206,7 @@ pub struct SubagentTree {
     /// All subagents indexed by ID
     nodes: std::collections::HashMap<Uuid, AgentTreeNode>,
     /// Root subagent IDs per task
-    roots: std::collections::HashMap<Uuid, Uuid>,
+    roots: std::collections::HashMap<TaskId, Uuid>,
 }
 
 impl SubagentTree {
@@ -260,12 +261,12 @@ impl SubagentTree {
     }
 
     /// Get the root subagent for a task
-    pub fn get_root(&self, task_id: &Uuid) -> Option<&Subagent> {
+    pub fn get_root(&self, task_id: &TaskId) -> Option<&Subagent> {
         self.roots.get(task_id).and_then(|id| self.get(id))
     }
 
     /// Get all subagents for a task
-    pub fn get_all_for_task(&self, task_id: &Uuid) -> Vec<&Subagent> {
+    pub fn get_all_for_task(&self, task_id: &TaskId) -> Vec<&Subagent> {
         self.nodes
             .values()
             .filter(|n| n.subagent.task_id == *task_id)
@@ -295,7 +296,7 @@ impl SubagentTree {
     }
 
     /// Count total subagents for a task
-    pub fn count(&self, task_id: &Uuid) -> usize {
+    pub fn count(&self, task_id: &TaskId) -> usize {
         self.nodes
             .iter()
             .filter(|(_, n)| n.subagent.task_id == *task_id)
@@ -321,7 +322,7 @@ impl SubagentTree {
     }
 
     /// Get all completed subagents for a task
-    pub fn get_completed(&self, task_id: &Uuid) -> Vec<&Subagent> {
+    pub fn get_completed(&self, task_id: &TaskId) -> Vec<&Subagent> {
         self.nodes
             .values()
             .filter(|n| n.subagent.task_id == *task_id && n.subagent.completed)
@@ -330,7 +331,7 @@ impl SubagentTree {
     }
 
     /// Get all active (not completed) subagents for a task
-    pub fn get_active(&self, task_id: &Uuid) -> Vec<&Subagent> {
+    pub fn get_active(&self, task_id: &TaskId) -> Vec<&Subagent> {
         self.nodes
             .values()
             .filter(|n| n.subagent.task_id == *task_id && !n.subagent.completed)
@@ -379,7 +380,7 @@ impl SubagentSpawner {
     /// This creates a subagent that can spawn level 1 children.
     pub fn spawn_root(
         &mut self,
-        task_id: Uuid,
+        task_id: TaskId,
         name: String,
         description: String,
     ) -> Result<Subagent, SubagentError> {
@@ -407,7 +408,7 @@ impl SubagentSpawner {
     /// Returns an error if the parent is at max depth (2).
     pub fn spawn_child(
         &mut self,
-        task_id: Uuid,
+        task_id: TaskId,
         parent_id: Uuid,
         name: String,
         description: String,
@@ -481,7 +482,7 @@ impl SubagentSpawner {
     }
 
     /// Get all subagents for a task
-    pub fn get_all_for_task(&self, task_id: &Uuid) -> Vec<&Subagent> {
+    pub fn get_all_for_task(&self, task_id: &TaskId) -> Vec<&Subagent> {
         self.tree.get_all_for_task(task_id)
     }
 
@@ -503,17 +504,17 @@ impl SubagentSpawner {
     }
 
     /// Get all completed subagents for a task
-    pub fn get_completed(&self, task_id: &Uuid) -> Vec<&Subagent> {
+    pub fn get_completed(&self, task_id: &TaskId) -> Vec<&Subagent> {
         self.tree.get_completed(task_id)
     }
 
     /// Get all active subagents for a task
-    pub fn get_active(&self, task_id: &Uuid) -> Vec<&Subagent> {
+    pub fn get_active(&self, task_id: &TaskId) -> Vec<&Subagent> {
         self.tree.get_active(task_id)
     }
 
     /// Check if all subagents for a task are completed
-    pub fn is_task_completed(&self, task_id: &Uuid) -> bool {
+    pub fn is_task_completed(&self, task_id: &TaskId) -> bool {
         let active = self.get_active(task_id);
         active.is_empty()
     }
@@ -534,12 +535,12 @@ impl SubagentSpawner {
     }
 
     /// Get the total count of subagents for a task
-    pub fn count(&self, task_id: &Uuid) -> usize {
+    pub fn count(&self, task_id: &TaskId) -> usize {
         self.tree.count(task_id)
     }
 
     /// Check if spawning is allowed at a given depth
-    pub fn can_spawn_at_depth(&self, parent_id: Uuid, _task_id: Uuid) -> bool {
+    pub fn can_spawn_at_depth(&self, parent_id: Uuid, _task_id: TaskId) -> bool {
         self.tree
             .get(&parent_id)
             .map(|p| p.can_spawn_subagent())
@@ -559,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_subagent_new_root() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let subagent = Subagent::new_root(
             task_id,
             "Root Agent".to_string(),
@@ -575,7 +576,7 @@ mod tests {
 
     #[test]
     fn test_subagent_first_level() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let parent_id = Uuid::new_v4();
         let subagent = Subagent::first_level(
             task_id,
@@ -593,7 +594,7 @@ mod tests {
 
     #[test]
     fn test_subagent_second_level() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let parent_id = Uuid::new_v4();
         let subagent = Subagent::second_level(
             task_id,
@@ -611,7 +612,7 @@ mod tests {
 
     #[test]
     fn test_subagent_is_at_max_depth() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let parent_id = Uuid::new_v4();
 
         let root = Subagent::new_root(task_id, "Root".to_string(), "".to_string());
@@ -640,7 +641,7 @@ mod tests {
     #[test]
     fn test_tree_insert_and_get() {
         let mut tree = SubagentTree::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let root = Subagent::new_root(task_id, "Root".to_string(), "".to_string());
         tree.insert(root.clone());
@@ -652,7 +653,7 @@ mod tests {
     #[test]
     fn test_tree_connect() {
         let mut tree = SubagentTree::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let root = Subagent::new_root(task_id, "Root".to_string(), "".to_string());
         let child = Subagent::first_level(
@@ -680,8 +681,8 @@ mod tests {
     #[test]
     fn test_tree_get_all_for_task() {
         let mut tree = SubagentTree::new();
-        let task_id = Uuid::new_v4();
-        let other_task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
+        let other_task_id = TaskId::new();
 
         tree.insert(Subagent::new_root(
             task_id,
@@ -702,7 +703,7 @@ mod tests {
     #[test]
     fn test_tree_mark_completed() {
         let mut tree = SubagentTree::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let subagent = Subagent::new_root(task_id, "Root".to_string(), "".to_string());
         let id = subagent.id;
@@ -720,7 +721,7 @@ mod tests {
     #[test]
     fn test_tree_validate_depth() {
         let mut tree = SubagentTree::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Insert subagents with various depths
         let root = Subagent::new_root(task_id, "Root".to_string(), "".to_string());
@@ -756,7 +757,7 @@ mod tests {
     #[test]
     fn test_spawner_spawn_root() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let root = spawner
             .spawn_root(
@@ -774,7 +775,7 @@ mod tests {
     #[test]
     fn test_spawner_spawn_child() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Spawn root
         let root = spawner
@@ -800,7 +801,7 @@ mod tests {
     #[test]
     fn test_spawner_spawn_grandchild() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Spawn root
         let root = spawner
@@ -837,7 +838,7 @@ mod tests {
     #[test]
     fn test_spawner_rejects_depth_3() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Spawn root
         let root = spawner
@@ -886,7 +887,7 @@ mod tests {
     #[test]
     fn test_spawner_get_children() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let root = spawner
             .spawn_root(task_id, "Root".to_string(), "".to_string())
@@ -922,7 +923,7 @@ mod tests {
     #[test]
     fn test_spawner_mark_completed() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let root = spawner
             .spawn_root(task_id, "Root".to_string(), "".to_string())
@@ -938,7 +939,7 @@ mod tests {
     #[test]
     fn test_spawner_depth_validation() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let root = spawner
             .spawn_root(task_id, "Root".to_string(), "".to_string())
@@ -974,7 +975,7 @@ mod tests {
     #[test]
     fn test_spawner_can_spawn_at_depth() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let root = spawner
             .spawn_root(task_id, "Root".to_string(), "".to_string())
@@ -1010,8 +1011,8 @@ mod tests {
     #[test]
     fn test_spawner_multiple_tasks() {
         let mut spawner = SubagentSpawner::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         let root1 = spawner
             .spawn_root(task1, "Task1 Root".to_string(), "".to_string())
@@ -1043,7 +1044,7 @@ mod tests {
     #[test]
     fn test_spawner_get_parent() {
         let mut spawner = SubagentSpawner::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let root = spawner
             .spawn_root(task_id, "Root".to_string(), "".to_string())

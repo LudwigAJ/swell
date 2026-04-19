@@ -19,7 +19,7 @@
 //! use swell_tools::loop_detection::{ToolLoopTracker, LoopDetectionConfig};
 //!
 //! let tracker = ToolLoopTracker::new(LoopDetectionConfig::default());
-//! let task_id = Uuid::new_v4();
+//! let task_id = TaskId::new();
 //!
 //! // Record tool executions
 //! tracker.record_execution(task_id, "read_file", true).await;
@@ -36,8 +36,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use tokio::sync::RwLock;
-use uuid::Uuid;
 
 /// Configuration for loop detection thresholds
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -189,9 +189,9 @@ pub struct ToolLoopTracker {
     /// Configuration
     config: LoopDetectionConfig,
     /// Execution history per task: task_id -> execution history
-    history: HashMap<Uuid, VecDeque<ToolExecution>>,
+    history: HashMap<TaskId, VecDeque<ToolExecution>>,
     /// Re-plan count per task
-    replan_counts: HashMap<Uuid, u32>,
+    replan_counts: HashMap<TaskId, u32>,
     /// Pending intervention callbacks
     intervention_callback: Option<Box<dyn FnMut(LoopPattern) + Send + Sync>>,
 }
@@ -224,7 +224,7 @@ impl ToolLoopTracker {
     /// Record a tool execution
     pub async fn record_execution(
         &mut self,
-        task_id: Uuid,
+        task_id: TaskId,
         tool_name: impl Into<String>,
         success: bool,
         arguments: serde_json::Value,
@@ -249,18 +249,18 @@ impl ToolLoopTracker {
     }
 
     /// Record a planner call (increments re-plan counter)
-    pub async fn record_replan(&mut self, task_id: Uuid) {
+    pub async fn record_replan(&mut self, task_id: TaskId) {
         let count = self.replan_counts.entry(task_id).or_insert(0);
         *count += 1;
     }
 
     /// Get re-plan count for a task
-    pub fn get_replan_count(&self, task_id: Uuid) -> u32 {
+    pub fn get_replan_count(&self, task_id: TaskId) -> u32 {
         self.replan_counts.get(&task_id).copied().unwrap_or(0)
     }
 
     /// Analyze tool execution history for loop patterns
-    pub async fn analyze(&mut self, task_id: Uuid) -> LoopDetectionResult {
+    pub async fn analyze(&mut self, task_id: TaskId) -> LoopDetectionResult {
         // Get history (may be empty if only replans were recorded)
         let history = match self.history.get(&task_id) {
             Some(h) => h.clone(),
@@ -464,7 +464,7 @@ impl ToolLoopTracker {
     }
 
     /// Clear history for a task (e.g., after successful completion)
-    pub fn clear(&mut self, task_id: Uuid) {
+    pub fn clear(&mut self, task_id: TaskId) {
         self.history.remove(&task_id);
         self.replan_counts.remove(&task_id);
     }
@@ -472,7 +472,7 @@ impl ToolLoopTracker {
     /// Clear loop context for a task - used by LoopBreaker to reset repetitive context.
     /// Delegates to the existing clear() method, which handles the same cleanup.
     /// The async signature allows this to be called from async intervention contexts.
-    pub async fn clear_loop_context(&mut self, task_id: Uuid) {
+    pub async fn clear_loop_context(&mut self, task_id: TaskId) {
         self.clear(task_id);
     }
 
@@ -483,7 +483,7 @@ impl ToolLoopTracker {
     }
 
     /// Get current history size for a task
-    pub fn history_size(&self, task_id: Uuid) -> usize {
+    pub fn history_size(&self, task_id: TaskId) -> usize {
         self.history.get(&task_id).map(|h| h.len()).unwrap_or(0)
     }
 }
@@ -514,7 +514,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_loop_when_history_empty() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = tracker.analyze(task_id).await;
 
@@ -525,7 +525,7 @@ mod tests {
     #[tokio::test]
     async fn test_same_tool_retry_detection() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Record 3 consecutive read_file failures
         tracker
@@ -555,7 +555,7 @@ mod tests {
     #[tokio::test]
     async fn test_oscillation_detection() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Record oscillation: read_file → edit_file → read_file → edit_file → read_file
         tracker
@@ -585,7 +585,7 @@ mod tests {
     #[tokio::test]
     async fn test_replan_loop_detection() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Record 3 re-plan calls
         tracker.record_replan(task_id).await;
@@ -608,7 +608,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_progress_doom_detection() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // All failures
         tracker
@@ -636,7 +636,7 @@ mod tests {
     #[tokio::test]
     async fn test_clear_clears_history() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         tracker
             .record_execution(task_id, "read_file", false, serde_json::json!({}))
@@ -662,7 +662,7 @@ mod tests {
             *pattern_clone_clone.lock().unwrap() = Some(pattern);
         });
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Record 3 consecutive failures to trigger intervention
         tracker
@@ -686,7 +686,7 @@ mod tests {
     #[tokio::test]
     async fn test_severity_calculation() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Test with 6 consecutive same-tool failures (threshold is 3)
         for _ in 0..6 {
@@ -707,7 +707,7 @@ mod tests {
     #[tokio::test]
     async fn test_min_executions_threshold() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Only 2 executions (min is 3)
         tracker
@@ -735,7 +735,7 @@ mod tests {
         };
 
         let mut tracker = ToolLoopTracker::with_config(config.clone());
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // 4 same-tool executions (threshold is now 5)
         for _ in 0..4 {
@@ -754,7 +754,7 @@ mod tests {
     #[tokio::test]
     async fn test_oscillation_with_identical_tools() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Same tool repeatedly should NOT count as oscillation
         tracker
@@ -779,7 +779,7 @@ mod tests {
     #[tokio::test]
     async fn test_replan_count_tracking() {
         let mut tracker = ToolLoopTracker::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         assert_eq!(tracker.get_replan_count(task_id), 0);
 
@@ -796,7 +796,7 @@ mod tests {
         let mut tracker = ToolLoopTracker::new();
 
         let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task2 = TaskId::new();
 
         // Task 1: Has a loop
         for _ in 0..3 {
@@ -820,7 +820,7 @@ mod tests {
     #[tokio::test]
     async fn test_shared_tracker() {
         let shared = create_tool_loop_tracker();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Write to shared tracker
         {

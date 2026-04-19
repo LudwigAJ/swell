@@ -2,7 +2,7 @@ use crate::{SqliteMemoryStore, SwellError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use swell_core::MemoryStore;
+use swell_core::{ids::TaskId, MemoryStore};
 use uuid::Uuid;
 
 /// A learned pattern extracted from a task trajectory
@@ -21,7 +21,7 @@ pub struct LearnedPattern {
     /// Whether this pattern has been validated and is ready for reuse
     pub is_validated: bool,
     /// Source task ID where this pattern was first observed
-    pub source_task_id: Uuid,
+    pub source_task_id: TaskId,
     /// Repository where this pattern was learned
     pub repository: String,
     /// Created timestamp
@@ -36,7 +36,7 @@ pub struct LearnedPattern {
 
 impl LearnedPattern {
     /// Create a new learned pattern from a tool sequence
-    pub fn new(tool_sequence: Vec<String>, source_task_id: Uuid, repository: String) -> Self {
+    pub fn new(tool_sequence: Vec<String>, source_task_id: TaskId, repository: String) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
@@ -106,7 +106,7 @@ pub struct ToolCallRecord {
 /// A complete task trajectory for analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskTrajectory {
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub task_description: String,
     pub tool_calls: Vec<ToolCallRecord>,
     pub outcome: TaskOutcome,
@@ -322,7 +322,7 @@ impl PostSessionLearner {
             session_id: None,
             last_reinforcement: Some(Utc::now()),
             is_stale: false,
-            source_episode_id: Some(pattern.source_task_id),
+            source_episode_id: Some(pattern.source_task_id.as_uuid()),
             evidence: None,
             provenance_context: None,
         };
@@ -430,7 +430,7 @@ mod tests {
 
     fn create_test_trajectory(outcome: TaskOutcome) -> TaskTrajectory {
         TaskTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Test task".to_string(),
             tool_calls: vec![
                 ToolCallRecord {
@@ -474,7 +474,7 @@ mod tests {
     fn test_learned_pattern_creation() {
         let sequence = vec!["read_file".to_string(), "edit_file".to_string()];
         let pattern =
-            LearnedPattern::new(sequence.clone(), Uuid::new_v4(), "test-repo".to_string());
+            LearnedPattern::new(sequence.clone(), TaskId::new(), "test-repo".to_string());
 
         assert_eq!(pattern.tool_sequence, sequence);
         assert_eq!(pattern.observation_count, 1);
@@ -485,7 +485,7 @@ mod tests {
     #[test]
     fn test_pattern_name_generation() {
         let short_seq = vec!["read_file".to_string()];
-        let pattern = LearnedPattern::new(short_seq, Uuid::new_v4(), "test-repo".to_string());
+        let pattern = LearnedPattern::new(short_seq, TaskId::new(), "test-repo".to_string());
         assert!(pattern.name.contains("read_file"));
 
         let long_seq = vec![
@@ -495,7 +495,7 @@ mod tests {
             "read_file".to_string(),
             "edit_file".to_string(),
         ];
-        let pattern2 = LearnedPattern::new(long_seq, Uuid::new_v4(), "test-repo".to_string());
+        let pattern2 = LearnedPattern::new(long_seq, TaskId::new(), "test-repo".to_string());
         assert!(pattern2.name.len() <= 100); // Allow room for longer names with truncation
     }
 

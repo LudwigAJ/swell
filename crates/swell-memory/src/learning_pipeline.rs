@@ -12,6 +12,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use swell_core::TaskId;
 use uuid::Uuid;
 
 /// Stage in the 5-stage learning pipeline
@@ -386,7 +387,7 @@ pub struct Observation {
     /// Context/environment where observation occurred
     pub context: String,
     /// Source task ID if applicable
-    pub source_task_id: Option<Uuid>,
+    pub source_task_id: Option<TaskId>,
     /// Timestamp when observation occurred
     pub observed_at: DateTime<Utc>,
     /// Additional metadata
@@ -407,7 +408,7 @@ impl Observation {
     }
 
     /// Create with a source task ID
-    pub fn with_source_task(mut self, task_id: Uuid) -> Self {
+    pub fn with_source_task(mut self, task_id: TaskId) -> Self {
         self.source_task_id = Some(task_id);
         self
     }
@@ -857,7 +858,7 @@ mod tests {
         assert_eq!(obs.description, "use std::collections::HashMap");
         assert!(obs.source_task_id.is_none());
 
-        let obs_with_task = obs.with_source_task(Uuid::new_v4());
+        let obs_with_task = obs.with_source_task(TaskId::new());
         assert!(obs_with_task.source_task_id.is_some());
     }
 

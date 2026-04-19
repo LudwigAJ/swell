@@ -443,7 +443,7 @@ impl From<DaemonEvent> for DashboardEvent {
                     )
                 };
                 DashboardEvent::TaskProgress {
-                    id: task_id.unwrap_or_else(|| TaskId::nil()),
+                    id: task_id.unwrap_or_else(TaskId::nil),
                     message: summary,
                     correlation_id,
                 }

@@ -11,6 +11,7 @@
 //! operations. Workers are identified by unique IDs and tracked through their
 //! lifecycle states.
 
+use swell_core::ids::TaskId;
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info, warn};
@@ -57,7 +58,7 @@ pub struct Worker {
     /// Current worker state
     state: WorkerState,
     /// Task assigned to this worker (if any)
-    task_id: Option<Uuid>,
+    task_id: Option<TaskId>,
 }
 
 impl Worker {
@@ -76,7 +77,7 @@ impl Worker {
     }
 
     /// Get assigned task ID
-    pub fn task_id(&self) -> Option<Uuid> {
+    pub fn task_id(&self) -> Option<TaskId> {
         self.task_id
     }
 
@@ -91,13 +92,13 @@ impl Worker {
     }
 
     /// Assign a task to this worker
-    pub fn assign_task(&mut self, task_id: Uuid) {
+    pub fn assign_task(&mut self, task_id: TaskId) {
         self.state = WorkerState::Busy;
         self.task_id = Some(task_id);
     }
 
     /// Release the worker (task completed or cancelled)
-    pub fn release(&mut self) -> Option<Uuid> {
+    pub fn release(&mut self) -> Option<TaskId> {
         let task = self.task_id.take();
         self.state = WorkerState::Idle;
         task
@@ -306,7 +307,7 @@ impl SemaphoreWorkerPool {
     /// Assign a task to a worker.
     ///
     /// The worker must have been previously acquired.
-    pub fn assign_task(&mut self, worker_id: Uuid, task_id: Uuid) -> Result<(), WorkerPoolError> {
+    pub fn assign_task(&mut self, worker_id: Uuid, task_id: TaskId) -> Result<(), WorkerPoolError> {
         let worker = self
             .workers
             .iter_mut()
@@ -332,7 +333,7 @@ impl SemaphoreWorkerPool {
     /// Release a worker back to the pool.
     ///
     /// The permit is consumed and the worker becomes available again.
-    pub fn release(&mut self, worker_id: Uuid) -> Result<Uuid, WorkerPoolError> {
+    pub fn release(&mut self, worker_id: Uuid) -> Result<TaskId, WorkerPoolError> {
         let permit_id = self
             .worker_permits
             .lock()
@@ -359,7 +360,7 @@ impl SemaphoreWorkerPool {
             "Worker released back to pool"
         );
 
-        Ok(task_id.unwrap_or(Uuid::nil()))
+        Ok(task_id.unwrap_or(TaskId::nil()))
     }
 
     /// Get a worker by ID
@@ -391,12 +392,12 @@ impl SemaphoreWorkerPool {
     }
 
     /// Check if a task is being processed by any worker
-    pub fn is_task_active(&self, task_id: &Uuid) -> bool {
+    pub fn is_task_active(&self, task_id: &TaskId) -> bool {
         self.workers.iter().any(|w| w.task_id() == Some(*task_id))
     }
 
     /// Get the worker processing a specific task
-    pub fn get_worker_for_task(&self, task_id: &Uuid) -> Option<Uuid> {
+    pub fn get_worker_for_task(&self, task_id: &TaskId) -> Option<Uuid> {
         self.workers
             .iter()
             .find(|w| w.task_id() == Some(*task_id))
@@ -595,7 +596,7 @@ mod tests {
         assert_eq!(pool.busy_count(), 1); // busy_count tracks permits consumed
 
         // Assign a task
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         pool.assign_task(worker_id, task_id).unwrap();
 
         // Worker should now be busy
@@ -689,7 +690,7 @@ mod tests {
         let mut permits: Vec<_> = Vec::new();
         for _ in 0..3 {
             let (worker_id, permit) = pool.try_acquire().unwrap();
-            pool.assign_task(worker_id, Uuid::new_v4()).unwrap();
+            pool.assign_task(worker_id, TaskId::new()).unwrap();
             permits.push(permit);
         }
 
@@ -705,7 +706,7 @@ mod tests {
     #[tokio::test]
     async fn test_worker_pool_is_task_active() {
         let mut pool = SemaphoreWorkerPool::new(3).unwrap();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         assert!(!pool.is_task_active(&task_id));
 
@@ -725,7 +726,7 @@ mod tests {
     #[tokio::test]
     async fn test_worker_pool_get_worker_for_task() {
         let mut pool = SemaphoreWorkerPool::new(3).unwrap();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let (worker_id, _permit) = pool.acquire().await.unwrap();
         pool.assign_task(worker_id, task_id).unwrap();
@@ -736,8 +737,8 @@ mod tests {
     #[tokio::test]
     async fn test_worker_pool_multiple_tasks() {
         let mut pool = SemaphoreWorkerPool::new(3).unwrap();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // Assign two tasks
         let (w1, p1) = pool.acquire().await.unwrap();
@@ -773,7 +774,7 @@ mod tests {
     async fn test_worker_pool_assign_without_acquire() {
         let mut pool = SemaphoreWorkerPool::new(3).unwrap();
         let worker_id = pool.worker_ids()[0];
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Trying to assign to a worker without acquiring should fail
         // because the worker's permit wasn't obtained
@@ -875,7 +876,7 @@ mod tests {
         assert!(!worker.is_busy());
 
         // Assign task
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         worker.assign_task(task_id);
         assert!(!worker.is_idle());
         assert!(worker.is_busy());

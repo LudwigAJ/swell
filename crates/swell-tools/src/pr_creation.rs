@@ -15,6 +15,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -96,7 +97,7 @@ impl Default for PrCreatorConfig {
 #[derive(Debug, Clone)]
 pub struct PrMetadata {
     /// Task ID associated with this PR
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Task description (used as PR title if not specified)
     pub task_description: String,
     /// PR title (defaults to task_description if not set)
@@ -126,7 +127,7 @@ impl PrMetadata {
     }
 
     /// Set the task ID
-    pub fn with_task_id(mut self, task_id: Uuid) -> Self {
+    pub fn with_task_id(mut self, task_id: TaskId) -> Self {
         self.task_id = Some(task_id);
         self
     }
@@ -846,7 +847,7 @@ mod tests {
     #[test]
     fn test_pr_metadata_builder() {
         let meta = PrMetadata::new("Fix bug")
-            .with_task_id(Uuid::new_v4())
+            .with_task_id(TaskId::new())
             .with_title("Critical bug fix")
             .with_description("Fixes the login issue")
             .with_base_branch("develop")
@@ -919,7 +920,7 @@ mod tests {
     fn test_pr_template_generation() {
         let creator = PrCreator::new();
         let metadata = PrMetadata::new("Test PR")
-            .with_task_id(Uuid::new_v4())
+            .with_task_id(TaskId::new())
             .with_label(PrLabel::TypeFeature);
 
         let template = creator.generate_pr_template(&metadata, None);

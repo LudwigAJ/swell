@@ -55,6 +55,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::time::Instant;
+use swell_core::ids::TaskId;
 use uuid::Uuid;
 
 // ============================================================================
@@ -171,7 +172,7 @@ impl GenerationData {
 #[derive(Debug, Clone)]
 struct TaskTraceData {
     /// The task this trace is for
-    task_id: Uuid,
+    task_id: TaskId,
     /// Human-readable name
     name: String,
     /// Whether the trace has been finalized
@@ -187,7 +188,7 @@ struct TaskTraceData {
 }
 
 impl TaskTraceData {
-    fn new(task_id: Uuid, name: String) -> Self {
+    fn new(task_id: TaskId, name: String) -> Self {
         Self {
             task_id,
             name,
@@ -330,7 +331,7 @@ impl TaskTraceData {
 pub struct LangfuseExporter {
     client: swell_core::langfuse::LangfuseClient,
     /// Active task traces indexed by task_id
-    traces: std::sync::RwLock<HashMap<Uuid, TaskTraceData>>,
+    traces: std::sync::RwLock<HashMap<TaskId, TaskTraceData>>,
 }
 
 impl LangfuseExporter {
@@ -386,7 +387,7 @@ impl LangfuseExporter {
     /// ```rust,ignore
     /// exporter.start_task_trace(task_id, "Implement user authentication");
     /// ```
-    pub fn start_task_trace(&self, task_id: Uuid, name: impl Into<String>) {
+    pub fn start_task_trace(&self, task_id: TaskId, name: impl Into<String>) {
         let trace = TaskTraceData::new(task_id, name.into());
         let mut traces = self.traces.write().unwrap();
         traces.insert(task_id, trace);
@@ -406,7 +407,7 @@ impl LangfuseExporter {
     /// # Panics
     ///
     /// Panics if no active trace exists for the given task_id.
-    pub fn start_turn_span(&self, task_id: Uuid, turn_number: u32, agent_name: &str) {
+    pub fn start_turn_span(&self, task_id: TaskId, turn_number: u32, agent_name: &str) {
         let mut traces = self.traces.write().unwrap();
         let trace = traces
             .get_mut(&task_id)
@@ -426,7 +427,7 @@ impl LangfuseExporter {
     ///
     /// Returns `Ok` if the span was ended successfully, or an error if no
     /// active span exists.
-    pub fn end_turn_span(&self, task_id: Uuid) -> Result<(), LangfuseExporterError> {
+    pub fn end_turn_span(&self, task_id: TaskId) -> Result<(), LangfuseExporterError> {
         {
             let mut traces = self.traces.write().unwrap();
             let trace = traces
@@ -468,7 +469,7 @@ impl LangfuseExporter {
     #[allow(clippy::too_many_arguments)]
     pub fn emit_llm_generation(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         model_name: &str,
         provider: Option<&str>,
         input_tokens: u64,
@@ -515,7 +516,7 @@ impl LangfuseExporter {
     /// the trace could not be built or sent.
     pub async fn finalize_task_trace(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         success: bool,
     ) -> Result<(), LangfuseExporterError> {
         let langfuse_trace = {
@@ -621,7 +622,7 @@ impl LangfuseExporter {
     }
 
     /// Check if there is an active trace for a task.
-    pub fn has_active_trace(&self, task_id: Uuid) -> bool {
+    pub fn has_active_trace(&self, task_id: TaskId) -> bool {
         let traces = self.traces.read().unwrap();
         traces.contains_key(&task_id)
     }
@@ -630,7 +631,7 @@ impl LangfuseExporter {
     ///
     /// Note: Since we use internal trace data (not Langfuse Trace),
     /// this returns a generated UUID for the trace.
-    pub fn get_trace_id(&self, task_id: Uuid) -> Option<String> {
+    pub fn get_trace_id(&self, task_id: TaskId) -> Option<String> {
         let traces = self.traces.read().unwrap();
         traces.get(&task_id).map(|t| t.task_id.to_string())
     }
@@ -642,7 +643,7 @@ impl LangfuseExporter {
     }
 
     /// Get the number of turns recorded for a task.
-    pub fn get_turn_count(&self, task_id: Uuid) -> Option<usize> {
+    pub fn get_turn_count(&self, task_id: TaskId) -> Option<usize> {
         let traces = self.traces.read().unwrap();
         traces.get(&task_id).map(|t| t.turn_count())
     }
@@ -667,7 +668,7 @@ pub enum LangfuseExporterError {
     /// After `finalize_task_trace` is called, no more spans or generations
     /// can be recorded for that trace.
     #[error("Trace has already been finalized for task_id: {0}")]
-    TraceAlreadyFinalized(Uuid),
+    TraceAlreadyFinalized(TaskId),
 
     /// Failed to send the trace to Langfuse.
     #[error("Failed to send trace to Langfuse: {0}")]
@@ -703,7 +704,7 @@ mod tests {
     #[test]
     fn test_start_task_trace_creates_trace() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         assert!(!exporter.has_active_trace(task_id));
 
@@ -718,7 +719,7 @@ mod tests {
     #[test]
     fn test_single_trace_per_task() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Starting a trace twice for the same task should replace the existing trace
         exporter.start_task_trace(task_id, "First trace");
@@ -735,8 +736,8 @@ mod tests {
     #[test]
     fn test_multiple_tasks_multiple_traces() {
         let exporter = create_test_exporter();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         exporter.start_task_trace(task1, "Task 1");
         exporter.start_task_trace(task2, "Task 2");
@@ -751,7 +752,7 @@ mod tests {
     #[test]
     fn test_start_turn_span_records_turn() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         exporter.start_task_trace(task_id, "Test task");
         exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -763,7 +764,7 @@ mod tests {
     #[test]
     fn test_multiple_turn_spans_increment_count() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         exporter.start_task_trace(task_id, "Test task");
         exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -779,7 +780,7 @@ mod tests {
     #[should_panic(expected = "No active trace found")]
     fn test_turn_span_without_trace_panics() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Should panic because no trace was started
         exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -788,7 +789,7 @@ mod tests {
     #[test]
     fn test_end_turn_span_without_start_returns_ok() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         exporter.start_task_trace(task_id, "Test task");
 
@@ -802,7 +803,7 @@ mod tests {
     #[test]
     fn test_emit_generation_records_llm_call() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         exporter.start_task_trace(task_id, "Test task");
         exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -829,7 +830,7 @@ mod tests {
     #[test]
     fn test_generation_without_active_trace_returns_error() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = exporter.emit_llm_generation(
             task_id,
@@ -855,7 +856,7 @@ mod tests {
     #[tokio::test]
     async fn test_trace_serialization_contains_required_fields() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         exporter.start_task_trace(task_id, "Test task with turns");
         exporter.start_turn_span(task_id, 1, "GeneratorAgent");
@@ -901,7 +902,7 @@ mod tests {
         use std::thread;
 
         let exporter = Arc::new(create_test_exporter());
-        let task_ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
+        let task_ids: Vec<TaskId> = (0..5).map(|_| TaskId::new()).collect();
 
         let handles: Vec<_> = task_ids
             .iter()
@@ -927,7 +928,7 @@ mod tests {
     #[test]
     fn test_trace_metadata_includes_task_id() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         exporter.start_task_trace(task_id, "Feature implementation");
 
@@ -942,7 +943,7 @@ mod tests {
     #[tokio::test]
     async fn test_finalize_without_trace_returns_error() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // No trace started, should fail
         let result = exporter.finalize_task_trace(task_id, true).await;
@@ -958,7 +959,7 @@ mod tests {
     #[tokio::test]
     async fn test_finalize_removes_trace() {
         let exporter = create_test_exporter();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         exporter.start_task_trace(task_id, "Test task");
         exporter.start_turn_span(task_id, 1, "GeneratorAgent");

@@ -33,6 +33,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::ids::{AgentId, SessionId, TaskId};
+
 // ============================================================================
 // Core Event Schema Types
 // ============================================================================
@@ -386,11 +388,11 @@ pub struct ObservableEvent {
     /// Request ID for this specific API call
     pub request_id: RequestId,
     /// Identifier of the agent that generated this event
-    pub agent_id: Uuid,
+    pub agent_id: AgentId,
     /// Identifier of the session grouping related events
-    pub session_id: Uuid,
+    pub session_id: SessionId,
     /// Identifier of the task this event relates to
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Information about tool usage (if applicable)
     pub tool_invocation: Option<ToolInvocation>,
     /// When the event occurred
@@ -409,9 +411,9 @@ impl ObservableEvent {
         cross_task_correlation_id: CrossTaskCorrelationId,
         agent_session_id: AgentSessionId,
         request_id: RequestId,
-        agent_id: Uuid,
-        session_id: Uuid,
-        task_id: Uuid,
+        agent_id: AgentId,
+        session_id: SessionId,
+        task_id: TaskId,
         outcome: Outcome,
     ) -> Self {
         Self {
@@ -445,9 +447,9 @@ impl ObservableEvent {
 
     /// Generate a new trace ID and create an event with it
     pub fn with_generated_trace(
-        agent_id: Uuid,
-        session_id: Uuid,
-        task_id: Uuid,
+        agent_id: AgentId,
+        session_id: SessionId,
+        task_id: TaskId,
         outcome: Outcome,
     ) -> Self {
         let trace_id = TraceId::generate();
@@ -470,9 +472,9 @@ impl ObservableEvent {
     /// Create an event with a specific root_trace_id for propagation
     pub fn with_root_trace(
         root_trace_id: TraceId,
-        agent_id: Uuid,
-        session_id: Uuid,
-        task_id: Uuid,
+        agent_id: AgentId,
+        session_id: SessionId,
+        task_id: TaskId,
         outcome: Outcome,
     ) -> Self {
         let trace_id = root_trace_id.clone();
@@ -513,7 +515,7 @@ impl ObservableEvent {
     }
 
     /// Propagate this event's root_trace_id to a new event (for cross-agent/cross-task correlation)
-    pub fn propagate_root_trace(&self, task_id: Uuid) -> ObservableEvent {
+    pub fn propagate_root_trace(&self, task_id: TaskId) -> ObservableEvent {
         let span_id = SpanId::generate();
         ObservableEvent {
             trace_id: self.root_trace_id.clone(),

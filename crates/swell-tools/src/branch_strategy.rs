@@ -9,9 +9,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
 /// Configuration for branch naming
 #[derive(Debug, Clone)]
@@ -61,7 +61,7 @@ impl BranchStrategyConfig {
 #[derive(Debug, Clone)]
 pub struct BranchRequest {
     /// Task ID for the branch
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Description for the branch (will be sanitized for branch name)
     pub description: String,
     /// Optional base branch (defaults to main)
@@ -70,7 +70,7 @@ pub struct BranchRequest {
 
 impl BranchRequest {
     /// Create a new branch request
-    pub fn new(task_id: Uuid, description: String) -> Self {
+    pub fn new(task_id: TaskId, description: String) -> Self {
         Self {
             task_id,
             description,
@@ -91,7 +91,7 @@ pub struct BranchResult {
     /// The full branch name created
     pub branch_name: String,
     /// The task ID associated with this branch
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Whether this was a new branch or existing
     pub is_new: bool,
 }
@@ -120,7 +120,7 @@ pub enum BranchStrategyError {
 pub struct BranchStrategy {
     config: BranchStrategyConfig,
     /// Tracks active branches created by this strategy in the current run
-    active_branches: Arc<RwLock<HashMap<String, Uuid>>>,
+    active_branches: Arc<RwLock<HashMap<String, TaskId>>>,
 }
 
 impl BranchStrategy {
@@ -230,7 +230,7 @@ impl BranchStrategy {
 
     /// Generate a deterministic branch name for a task
     /// Format: agent/<task-id>/<sanitized-description>
-    pub fn generate_branch_name(&self, task_id: Uuid, description: &str) -> String {
+    pub fn generate_branch_name(&self, task_id: TaskId, description: &str) -> String {
         let sanitized = Self::sanitize_description(description);
         let task_id_str = task_id.to_string();
         let task_short = task_id_str.split('-').next().unwrap_or("task");
@@ -280,7 +280,7 @@ impl BranchStrategy {
     }
 
     /// Register a branch as active (call after successful creation)
-    pub async fn register_branch(&self, branch_name: String, task_id: Uuid) {
+    pub async fn register_branch(&self, branch_name: String, task_id: TaskId) {
         let mut branches = self.active_branches.write().await;
         branches.insert(branch_name.clone(), task_id);
         debug!(
@@ -310,7 +310,7 @@ impl BranchStrategy {
     }
 
     /// Get the task ID associated with a branch
-    pub async fn get_task_id(&self, branch_name: &str) -> Option<Uuid> {
+    pub async fn get_task_id(&self, branch_name: &str) -> Option<TaskId> {
         let branches = self.active_branches.read().await;
         branches.get(branch_name).copied()
     }
@@ -469,7 +469,7 @@ mod tests {
     #[tokio::test]
     async fn test_generate_branch_name() {
         let strategy = BranchStrategy::new();
-        let task_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let task_id = TaskId::nil();
 
         let name = strategy.generate_branch_name(task_id, "fix bug in auth");
         assert_eq!(name, "agent/550e8400/fix-bug-in-auth");
@@ -478,7 +478,7 @@ mod tests {
     #[tokio::test]
     async fn test_generate_branch_name_special_chars() {
         let strategy = BranchStrategy::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let name = strategy.generate_branch_name(task_id, "fix: auth issue #123");
         assert_eq!(
@@ -543,7 +543,7 @@ mod tests {
     #[tokio::test]
     async fn test_register_unregister_branch() {
         let strategy = BranchStrategy::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let branch_name = "agent/test/branch";
 
         assert_eq!(strategy.active_count().await, 0);
@@ -565,9 +565,9 @@ mod tests {
         let config = BranchStrategyConfig::new("test".to_string(), 2);
         let strategy = BranchStrategy::with_config(config);
 
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
-        let task3 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
+        let task3 = TaskId::new();
 
         let req1 =
             BranchRequest::new(task1, "task 1".to_string()).with_base_branch("develop".to_string());
@@ -591,7 +591,7 @@ mod tests {
     #[tokio::test]
     async fn test_reset() {
         let strategy = BranchStrategy::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         strategy
             .register_branch("test/branch".to_string(), task_id)
@@ -607,7 +607,7 @@ mod tests {
         let config = BranchStrategyConfig::new("test".to_string(), 1);
         let strategy = BranchStrategy::with_config(config);
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let req = BranchRequest::new(task_id, "first task".to_string())
             .with_base_branch("develop".to_string());
 
@@ -616,7 +616,7 @@ mod tests {
         assert!(branch.contains("first-task"));
 
         // Second should fail limit check
-        let task2 = Uuid::new_v4();
+        let task2 = TaskId::new();
         let req2 = BranchRequest::new(task2, "second task".to_string())
             .with_base_branch("develop".to_string());
         let result = strategy.propose_branch(&req2).await;

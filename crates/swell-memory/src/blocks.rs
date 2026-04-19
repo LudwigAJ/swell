@@ -8,7 +8,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 pub use swell_core::{
-    AgentContext, MemoryBlock, MemoryBlockType, MemoryEntry, MemoryStore, SwellError,
+    AgentContext, MemoryBlock, MemoryBlockType, MemoryEntry, MemoryStore, SwellError, TaskId,
 };
 
 /// Memory block labels for well-known blocks
@@ -277,12 +277,12 @@ pub fn create_user_block_with_repo(
 }
 
 /// Helper to create a Task memory entry
-pub fn create_task_block(task_id: Uuid, context: &str) -> MemoryEntry {
+pub fn create_task_block(task_id: TaskId, context: &str) -> MemoryEntry {
     create_task_block_with_repo(task_id, context, "")
 }
 
 /// Helper to create a Task memory entry with repository scope
-pub fn create_task_block_with_repo(task_id: Uuid, context: &str, repository: &str) -> MemoryEntry {
+pub fn create_task_block_with_repo(task_id: TaskId, context: &str, repository: &str) -> MemoryEntry {
     let now = chrono::Utc::now();
     MemoryEntry {
         id: Uuid::new_v4(),
@@ -346,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_task_block() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let block = create_task_block(task_id, "Fix authentication bug");
 
         assert_eq!(block.block_type, MemoryBlockType::Task);
@@ -401,7 +401,7 @@ mod tests {
         store.store(user.clone()).await.unwrap();
 
         // Store a task block
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let task_block = create_task_block_with_repo(task_id, "Test task context", "test-repo");
         store.store(task_block.clone()).await.unwrap();
 

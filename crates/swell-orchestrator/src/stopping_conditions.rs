@@ -27,10 +27,10 @@
 use crate::hard_limits::HardLimits;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use swell_core::TaskState;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
 /// A single stopping condition that can cause the orchestrator to stop
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,7 +89,7 @@ pub enum HardLimitType {
     /// Maximum number of tasks exceeded
     MaxTasks,
     /// Maximum time per task exceeded
-    MaxTime { task_id: Uuid },
+    MaxTime { task_id: TaskId },
     /// Maximum total cost exceeded
     MaxCost,
     /// Maximum consecutive failures exceeded
@@ -114,7 +114,7 @@ pub enum HardLimitsError {
     TaskLimitExceeded { current: usize, limit: usize },
     /// Time limit exceeded for a task
     TimeLimitExceeded {
-        task_id: Uuid,
+        task_id: TaskId,
         elapsed_secs: u64,
         limit_secs: u64,
     },
@@ -296,7 +296,7 @@ impl StoppingConditions {
     /// Check time limit for a specific task
     pub fn check_task_time_limit(
         limits: &HardLimits,
-        task_id: Uuid,
+        task_id: TaskId,
         started_at: chrono::DateTime<chrono::Utc>,
     ) -> Option<StoppingCondition> {
         if limits.is_time_limit_exceeded(started_at) {
@@ -418,7 +418,7 @@ mod tests {
             format!(
                 "{}",
                 HardLimitType::MaxTime {
-                    task_id: Uuid::nil()
+                    task_id: TaskId::nil()
                 }
             ),
             "max_time (00000000-0000-0000-0000-000000000000)"
@@ -602,7 +602,7 @@ mod tests {
     fn test_check_task_time_limit_not_exceeded() {
         let limits = HardLimits::default();
         let started_at = chrono::Utc::now() - chrono::Duration::minutes(5);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = StoppingConditions::check_task_time_limit(&limits, task_id, started_at);
         assert!(result.is_none());
@@ -613,7 +613,7 @@ mod tests {
         let limits = HardLimits::default();
         // Default is 8 hours, so 9 hours ago should exceed
         let started_at = chrono::Utc::now() - chrono::Duration::hours(9);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = StoppingConditions::check_task_time_limit(&limits, task_id, started_at);
         assert!(result.is_some());
@@ -734,7 +734,7 @@ mod tests {
         assert_eq!(format!("{}", err), "Task limit: 50/100");
 
         let err = HardLimitsError::TimeLimitExceeded {
-            task_id: Uuid::nil(),
+            task_id: TaskId::nil(),
             elapsed_secs: 300,
             limit_secs: 28800,
         };

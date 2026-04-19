@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
+use swell_core::TaskId;
 use uuid::Uuid;
 
 /// Represents a skill extracted from a successful task trajectory
@@ -23,7 +24,7 @@ pub struct Skill {
     pub tools_used: Vec<String>,
     pub conventions: Vec<String>,
     pub confidence: f64,
-    pub source_task_id: Uuid,
+    pub source_task_id: TaskId,
     pub created_at: DateTime<Utc>,
     pub metadata: serde_json::Value,
 }
@@ -40,7 +41,7 @@ impl Skill {
             tools_used: Vec::new(),
             conventions: Vec::new(),
             confidence: 0.0,
-            source_task_id: Uuid::nil(),
+            source_task_id: TaskId::nil(),
             created_at: Utc::now(),
             metadata: serde_json::json!({}),
         }
@@ -60,7 +61,7 @@ pub struct SkillStep {
 /// Metadata about the task trajectory used for skill extraction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrajectoryData {
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub task_description: String,
     pub plan_steps: Vec<TrajectoryStep>,
     pub tool_calls: Vec<ToolCallData>,
@@ -930,7 +931,7 @@ mod tests {
     #[tokio::test]
     async fn test_trajectory_data_serialization() {
         let trajectory = TrajectoryData {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Add new feature".to_string(),
             plan_steps: vec![],
             tool_calls: vec![ToolCallData {

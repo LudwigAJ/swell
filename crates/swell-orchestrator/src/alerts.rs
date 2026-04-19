@@ -14,6 +14,8 @@ use uuid::Uuid;
 // Re-export alert types from metrics module
 pub use super::metrics::{AlertSeverity, AlertThresholds, AlertType, MetricsAlert};
 
+use swell_core::ids::{AgentId, TaskId};
+
 /// Alert categories for the enhanced alert system
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -52,9 +54,9 @@ pub struct Alert {
     /// When the alert was triggered
     pub triggered_at: DateTime<Utc>,
     /// Associated task ID if applicable
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Associated agent ID if applicable
-    pub agent_id: Option<Uuid>,
+    pub agent_id: Option<AgentId>,
 }
 
 impl Alert {
@@ -84,13 +86,13 @@ impl Alert {
     }
 
     /// Set the task ID
-    pub fn with_task_id(mut self, task_id: Uuid) -> Self {
+    pub fn with_task_id(mut self, task_id: TaskId) -> Self {
         self.task_id = Some(task_id);
         self
     }
 
     /// Set the agent ID
-    pub fn with_agent_id(mut self, agent_id: Uuid) -> Self {
+    pub fn with_agent_id(mut self, agent_id: AgentId) -> Self {
         self.agent_id = Some(agent_id);
         self
     }
@@ -240,17 +242,17 @@ pub struct AlertManager {
     /// Alert history
     alerts: VecDeque<Alert>,
     /// Consecutive failures per task
-    task_failures: HashMap<Uuid, u32>,
+    task_failures: HashMap<TaskId, u32>,
     /// Consecutive failures globally
     global_failures: u32,
     /// Total cost accumulated
     total_cost: u64,
     /// Cost per task
-    task_costs: HashMap<Uuid, u64>,
+    task_costs: HashMap<TaskId, u64>,
     /// Last alert time per alert type (for cooldown)
     last_alert_time: HashMap<AlertType, DateTime<Utc>>,
     /// Loop detection states per task
-    loop_states: HashMap<Uuid, LoopDetectionState>,
+    loop_states: HashMap<TaskId, LoopDetectionState>,
 }
 
 impl AlertManager {
@@ -306,7 +308,7 @@ impl AlertManager {
     // ========================================================================
 
     /// Initialize loop detection for a task
-    pub fn init_loop_detection(&mut self, task_id: Uuid) {
+    pub fn init_loop_detection(&mut self, task_id: TaskId) {
         self.loop_states.insert(
             task_id,
             LoopDetectionState {
@@ -321,14 +323,14 @@ impl AlertManager {
     }
 
     /// Record a loop iteration
-    pub fn record_loop_iteration(&mut self, task_id: Uuid) {
+    pub fn record_loop_iteration(&mut self, task_id: TaskId) {
         if let Some(state) = self.loop_states.get_mut(&task_id) {
             state.iterations += 1;
         }
     }
 
     /// Record a file change in the loop
-    pub fn record_file_change(&mut self, task_id: Uuid) {
+    pub fn record_file_change(&mut self, task_id: TaskId) {
         if let Some(state) = self.loop_states.get_mut(&task_id) {
             state.last_file_change_iteration = state.iterations;
             state.consecutive_failures = 0;
@@ -336,28 +338,28 @@ impl AlertManager {
     }
 
     /// Record a loop failure
-    pub fn record_loop_failure(&mut self, task_id: Uuid) {
+    pub fn record_loop_failure(&mut self, task_id: TaskId) {
         if let Some(state) = self.loop_states.get_mut(&task_id) {
             state.consecutive_failures += 1;
         }
     }
 
     /// Record loop convergence
-    pub fn record_loop_converged(&mut self, task_id: Uuid) {
+    pub fn record_loop_converged(&mut self, task_id: TaskId) {
         if let Some(state) = self.loop_states.get_mut(&task_id) {
             state.converged = true;
         }
     }
 
     /// Record max iterations reached
-    pub fn record_max_iterations_reached(&mut self, task_id: Uuid) {
+    pub fn record_max_iterations_reached(&mut self, task_id: TaskId) {
         if let Some(state) = self.loop_states.get_mut(&task_id) {
             state.max_iterations_reached = true;
         }
     }
 
     /// Check for loop detection alerts and return any triggered
-    pub fn check_loop_alerts(&mut self, task_id: Uuid) -> Vec<Alert> {
+    pub fn check_loop_alerts(&mut self, task_id: TaskId) -> Vec<Alert> {
         let mut alerts = Vec::new();
         let config = &self.config.loop_detection;
 
@@ -463,7 +465,7 @@ impl AlertManager {
     }
 
     /// Remove loop state for a task
-    pub fn remove_loop_state(&mut self, task_id: Uuid) {
+    pub fn remove_loop_state(&mut self, task_id: TaskId) {
         self.loop_states.remove(&task_id);
     }
 
@@ -472,7 +474,7 @@ impl AlertManager {
     // ========================================================================
 
     /// Record a task failure
-    pub fn record_task_failure(&mut self, task_id: Uuid) -> u32 {
+    pub fn record_task_failure(&mut self, task_id: TaskId) -> u32 {
         let count = self.task_failures.entry(task_id).or_insert(0);
         *count += 1;
         self.global_failures += 1;
@@ -480,13 +482,13 @@ impl AlertManager {
     }
 
     /// Record a task success (resets failure count)
-    pub fn record_task_success(&mut self, task_id: Uuid) {
+    pub fn record_task_success(&mut self, task_id: TaskId) {
         self.task_failures.remove(&task_id);
         self.global_failures = self.global_failures.saturating_sub(1);
     }
 
     /// Get consecutive failure count for a task
-    pub fn get_task_failure_count(&self, task_id: Uuid) -> u32 {
+    pub fn get_task_failure_count(&self, task_id: TaskId) -> u32 {
         self.task_failures.get(&task_id).copied().unwrap_or(0)
     }
 
@@ -496,7 +498,7 @@ impl AlertManager {
     }
 
     /// Check for consecutive failure alerts
-    pub fn check_failure_alerts(&mut self, task_id: Uuid) -> Vec<Alert> {
+    pub fn check_failure_alerts(&mut self, task_id: TaskId) -> Vec<Alert> {
         let mut alerts = Vec::new();
         let count = self.get_task_failure_count(task_id);
         let config = &self.config.consecutive_failure;
@@ -553,14 +555,14 @@ impl AlertManager {
     // ========================================================================
 
     /// Record cost for a task
-    pub fn record_task_cost(&mut self, task_id: Uuid, cost: u64) {
+    pub fn record_task_cost(&mut self, task_id: TaskId, cost: u64) {
         let current = self.task_costs.entry(task_id).or_insert(0);
         *current += cost;
         self.total_cost += cost;
     }
 
     /// Get total cost for a task
-    pub fn get_task_cost(&self, task_id: Uuid) -> u64 {
+    pub fn get_task_cost(&self, task_id: TaskId) -> u64 {
         self.task_costs.get(&task_id).copied().unwrap_or(0)
     }
 
@@ -570,7 +572,7 @@ impl AlertManager {
     }
 
     /// Check cost threshold alerts for a task
-    pub fn check_cost_alerts(&mut self, task_id: Uuid) -> Vec<Alert> {
+    pub fn check_cost_alerts(&mut self, task_id: TaskId) -> Vec<Alert> {
         let mut alerts = Vec::new();
         let task_cost = self.get_task_cost(task_id);
         let config = &self.config.cost_threshold;
@@ -642,7 +644,7 @@ impl AlertManager {
     }
 
     /// Remove task cost tracking
-    pub fn remove_task_cost(&mut self, task_id: Uuid) {
+    pub fn remove_task_cost(&mut self, task_id: TaskId) {
         self.task_costs.remove(&task_id);
     }
 
@@ -655,8 +657,8 @@ impl AlertManager {
         &mut self,
         action_type: &str,
         reason: &str,
-        task_id: Option<Uuid>,
-        agent_id: Option<Uuid>,
+        task_id: Option<TaskId>,
+        agent_id: Option<AgentId>,
     ) -> Option<Alert> {
         if !self.config.policy_violation.enabled {
             return None;
@@ -676,8 +678,8 @@ impl AlertManager {
             1.0,
             0.0,
         )
-        .with_task_id(task_id.unwrap_or(Uuid::nil()))
-        .with_agent_id(agent_id.unwrap_or(Uuid::nil()));
+        .with_task_id(task_id.unwrap_or_else(TaskId::nil))
+        .with_agent_id(agent_id.unwrap_or_default());
 
         self.record_alert_time(&alert.alert_type);
         self.add_alert(alert.clone());
@@ -774,7 +776,7 @@ mod tests {
         assert_eq!(alert.threshold, 5.0);
         assert!(alert.task_id.is_none());
 
-        let alert_with_task = alert.with_task_id(Uuid::new_v4());
+        let alert_with_task = alert.with_task_id(TaskId::new());
         assert!(alert_with_task.task_id.is_some());
     }
 
@@ -795,7 +797,7 @@ mod tests {
     #[test]
     fn test_alert_manager_loop_detection() {
         let mut manager = AlertManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Initialize loop
         manager.init_loop_detection(task_id);
@@ -821,7 +823,7 @@ mod tests {
     #[test]
     fn test_consecutive_failures() {
         let mut manager = AlertManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Record 2 failures
         assert_eq!(manager.record_task_failure(task_id), 1);
@@ -838,7 +840,7 @@ mod tests {
     #[test]
     fn test_cost_tracking() {
         let mut manager = AlertManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Record costs
         manager.record_task_cost(task_id, 100_000);
@@ -870,7 +872,7 @@ mod tests {
         let mut manager = AlertManager::new();
 
         // Create some alerts by triggering conditions
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         manager.init_loop_detection(task_id);
         for _ in 0..25 {
             manager.record_loop_iteration(task_id);

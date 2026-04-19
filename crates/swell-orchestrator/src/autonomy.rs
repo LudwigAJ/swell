@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -296,7 +297,7 @@ pub fn classify_action_strategic(
 /// Represents an approval request for a pending action
 #[derive(Debug, Clone)]
 pub struct ApprovalRequest {
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub request_id: Uuid,
     pub step_id: Option<Uuid>,
     pub action_description: String,
@@ -310,7 +311,7 @@ pub struct ApprovalRequest {
 
 impl ApprovalRequest {
     pub fn new(
-        task_id: Uuid,
+        task_id: TaskId,
         action_description: String,
         risk_level: swell_core::RiskLevel,
         autonomy_level: swell_core::AutonomyLevel,
@@ -330,7 +331,7 @@ impl ApprovalRequest {
     }
 
     pub fn for_step(
-        task_id: Uuid,
+        task_id: TaskId,
         step_id: Uuid,
         action_description: String,
         risk_level: swell_core::RiskLevel,
@@ -606,7 +607,7 @@ impl AutonomyController {
     /// and whether strategic actions require approval.
     pub async fn needs_approval(
         &self,
-        _task_id: Uuid,
+        _task_id: TaskId,
         risk_level: swell_core::RiskLevel,
         autonomy_level: swell_core::AutonomyLevel,
         agent_role: swell_core::AgentRole,
@@ -657,7 +658,7 @@ impl AutonomyController {
     /// Uses default values for agent_role and task_type
     pub async fn needs_approval_simple(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         risk_level: swell_core::RiskLevel,
         autonomy_level: swell_core::AutonomyLevel,
     ) -> bool {
@@ -722,7 +723,7 @@ impl AutonomyController {
     }
 
     /// Get all pending requests for a task
-    pub async fn get_pending_for_task(&self, task_id: Uuid) -> Vec<ApprovalRequest> {
+    pub async fn get_pending_for_task(&self, task_id: TaskId) -> Vec<ApprovalRequest> {
         let pending = self.pending_requests.read().await;
         pending
             .values()
@@ -732,7 +733,7 @@ impl AutonomyController {
     }
 
     /// Clear all pending requests (used when task is cancelled or completed)
-    pub async fn clear_task_requests(&self, task_id: Uuid) {
+    pub async fn clear_task_requests(&self, task_id: TaskId) {
         let mut pending = self.pending_requests.write().await;
         pending.retain(|_, r| r.task_id != task_id);
     }
@@ -888,7 +889,7 @@ impl AutonomyController {
         // Get the base approval requirement
         let base_needs_approval = self
             .needs_approval(
-                Uuid::new_v4(),
+                TaskId::new(),
                 risk_level,
                 autonomy_level,
                 agent_role,
@@ -975,7 +976,7 @@ mod tests {
         assert!(
             !controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::High,
                     swell_core::AutonomyLevel::FullAuto,
                     swell_core::AgentRole::Generator,
@@ -987,7 +988,7 @@ mod tests {
         assert!(
             !controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::Low,
                     swell_core::AutonomyLevel::FullAuto,
                     swell_core::AgentRole::Generator,
@@ -1005,7 +1006,7 @@ mod tests {
         assert!(
             controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::High,
                     swell_core::AutonomyLevel::Supervised,
                     swell_core::AgentRole::Generator,
@@ -1017,7 +1018,7 @@ mod tests {
         assert!(
             controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::Low,
                     swell_core::AutonomyLevel::Supervised,
                     swell_core::AgentRole::Generator,
@@ -1036,7 +1037,7 @@ mod tests {
         assert!(
             controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::High,
                     swell_core::AutonomyLevel::Guided,
                     swell_core::AgentRole::Generator,
@@ -1049,7 +1050,7 @@ mod tests {
         assert!(
             !controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::High,
                     swell_core::AutonomyLevel::Guided,
                     swell_core::AgentRole::Generator,
@@ -1068,7 +1069,7 @@ mod tests {
         assert!(
             !controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::High,
                     swell_core::AutonomyLevel::Guided,
                     swell_core::AgentRole::Generator,
@@ -1080,7 +1081,7 @@ mod tests {
         assert!(
             !controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::Low,
                     swell_core::AutonomyLevel::Guided,
                     swell_core::AgentRole::Generator,
@@ -1099,7 +1100,7 @@ mod tests {
         assert!(
             controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::High,
                     swell_core::AutonomyLevel::Autonomous,
                     swell_core::AgentRole::Generator,
@@ -1111,7 +1112,7 @@ mod tests {
         assert!(
             !controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::Medium,
                     swell_core::AutonomyLevel::Autonomous,
                     swell_core::AgentRole::Generator,
@@ -1123,7 +1124,7 @@ mod tests {
         assert!(
             !controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::Low,
                     swell_core::AutonomyLevel::Autonomous,
                     swell_core::AgentRole::Generator,
@@ -1148,7 +1149,7 @@ mod tests {
         assert!(
             controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::Low, // Low risk but strategic
                     swell_core::AutonomyLevel::Autonomous,
                     swell_core::AgentRole::Generator,
@@ -1162,7 +1163,7 @@ mod tests {
         assert!(
             !controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::Low,
                     swell_core::AutonomyLevel::Autonomous,
                     swell_core::AgentRole::Generator,
@@ -1187,7 +1188,7 @@ mod tests {
         assert!(
             controller
                 .needs_approval(
-                    Uuid::new_v4(),
+                    TaskId::new(),
                     swell_core::RiskLevel::Low, // Low risk, but task type override
                     swell_core::AutonomyLevel::Autonomous,
                     swell_core::AgentRole::Generator,
@@ -1249,7 +1250,7 @@ mod tests {
     #[tokio::test]
     async fn test_approval_request_flow() {
         let controller = AutonomyController::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Request approval
         let request = ApprovalRequest::new(
@@ -1274,7 +1275,7 @@ mod tests {
     #[tokio::test]
     async fn test_reject_approval() {
         let controller = AutonomyController::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let request = ApprovalRequest::new(
             task_id,
@@ -1294,7 +1295,7 @@ mod tests {
     #[tokio::test]
     async fn test_clear_task_requests() {
         let controller = AutonomyController::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Create multiple requests for the same task
         for i in 0..3 {
@@ -1308,7 +1309,7 @@ mod tests {
         }
 
         // Create request for different task
-        let other_task = Uuid::new_v4();
+        let other_task = TaskId::new();
         let request = ApprovalRequest::new(
             other_task,
             "Other task action".to_string(),
@@ -1425,7 +1426,7 @@ mod tests {
     #[tokio::test]
     async fn test_approval_request_builder() {
         let request = ApprovalRequest::new(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Implement feature X".to_string(),
             swell_core::RiskLevel::High,
             swell_core::AutonomyLevel::Guided,

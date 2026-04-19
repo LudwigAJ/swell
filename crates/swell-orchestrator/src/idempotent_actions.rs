@@ -38,6 +38,7 @@
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -66,7 +67,7 @@ pub enum ActionStatus {
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ActionKey {
     /// Task ID this action belongs to (if any)
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Type of action (e.g., "set_state", "create_task", "assign_agent")
     pub action_type: String,
     /// Unique parameters that distinguish this action from others of the same type
@@ -77,7 +78,7 @@ pub struct ActionKey {
 impl ActionKey {
     /// Create a new action key
     pub fn new(
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
         action_type: impl Into<String>,
         parameters: impl Into<String>,
     ) -> Self {
@@ -89,13 +90,13 @@ impl ActionKey {
     }
 
     /// Create a key for a task-specific action
-    pub fn for_task(task_id: Uuid, action_type: impl Into<String>) -> Self {
+    pub fn for_task(task_id: TaskId, action_type: impl Into<String>) -> Self {
         Self::new(Some(task_id), action_type, "")
     }
 
     /// Create a key for a task action with parameters
     pub fn for_task_with_params(
-        task_id: Uuid,
+        task_id: TaskId,
         action_type: impl Into<String>,
         params: impl Into<String>,
     ) -> Self {
@@ -691,7 +692,7 @@ mod tests {
 
     #[test]
     fn test_action_key_creation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let key = ActionKey::new(Some(task_id), "test_action", "param1=value1");
 
         assert_eq!(key.task_id, Some(task_id));
@@ -701,7 +702,7 @@ mod tests {
 
     #[test]
     fn test_action_key_for_task() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let key = ActionKey::for_task(task_id, "set_state");
 
         assert_eq!(key.task_id, Some(task_id));
@@ -711,7 +712,7 @@ mod tests {
 
     #[test]
     fn test_action_key_for_task_with_params() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let key = ActionKey::for_task_with_params(task_id, "transition", "Executing");
 
         assert_eq!(key.task_id, Some(task_id));
@@ -721,7 +722,7 @@ mod tests {
 
     #[test]
     fn test_action_key_equality() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let key1 = ActionKey::for_task(task_id, "test");
         let key2 = ActionKey::for_task(task_id, "test");
         let key3 = ActionKey::for_task(task_id, "other");
@@ -732,7 +733,7 @@ mod tests {
 
     #[test]
     fn test_action_key_hash() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut map = HashMap::new();
         let key1 = ActionKey::for_task(task_id, "test");
         let key2 = ActionKey::for_task(task_id, "test");
@@ -747,7 +748,7 @@ mod tests {
 
     #[test]
     fn test_action_execution_initial() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let execution = ActionExecution::new(key.clone());
 
         assert_eq!(execution.key, key);
@@ -757,7 +758,7 @@ mod tests {
 
     #[test]
     fn test_action_execution_record_attempt() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let mut execution = ActionExecution::new(key);
 
         execution.record_attempt(Some("Error 1".to_string()));
@@ -771,7 +772,7 @@ mod tests {
 
     #[test]
     fn test_action_execution_exceeded_retries() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let mut execution = ActionExecution::new(key);
 
         // Under limit
@@ -789,7 +790,7 @@ mod tests {
 
     #[test]
     fn test_action_execution_duration() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let execution = ActionExecution::new(key);
 
         // Should be very small initially
@@ -801,7 +802,7 @@ mod tests {
 
     #[test]
     fn test_tracked_action_creation() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let tracked = TrackedAction::new(key.clone());
 
         assert_eq!(tracked.key, key);
@@ -811,7 +812,7 @@ mod tests {
 
     #[test]
     fn test_tracked_action_mark_completed() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let mut tracked = TrackedAction::new(key);
 
         tracked.mark_completed();
@@ -821,7 +822,7 @@ mod tests {
 
     #[test]
     fn test_tracked_action_mark_failed() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let mut tracked = TrackedAction::new(key);
 
         tracked.mark_failed("Something went wrong".to_string());
@@ -834,7 +835,7 @@ mod tests {
 
     #[test]
     fn test_tracked_action_mark_cancelled() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let mut tracked = TrackedAction::new(key);
 
         tracked.mark_cancelled();
@@ -844,7 +845,7 @@ mod tests {
 
     #[test]
     fn test_tracked_action_is_valid() {
-        let key = ActionKey::for_task(Uuid::new_v4(), "test");
+        let key = ActionKey::for_task(TaskId::new(), "test");
         let tracked = TrackedAction::new(key);
 
         // Within time window
@@ -859,7 +860,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplicator_new_action() {
         let deduplicator = ActionDeduplicator::new();
-        let key = ActionKey::for_task(Uuid::new_v4(), "test_action");
+        let key = ActionKey::for_task(TaskId::new(), "test_action");
 
         let result = deduplicator.try_acquire(&key).await;
 
@@ -870,7 +871,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplicator_duplicate_rejected() {
         let deduplicator = ActionDeduplicator::new();
-        let key = ActionKey::for_task(Uuid::new_v4(), "test_action");
+        let key = ActionKey::for_task(TaskId::new(), "test_action");
 
         // First acquisition succeeds
         let result1 = deduplicator.try_acquire(&key).await;
@@ -892,7 +893,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplicator_complete_allows_retry() {
         let deduplicator = ActionDeduplicator::new();
-        let key = ActionKey::for_task(Uuid::new_v4(), "test_action");
+        let key = ActionKey::for_task(TaskId::new(), "test_action");
 
         // First acquisition
         deduplicator.try_acquire(&key).await.unwrap();
@@ -908,7 +909,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplicator_fail_allows_retry() {
         let deduplicator = ActionDeduplicator::new();
-        let key = ActionKey::for_task(Uuid::new_v4(), "test_action");
+        let key = ActionKey::for_task(TaskId::new(), "test_action");
 
         // First acquisition
         deduplicator.try_acquire(&key).await.unwrap();
@@ -924,7 +925,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplicator_cancel_allows_retry() {
         let deduplicator = ActionDeduplicator::new();
-        let key = ActionKey::for_task(Uuid::new_v4(), "test_action");
+        let key = ActionKey::for_task(TaskId::new(), "test_action");
 
         // First acquisition
         deduplicator.try_acquire(&key).await.unwrap();
@@ -940,7 +941,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplicator_is_running() {
         let deduplicator = ActionDeduplicator::new();
-        let key = ActionKey::for_task(Uuid::new_v4(), "test_action");
+        let key = ActionKey::for_task(TaskId::new(), "test_action");
 
         assert!(!deduplicator.is_running(&key).await);
 
@@ -954,7 +955,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplicator_get_status() {
         let deduplicator = ActionDeduplicator::new();
-        let key = ActionKey::for_task(Uuid::new_v4(), "test_action");
+        let key = ActionKey::for_task(TaskId::new(), "test_action");
 
         assert!(deduplicator.get_status(&key).await.is_none());
 
@@ -975,7 +976,7 @@ mod tests {
     async fn test_deduplicator_cleanup_expired() {
         // Create deduplicator with very short window
         let deduplicator = ActionDeduplicator::with_time_window(10); // 10ms
-        let key = ActionKey::for_task(Uuid::new_v4(), "test_action");
+        let key = ActionKey::for_task(TaskId::new(), "test_action");
 
         deduplicator.try_acquire(&key).await.unwrap();
 
@@ -993,7 +994,7 @@ mod tests {
     #[tokio::test]
     async fn test_deduplicator_different_keys_allowed() {
         let deduplicator = ActionDeduplicator::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let key1 = ActionKey::for_task(task_id, "action1");
         let key2 = ActionKey::for_task(task_id, "action2");
@@ -1030,7 +1031,7 @@ mod tests {
     #[tokio::test]
     async fn test_idempotent_closure_execution() {
         let deduplicator = Arc::new(ActionDeduplicator::new());
-        let key = ActionKey::for_task(Uuid::new_v4(), "closure_test");
+        let key = ActionKey::for_task(TaskId::new(), "closure_test");
         let call_count = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
 
         let call_count_clone = call_count.clone();
@@ -1058,7 +1059,7 @@ mod tests {
     #[tokio::test]
     async fn test_shared_deduplicator() {
         let deduplicator = create_deduplicator();
-        let key = ActionKey::for_task(Uuid::new_v4(), "shared_test");
+        let key = ActionKey::for_task(TaskId::new(), "shared_test");
 
         // Clone and use from different tasks
         let dedup1 = deduplicator.clone();
@@ -1094,7 +1095,7 @@ mod tests {
     }
 
     impl MockIdempotentAction {
-        fn new(task_id: Uuid, should_fail: bool) -> Self {
+        fn new(task_id: TaskId, should_fail: bool) -> Self {
             Self {
                 key: ActionKey::for_task(task_id, "mock_action"),
                 should_fail,
@@ -1128,7 +1129,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_idempotent_success() {
         let deduplicator = create_deduplicator();
-        let action = MockIdempotentAction::new(Uuid::new_v4(), false);
+        let action = MockIdempotentAction::new(TaskId::new(), false);
 
         let result = execute_idempotent(&deduplicator, &action).await;
 
@@ -1141,7 +1142,7 @@ mod tests {
     #[tokio::test]
     async fn test_execute_idempotent_retry_on_failure() {
         let deduplicator = create_deduplicator();
-        let action = MockIdempotentAction::new(Uuid::new_v4(), true);
+        let action = MockIdempotentAction::new(TaskId::new(), true);
 
         // This will fail and retry up to MAX_ACTION_RETRIES
         let result = execute_idempotent(&deduplicator, &action).await;
@@ -1157,14 +1158,14 @@ mod tests {
     #[tokio::test]
     async fn test_execute_idempotent_non_idempotent_no_retry() {
         let deduplicator = create_deduplicator();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         struct NonIdempotentAction {
             key: ActionKey,
         }
 
         impl NonIdempotentAction {
-            fn new(task_id: Uuid) -> Self {
+            fn new(task_id: TaskId) -> Self {
                 Self {
                     key: ActionKey::for_task(task_id, "non_idempotent"),
                 }

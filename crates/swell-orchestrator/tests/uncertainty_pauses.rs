@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 use std::time::Duration;
-use swell_core::{AgentRole, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
+use swell_core::{AgentRole, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskId, TaskState};
 use swell_orchestrator::{
     builder::OrchestratorBuilder, check_confidence_threshold, generate_suggested_options,
     ClarificationOption, ClarificationResponse, Orchestrator, UncertaintyClarificationEvent,
@@ -21,7 +21,7 @@ use uuid::Uuid;
 // ---------------------------------------------------------------------------
 
 /// Create a minimal plan for a task.
-fn make_plan(task_id: Uuid) -> Plan {
+fn make_plan(task_id: TaskId) -> Plan {
     Plan {
         id: Uuid::new_v4(),
         task_id,
@@ -426,7 +426,7 @@ async fn test_full_uncertainty_pause_and_resume_flow() {
 async fn test_uncertainty_manager_stats() {
     let manager = UncertaintyManager::new();
 
-    let make_event = |task_id: Uuid| {
+    let make_event = |task_id: TaskId| {
         UncertaintyClarificationEvent::new(
             task_id,
             None,

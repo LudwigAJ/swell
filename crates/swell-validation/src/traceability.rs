@@ -46,6 +46,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use swell_core::ids::TaskId;
 use uuid::Uuid;
 
 /// A high-level goal/objective linked to a task
@@ -54,7 +55,7 @@ pub struct Goal {
     /// Unique identifier
     pub id: Uuid,
     /// Task ID this goal belongs to
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Goal description
     pub description: String,
     /// When goal was created
@@ -69,7 +70,7 @@ pub struct Goal {
 
 impl Goal {
     /// Create a new goal
-    pub fn new(description: impl Into<String>, task_id: Uuid) -> Self {
+    pub fn new(description: impl Into<String>, task_id: TaskId) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4(),
@@ -376,7 +377,7 @@ pub trait TraceabilityStore: Send + Sync {
     async fn update_goal(&self, goal: &Goal) -> Result<(), TraceabilityError>;
 
     /// Get all goals for a task
-    async fn get_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, TraceabilityError>;
+    async fn get_goals_for_task(&self, task_id: TaskId) -> Result<Vec<Goal>, TraceabilityError>;
 
     // --- Criteria Operations ---
 
@@ -730,7 +731,7 @@ impl TraceabilityStore for InMemoryTraceabilityStore {
         }
     }
 
-    async fn get_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, TraceabilityError> {
+    async fn get_goals_for_task(&self, task_id: TaskId) -> Result<Vec<Goal>, TraceabilityError> {
         let goals = self.goals.read().unwrap();
         Ok(goals
             .values()
@@ -1491,8 +1492,10 @@ pub mod sqlite_store {
                     Ok(Some(Goal {
                         id: Uuid::parse_str(&id)
                             .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                        task_id: Uuid::parse_str(&task_id)
-                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                        task_id: TaskId::from_uuid(
+                            Uuid::parse_str(&task_id)
+                                .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                        ),
                         description,
                         created_at: DateTime::parse_from_rfc3339(&created_at)
                             .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
@@ -1537,7 +1540,7 @@ pub mod sqlite_store {
             }
         }
 
-        async fn get_goals_for_task(&self, task_id: Uuid) -> Result<Vec<Goal>, TraceabilityError> {
+        async fn get_goals_for_task(&self, task_id: TaskId) -> Result<Vec<Goal>, TraceabilityError> {
             let task_id_str = task_id.to_string();
 
             let rows: Vec<(String, String, String, String, String, String, String)> =
@@ -1554,8 +1557,10 @@ pub mod sqlite_store {
                 goals.push(Goal {
                     id: Uuid::parse_str(&id)
                         .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
-                    task_id: Uuid::parse_str(&task_id)
-                        .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    task_id: TaskId::from_uuid(
+                        Uuid::parse_str(&task_id)
+                            .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?,
+                    ),
                     description,
                     created_at: DateTime::parse_from_rfc3339(&created_at)
                         .map_err(|e| TraceabilityError::SerializationError(e.to_string()))?
@@ -2397,7 +2402,7 @@ pub mod sqlite_store {
 mod traceability_tests {
     use super::*;
 
-    fn create_test_goal(task_id: Uuid) -> Goal {
+    fn create_test_goal(task_id: TaskId) -> Goal {
         Goal::new("Test goal description", task_id)
     }
 
@@ -2719,7 +2724,7 @@ mod sqlite_traceability_tests {
     use super::sqlite_store::SqliteTraceabilityStore;
     use super::*;
 
-    fn create_test_goal(task_id: Uuid) -> Goal {
+    fn create_test_goal(task_id: TaskId) -> Goal {
         Goal::new("SQLite test goal", task_id)
     }
 

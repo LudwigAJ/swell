@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use swell_core::{
-    get_last_llm_model, get_total_llm_tokens, AgentId, CliCommand, DaemonEvent, DataResponse,
-    FailureClass, TaskId, TaskState,
+    get_last_llm_model, get_total_llm_tokens, CliCommand, DaemonEvent, DataResponse,
+    FailureClass, TaskState,
 };
 use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
@@ -679,10 +679,10 @@ mod tests {
     use crate::events::EventEmitter;
     use serial_test::serial;
     use std::sync::Arc;
-    use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
+    use swell_core::{Plan, PlanStep, RiskLevel, StepStatus, TaskId};
     use tokio::sync::Mutex;
 
-    fn create_test_plan(task_id: Uuid) -> Plan {
+    fn create_test_plan(task_id: TaskId) -> Plan {
         Plan {
             id: Uuid::new_v4(),
             task_id,

@@ -8,7 +8,7 @@
 //! This test module validates VAL-OBS-008: Task interruption (pause/resume/redirect)
 
 use std::sync::Arc;
-use swell_core::{AgentId, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
+use swell_core::{AgentId, AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskId, TaskState};
 use swell_orchestrator::{
     builder::OrchestratorBuilder, checkpoint_wiring::CheckpointingTaskStateMachine, Orchestrator,
 };
@@ -16,7 +16,7 @@ use swell_state::traits::in_memory::InMemoryCheckpointStore;
 use uuid::Uuid;
 
 /// Helper to create a test plan for a task.
-fn create_test_plan(task_id: Uuid) -> Plan {
+fn create_test_plan(task_id: TaskId) -> Plan {
     Plan {
         id: Uuid::new_v4(),
         task_id,

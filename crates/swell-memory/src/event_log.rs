@@ -13,6 +13,8 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use uuid::Uuid;
 
+use swell_core::ids::{AgentId, SessionId, TaskId};
+
 /// Current schema version for event log entries
 const CURRENT_SCHEMA_VERSION: &str = "1.0";
 
@@ -88,11 +90,11 @@ pub struct EventLogEntry {
     /// When the event occurred
     pub timestamp: DateTime<Utc>,
     /// Optional task ID this event belongs to
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Optional session ID
-    pub session_id: Option<Uuid>,
+    pub session_id: Option<SessionId>,
     /// Optional agent ID
-    pub agent_id: Option<Uuid>,
+    pub agent_id: Option<AgentId>,
     /// Event-specific payload (serialized as JSON)
     pub payload: serde_json::Value,
     /// Optional correlation ID for tracing
@@ -116,19 +118,19 @@ impl EventLogEntry {
     }
 
     /// Set the task ID
-    pub fn with_task_id(mut self, task_id: Uuid) -> Self {
+    pub fn with_task_id(mut self, task_id: TaskId) -> Self {
         self.task_id = Some(task_id);
         self
     }
 
     /// Set the session ID
-    pub fn with_session_id(mut self, session_id: Uuid) -> Self {
+    pub fn with_session_id(mut self, session_id: SessionId) -> Self {
         self.session_id = Some(session_id);
         self
     }
 
     /// Set the agent ID
-    pub fn with_agent_id(mut self, agent_id: Uuid) -> Self {
+    pub fn with_agent_id(mut self, agent_id: AgentId) -> Self {
         self.agent_id = Some(agent_id);
         self
     }
@@ -261,7 +263,7 @@ impl EventLog {
     /// Log a tool invocation event
     pub fn log_tool_invocation(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         tool_name: &str,
         arguments: serde_json::Value,
         success: bool,
@@ -288,8 +290,8 @@ impl EventLog {
     /// Log a decision event
     pub fn log_decision(
         &self,
-        task_id: Uuid,
-        agent_id: Uuid,
+        task_id: TaskId,
+        agent_id: AgentId,
         decision: &str,
         reasoning: &str,
         context: serde_json::Value,
@@ -313,7 +315,7 @@ impl EventLog {
     /// Log an error event
     pub fn log_error(
         &self,
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
         error_type: &str,
         message: &str,
         stack_trace: Option<String>,
@@ -339,7 +341,7 @@ impl EventLog {
     /// Log an outcome event
     pub fn log_outcome(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         success: bool,
         summary: &str,
         details: serde_json::Value,
@@ -362,7 +364,7 @@ impl EventLog {
     /// Log a state transition event
     pub fn log_state_transition(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         from_state: &str,
         to_state: &str,
         reason: Option<String>,
@@ -395,7 +397,7 @@ impl EventLog {
     }
 
     /// Replay events for a specific task
-    pub fn replay_for_task(&self, task_id: Uuid) -> io::Result<TaskEventIter> {
+    pub fn replay_for_task(&self, task_id: TaskId) -> io::Result<TaskEventIter> {
         Ok(TaskEventIter {
             inner: self.replay()?,
             task_id,
@@ -461,7 +463,7 @@ impl<R: io::Read> Iterator for EventLogReplayIter<R> {
 /// Iterator for replaying events filtered by task ID
 pub struct TaskEventIter {
     inner: EventLogReplayIter<fs::File>,
-    task_id: Uuid,
+    task_id: TaskId,
 }
 
 impl Iterator for TaskEventIter {
@@ -488,13 +490,13 @@ impl Iterator for TaskEventIter {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SessionState {
     /// Session identifier
-    pub session_id: Option<Uuid>,
+    pub session_id: Option<SessionId>,
     /// Current state of the session
     pub current_state: String,
     /// Task states tracked by task ID
-    pub task_states: HashMap<Uuid, String>,
+    pub task_states: HashMap<TaskId, String>,
     /// Tool invocations by task
-    pub tool_invocations: HashMap<Uuid, Vec<ToolInvocationSummary>>,
+    pub tool_invocations: HashMap<TaskId, Vec<ToolInvocationSummary>>,
     /// Decisions made by agent
     pub decisions: Vec<DecisionSummary>,
     /// All events by correlation ID for tracing
@@ -502,7 +504,7 @@ pub struct SessionState {
     /// LLM calls made
     pub llm_calls: Vec<LlmCallSummary>,
     /// Final outcomes by task
-    pub outcomes: HashMap<Uuid, OutcomeSummary>,
+    pub outcomes: HashMap<TaskId, OutcomeSummary>,
     /// Error count
     pub error_count: usize,
     /// Total events processed
@@ -652,7 +654,7 @@ pub struct ToolInvocationSummary {
 pub struct DecisionSummary {
     pub decision: String,
     pub timestamp: DateTime<Utc>,
-    pub agent_id: Option<Uuid>,
+    pub agent_id: Option<AgentId>,
 }
 
 /// Summary of an LLM call
@@ -770,7 +772,7 @@ impl ReplayableEventLog {
     }
 
     /// Replay events for a specific session
-    pub fn replay_for_session(&self, session_id: Uuid) -> io::Result<SessionState> {
+    pub fn replay_for_session(&self, session_id: SessionId) -> io::Result<SessionState> {
         let events = self.replay()?;
         let filtered = events.filter(|e| {
             e.as_ref()
@@ -781,7 +783,7 @@ impl ReplayableEventLog {
     }
 
     /// Replay events for a specific task
-    pub fn replay_for_task(&self, task_id: Uuid) -> io::Result<SessionState> {
+    pub fn replay_for_task(&self, task_id: TaskId) -> io::Result<SessionState> {
         let events = self.replay()?;
         let filtered = events.filter(|e| {
             e.as_ref()
@@ -924,7 +926,7 @@ mod episodic {
             EventType::ToolInvocation,
             serde_json::json!({"tool_name": "test", "success": true}),
         )
-        .with_task_id(Uuid::new_v4());
+        .with_task_id(TaskId::new());
 
         log.append(&entry).unwrap();
 
@@ -940,7 +942,7 @@ mod episodic {
     fn test_log_tool_invocation() {
         let (_temp_dir, log) = create_temp_log();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         log.log_tool_invocation(
             task_id,
             "file_read",
@@ -967,7 +969,7 @@ mod episodic {
     fn test_log_decision() {
         let (_temp_dir, log) = create_temp_log();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let agent_id = Uuid::new_v4();
 
         log.log_decision(
@@ -993,7 +995,7 @@ mod episodic {
     fn test_log_error() {
         let (_temp_dir, log) = create_temp_log();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         log.log_error(
             Some(task_id),
             "FileNotFound",
@@ -1015,7 +1017,7 @@ mod episodic {
     fn test_log_outcome() {
         let (_temp_dir, log) = create_temp_log();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         log.log_outcome(
             task_id,
             true,
@@ -1036,7 +1038,7 @@ mod episodic {
     fn test_log_state_transition() {
         let (_temp_dir, log) = create_temp_log();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         log.log_state_transition(
             task_id,
             "EXECUTING",
@@ -1100,9 +1102,9 @@ mod episodic {
             EventType::LlmCall,
             serde_json::json!({"model": "claude-3-5-sonnet"}),
         )
-        .with_task_id(Uuid::new_v4())
-        .with_session_id(Uuid::new_v4())
-        .with_agent_id(Uuid::new_v4())
+        .with_task_id(TaskId::new())
+        .with_session_id(Uuid::new_v4().into())
+        .with_agent_id(Uuid::new_v4().into())
         .with_correlation_id(Uuid::new_v4());
 
         assert!(entry.task_id.is_some());
@@ -1248,14 +1250,14 @@ mod episodic {
             EventType::ToolInvocation,
             serde_json::json!({"tool_name": "test_tool"}),
         )
-        .with_task_id(Uuid::new_v4());
+        .with_task_id(TaskId::new());
         log.write_event(&entry1).unwrap();
 
         let entry2 = EventLogEntry::new(
             EventType::Decision,
             serde_json::json!({"decision": "test_decision"}),
         )
-        .with_agent_id(Uuid::new_v4());
+        .with_agent_id(Uuid::new_v4().into());
         log.write_event(&entry2).unwrap();
 
         // Replay all events
@@ -1314,7 +1316,7 @@ mod episodic {
             EventType::StateTransition,
             serde_json::json!({"from_state": "CREATED", "to_state": "EXECUTING"}),
         )
-        .with_task_id(Uuid::new_v4());
+        .with_task_id(TaskId::new());
 
         state.process_event(&entry);
         assert_eq!(state.current_state, "EXECUTING");
@@ -1324,7 +1326,7 @@ mod episodic {
     #[test]
     fn test_session_state_process_tool_invocation() {
         let mut state = SessionState::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let entry = EventLogEntry::new(
             EventType::ToolInvocation,
@@ -1347,7 +1349,7 @@ mod episodic {
     #[test]
     fn test_session_state_process_decision() {
         let mut state = SessionState::new();
-        let agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
 
         let entry = EventLogEntry::new(
             EventType::Decision,
@@ -1390,7 +1392,7 @@ mod episodic {
     #[test]
     fn test_session_state_process_outcome() {
         let mut state = SessionState::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let entry = EventLogEntry::new(
             EventType::Outcome,
@@ -1428,7 +1430,7 @@ mod episodic {
     #[test]
     fn test_session_state_process_multiple_events() {
         let mut state = SessionState::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Process state transition
         let entry1 = EventLogEntry::new(
@@ -1471,7 +1473,7 @@ mod episodic {
                 EventType::StateTransition,
                 serde_json::json!({"to_state": "EXECUTING"}),
             )
-            .with_task_id(Uuid::new_v4()),
+            .with_task_id(TaskId::new()),
             EventLogEntry::new(
                 EventType::ToolInvocation,
                 serde_json::json!({"tool_name": "test", "success": true}),
@@ -1531,7 +1533,7 @@ mod episodic {
     fn test_replayable_event_log_replay_for_task() {
         let temp_dir = TempDir::new().unwrap();
         let base_path = temp_dir.path().join("event_log");
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let log = ReplayableEventLog::new(&base_path);
         log.init().unwrap();
@@ -1548,7 +1550,7 @@ mod episodic {
             EventType::ToolInvocation,
             serde_json::json!({"tool_name": "tool_b"}),
         )
-        .with_task_id(Uuid::new_v4()); // Different task
+        .with_task_id(TaskId::new()); // Different task
         log.write_event(&entry2).unwrap();
 
         // Replay for specific task

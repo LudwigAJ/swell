@@ -17,6 +17,7 @@
 //! ```
 
 use dashmap::DashMap;
+use swell_core::ids::TaskId;
 use std::sync::Arc;
 use swell_core::SwellError;
 use tokio::sync::broadcast;
@@ -34,7 +35,7 @@ pub struct Team {
     /// Human-readable team name (optional)
     pub name: String,
     /// All task IDs belonging to this team
-    task_ids: std::sync::RwLock<std::collections::HashSet<Uuid>>,
+    task_ids: std::sync::RwLock<std::collections::HashSet<TaskId>>,
     /// When the team was created
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -51,17 +52,17 @@ impl Team {
     }
 
     /// Add a task to this team
-    pub fn add_task(&self, task_id: Uuid) -> bool {
+    pub fn add_task(&self, task_id: TaskId) -> bool {
         self.task_ids.write().unwrap().insert(task_id)
     }
 
     /// Remove a task from this team
-    pub fn remove_task(&self, task_id: Uuid) -> bool {
+    pub fn remove_task(&self, task_id: TaskId) -> bool {
         self.task_ids.write().unwrap().remove(&task_id)
     }
 
     /// Get all task IDs in this team
-    pub fn task_ids(&self) -> Vec<Uuid> {
+    pub fn task_ids(&self) -> Vec<TaskId> {
         self.task_ids.read().unwrap().iter().copied().collect()
     }
 
@@ -71,7 +72,7 @@ impl Team {
     }
 
     /// Check if a task belongs to this team
-    pub fn contains_task(&self, task_id: Uuid) -> bool {
+    pub fn contains_task(&self, task_id: TaskId) -> bool {
         self.task_ids.read().unwrap().contains(&task_id)
     }
 }
@@ -85,9 +86,9 @@ pub struct TeamTaskFailed {
     /// The team ID this event pertains to
     pub team_id: Uuid,
     /// The task ID that failed
-    pub failed_task_id: Uuid,
+    pub failed_task_id: TaskId,
     /// The remaining task IDs in the team (excluding the failed one)
-    pub remaining_task_ids: Vec<Uuid>,
+    pub remaining_task_ids: Vec<TaskId>,
     /// Error message describing why the task failed
     pub error_message: String,
 }
@@ -100,7 +101,7 @@ pub struct TeamRegistry {
     /// Maps team ID -> Team
     teams: DashMap<Uuid, Arc<Team>>,
     /// Maps task ID -> team ID (for fast lookup of which team a task belongs to)
-    task_to_team: DashMap<Uuid, Uuid>,
+    task_to_team: DashMap<TaskId, Uuid>,
     /// Event sender for broadcasting team events
     event_sender: broadcast::Sender<TeamEvent>,
 }
@@ -115,9 +116,9 @@ pub enum TeamEvent {
     /// Emitted when a team is disbanded
     TeamDisbanded { team_id: Uuid, member_count: usize },
     /// Emitted when a task joins a team
-    TaskJoinedTeam { task_id: Uuid, team_id: Uuid },
+    TaskJoinedTeam { task_id: TaskId, team_id: Uuid },
     /// Emitted when a task leaves a team
-    TaskLeftTeam { task_id: Uuid, team_id: Uuid },
+    TaskLeftTeam { task_id: TaskId, team_id: Uuid },
 }
 
 impl TeamRegistry {
@@ -178,7 +179,7 @@ impl TeamRegistry {
     /// Add a task to a team.
     ///
     /// Returns an error if the team doesn't exist or the task is already in another team.
-    pub fn add_task_to_team(&self, task_id: Uuid, team_id: Uuid) -> Result<(), SwellError> {
+    pub fn add_task_to_team(&self, task_id: TaskId, team_id: Uuid) -> Result<(), SwellError> {
         // Check if task is already in another team
         if let Some(existing_team_id) = self.get_team_id_for_task(task_id) {
             if existing_team_id != team_id {
@@ -213,7 +214,7 @@ impl TeamRegistry {
     /// Remove a task from its current team.
     ///
     /// If the task is not in any team, this is a no-op.
-    pub fn remove_task_from_team(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub fn remove_task_from_team(&self, task_id: TaskId) -> Result<(), SwellError> {
         let Some(team_id) = self.get_team_id_for_task(task_id) else {
             // Task not in any team - no-op
             return Ok(());
@@ -235,7 +236,7 @@ impl TeamRegistry {
     }
 
     /// Get all task IDs in a team
-    pub fn get_team_tasks(&self, team_id: Uuid) -> Result<Vec<Uuid>, SwellError> {
+    pub fn get_team_tasks(&self, team_id: Uuid) -> Result<Vec<TaskId>, SwellError> {
         let team = self
             .teams
             .get(&team_id)
@@ -248,7 +249,7 @@ impl TeamRegistry {
     }
 
     /// Get the team ID for a task, if any
-    pub fn get_team_id_for_task(&self, task_id: Uuid) -> Option<Uuid> {
+    pub fn get_team_id_for_task(&self, task_id: TaskId) -> Option<Uuid> {
         self.task_to_team.get(&task_id).map(|r| *r.value())
     }
 
@@ -275,7 +276,7 @@ impl TeamRegistry {
     /// Returns the number of team members notified.
     pub fn notify_task_failed(
         &self,
-        failed_task_id: Uuid,
+        failed_task_id: TaskId,
         error_message: String,
     ) -> Result<usize, SwellError> {
         let Some(team_id) = self.get_team_id_for_task(failed_task_id) else {
@@ -291,7 +292,7 @@ impl TeamRegistry {
                 team_id
             )))?;
 
-        let remaining: Vec<Uuid> = team
+        let remaining: Vec<TaskId> = team
             .task_ids()
             .into_iter()
             .filter(|&id| id != failed_task_id)
@@ -400,7 +401,7 @@ mod tests {
     fn test_add_task_to_team() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.add_task_to_team(task_id, team_id).unwrap();
 
@@ -413,9 +414,9 @@ mod tests {
     fn test_add_multiple_tasks_to_team() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
-        let task3 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
+        let task3 = TaskId::new();
 
         registry.add_task_to_team(task1, team_id).unwrap();
         registry.add_task_to_team(task2, team_id).unwrap();
@@ -429,7 +430,7 @@ mod tests {
     fn test_add_same_task_to_team_twice_is_noop() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.add_task_to_team(task_id, team_id).unwrap();
         registry.add_task_to_team(task_id, team_id).unwrap(); // no-op
@@ -441,7 +442,7 @@ mod tests {
     #[test]
     fn test_add_task_to_nonexistent_team_returns_error() {
         let registry = TeamRegistry::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let fake_team_id = Uuid::new_v4();
 
         let result = registry.add_task_to_team(task_id, fake_team_id);
@@ -452,7 +453,7 @@ mod tests {
     fn test_add_task_to_team_emits_event() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut rx = registry.subscribe();
 
         registry.add_task_to_team(task_id, team_id).unwrap();
@@ -476,7 +477,7 @@ mod tests {
     fn test_remove_task_from_team() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.add_task_to_team(task_id, team_id).unwrap();
         registry.remove_task_from_team(task_id).unwrap();
@@ -489,7 +490,7 @@ mod tests {
     fn test_remove_nonexistent_task_is_noop() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let fake_task_id = Uuid::new_v4();
+        let fake_task_id = TaskId::new();
 
         // Should not error even though task doesn't exist
         registry.remove_task_from_team(fake_task_id).unwrap();
@@ -504,7 +505,7 @@ mod tests {
     fn test_disband_team() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.add_task_to_team(task_id, team_id).unwrap();
         let count = registry.disband_team(team_id).unwrap();
@@ -545,7 +546,7 @@ mod tests {
     fn test_get_team_id_for_task() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         assert!(registry.get_team_id_for_task(task_id).is_none());
 
@@ -559,7 +560,7 @@ mod tests {
         let registry = TeamRegistry::new();
         let team1_id = create_test_team(&registry);
         let team2_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.add_task_to_team(task_id, team1_id).unwrap();
         let result = registry.add_task_to_team(task_id, team2_id);
@@ -573,9 +574,9 @@ mod tests {
     fn test_notify_task_failed_emits_event_to_team_members() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
-        let task3 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
+        let task3 = TaskId::new();
 
         registry.add_task_to_team(task1, team_id).unwrap();
         registry.add_task_to_team(task2, team_id).unwrap();
@@ -607,7 +608,7 @@ mod tests {
     #[test]
     fn test_notify_task_failed_not_in_team_is_noop() {
         let registry = TeamRegistry::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let mut rx = registry.subscribe();
 
         // Task not in any team - should return 0 and not emit event
@@ -625,7 +626,7 @@ mod tests {
     fn test_notify_task_failed_last_member() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.add_task_to_team(task_id, team_id).unwrap();
 
@@ -663,8 +664,8 @@ mod tests {
         let team = registry.get_team(team_id).unwrap();
         assert_eq!(team.task_count(), 0);
 
-        registry.add_task_to_team(Uuid::new_v4(), team_id).unwrap();
-        registry.add_task_to_team(Uuid::new_v4(), team_id).unwrap();
+        registry.add_task_to_team(TaskId::new(), team_id).unwrap();
+        registry.add_task_to_team(TaskId::new(), team_id).unwrap();
 
         let team = registry.get_team(team_id).unwrap();
         assert_eq!(team.task_count(), 2);
@@ -676,9 +677,9 @@ mod tests {
         let team1_id = create_test_team(&registry);
         let team2_id = create_test_team(&registry);
 
-        registry.add_task_to_team(Uuid::new_v4(), team1_id).unwrap();
-        registry.add_task_to_team(Uuid::new_v4(), team1_id).unwrap();
-        registry.add_task_to_team(Uuid::new_v4(), team2_id).unwrap();
+        registry.add_task_to_team(TaskId::new(), team1_id).unwrap();
+        registry.add_task_to_team(TaskId::new(), team1_id).unwrap();
+        registry.add_task_to_team(TaskId::new(), team2_id).unwrap();
 
         assert_eq!(registry.total_task_count(), 3);
     }
@@ -689,7 +690,7 @@ mod tests {
     fn test_team_contains_task() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let team = registry.get_team(team_id).unwrap();
         assert!(!team.contains_task(task_id));
@@ -706,7 +707,7 @@ mod tests {
     async fn test_notify_task_failed_empty_team() {
         let registry = TeamRegistry::new();
         let team_id = create_test_team(&registry);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Add only task, then remove it - team is now empty
         registry.add_task_to_team(task_id, team_id).unwrap();

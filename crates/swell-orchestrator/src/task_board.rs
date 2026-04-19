@@ -32,7 +32,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use uuid::Uuid;
+
+use swell_core::ids::{AgentId, TaskId};
 
 /// Cost model for estimating token costs
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -66,11 +67,11 @@ impl CostModel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskBoardEntry {
     /// Task identifier
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Current state
     pub state: swell_core::TaskState,
     /// Assigned agent ID (if any)
-    pub assigned_agent: Option<Uuid>,
+    pub assigned_agent: Option<AgentId>,
     /// When task execution started (set when entering Executing state)
     pub started_at: Option<DateTime<Utc>>,
     /// When task completed (set when entering terminal state)
@@ -105,7 +106,7 @@ pub struct CostBreakdownEntry {
 
 impl TaskBoardEntry {
     /// Create a new entry for a task
-    pub fn new(task_id: Uuid, token_budget: u64) -> Self {
+    pub fn new(task_id: TaskId, token_budget: u64) -> Self {
         Self {
             task_id,
             state: swell_core::TaskState::Created,
@@ -169,7 +170,7 @@ impl TaskBoardEntry {
 #[derive(Debug, Clone)]
 pub struct TaskBoard {
     /// Entries indexed by task ID
-    entries: HashMap<Uuid, TaskBoardEntry>,
+    entries: HashMap<TaskId, TaskBoardEntry>,
     /// Cost model for calculating USD costs
     cost_model: CostModel,
 }
@@ -192,28 +193,28 @@ impl TaskBoard {
     }
 
     /// Add a new task to the board
-    pub fn add_task(&mut self, task_id: Uuid, token_budget: u64) {
+    pub fn add_task(&mut self, task_id: TaskId, token_budget: u64) {
         let entry = TaskBoardEntry::new(task_id, token_budget);
         self.entries.insert(task_id, entry);
     }
 
     /// Get an entry by task ID
-    pub fn get(&self, task_id: &Uuid) -> Option<&TaskBoardEntry> {
+    pub fn get(&self, task_id: &TaskId) -> Option<&TaskBoardEntry> {
         self.entries.get(task_id)
     }
 
     /// Get a mutable entry by task ID
-    pub fn get_mut(&mut self, task_id: &Uuid) -> Option<&mut TaskBoardEntry> {
+    pub fn get_mut(&mut self, task_id: &TaskId) -> Option<&mut TaskBoardEntry> {
         self.entries.get_mut(task_id)
     }
 
     /// Get all entries
-    pub fn entries(&self) -> &HashMap<Uuid, TaskBoardEntry> {
+    pub fn entries(&self) -> &HashMap<TaskId, TaskBoardEntry> {
         &self.entries
     }
 
     /// Update task state
-    pub fn update_state(&mut self, task_id: &Uuid, state: swell_core::TaskState) {
+    pub fn update_state(&mut self, task_id: &TaskId, state: swell_core::TaskState) {
         if let Some(entry) = self.entries.get_mut(task_id) {
             let now = Utc::now();
 
@@ -260,14 +261,14 @@ impl TaskBoard {
     }
 
     /// Assign an agent to a task
-    pub fn assign_agent(&mut self, task_id: &Uuid, agent_id: Uuid) {
+    pub fn assign_agent(&mut self, task_id: &TaskId, agent_id: AgentId) {
         if let Some(entry) = self.entries.get_mut(task_id) {
             entry.assigned_agent = Some(agent_id);
         }
     }
 
     /// Record token usage for a task
-    pub fn record_cost(&mut self, task_id: &Uuid, tokens: u64) {
+    pub fn record_cost(&mut self, task_id: &TaskId, tokens: u64) {
         if let Some(entry) = self.entries.get_mut(task_id) {
             entry.tokens_used += tokens;
 
@@ -282,7 +283,7 @@ impl TaskBoard {
     /// Record detailed cost breakdown per model
     pub fn record_model_cost(
         &mut self,
-        task_id: &Uuid,
+        task_id: &TaskId,
         model: &str,
         input_tokens: u64,
         output_tokens: u64,
@@ -304,12 +305,12 @@ impl TaskBoard {
     }
 
     /// Complete a task with final state
-    pub fn complete_task(&mut self, task_id: &Uuid, final_state: swell_core::TaskState) {
+    pub fn complete_task(&mut self, task_id: &TaskId, final_state: swell_core::TaskState) {
         self.update_state(task_id, final_state);
     }
 
     /// Remove a task from the board
-    pub fn remove_task(&mut self, task_id: &Uuid) -> Option<TaskBoardEntry> {
+    pub fn remove_task(&mut self, task_id: &TaskId) -> Option<TaskBoardEntry> {
         self.entries.remove(task_id)
     }
 
@@ -319,7 +320,7 @@ impl TaskBoard {
     }
 
     /// Get all tasks assigned to a specific agent
-    pub fn get_by_agent(&self, agent_id: &Uuid) -> Vec<&TaskBoardEntry> {
+    pub fn get_by_agent(&self, agent_id: &AgentId) -> Vec<&TaskBoardEntry> {
         self.entries
             .values()
             .filter(|e| e.assigned_agent == Some(*agent_id))
@@ -453,7 +454,7 @@ mod tests {
     #[test]
     fn test_task_board_add_task() {
         let mut board = TaskBoard::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         board.add_task(task_id, 1_000_000);
 
@@ -467,7 +468,7 @@ mod tests {
     #[test]
     fn test_task_board_update_state() {
         let mut board = TaskBoard::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         board.add_task(task_id, 1_000_000);
         board.update_state(&task_id, swell_core::TaskState::Executing);
@@ -480,8 +481,8 @@ mod tests {
     #[test]
     fn test_task_board_assign_agent() {
         let mut board = TaskBoard::new();
-        let task_id = Uuid::new_v4();
-        let agent_id = Uuid::new_v4();
+        let task_id = TaskId::new();
+        let agent_id = AgentId::new();
 
         board.add_task(task_id, 1_000_000);
         board.assign_agent(&task_id, agent_id);
@@ -493,7 +494,7 @@ mod tests {
     #[test]
     fn test_task_board_record_cost() {
         let mut board = TaskBoard::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         board.add_task(task_id, 1_000_000);
         board.record_cost(&task_id, 1000);
@@ -509,7 +510,7 @@ mod tests {
     #[test]
     fn test_task_board_record_model_cost() {
         let mut board = TaskBoard::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         board.add_task(task_id, 1_000_000);
         board.record_model_cost(&task_id, "claude-sonnet-4-20250514", 400, 600);
@@ -531,7 +532,7 @@ mod tests {
     #[test]
     fn test_task_board_complete_task() {
         let mut board = TaskBoard::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         board.add_task(task_id, 1_000_000);
         board.update_state(&task_id, swell_core::TaskState::Executing);
@@ -545,9 +546,9 @@ mod tests {
     #[test]
     fn test_task_board_get_by_state() {
         let mut board = TaskBoard::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
-        let task3 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
+        let task3 = TaskId::new();
 
         board.add_task(task1, 1_000_000);
         board.add_task(task2, 1_000_000);
@@ -567,10 +568,10 @@ mod tests {
     #[test]
     fn test_task_board_get_by_agent() {
         let mut board = TaskBoard::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
-        let agent1 = Uuid::new_v4();
-        let agent2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
+        let agent1 = AgentId::new();
+        let agent2 = AgentId::new();
 
         board.add_task(task1, 1_000_000);
         board.add_task(task2, 1_000_000);
@@ -587,8 +588,8 @@ mod tests {
     #[test]
     fn test_task_board_stats() {
         let mut board = TaskBoard::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         board.add_task(task1, 1_000_000);
         board.add_task(task2, 1_000_000);
@@ -607,9 +608,9 @@ mod tests {
     #[test]
     fn test_task_board_top_by_cost() {
         let mut board = TaskBoard::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
-        let task3 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
+        let task3 = TaskId::new();
 
         board.add_task(task1, 1_000_000);
         board.add_task(task2, 1_000_000);
@@ -629,8 +630,8 @@ mod tests {
     #[test]
     fn test_task_board_top_by_time() {
         let mut board = TaskBoard::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         board.add_task(task1, 1_000_000);
         board.add_task(task2, 1_000_000);
@@ -654,8 +655,8 @@ mod tests {
     #[test]
     fn test_task_board_over_budget() {
         let mut board = TaskBoard::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         board.add_task(task1, 100_000); // 100k budget
         board.add_task(task2, 1_000_000); // 1M budget
@@ -695,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_task_board_entry_is_terminal() {
-        let entry = TaskBoardEntry::new(Uuid::new_v4(), 1_000_000);
+        let entry = TaskBoardEntry::new(TaskId::new(), 1_000_000);
         assert!(!entry.is_terminal());
 
         let mut entry = entry;
@@ -708,7 +709,7 @@ mod tests {
 
     #[test]
     fn test_task_board_entry_is_active() {
-        let entry = TaskBoardEntry::new(Uuid::new_v4(), 1_000_000);
+        let entry = TaskBoardEntry::new(TaskId::new(), 1_000_000);
         assert!(!entry.is_active());
 
         let mut entry = entry;
@@ -722,7 +723,7 @@ mod tests {
     #[test]
     fn test_task_board_remove_task() {
         let mut board = TaskBoard::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         board.add_task(task_id, 1_000_000);
         assert!(board.get(&task_id).is_some());
@@ -735,7 +736,7 @@ mod tests {
     #[test]
     fn test_shared_task_board() {
         let board = create_task_board();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Write to board
         {

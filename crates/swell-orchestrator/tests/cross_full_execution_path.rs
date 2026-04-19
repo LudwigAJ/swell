@@ -7,14 +7,14 @@
 //! This validates VAL-CROSS-001: Full execution path end-to-end.
 
 use std::sync::Arc;
-use swell_core::{AutonomyLevel, LlmBackend, Plan, PlanStep, RiskLevel, StepStatus};
+use swell_core::{AutonomyLevel, LlmBackend, Plan, PlanStep, RiskLevel, StepStatus, TaskId};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, Orchestrator};
 use swell_tools::ToolRegistry;
 use uuid::Uuid;
 
 /// Helper to create a simple test plan.
-fn create_test_plan(task_id: Uuid) -> Plan {
+fn create_test_plan(task_id: TaskId) -> Plan {
     Plan {
         id: Uuid::new_v4(),
         task_id,

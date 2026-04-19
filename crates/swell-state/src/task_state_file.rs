@@ -10,8 +10,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use swell_core::ids::TaskId;
 use swell_core::{SwellError, TaskState};
-use uuid::Uuid;
 
 /// Represents the task state file content written on each state transition.
 ///
@@ -20,7 +20,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskStateFile {
     /// The task ID this state belongs to
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// The current state after transition
     pub state: TaskState,
     /// ISO 8601 timestamp of when the transition occurred
@@ -55,7 +55,7 @@ pub enum TaskStateFileError {
 /// * `iteration_count` - Current iteration count for the task
 pub async fn write_task_state(
     swell_dir: &Path,
-    task_id: Uuid,
+    task_id: TaskId,
     state: TaskState,
     iteration_count: u32,
 ) -> Result<(), TaskStateFileError> {
@@ -102,7 +102,7 @@ pub async fn read_task_state(
 /// This is useful for contexts where async I/O is not available.
 pub fn write_task_state_sync(
     swell_dir: &Path,
-    task_id: Uuid,
+    task_id: TaskId,
     state: TaskState,
     iteration_count: u32,
 ) -> Result<(), TaskStateFileError> {
@@ -150,7 +150,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let swell_dir = temp_dir.path();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let state = TaskState::Executing;
         let iteration_count = 5u32;
 
@@ -185,7 +185,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let swell_dir = temp_dir.path();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let state = TaskState::Executing;
 
         // Write state
@@ -213,7 +213,7 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let swell_dir = temp_dir.path().to_path_buf();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let state = TaskState::Executing;
 
         // Rapid sequential writes
@@ -233,7 +233,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let swell_dir = temp_dir.path();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let state = TaskState::Validating;
         let iteration_count = 3u32;
 
@@ -253,7 +253,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let swell_dir = temp_dir.path();
 
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let state = TaskState::Accepted;
 
         write_task_state_sync(swell_dir, task_id, state, 1).unwrap();
@@ -272,7 +272,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_task_state_file_serde() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let original = TaskStateFile {
             task_id,
             state: TaskState::Enriched,

@@ -865,9 +865,9 @@ mod tests {
         let mut graph = TaskGraph::new();
 
         // Create a 20-task sub-graph
-        let mut task_ids: Vec<Uuid> = Vec::new();
+        let mut task_ids: Vec<TaskId> = Vec::new();
         for i in 0..20 {
-            let id = Uuid::new_v4();
+            let id = TaskId::new();
             task_ids.push(id);
             if i > 0 {
                 graph.add_task(id, vec![task_ids[i - 1]]).unwrap();
@@ -880,9 +880,9 @@ mod tests {
         assert_eq!(graph.largest_subgraph_size(), 20);
 
         // Add a 10-task sub-graph (disconnected)
-        let mut small_task_ids: Vec<Uuid> = Vec::new();
+        let mut small_task_ids: Vec<TaskId> = Vec::new();
         for i in 0..10 {
-            let id = Uuid::new_v4();
+            let id = TaskId::new();
             small_task_ids.push(id);
             if i > 0 {
                 graph.add_task(id, vec![small_task_ids[i - 1]]).unwrap();

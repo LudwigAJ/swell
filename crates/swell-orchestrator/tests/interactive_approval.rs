@@ -6,12 +6,12 @@
 //!
 //! This test module validates VAL-OBS-005: Interactive approval workflow
 
-use swell_core::{AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskState};
+use swell_core::{AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskId, TaskState};
 use swell_orchestrator::{builder::OrchestratorBuilder, Orchestrator};
 use uuid::Uuid;
 
 /// Helper to create a test plan for a task.
-fn create_test_plan(task_id: Uuid) -> Plan {
+fn create_test_plan(task_id: TaskId) -> Plan {
     Plan {
         id: Uuid::new_v4(),
         task_id,

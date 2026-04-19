@@ -40,6 +40,7 @@ use std::sync::{LazyLock, Mutex};
 use uuid::Uuid;
 
 // Re-export pricing from opentelemetry module
+use crate::ids::TaskId;
 use crate::opentelemetry::pricing;
 
 /// Outcome of a task for cost-per-outcome analysis
@@ -93,7 +94,7 @@ pub struct CostRecord {
     /// Unique identifier for this cost record
     pub id: Uuid,
     /// Task ID this cost belongs to
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Model used for this call
     pub model: String,
     /// Number of input tokens
@@ -108,7 +109,7 @@ pub struct CostRecord {
 
 impl CostRecord {
     /// Create a new cost record
-    pub fn new(task_id: Uuid, model: String, input_tokens: u64, output_tokens: u64) -> Self {
+    pub fn new(task_id: TaskId, model: String, input_tokens: u64, output_tokens: u64) -> Self {
         let pricing = pricing::for_model(&model);
         let cost_usd = pricing.calculate_cost(input_tokens, output_tokens);
 
@@ -341,7 +342,7 @@ pub struct BudgetAlert {
     /// Alert type
     pub alert_type: BudgetAlertType,
     /// Task ID if applicable
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Current tokens
     pub current_tokens: u64,
     /// Threshold tokens
@@ -355,7 +356,7 @@ pub struct BudgetAlert {
 impl BudgetAlert {
     /// Create a warning alert
     pub fn warning(
-        task_id: Uuid,
+        task_id: TaskId,
         current_tokens: u64,
         threshold_tokens: u64,
         current_cost_usd: f64,
@@ -372,7 +373,7 @@ impl BudgetAlert {
 
     /// Create a hard stop alert
     pub fn hard_stop(
-        task_id: Uuid,
+        task_id: TaskId,
         current_tokens: u64,
         threshold_tokens: u64,
         current_cost_usd: f64,
@@ -422,17 +423,17 @@ pub struct CostTracker {
     /// Budget configuration
     budget: CostBudget,
     /// Per-task cost records
-    task_costs: HashMap<Uuid, Vec<CostRecord>>,
+    task_costs: HashMap<TaskId, Vec<CostRecord>>,
     /// Run-level cost records (for tasks without a task_id or for run aggregation)
     run_costs: Vec<CostRecord>,
     /// Run-level summary (aggregated)
     run_summary: CostSummary,
     /// Active task ID (for convenience)
-    active_task_id: Option<Uuid>,
+    active_task_id: Option<TaskId>,
     /// Per-task summaries (for quick access)
-    task_summaries: HashMap<Uuid, CostSummary>,
+    task_summaries: HashMap<TaskId, CostSummary>,
     /// Per-task outcomes for cost-per-outcome analysis
-    task_outcomes: HashMap<Uuid, TaskOutcome>,
+    task_outcomes: HashMap<TaskId, TaskOutcome>,
     /// Budget alerts triggered
     budget_alerts: Vec<BudgetAlert>,
     /// Last alert time for cooldown (in milliseconds since Unix epoch)
@@ -469,7 +470,7 @@ impl CostTracker {
     }
 
     /// Set the active task ID for recording costs
-    pub fn set_active_task(&mut self, task_id: Uuid) {
+    pub fn set_active_task(&mut self, task_id: TaskId) {
         self.active_task_id = Some(task_id);
     }
 
@@ -526,7 +527,7 @@ impl CostTracker {
     /// Record cost for a specific task (alternative to set_active_task)
     pub fn record_task_cost(
         &mut self,
-        task_id: Uuid,
+        task_id: TaskId,
         input_tokens: u64,
         output_tokens: u64,
         model: &str,
@@ -555,7 +556,7 @@ impl CostTracker {
     }
 
     /// Check and record budget alerts
-    fn check_and_record_budget_alerts(&mut self, task_id: Uuid, _record: &CostRecord) {
+    fn check_and_record_budget_alerts(&mut self, task_id: TaskId, _record: &CostRecord) {
         // Only check if cooldown has passed
         if !self.is_alert_cooldown_passed() {
             return;
@@ -617,7 +618,7 @@ impl CostTracker {
     }
 
     /// Get cost records for a task
-    pub fn get_task_records(&self, task_id: Uuid) -> Vec<&CostRecord> {
+    pub fn get_task_records(&self, task_id: TaskId) -> Vec<&CostRecord> {
         self.task_costs
             .get(&task_id)
             .map(|r| r.iter().collect())
@@ -625,13 +626,13 @@ impl CostTracker {
     }
 
     /// Get summary for a task
-    pub fn get_task_summary(&self, task_id: Uuid) -> Option<&CostSummary> {
+    pub fn get_task_summary(&self, task_id: TaskId) -> Option<&CostSummary> {
         self.task_summaries.get(&task_id)
     }
 
     /// Get task summary including outcome for cost-per-outcome analysis
     /// Returns both the cost data and the final task outcome
-    pub fn get_task_summary_with_outcome(&self, task_id: Uuid) -> Option<TaskCostSummary> {
+    pub fn get_task_summary_with_outcome(&self, task_id: TaskId) -> Option<TaskCostSummary> {
         let summary = self.task_summaries.get(&task_id)?;
         let outcome = self
             .task_outcomes
@@ -650,12 +651,12 @@ impl CostTracker {
     }
 
     /// Set the outcome for a task (called when task completes)
-    pub fn set_task_outcome(&mut self, task_id: Uuid, outcome: TaskOutcome) {
+    pub fn set_task_outcome(&mut self, task_id: TaskId, outcome: TaskOutcome) {
         self.task_outcomes.insert(task_id, outcome);
     }
 
     /// Get the outcome for a task
-    pub fn get_task_outcome(&self, task_id: Uuid) -> Option<TaskOutcome> {
+    pub fn get_task_outcome(&self, task_id: TaskId) -> Option<TaskOutcome> {
         self.task_outcomes.get(&task_id).copied()
     }
 
@@ -706,7 +707,7 @@ impl CostTracker {
     }
 
     /// Reset task costs (keep run costs)
-    pub fn reset_task_costs(&mut self, task_id: Uuid) {
+    pub fn reset_task_costs(&mut self, task_id: TaskId) {
         self.task_costs.remove(&task_id);
         self.task_summaries.remove(&task_id);
         self.task_outcomes.remove(&task_id);

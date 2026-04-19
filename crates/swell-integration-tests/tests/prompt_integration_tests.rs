@@ -8,6 +8,7 @@
 //! - VAL-PROMPT-008: ValidationOrchestrator provides single validate_task_completion entry point
 
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use swell_core::{Plan, PlanStep, RiskLevel, StepStatus};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_validation::orchestrator::{
@@ -16,7 +17,7 @@ use swell_validation::orchestrator::{
 use uuid::Uuid;
 
 /// Helper to create a Plan for testing
-fn create_test_plan(task_id: Uuid) -> Plan {
+fn create_test_plan(task_id: TaskId) -> Plan {
     Plan {
         id: Uuid::new_v4(),
         task_id,
@@ -35,7 +36,7 @@ fn create_test_plan(task_id: Uuid) -> Plan {
 }
 
 /// Helper to create a TaskCompletionInput for testing
-fn create_test_input(task_id: Uuid, workspace_path: String) -> TaskCompletionInput {
+fn create_test_input(task_id: TaskId, workspace_path: String) -> TaskCompletionInput {
     TaskCompletionInput {
         task_id,
         workspace_path,
@@ -89,7 +90,7 @@ async fn test_validate_task_completion_success_path() {
     let _mock_llm = ScenarioMockLlm::new("test-model", scenario);
 
     // Create test input
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let workspace_path = std::env::current_dir()
         .unwrap()
         .to_string_lossy()
@@ -167,7 +168,7 @@ async fn test_validate_task_completion_failure_path() {
     let _mock_llm = ScenarioMockLlm::new("test-model", scenario);
 
     // Create test input with execution that indicates errors
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let workspace_path = std::env::current_dir()
         .unwrap()
         .to_string_lossy()
@@ -231,7 +232,7 @@ async fn test_validation_orchestrator_with_all_gates() {
     let orchestrator = ValidationOrchestrator::with_all_gates();
 
     // Run validation
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let workspace_path = std::env::current_dir()
         .unwrap()
         .to_string_lossy()
@@ -253,7 +254,7 @@ async fn test_validation_orchestrator_with_fast_gates() {
     let orchestrator = ValidationOrchestrator::with_fast_gates();
 
     // Run validation
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let workspace_path = std::env::current_dir()
         .unwrap()
         .to_string_lossy()
@@ -379,7 +380,7 @@ async fn test_scenario_mock_llm_with_validation() {
 async fn test_validate_task_completion_multiple_files() {
     let orchestrator = ValidationOrchestrator::new();
 
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let workspace_path = std::env::current_dir()
         .unwrap()
         .to_string_lossy()
@@ -451,7 +452,7 @@ async fn test_validate_task_completion_multiple_files() {
 async fn test_validate_task_completion_max_iterations() {
     let orchestrator = ValidationOrchestrator::new();
 
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let workspace_path = std::env::current_dir()
         .unwrap()
         .to_string_lossy()
@@ -508,7 +509,7 @@ async fn test_validation_orchestrator_gate_configuration() {
     orchestrator.set_run_security(true);
 
     // Verify the configuration was applied
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let workspace_path = std::env::current_dir()
         .unwrap()
         .to_string_lossy()
@@ -525,7 +526,7 @@ async fn test_validation_orchestrator_gate_configuration() {
     orchestrator2.set_run_security(true);
     orchestrator2.set_run_ai_review(false);
 
-    let input2 = create_test_input(Uuid::new_v4(), workspace_path.clone());
+    let input2 = create_test_input(TaskId::new(), workspace_path.clone());
     let result2 = orchestrator2.validate_task_completion(input2).await;
     assert!(result2.is_ok());
 }
@@ -593,7 +594,7 @@ async fn test_full_pipeline_integration() {
     let orchestrator = ValidationOrchestrator::with_fast_gates();
 
     // Create test input
-    let task_id = Uuid::new_v4();
+    let task_id = TaskId::new();
     let workspace_path = std::env::current_dir()
         .unwrap()
         .to_string_lossy()
@@ -673,7 +674,7 @@ async fn test_full_pipeline_integration() {
 #[tokio::test]
 async fn test_task_completion_input_serialization() {
     let input = TaskCompletionInput {
-        task_id: Uuid::new_v4(),
+        task_id: TaskId::new(),
         workspace_path: "/tmp/workspace".to_string(),
         changed_files: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
         plan: None,

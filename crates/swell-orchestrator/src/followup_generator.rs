@@ -93,7 +93,7 @@ impl FollowUpProposal {
             description: self.description,
             state: TaskState::Created,
             source: TaskSource::FailureDerived {
-                original_task_id: self.parent_task_id.as_uuid(),
+                original_task_id: self.parent_task_id,
                 failure_signal: format!("{:?}", self.opportunity_type),
             },
             created_at: chrono::Utc::now(),

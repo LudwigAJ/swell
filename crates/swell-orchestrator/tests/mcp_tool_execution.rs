@@ -13,7 +13,7 @@ use serde_json::json;
 use std::sync::{Arc, Mutex};
 use swell_core::{
     traits::{Agent, Tool},
-    AgentContext, RiskLevel, SwellError, ToolOutput, ToolResultContent,
+    AgentContext, RiskLevel, SwellError, TaskId, ToolOutput, ToolResultContent,
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::agents::GeneratorAgent;
@@ -291,7 +291,7 @@ async fn test_generator_agent_executes_tool_via_react_loop() {
     // Create task with plan
     let plan = swell_core::Plan {
         id: Uuid::new_v4(),
-        task_id: Uuid::new_v4(),
+        task_id: TaskId::new(),
         steps: vec![swell_core::PlanStep {
             id: Uuid::new_v4(),
             description: "Test tool invocation".to_string(),
@@ -358,7 +358,7 @@ async fn test_generator_agent_handles_missing_tool() {
 
     let plan = swell_core::Plan {
         id: Uuid::new_v4(),
-        task_id: Uuid::new_v4(),
+        task_id: TaskId::new(),
         steps: vec![swell_core::PlanStep {
             id: Uuid::new_v4(),
             description: "Test missing tool handling".to_string(),
@@ -440,7 +440,7 @@ async fn test_generator_agent_multiple_tool_calls() {
 
     let plan = swell_core::Plan {
         id: Uuid::new_v4(),
-        task_id: Uuid::new_v4(),
+        task_id: TaskId::new(),
         steps: vec![swell_core::PlanStep {
             id: Uuid::new_v4(),
             description: "Multi-step tool execution".to_string(),
@@ -505,7 +505,7 @@ async fn test_generator_agent_heuristic_fallback() {
 
     let plan = swell_core::Plan {
         id: Uuid::new_v4(),
-        task_id: Uuid::new_v4(),
+        task_id: TaskId::new(),
         steps: vec![swell_core::PlanStep {
             id: Uuid::new_v4(),
             description: "Test heuristic behavior".to_string(),

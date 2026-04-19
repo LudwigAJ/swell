@@ -36,10 +36,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
-use uuid::Uuid;
 
 // Re-export types for convenience
 use crate::alerts::{Alert, AlertCategory, AlertSeverity, AlertType};
+
+use swell_core::ids::TaskId;
 
 /// Configuration for soft limits
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -144,7 +145,7 @@ pub struct SoftLimitWarning {
     /// Actionable guidance
     pub action: String,
     /// Associated task ID if applicable
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// When the warning was generated
     pub generated_at: DateTime<Utc>,
 }
@@ -172,7 +173,7 @@ impl SoftLimitWarning {
     }
 
     /// Set the associated task ID
-    pub fn with_task_id(mut self, task_id: Uuid) -> Self {
+    pub fn with_task_id(mut self, task_id: TaskId) -> Self {
         self.task_id = Some(task_id);
         self
     }
@@ -196,7 +197,7 @@ impl SoftLimitWarning {
             self.current_value,
             self.threshold_value,
         )
-        .with_task_id(self.task_id.unwrap_or(Uuid::nil()))
+        .with_task_id(self.task_id.unwrap_or_else(TaskId::nil))
     }
 }
 
@@ -294,7 +295,7 @@ impl Default for ProgressTracker {
 pub struct SoftLimits {
     config: SoftLimitsConfig,
     /// Progress trackers per task
-    progress_trackers: HashMap<Uuid, ProgressTracker>,
+    progress_trackers: HashMap<TaskId, ProgressTracker>,
     /// Last warning time per limit type (for cooldown)
     last_warning_time: HashMap<SoftLimitType, DateTime<Utc>>,
     /// Global iteration count
@@ -332,13 +333,13 @@ impl SoftLimits {
     // ========================================================================
 
     /// Initialize progress tracking for a task
-    pub fn init_task_tracking(&mut self, task_id: Uuid) {
+    pub fn init_task_tracking(&mut self, task_id: TaskId) {
         self.progress_trackers
             .insert(task_id, ProgressTracker::new());
     }
 
     /// Record an iteration for a task
-    pub fn record_iteration(&mut self, task_id: Uuid) {
+    pub fn record_iteration(&mut self, task_id: TaskId) {
         self.global_iteration += 1;
         if let Some(tracker) = self.progress_trackers.get_mut(&task_id) {
             tracker.record_iteration();
@@ -346,7 +347,7 @@ impl SoftLimits {
     }
 
     /// Record progress for a task (successful step, file change, etc.)
-    pub fn record_progress(&mut self, task_id: Uuid) {
+    pub fn record_progress(&mut self, task_id: TaskId) {
         if let Some(tracker) = self.progress_trackers.get_mut(&task_id) {
             tracker.record_progress();
             info!(
@@ -358,7 +359,7 @@ impl SoftLimits {
     }
 
     /// Check if no-progress is detected for a task
-    pub fn is_no_progress_detected(&mut self, task_id: Uuid) -> bool {
+    pub fn is_no_progress_detected(&mut self, task_id: TaskId) -> bool {
         if let Some(tracker) = self.progress_trackers.get_mut(&task_id) {
             tracker.check_no_progress(&self.config)
         } else {
@@ -367,14 +368,14 @@ impl SoftLimits {
     }
 
     /// Get no-progress severity for a task
-    pub fn get_no_progress_severity(&self, task_id: Uuid) -> Option<AlertSeverity> {
+    pub fn get_no_progress_severity(&self, task_id: TaskId) -> Option<AlertSeverity> {
         self.progress_trackers
             .get(&task_id)
             .and_then(|t| t.no_progress_severity)
     }
 
     /// Get iterations without progress for a task
-    pub fn get_iterations_without_progress(&self, task_id: Uuid) -> u32 {
+    pub fn get_iterations_without_progress(&self, task_id: TaskId) -> u32 {
         self.progress_trackers
             .get(&task_id)
             .map(|t| t.iterations_without_progress())
@@ -382,7 +383,7 @@ impl SoftLimits {
     }
 
     /// Remove task tracking
-    pub fn remove_task_tracking(&mut self, task_id: Uuid) {
+    pub fn remove_task_tracking(&mut self, task_id: TaskId) {
         self.progress_trackers.remove(&task_id);
     }
 
@@ -456,7 +457,7 @@ impl SoftLimits {
     /// Check time warning
     pub fn check_time_warning(
         &mut self,
-        task_id: Uuid,
+        task_id: TaskId,
         elapsed_secs: u64,
         hard_limit_secs: u64,
     ) -> Option<SoftLimitWarning> {
@@ -590,7 +591,7 @@ impl SoftLimits {
     }
 
     /// Check no-progress warning for a task
-    pub fn check_no_progress_warning(&mut self, task_id: Uuid) -> Option<SoftLimitWarning> {
+    pub fn check_no_progress_warning(&mut self, task_id: TaskId) -> Option<SoftLimitWarning> {
         if !self.config.no_progress_detection_enabled {
             return None;
         }
@@ -632,7 +633,7 @@ impl SoftLimits {
     }
 
     /// Get all active warnings for a task
-    pub fn get_task_warnings(&mut self, task_id: Uuid) -> Vec<SoftLimitWarning> {
+    pub fn get_task_warnings(&mut self, task_id: TaskId) -> Vec<SoftLimitWarning> {
         let mut warnings = Vec::new();
 
         if let Some(warning) = self.check_no_progress_warning(task_id) {
@@ -814,7 +815,7 @@ mod tests {
     #[test]
     fn test_init_task_tracking() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         soft_limits.init_task_tracking(task_id);
         assert_eq!(soft_limits.tracked_task_count(), 1);
@@ -823,7 +824,7 @@ mod tests {
     #[test]
     fn test_record_iteration() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         soft_limits.init_task_tracking(task_id);
         soft_limits.record_iteration(task_id);
@@ -834,7 +835,7 @@ mod tests {
     #[test]
     fn test_record_progress() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         soft_limits.init_task_tracking(task_id);
         soft_limits.record_iteration(task_id);
@@ -847,7 +848,7 @@ mod tests {
     #[test]
     fn test_remove_task_tracking() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         soft_limits.init_task_tracking(task_id);
         assert_eq!(soft_limits.tracked_task_count(), 1);
@@ -906,7 +907,7 @@ mod tests {
     #[test]
     fn test_time_warning() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // 250 seconds with 300 second hard limit = 83% (above 80% threshold)
         let warning = soft_limits.check_time_warning(task_id, 250, 300);
@@ -920,7 +921,7 @@ mod tests {
     #[test]
     fn test_time_warning_below_threshold() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // 200 seconds with 300 second hard limit = 67% (below 80% threshold)
         let warning = soft_limits.check_time_warning(task_id, 200, 300);
@@ -972,7 +973,7 @@ mod tests {
     #[test]
     fn test_no_progress_warning() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         soft_limits.init_task_tracking(task_id);
 
@@ -992,7 +993,7 @@ mod tests {
     #[test]
     fn test_no_progress_warning_with_progress_resets() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         soft_limits.init_task_tracking(task_id);
 
@@ -1033,7 +1034,7 @@ mod tests {
 
     #[test]
     fn test_soft_limit_warning_with_task_id() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let warning = SoftLimitWarning::new(
             SoftLimitType::NoProgress,
             AlertSeverity::Critical,
@@ -1052,7 +1053,7 @@ mod tests {
     #[tokio::test]
     async fn test_shared_soft_limits() {
         let soft_limits = create_soft_limits();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Initialize
         {
@@ -1129,7 +1130,7 @@ mod tests {
         config.no_progress_detection_enabled = false;
 
         let mut soft_limits = SoftLimits::with_config(config);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         soft_limits.init_task_tracking(task_id);
         for _ in 0..10 {
@@ -1145,7 +1146,7 @@ mod tests {
     #[test]
     fn test_full_warning_lifecycle() {
         let mut soft_limits = SoftLimits::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Initialize
         soft_limits.init_task_tracking(task_id);

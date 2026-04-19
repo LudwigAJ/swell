@@ -12,7 +12,6 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{watch, Mutex};
 use tokio::time::{interval, timeout, Duration};
 use tracing::{error, info, warn};
-use uuid::Uuid;
 
 use crate::commands::handle_command;
 use crate::events::EventEmitter;

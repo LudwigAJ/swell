@@ -38,9 +38,9 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use swell_core::ids::TaskId;
 use std::collections::HashMap;
 use tracing::{debug, info};
-use uuid::Uuid;
 
 /// Maximum lines per PR (default: 200)
 pub const DEFAULT_MAX_PR_LINES: u32 = 200;
@@ -52,7 +52,7 @@ pub const MIN_PR_LINES: u32 = 20;
 #[derive(Debug)]
 pub struct PrStackManager {
     /// Active PR stacks indexed by task_id
-    stacks: HashMap<Uuid, PrStack>,
+    stacks: HashMap<TaskId, PrStack>,
     /// Maximum lines per PR
     max_pr_lines: u32,
     /// Minimum lines to consider worth a PR
@@ -79,7 +79,7 @@ impl PrStackManager {
     }
 
     /// Create a new PR stack for a task
-    pub fn create_stack(&mut self, task_id: Uuid, base_branch: String) -> PrStack {
+    pub fn create_stack(&mut self, task_id: TaskId, base_branch: String) -> PrStack {
         let stack = PrStack::new(task_id, base_branch.clone());
         info!(task_id = %task_id, base_branch = %base_branch, "Created new PR stack");
         self.stacks.insert(task_id, stack);
@@ -87,22 +87,22 @@ impl PrStackManager {
     }
 
     /// Get an existing stack for a task
-    pub fn get_stack(&self, task_id: &Uuid) -> Option<&PrStack> {
+    pub fn get_stack(&self, task_id: &TaskId) -> Option<&PrStack> {
         self.stacks.get(task_id)
     }
 
     /// Get a mutable stack for a task
-    pub fn get_stack_mut(&mut self, task_id: &Uuid) -> Option<&mut PrStack> {
+    pub fn get_stack_mut(&mut self, task_id: &TaskId) -> Option<&mut PrStack> {
         self.stacks.get_mut(task_id)
     }
 
     /// Remove a stack when task is complete
-    pub fn remove_stack(&mut self, task_id: &Uuid) -> Option<PrStack> {
+    pub fn remove_stack(&mut self, task_id: &TaskId) -> Option<PrStack> {
         self.stacks.remove(task_id)
     }
 
     /// Add a PR to an existing stack
-    pub fn add_pr(&mut self, task_id: Uuid, pr: Pr) -> Result<(), StackedPrError> {
+    pub fn add_pr(&mut self, task_id: TaskId, pr: Pr) -> Result<(), StackedPrError> {
         let stack = self
             .stacks
             .get_mut(&task_id)
@@ -116,7 +116,7 @@ impl PrStackManager {
     /// Calculate if a set of changes needs to be split into multiple PRs
     pub fn calculate_splits(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         changes: &[PrFileChange],
     ) -> Result<Vec<Pr>, StackedPrError> {
         let stack = self
@@ -145,7 +145,7 @@ impl PrStackManager {
     /// Split changes into multiple PRs respecting size limits
     fn split_changes_into_prs(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         changes: &[PrFileChange],
         base_branch: &str,
     ) -> Vec<Pr> {
@@ -235,7 +235,7 @@ impl PrStackManager {
     fn split_large_file_change(
         &self,
         change: &PrFileChange,
-        task_id: Uuid,
+        task_id: TaskId,
         start_pr_number: u32,
         base_branch: &str,
     ) -> Vec<Pr> {
@@ -314,7 +314,7 @@ impl PrStackManager {
 
     /// Check if adding a PR would create a cycle in dependencies
     /// Takes a PR ID string to check against existing PRs
-    pub fn would_create_cycle(&self, task_id: &Uuid, new_pr_id: &str) -> bool {
+    pub fn would_create_cycle(&self, task_id: &TaskId, new_pr_id: &str) -> bool {
         // Simple cycle check: ensure no PR in stack depends on new_pr_id already
         if let Some(stack) = self.stacks.get(task_id) {
             stack.prs.iter().any(|pr| pr.id == new_pr_id)
@@ -324,7 +324,7 @@ impl PrStackManager {
     }
 
     /// Get PRs that depend on a given PR
-    pub fn get_dependent_prs(&self, task_id: &Uuid, pr_id: &str) -> Vec<&Pr> {
+    pub fn get_dependent_prs(&self, task_id: &TaskId, pr_id: &str) -> Vec<&Pr> {
         if let Some(stack) = self.stacks.get(task_id) {
             let pr_id_str = pr_id.to_string();
             stack
@@ -338,7 +338,7 @@ impl PrStackManager {
     }
 
     /// Get total line count across all PRs in a stack
-    pub fn total_lines(&self, task_id: &Uuid) -> u32 {
+    pub fn total_lines(&self, task_id: &TaskId) -> u32 {
         self.stacks
             .get(task_id)
             .map(|stack| stack.prs.iter().map(|pr| pr.line_count()).sum())
@@ -346,7 +346,7 @@ impl PrStackManager {
     }
 
     /// Validate PR sizes are all under limit
-    pub fn validate_sizes(&self, task_id: &Uuid) -> Result<(), StackedPrError> {
+    pub fn validate_sizes(&self, task_id: &TaskId) -> Result<(), StackedPrError> {
         if let Some(stack) = self.stacks.get(task_id) {
             for pr in &stack.prs {
                 if pr.line_count() > self.max_pr_lines {
@@ -362,7 +362,7 @@ impl PrStackManager {
     }
 
     /// Get count of PRs in a stack
-    pub fn stack_size(&self, task_id: &Uuid) -> usize {
+    pub fn stack_size(&self, task_id: &TaskId) -> usize {
         self.stacks
             .get(task_id)
             .map(|stack| stack.prs.len())
@@ -385,7 +385,7 @@ impl Default for PrStackManager {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrStack {
     /// Task this stack belongs to
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Base branch (e.g., "main")
     pub base_branch: String,
     /// PRs in the stack (ordered from base to head)
@@ -396,7 +396,7 @@ pub struct PrStack {
 
 impl PrStack {
     /// Create a new PR stack
-    pub fn new(task_id: Uuid, base_branch: String) -> Self {
+    pub fn new(task_id: TaskId, base_branch: String) -> Self {
         Self {
             task_id,
             base_branch,
@@ -612,7 +612,7 @@ impl Ord for FileChangeRisk {
 #[derive(Debug, thiserror::Error)]
 pub enum StackedPrError {
     #[error("PR stack not found for task {0}")]
-    StackNotFound(Uuid),
+    StackNotFound(TaskId),
 
     #[error("PR {pr_id} exceeds size limit: {lines} lines (limit: {limit})")]
     PrExceedsSizeLimit {
@@ -729,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_stack_creation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let stack = PrStack::new(task_id, "main".to_string());
 
         assert_eq!(stack.task_id, task_id);
@@ -741,7 +741,7 @@ mod tests {
 
     #[test]
     fn test_stack_add_pr() {
-        let mut stack = PrStack::new(Uuid::new_v4(), "main".to_string());
+        let mut stack = PrStack::new(TaskId::new(), "main".to_string());
 
         let pr = Pr::new(
             "pr-1".to_string(),
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn test_stack_add_pr_wrong_base() {
-        let mut stack = PrStack::new(Uuid::new_v4(), "main".to_string());
+        let mut stack = PrStack::new(TaskId::new(), "main".to_string());
 
         let pr = Pr::new(
             "pr-1".to_string(),
@@ -783,7 +783,7 @@ mod tests {
     #[test]
     fn test_manager_create_stack() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let stack = manager.create_stack(task_id, "main".to_string());
 
@@ -794,7 +794,7 @@ mod tests {
     #[test]
     fn test_manager_get_nonexistent_stack() {
         let manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         assert!(manager.get_stack(&task_id).is_none());
     }
@@ -802,7 +802,7 @@ mod tests {
     #[test]
     fn test_manager_remove_stack() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         manager.create_stack(task_id, "main".to_string());
         assert!(manager.get_stack(&task_id).is_some());
@@ -815,7 +815,7 @@ mod tests {
     #[test]
     fn test_manager_add_pr() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         manager.create_stack(task_id, "main".to_string());
 
@@ -839,7 +839,7 @@ mod tests {
     #[test]
     fn test_manager_add_pr_nonexistent_stack() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let pr = Pr::new("pr-1".to_string(), 1, "main".to_string(), vec![]);
 
@@ -870,7 +870,7 @@ mod tests {
     #[test]
     fn test_manager_validate_sizes_pass() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         manager.create_stack(task_id, "main".to_string());
 
@@ -898,7 +898,7 @@ mod tests {
             max_pr_lines: 100,
             ..Default::default()
         });
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         manager.create_stack(task_id, "main".to_string());
 
@@ -925,7 +925,7 @@ mod tests {
     #[test]
     fn test_split_small_changes_no_split() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         manager.create_stack(task_id, "main".to_string());
 
         let changes = vec![
@@ -953,7 +953,7 @@ mod tests {
     #[test]
     fn test_split_exceeds_limit() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         manager.create_stack(task_id, "main".to_string());
 
         // Create changes that exceed 200 lines
@@ -973,7 +973,7 @@ mod tests {
     #[test]
     fn test_split_multiple_prs() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         manager.create_stack(task_id, "main".to_string());
 
         // Create changes that will need multiple PRs
@@ -1014,7 +1014,7 @@ mod tests {
     #[test]
     fn test_pr_dependencies_chain() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         manager.create_stack(task_id, "main".to_string());
 
         let changes = vec![
@@ -1055,7 +1055,7 @@ mod tests {
     #[test]
     fn test_total_lines() {
         let mut manager = PrStackManager::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         manager.create_stack(task_id, "main".to_string());
 
         let pr1 = Pr::new(
@@ -1092,7 +1092,7 @@ mod tests {
 
     #[test]
     fn test_branch_chain() {
-        let mut stack = PrStack::new(Uuid::new_v4(), "main".to_string());
+        let mut stack = PrStack::new(TaskId::new(), "main".to_string());
 
         stack
             .add_pr(Pr::new("pr-1".to_string(), 1, "main".to_string(), vec![]))
@@ -1170,7 +1170,7 @@ mod tests {
 
     #[test]
     fn test_stack_not_found_error() {
-        let err = StackedPrError::StackNotFound(Uuid::new_v4());
+        let err = StackedPrError::StackNotFound(TaskId::new());
         assert!(err.to_string().contains("PR stack not found"));
     }
 

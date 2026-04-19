@@ -12,7 +12,8 @@
 //! action to take based on the iteration count.
 
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+
+use swell_core::ids::AgentId;
 
 /// Maximum retries before escalating to human
 pub const MAX_RETRIES_BEFORE_ESCALATION: u32 = 3;
@@ -71,7 +72,7 @@ pub struct RetryState {
     /// Alternative model to switch to (for 3rd retry)
     pub alternative_model: Option<String>,
     /// Agent ID used in previous attempt
-    pub previous_agent_id: Option<Uuid>,
+    pub previous_agent_id: Option<AgentId>,
 }
 
 impl RetryState {
@@ -124,7 +125,7 @@ impl RetryState {
     }
 
     /// Record the agent used for the current attempt
-    pub fn record_agent(&mut self, agent_id: Uuid) {
+    pub fn record_agent(&mut self, agent_id: AgentId) {
         self.previous_agent_id = Some(agent_id);
     }
 
@@ -523,7 +524,7 @@ mod tests {
     fn test_retry_state_reset() {
         let mut state = RetryState::with_model("claude-sonnet".to_string());
         state.set_alternative_model("claude-3-opus".to_string());
-        state.record_agent(Uuid::new_v4());
+        state.record_agent(AgentId::new());
         state.iteration_count = 3;
 
         state.reset();
@@ -553,7 +554,7 @@ mod tests {
     #[test]
     fn test_retry_state_record_agent() {
         let mut state = RetryState::new();
-        let agent_id = Uuid::new_v4();
+        let agent_id = AgentId::new();
 
         state.record_agent(agent_id);
 

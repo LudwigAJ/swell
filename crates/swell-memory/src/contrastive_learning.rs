@@ -13,13 +13,13 @@ use crate::{SqliteMemoryStore, SwellError};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use swell_core::MemoryStore;
+use swell_core::{MemoryStore, TaskId};
 use uuid::Uuid;
 
 /// Represents a successful task trajectory with associated memories
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SuccessTrajectory {
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub task_description: String,
     /// Memory embeddings associated with this successful trajectory
     pub memory_ids: Vec<Uuid>,
@@ -73,7 +73,7 @@ pub struct ToolCallRecord {
 /// Represents a failed/rejected task trajectory with associated memories
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FailureTrajectory {
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     pub task_description: String,
     /// Memory embeddings associated with this failed trajectory
     pub memory_ids: Vec<Uuid>,
@@ -1180,7 +1180,7 @@ impl ContrastiveLearningService {
 
     /// Create a SuccessTrajectory from task data
     pub fn create_success_trajectory(
-        task_id: Uuid,
+        task_id: TaskId,
         description: String,
         memory_ids: Vec<Uuid>,
         files_modified: Vec<String>,
@@ -1200,7 +1200,7 @@ impl ContrastiveLearningService {
 
     /// Create a FailureTrajectory from task data
     pub fn create_failure_trajectory(
-        task_id: Uuid,
+        task_id: TaskId,
         description: String,
         memory_ids: Vec<Uuid>,
         files_modified: Vec<String>,
@@ -1420,7 +1420,7 @@ mod tests {
 
     #[test]
     fn test_success_trajectory_creation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let trajectory = ContrastiveLearningService::create_success_trajectory(
             task_id,
             "Implement feature X".to_string(),
@@ -1437,7 +1437,7 @@ mod tests {
 
     #[test]
     fn test_failure_trajectory_creation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let errors = vec![ValidationErrorRecord {
             error_type: "test_failed".to_string(),
             message: "Test assertion failed".to_string(),
@@ -1509,7 +1509,7 @@ mod tests {
 
         // Create two similar successful trajectories
         let traj1 = SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Add feature A".to_string(),
             memory_ids: vec![Uuid::new_v4(), Uuid::new_v4()],
             steps: vec![TrajectoryStep {
@@ -1539,7 +1539,7 @@ mod tests {
         };
 
         let traj2 = SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Add feature B".to_string(),
             memory_ids: vec![Uuid::new_v4(), Uuid::new_v4()],
             steps: vec![TrajectoryStep {
@@ -1592,7 +1592,7 @@ mod tests {
 
         // Create a success and failure that modify the same file
         let success = SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Implement feature".to_string(),
             memory_ids: vec![Uuid::new_v4()],
             steps: vec![],
@@ -1608,7 +1608,7 @@ mod tests {
         };
 
         let failure = FailureTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Fix bug".to_string(),
             memory_ids: vec![Uuid::new_v4()],
             steps: vec![],
@@ -1651,7 +1651,7 @@ mod tests {
 
         // Create only one success trajectory (not enough pairs)
         let successes = vec![SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Test".to_string(),
             memory_ids: vec![Uuid::new_v4()],
             steps: vec![],
@@ -1675,7 +1675,7 @@ mod tests {
         let service = ContrastiveLearningService::with_default_config(store);
 
         let successes = vec![SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Test success".to_string(),
             memory_ids: vec![Uuid::new_v4()],
             steps: vec![],
@@ -1771,7 +1771,7 @@ mod tests {
 
         // Success uses "cargo build" and "cargo test"
         let success = SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Implement feature".to_string(),
             memory_ids: vec![],
             steps: vec![],
@@ -1796,7 +1796,7 @@ mod tests {
 
         // Failure uses "cargo build" but NOT "cargo test" (instead uses risky shell command)
         let failure = FailureTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Fix bug".to_string(),
             memory_ids: vec![],
             steps: vec![],
@@ -1851,7 +1851,7 @@ mod tests {
 
         // Success modifies src/lib.rs
         let success = SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Add test".to_string(),
             memory_ids: vec![],
             steps: vec![],
@@ -1863,7 +1863,7 @@ mod tests {
 
         // Failure modifies src/main.rs (different file)
         let failure = FailureTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Fix bug".to_string(),
             memory_ids: vec![],
             steps: vec![],
@@ -2094,7 +2094,7 @@ mod tests {
 
         // Create success trajectory that uses cargo test
         let successes = vec![SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Implement feature".to_string(),
             memory_ids: vec![],
             steps: vec![],
@@ -2111,7 +2111,7 @@ mod tests {
 
         // Create failure trajectory that uses rm -rf
         let failures = vec![FailureTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Fix bug".to_string(),
             memory_ids: vec![],
             steps: vec![],
@@ -2165,7 +2165,7 @@ mod tests {
 
         // Create trajectories with known tool difference
         let successes = vec![SuccessTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Implement feature".to_string(),
             memory_ids: vec![],
             steps: vec![],
@@ -2181,7 +2181,7 @@ mod tests {
         }];
 
         let failures = vec![FailureTrajectory {
-            task_id: Uuid::new_v4(),
+            task_id: TaskId::new(),
             task_description: "Fix bug".to_string(),
             memory_ids: vec![],
             steps: vec![],

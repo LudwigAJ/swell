@@ -9,7 +9,7 @@ use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::{
     AutonomyLevel, LlmBackend, LlmMessage, LlmRole, MemoryBlock, MemoryBlockType, MemoryEntry,
-    Plan, PlanStep, RiskLevel, StepStatus, SwellError,
+    Plan, PlanStep, RiskLevel, StepStatus, SwellError, TaskId,
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::{
@@ -104,7 +104,7 @@ impl LlmBackend for CapturingMockLlm {
 }
 
 /// Helper to create a simple test plan.
-fn create_test_plan(task_id: Uuid) -> Plan {
+fn create_test_plan(task_id: TaskId) -> Plan {
     Plan {
         id: Uuid::new_v4(),
         task_id,

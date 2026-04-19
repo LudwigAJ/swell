@@ -7,17 +7,17 @@
 //! - Ready task identification (all dependencies satisfied)
 
 use std::collections::{HashMap, HashSet};
+use swell_core::ids::TaskId;
 use swell_core::{SwellError, TaskState};
 use tracing::{info, warn};
-use uuid::Uuid;
 
 /// A directed acyclic graph (DAG) for managing task dependencies.
 #[derive(Debug, Clone)]
 pub struct TaskGraph {
     /// Map from task ID to its dependency IDs
-    dependencies: HashMap<Uuid, HashSet<Uuid>>,
+    dependencies: HashMap<TaskId, HashSet<TaskId>>,
     /// Map from task ID to tasks that depend on it (reverse lookup)
-    dependents: HashMap<Uuid, HashSet<Uuid>>,
+    dependents: HashMap<TaskId, HashSet<TaskId>>,
 }
 
 impl TaskGraph {
@@ -32,7 +32,7 @@ impl TaskGraph {
     /// Add a task to the graph with its dependencies
     ///
     /// Returns an error if adding the task would create a circular dependency.
-    pub fn add_task(&mut self, task_id: Uuid, dependencies: Vec<Uuid>) -> Result<(), SwellError> {
+    pub fn add_task(&mut self, task_id: TaskId, dependencies: Vec<TaskId>) -> Result<(), SwellError> {
         // Check for circular dependency before adding
         if self.would_create_cycle(&task_id, &dependencies) {
             warn!(task_id = %task_id, ?dependencies, "Circular dependency detected");
@@ -43,7 +43,7 @@ impl TaskGraph {
         }
 
         // Add the task's dependencies
-        let deps_set: HashSet<Uuid> = dependencies.into_iter().collect();
+        let deps_set: HashSet<TaskId> = dependencies.into_iter().collect();
         self.dependencies.insert(task_id, deps_set);
 
         // Ensure task exists in dependents map (with empty set if no dependents)
@@ -63,15 +63,15 @@ impl TaskGraph {
     /// Remove a task from the graph
     ///
     /// Also cleans up any references to this task from other tasks' dependencies.
-    pub fn remove_task(&mut self, task_id: Uuid) -> Result<(), SwellError> {
+    pub fn remove_task(&mut self, task_id: TaskId) -> Result<(), SwellError> {
         if !self.dependencies.contains_key(&task_id) {
-            return Err(SwellError::TaskNotFound(task_id));
+            return Err(SwellError::TaskNotFound(task_id.as_uuid()));
         }
 
         // Find all tasks that depend on this task and remove this task from their dependency lists
         if let Some(dependents_set) = self.dependents.get(&task_id) {
             // Collect a copy since we'll be modifying
-            let dependent_tasks: Vec<Uuid> = dependents_set.iter().cloned().collect();
+            let dependent_tasks: Vec<TaskId> = dependents_set.iter().cloned().collect();
             for dependent_id in dependent_tasks {
                 if let Some(deps) = self.dependencies.get_mut(&dependent_id) {
                     deps.remove(&task_id);
@@ -90,7 +90,7 @@ impl TaskGraph {
     }
 
     /// Check if adding a task with given dependencies would create a cycle
-    fn would_create_cycle(&self, task_id: &Uuid, new_dependencies: &[Uuid]) -> bool {
+    fn would_create_cycle(&self, task_id: &TaskId, new_dependencies: &[TaskId]) -> bool {
         // If the new task depends on itself, that's a cycle
         if new_dependencies.contains(task_id) {
             return true;
@@ -109,13 +109,13 @@ impl TaskGraph {
 
     /// Check if task_a transitively depends on task_b
     /// (i.e., there exists a path from task_a to task_b through dependencies)
-    fn transitively_depends_on(&self, task_id: &Uuid, target: &Uuid) -> bool {
+    fn transitively_depends_on(&self, task_id: &TaskId, target: &TaskId) -> bool {
         let mut visited = HashSet::new();
         self.has_path(task_id, target, &mut visited)
     }
 
     /// DFS to check if there's a path from source to target
-    fn has_path(&self, source: &Uuid, target: &Uuid, visited: &mut HashSet<Uuid>) -> bool {
+    fn has_path(&self, source: &TaskId, target: &TaskId, visited: &mut HashSet<TaskId>) -> bool {
         if source == target {
             return true;
         }
@@ -142,7 +142,7 @@ impl TaskGraph {
     /// A task is ready if:
     /// - It exists in the graph
     /// - All its dependencies have been completed (are in Accepted state)
-    pub fn get_ready_tasks(&self, task_states: &HashMap<Uuid, TaskState>) -> Vec<Uuid> {
+    pub fn get_ready_tasks(&self, task_states: &HashMap<TaskId, TaskState>) -> Vec<TaskId> {
         self.dependencies
             .keys()
             .filter(|task_id| {
@@ -169,10 +169,10 @@ impl TaskGraph {
     ///
     /// Returns an error if the graph contains a cycle (which shouldn't happen
     /// if add_task properly validated).
-    pub fn topological_sort(&self) -> Result<Vec<Uuid>, SwellError> {
+    pub fn topological_sort(&self) -> Result<Vec<TaskId>, SwellError> {
         // Kahn's algorithm
-        let mut in_degree: HashMap<Uuid, usize> = HashMap::new();
-        let mut result: Vec<Uuid> = Vec::new();
+        let mut in_degree: HashMap<TaskId, usize> = HashMap::new();
+        let mut result: Vec<TaskId> = Vec::new();
 
         // Initialize in-degrees
         for task_id in self.dependencies.keys() {
@@ -194,8 +194,8 @@ impl TaskGraph {
         // But that's the wrong way - we want tasks whose dependencies are done
 
         // Let's use a simpler approach: iterative removal of "ready" tasks
-        let mut ready: Vec<Uuid> = Vec::new();
-        let mut completed: HashSet<Uuid> = HashSet::new();
+        let mut ready: Vec<TaskId> = Vec::new();
+        let mut completed: HashSet<TaskId> = HashSet::new();
 
         // Find tasks that have no dependencies
         for (task_id, deps) in &self.dependencies {
@@ -252,10 +252,10 @@ impl TaskGraph {
     /// Alternative topological sort using Kahn's algorithm directly
     ///
     /// This returns tasks in execution order (dependencies first).
-    pub fn topological_sort_kahn(&self) -> Result<Vec<Uuid>, SwellError> {
+    pub fn topological_sort_kahn(&self) -> Result<Vec<TaskId>, SwellError> {
         // Clone the in-degrees
-        let mut in_degree: HashMap<Uuid, usize> = HashMap::new();
-        let mut result: Vec<Uuid> = Vec::new();
+        let mut in_degree: HashMap<TaskId, usize> = HashMap::new();
+        let mut result: Vec<TaskId> = Vec::new();
 
         // Initialize: every task has in-degree 0
         for task_id in self.dependencies.keys() {
@@ -280,14 +280,14 @@ impl TaskGraph {
         // B is a dependency of A
         // A's in-degree is the count of dependencies it has
 
-        let mut in_degree: HashMap<Uuid, usize> = HashMap::new();
+        let mut in_degree: HashMap<TaskId, usize> = HashMap::new();
         for task_id in self.dependencies.keys() {
             let count = self.dependencies.get(task_id).map(|d| d.len()).unwrap_or(0);
             in_degree.insert(*task_id, count);
         }
 
         // Queue of tasks with in-degree 0
-        let mut queue: Vec<Uuid> = in_degree
+        let mut queue: Vec<TaskId> = in_degree
             .iter()
             .filter(|(_, &count)| count == 0)
             .map(|(&id, _)| id)
@@ -323,22 +323,22 @@ impl TaskGraph {
     }
 
     /// Get dependencies for a specific task
-    pub fn get_dependencies(&self, task_id: &Uuid) -> Option<&HashSet<Uuid>> {
+    pub fn get_dependencies(&self, task_id: &TaskId) -> Option<&HashSet<TaskId>> {
         self.dependencies.get(task_id)
     }
 
     /// Get dependents (tasks that depend on this one) for a specific task
-    pub fn get_dependents(&self, task_id: &Uuid) -> Option<&HashSet<Uuid>> {
+    pub fn get_dependents(&self, task_id: &TaskId) -> Option<&HashSet<TaskId>> {
         self.dependents.get(task_id)
     }
 
     /// Check if the graph has a specific task
-    pub fn has_task(&self, task_id: &Uuid) -> bool {
+    pub fn has_task(&self, task_id: &TaskId) -> bool {
         self.dependencies.contains_key(task_id)
     }
 
     /// Get all task IDs in the graph
-    pub fn all_tasks(&self) -> Vec<Uuid> {
+    pub fn all_tasks(&self) -> Vec<TaskId> {
         self.dependencies.keys().cloned().collect()
     }
 
@@ -356,8 +356,8 @@ impl TaskGraph {
     ///
     /// Returns Ok(()) if no cycles, Err containing the task ID that is part of a cycle.
     pub fn validate_no_cycles(&self) -> Result<(), SwellError> {
-        let mut visited: HashSet<Uuid> = HashSet::new();
-        let mut recursion_stack: HashSet<Uuid> = HashSet::new();
+        let mut visited: HashSet<TaskId> = HashSet::new();
+        let mut recursion_stack: HashSet<TaskId> = HashSet::new();
 
         for task_id in self.dependencies.keys() {
             if self.has_cycle_from(task_id, &mut visited, &mut recursion_stack) {
@@ -374,9 +374,9 @@ impl TaskGraph {
     /// DFS helper to detect cycles
     fn has_cycle_from(
         &self,
-        task_id: &Uuid,
-        visited: &mut HashSet<Uuid>,
-        recursion_stack: &mut HashSet<Uuid>,
+        task_id: &TaskId,
+        visited: &mut HashSet<TaskId>,
+        recursion_stack: &mut HashSet<TaskId>,
     ) -> bool {
         if recursion_stack.contains(task_id) {
             return true;
@@ -406,11 +406,11 @@ impl TaskGraph {
     /// Returns an error if the new dependencies would create a cycle.
     pub fn update_dependencies(
         &mut self,
-        task_id: Uuid,
-        new_dependencies: Vec<Uuid>,
+        task_id: TaskId,
+        new_dependencies: Vec<TaskId>,
     ) -> Result<(), SwellError> {
         if !self.dependencies.contains_key(&task_id) {
-            return Err(SwellError::TaskNotFound(task_id));
+            return Err(SwellError::TaskNotFound(task_id.as_uuid()));
         }
 
         // Check for cycles with new dependencies
@@ -432,7 +432,7 @@ impl TaskGraph {
         }
 
         // Add new dependencies
-        let new_deps_set: HashSet<Uuid> = new_dependencies.into_iter().collect();
+        let new_deps_set: HashSet<TaskId> = new_dependencies.into_iter().collect();
         for new_dep in &new_deps_set {
             self.dependents.entry(*new_dep).or_default().insert(task_id);
         }
@@ -444,7 +444,7 @@ impl TaskGraph {
     }
 
     /// Check if updating a task's dependencies would create a cycle
-    fn would_create_cycle_with_removal(&self, task_id: &Uuid, new_dependencies: &[Uuid]) -> bool {
+    fn would_create_cycle_with_removal(&self, task_id: &TaskId, new_dependencies: &[TaskId]) -> bool {
         // Temporarily remove the task from the graph
         // and check if the new dependencies would create a cycle
 
@@ -476,14 +476,14 @@ impl TaskGraph {
     /// # Returns
     /// A vector of subgraphs, where each subgraph is a vector of task IDs.
     /// Each subgraph is a maximal set of mutually connected tasks.
-    pub fn get_connected_subgraphs(&self) -> Vec<Vec<Uuid>> {
+    pub fn get_connected_subgraphs(&self) -> Vec<Vec<TaskId>> {
         if self.dependencies.is_empty() {
             return vec![];
         }
 
-        let all_tasks: Vec<Uuid> = self.dependencies.keys().cloned().collect();
-        let mut visited: HashSet<Uuid> = HashSet::new();
-        let mut subgraphs: Vec<Vec<Uuid>> = Vec::new();
+        let all_tasks: Vec<TaskId> = self.dependencies.keys().cloned().collect();
+        let mut visited: HashSet<TaskId> = HashSet::new();
+        let mut subgraphs: Vec<Vec<TaskId>> = Vec::new();
 
         for task_id in all_tasks {
             if visited.contains(&task_id) {
@@ -491,8 +491,8 @@ impl TaskGraph {
             }
 
             // BFS to find all tasks connected to this one
-            let mut subgraph: Vec<Uuid> = Vec::new();
-            let mut queue: Vec<Uuid> = vec![task_id];
+            let mut subgraph: Vec<TaskId> = Vec::new();
+            let mut queue: Vec<TaskId> = vec![task_id];
 
             while let Some(current) = queue.pop() {
                 if visited.contains(&current) {
@@ -555,7 +555,7 @@ mod tests {
     use super::*;
 
     // Helper to create a simple task state map
-    fn task_state_map(tasks: &[(Uuid, TaskState)]) -> HashMap<Uuid, TaskState> {
+    fn task_state_map(tasks: &[(TaskId, TaskState)]) -> HashMap<TaskId, TaskState> {
         tasks.iter().cloned().collect()
     }
 
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn test_add_single_task() {
         let mut graph = TaskGraph::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         graph.add_task(task_id, vec![]).unwrap();
 
@@ -583,8 +583,8 @@ mod tests {
     #[test]
     fn test_add_task_with_dependencies() {
         let mut graph = TaskGraph::new();
-        let dep_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let dep_id = TaskId::new();
+        let task_id = TaskId::new();
 
         // Add dependency first
         graph.add_task(dep_id, vec![]).unwrap();
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn test_remove_task() {
         let mut graph = TaskGraph::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         graph.add_task(task_id, vec![]).unwrap();
         assert!(graph.has_task(&task_id));
@@ -613,8 +613,8 @@ mod tests {
     #[test]
     fn test_remove_task_with_dependent() {
         let mut graph = TaskGraph::new();
-        let dep_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let dep_id = TaskId::new();
+        let task_id = TaskId::new();
 
         graph.add_task(dep_id, vec![]).unwrap();
         graph.add_task(task_id, vec![dep_id]).unwrap();
@@ -632,7 +632,7 @@ mod tests {
     #[test]
     fn test_self_dependency_rejected() {
         let mut graph = TaskGraph::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = graph.add_task(task_id, vec![task_id]);
 
@@ -648,8 +648,8 @@ mod tests {
     #[test]
     fn test_direct_cycle_rejected() {
         let mut graph = TaskGraph::new();
-        let task_a = Uuid::new_v4();
-        let task_b = Uuid::new_v4();
+        let task_a = TaskId::new();
+        let task_b = TaskId::new();
 
         // A depends on B
         graph.add_task(task_a, vec![task_b]).unwrap();
@@ -669,9 +669,9 @@ mod tests {
     #[test]
     fn test_transitive_cycle_rejected() {
         let mut graph = TaskGraph::new();
-        let task_a = Uuid::new_v4();
-        let task_b = Uuid::new_v4();
-        let task_c = Uuid::new_v4();
+        let task_a = TaskId::new();
+        let task_b = TaskId::new();
+        let task_c = TaskId::new();
 
         // A depends on B
         graph.add_task(task_a, vec![task_b]).unwrap();
@@ -694,10 +694,10 @@ mod tests {
     #[test]
     fn test_complex_cycle_detection() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
-        let d = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
+        let d = TaskId::new();
 
         // Diamond dependency: A -> B, A -> C, B -> D, C -> D
         // This should be allowed (it's a diamond, not a cycle)
@@ -715,7 +715,7 @@ mod tests {
     #[test]
     fn test_topological_sort_single_task() {
         let mut graph = TaskGraph::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         graph.add_task(task_id, vec![]).unwrap();
 
@@ -727,9 +727,9 @@ mod tests {
     #[test]
     fn test_topological_sort_linear_dependencies() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
 
         // A -> B -> C (B depends on A, C depends on B)
         graph.add_task(a, vec![]).unwrap();
@@ -750,9 +750,9 @@ mod tests {
     #[test]
     fn test_topological_sort_parallel_branches() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
 
         // A is root, B and C both depend on A
         graph.add_task(a, vec![]).unwrap();
@@ -773,10 +773,10 @@ mod tests {
     #[test]
     fn test_topological_sort_diamond() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
-        let d = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
+        let d = TaskId::new();
 
         // Diamond: A -> B, A -> C, B -> D, C -> D
         graph.add_task(a, vec![]).unwrap();
@@ -807,7 +807,7 @@ mod tests {
     #[test]
     fn test_get_ready_tasks_no_dependencies() {
         let mut graph = TaskGraph::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         graph.add_task(task_id, vec![]).unwrap();
 
@@ -821,8 +821,8 @@ mod tests {
     #[test]
     fn test_get_ready_tasks_dependency_not_done() {
         let mut graph = TaskGraph::new();
-        let dep_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let dep_id = TaskId::new();
+        let task_id = TaskId::new();
 
         graph.add_task(dep_id, vec![]).unwrap();
         graph.add_task(task_id, vec![dep_id]).unwrap();
@@ -838,8 +838,8 @@ mod tests {
     #[test]
     fn test_get_ready_tasks_dependency_done() {
         let mut graph = TaskGraph::new();
-        let dep_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
+        let dep_id = TaskId::new();
+        let task_id = TaskId::new();
 
         graph.add_task(dep_id, vec![]).unwrap();
         graph.add_task(task_id, vec![dep_id]).unwrap();
@@ -855,9 +855,9 @@ mod tests {
     #[test]
     fn test_get_ready_tasks_multiple_dependencies() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
 
         graph.add_task(a, vec![]).unwrap();
         graph.add_task(b, vec![]).unwrap();
@@ -891,8 +891,8 @@ mod tests {
     #[test]
     fn test_validate_no_cycles_valid_graph() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
 
         graph.add_task(a, vec![]).unwrap();
         graph.add_task(b, vec![a]).unwrap();
@@ -911,9 +911,9 @@ mod tests {
     #[test]
     fn test_update_dependencies() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
 
         graph.add_task(a, vec![]).unwrap();
         graph.add_task(b, vec![]).unwrap();
@@ -930,8 +930,8 @@ mod tests {
     #[test]
     fn test_update_dependencies_to_create_cycle_rejected() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
 
         graph.add_task(a, vec![]).unwrap();
         graph.add_task(b, vec![a]).unwrap();
@@ -947,9 +947,9 @@ mod tests {
     #[test]
     fn test_get_dependents() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
 
         graph.add_task(a, vec![]).unwrap();
         graph.add_task(b, vec![a]).unwrap();
@@ -965,7 +965,7 @@ mod tests {
     #[test]
     fn test_get_dependents_no_dependents() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
+        let a = TaskId::new();
 
         graph.add_task(a, vec![]).unwrap();
 
@@ -979,8 +979,8 @@ mod tests {
     #[test]
     fn test_topological_sort_kahn_simple() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
 
         graph.add_task(a, vec![]).unwrap();
         graph.add_task(b, vec![a]).unwrap();
@@ -997,10 +997,10 @@ mod tests {
     #[test]
     fn test_topological_sort_kahn_complex() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
-        let d = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
+        let d = TaskId::new();
 
         // Diamond: A -> B, A -> C, B -> D, C -> D
         graph.add_task(a, vec![]).unwrap();
@@ -1022,9 +1022,9 @@ mod tests {
     #[test]
     fn test_get_connected_subgraphs_single_component() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
 
         // All tasks in one connected component: A -> B -> C
         graph.add_task(a, vec![]).unwrap();
@@ -1039,10 +1039,10 @@ mod tests {
     #[test]
     fn test_get_connected_subgraphs_multiple_components() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
-        let d = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
+        let d = TaskId::new();
 
         // Two disconnected components: A -> B and C -> D
         graph.add_task(a, vec![]).unwrap();
@@ -1069,11 +1069,11 @@ mod tests {
     #[test]
     fn test_largest_subgraph_size() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
-        let d = Uuid::new_v4();
-        let e = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
+        let d = TaskId::new();
+        let e = TaskId::new();
 
         // Component 1: A -> B -> C (size 3)
         // Component 2: D -> E (size 2)
@@ -1096,9 +1096,9 @@ mod tests {
     fn test_get_connected_subgraphs_independent_tasks() {
         let mut graph = TaskGraph::new();
         // Three independent tasks with no dependencies
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
 
         graph.add_task(a, vec![]).unwrap();
         graph.add_task(b, vec![]).unwrap();
@@ -1115,10 +1115,10 @@ mod tests {
     #[test]
     fn test_get_connected_subgraphs_complex_diamond() {
         let mut graph = TaskGraph::new();
-        let a = Uuid::new_v4();
-        let b = Uuid::new_v4();
-        let c = Uuid::new_v4();
-        let d = Uuid::new_v4();
+        let a = TaskId::new();
+        let b = TaskId::new();
+        let c = TaskId::new();
+        let d = TaskId::new();
 
         // Diamond: A -> B, A -> C, B -> D, C -> D
         // All connected in one component

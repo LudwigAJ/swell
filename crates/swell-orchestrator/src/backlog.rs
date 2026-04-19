@@ -29,6 +29,7 @@ use crate::SwellError;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use swell_core::ids::TaskId;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -76,9 +77,9 @@ pub struct BacklogItem {
     /// Whether this item has been approved for execution
     pub approved: bool,
     /// Task ID in the state machine (if already created)
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Original task ID if this is failure-derived
-    pub original_task_id: Option<Uuid>,
+    pub original_task_id: Option<TaskId>,
     /// Failure signal if this is failure-derived
     pub failure_signal: Option<String>,
     /// Spec ID if this is spec-gap
@@ -90,7 +91,7 @@ pub struct BacklogItem {
 impl BacklogItem {
     /// Create a new backlog item from a failure
     pub fn from_failure(
-        original_task_id: Uuid,
+        original_task_id: TaskId,
         failure_signal: String,
         affected_files: Vec<String>,
     ) -> Self {
@@ -225,7 +226,7 @@ pub struct WorkBacklog {
     /// Maximum items in backlog
     max_items: usize,
     /// Count of failure-derived tasks per original task (capped at 3)
-    failure_derived_counts: HashMap<Uuid, u32>,
+    failure_derived_counts: HashMap<TaskId, u32>,
 }
 
 impl WorkBacklog {
@@ -272,7 +273,7 @@ impl WorkBacklog {
     /// Add a failure-derived task
     pub fn add_failure_derived(
         &mut self,
-        original_task_id: Uuid,
+        original_task_id: TaskId,
         failure_signal: String,
         affected_files: Vec<String>,
     ) -> Result<Uuid, SwellError> {
@@ -668,7 +669,7 @@ mod tests {
     #[test]
     fn test_failure_derived_auto_approved() {
         let item = BacklogItem::from_failure(
-            Uuid::new_v4(),
+            TaskId::new(),
             "Type error in auth.ts line 42".to_string(),
             vec!["src/auth.ts".to_string()],
         );
@@ -718,7 +719,7 @@ mod tests {
     #[test]
     fn test_add_failure_derived() {
         let mut backlog = WorkBacklog::new();
-        let original_id = Uuid::new_v4();
+        let original_id = TaskId::new();
 
         let result = backlog.add_failure_derived(
             original_id,
@@ -733,7 +734,7 @@ mod tests {
     #[test]
     fn test_failure_derived_cap() {
         let mut backlog = WorkBacklog::new();
-        let original_id = Uuid::new_v4();
+        let original_id = TaskId::new();
 
         // Add 3 failure-derived tasks
         assert!(backlog
@@ -915,7 +916,7 @@ mod tests {
             .add_plan_task("Plan task".to_string(), vec![])
             .unwrap();
         backlog
-            .add_failure_derived(Uuid::new_v4(), "Failure".to_string(), vec![])
+            .add_failure_derived(TaskId::new(), "Failure".to_string(), vec![])
             .unwrap();
         backlog
             .add_spec_gap(Uuid::new_v4(), "Spec gap".to_string(), vec![])

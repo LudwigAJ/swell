@@ -40,6 +40,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use swell_core::ids::TaskId;
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -230,16 +231,16 @@ impl std::fmt::Display for ComplexityScore {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TaskDependency {
     /// The blocking task ID
-    pub blocker: Uuid,
+    pub blocker: TaskId,
     /// The blocked task ID
-    pub blocked: Uuid,
+    pub blocked: TaskId,
 }
 
 /// Result of scoring a task
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskScore {
     /// Task ID
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// Spec alignment score (1-5)
     pub spec_alignment: SpecAlignmentScore,
     /// Blocking impact score (1-5)
@@ -249,20 +250,20 @@ pub struct TaskScore {
     /// Combined priority score (1-5, weighted average)
     pub priority_score: f32,
     /// Which other tasks this task blocks
-    pub blocks: Vec<Uuid>,
+    pub blocks: Vec<TaskId>,
     /// Which tasks this task depends on
-    pub depends_on: Vec<Uuid>,
+    pub depends_on: Vec<TaskId>,
 }
 
 impl TaskScore {
     /// Create a new task score with all three dimensions
     pub fn new(
-        task_id: Uuid,
+        task_id: TaskId,
         spec_alignment: SpecAlignmentScore,
         blocking_impact: BlockingImpactScore,
         complexity: ComplexityScore,
-        blocks: Vec<Uuid>,
-        depends_on: Vec<Uuid>,
+        blocks: Vec<TaskId>,
+        depends_on: Vec<TaskId>,
     ) -> Self {
         let priority_score = Self::compute_priority(spec_alignment, blocking_impact, complexity);
         Self {
@@ -336,15 +337,15 @@ impl Default for ValueScorerConfig {
 pub struct ValueScorer {
     config: ValueScorerConfig,
     /// Map of task ID to spec requirement IDs it fulfills
-    spec_requirements: HashMap<Uuid, Vec<Uuid>>,
+    spec_requirements: HashMap<TaskId, Vec<Uuid>>,
     /// Map of spec requirement ID to task IDs that implement it
-    requirement_implementers: HashMap<Uuid, Vec<Uuid>>,
+    requirement_implementers: HashMap<Uuid, Vec<TaskId>>,
     /// Known spec requirements
     known_requirements: HashSet<Uuid>,
     /// Dependency graph (blocker -> blocked)
-    dependencies: HashMap<Uuid, Vec<Uuid>>,
+    dependencies: HashMap<TaskId, Vec<TaskId>>,
     /// Explicit complexity scores for tasks
-    complexity_scores: HashMap<Uuid, ComplexityScore>,
+    complexity_scores: HashMap<TaskId, ComplexityScore>,
 }
 
 impl ValueScorer {
@@ -377,7 +378,7 @@ impl ValueScorer {
     }
 
     /// Register a task as implementing a spec requirement
-    pub fn register_spec_link(&mut self, task_id: Uuid, requirement_id: Uuid) {
+    pub fn register_spec_link(&mut self, task_id: TaskId, requirement_id: Uuid) {
         debug!(
             task_id = %task_id,
             requirement_id = %requirement_id,
@@ -395,7 +396,7 @@ impl ValueScorer {
     }
 
     /// Register a dependency (blocker -> blocked)
-    pub fn register_dependency(&mut self, blocker: Uuid, blocked: Uuid) {
+    pub fn register_dependency(&mut self, blocker: TaskId, blocked: TaskId) {
         debug!(
             blocker = %blocker,
             blocked = %blocked,
@@ -408,7 +409,7 @@ impl ValueScorer {
     ///
     /// Use this to provide estimated complexity from task description analysis
     /// or dependency analysis. If not set, defaults to moderate (3).
-    pub fn set_complexity(&mut self, task_id: Uuid, complexity: ComplexityScore) {
+    pub fn set_complexity(&mut self, task_id: TaskId, complexity: ComplexityScore) {
         debug!(
             task_id = %task_id,
             complexity = %complexity,
@@ -420,8 +421,8 @@ impl ValueScorer {
     /// Register a dependency and set complexity for the blocking task
     pub fn register_dependency_with_complexity(
         &mut self,
-        blocker: Uuid,
-        blocked: Uuid,
+        blocker: TaskId,
+        blocked: TaskId,
         complexity: ComplexityScore,
     ) {
         self.register_dependency(blocker, blocked);
@@ -429,7 +430,7 @@ impl ValueScorer {
     }
 
     /// Score a task based on spec alignment, blocking impact, and complexity
-    pub fn score_task(&self, task_id: Uuid) -> TaskScore {
+    pub fn score_task(&self, task_id: TaskId) -> TaskScore {
         let spec_alignment = self.compute_spec_alignment(task_id);
         let blocking_impact = self.compute_blocking_impact(task_id);
         let complexity = self.get_complexity(task_id);
@@ -447,12 +448,12 @@ impl ValueScorer {
     }
 
     /// Score multiple tasks
-    pub fn score_tasks(&self, task_ids: &[Uuid]) -> Vec<TaskScore> {
+    pub fn score_tasks(&self, task_ids: &[TaskId]) -> Vec<TaskScore> {
         task_ids.iter().map(|id| self.score_task(*id)).collect()
     }
 
     /// Compute spec alignment score (1-5)
-    fn compute_spec_alignment(&self, task_id: Uuid) -> SpecAlignmentScore {
+    fn compute_spec_alignment(&self, task_id: TaskId) -> SpecAlignmentScore {
         // Check if task is directly linked to a spec requirement
         if let Some(requirements) = self.spec_requirements.get(&task_id) {
             if !requirements.is_empty() {
@@ -478,7 +479,7 @@ impl ValueScorer {
     }
 
     /// Count how many tasks this task enables that fulfill spec requirements
-    fn count_enables_spec_fulfilling(&self, task_id: Uuid) -> usize {
+    fn count_enables_spec_fulfilling(&self, task_id: TaskId) -> usize {
         let blocked_tasks = self.dependencies.get(&task_id);
 
         let mut count = 0;
@@ -496,7 +497,7 @@ impl ValueScorer {
     }
 
     /// Check if this task blocks tasks that have spec links
-    fn blocks_tasks_with_spec_links(&self, task_id: Uuid) -> bool {
+    fn blocks_tasks_with_spec_links(&self, task_id: TaskId) -> bool {
         if let Some(blocked) = self.dependencies.get(&task_id) {
             for blocked_id in blocked {
                 if self.spec_requirements.contains_key(blocked_id) {
@@ -508,7 +509,7 @@ impl ValueScorer {
     }
 
     /// Compute blocking impact score (1-5)
-    fn compute_blocking_impact(&self, task_id: Uuid) -> BlockingImpactScore {
+    fn compute_blocking_impact(&self, task_id: TaskId) -> BlockingImpactScore {
         let blocked_tasks = self.dependencies.get(&task_id);
         let count = blocked_tasks.map(|v| v.len()).unwrap_or(0);
 
@@ -522,12 +523,12 @@ impl ValueScorer {
     }
 
     /// Get tasks that this task blocks
-    pub fn get_blocked_tasks(&self, task_id: Uuid) -> Vec<Uuid> {
+    pub fn get_blocked_tasks(&self, task_id: TaskId) -> Vec<TaskId> {
         self.dependencies.get(&task_id).cloned().unwrap_or_default()
     }
 
     /// Get tasks that this task depends on (tasks that block it)
-    pub fn get_blocking_tasks(&self, task_id: Uuid) -> Vec<Uuid> {
+    pub fn get_blocking_tasks(&self, task_id: TaskId) -> Vec<TaskId> {
         let mut blocking = Vec::new();
         for (blocker, blocked_list) in &self.dependencies {
             if blocked_list.contains(&task_id) {
@@ -538,7 +539,7 @@ impl ValueScorer {
     }
 
     /// Get the number of tasks blocked by a task
-    pub fn blocked_count(&self, task_id: Uuid) -> usize {
+    pub fn blocked_count(&self, task_id: TaskId) -> usize {
         self.dependencies
             .get(&task_id)
             .map(|v| v.len())
@@ -546,7 +547,7 @@ impl ValueScorer {
     }
 
     /// Get the number of tasks a task depends on
-    pub fn blocking_count(&self, task_id: Uuid) -> usize {
+    pub fn blocking_count(&self, task_id: TaskId) -> usize {
         self.get_blocking_tasks(task_id).len()
     }
 
@@ -561,7 +562,7 @@ impl ValueScorer {
     }
 
     /// Get all registered task IDs with spec links
-    pub fn tasks_with_spec_links(&self) -> Vec<Uuid> {
+    pub fn tasks_with_spec_links(&self) -> Vec<TaskId> {
         self.spec_requirements.keys().copied().collect()
     }
 
@@ -582,7 +583,7 @@ impl ValueScorer {
     }
 
     /// Get complexity score for a task (explicit or default)
-    fn get_complexity(&self, task_id: Uuid) -> ComplexityScore {
+    fn get_complexity(&self, task_id: TaskId) -> ComplexityScore {
         self.complexity_scores
             .get(&task_id)
             .copied()
@@ -596,7 +597,7 @@ impl ValueScorer {
     /// - discarded_scores: tasks with priority < discard_threshold
     ///
     /// Discarded tasks are logged with reason and their scores.
-    pub fn score_and_filter(&self, task_ids: &[Uuid]) -> (Vec<TaskScore>, Vec<TaskScore>) {
+    pub fn score_and_filter(&self, task_ids: &[TaskId]) -> (Vec<TaskScore>, Vec<TaskScore>) {
         let threshold = self.config.discard_threshold;
         let mut kept = Vec::new();
         let mut discarded = Vec::new();
@@ -707,7 +708,7 @@ mod tests {
 
     #[test]
     fn test_task_score_computation() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let score = TaskScore::new(
             task_id,
             SpecAlignmentScore::implements(), // 4
@@ -723,7 +724,7 @@ mod tests {
 
     #[test]
     fn test_task_score_priority_rounded() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // 3.0 -> rounds to 3
         let score = TaskScore::new(
@@ -753,7 +754,7 @@ mod tests {
     #[test]
     fn test_score_task_no_links() {
         let scorer = ValueScorer::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let score = scorer.score_task(task_id);
 
@@ -764,7 +765,7 @@ mod tests {
     #[test]
     fn test_score_task_with_spec_link() {
         let mut scorer = ValueScorer::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let req_id = Uuid::new_v4();
 
         scorer.register_spec_link(task_id, req_id);
@@ -778,8 +779,8 @@ mod tests {
     #[test]
     fn test_score_task_with_blocking() {
         let mut scorer = ValueScorer::new();
-        let blocker = Uuid::new_v4();
-        let blocked = Uuid::new_v4();
+        let blocker = TaskId::new();
+        let blocked = TaskId::new();
 
         scorer.register_dependency(blocker, blocked);
 
@@ -793,10 +794,10 @@ mod tests {
     #[test]
     fn test_score_task_multiple_blockers() {
         let mut scorer = ValueScorer::new();
-        let task = Uuid::new_v4();
-        let blocked1 = Uuid::new_v4();
-        let blocked2 = Uuid::new_v4();
-        let blocked3 = Uuid::new_v4();
+        let task = TaskId::new();
+        let blocked1 = TaskId::new();
+        let blocked2 = TaskId::new();
+        let blocked3 = TaskId::new();
 
         scorer.register_dependency(task, blocked1);
         scorer.register_dependency(task, blocked2);
@@ -811,11 +812,11 @@ mod tests {
     #[test]
     fn test_critical_path_blocking() {
         let mut scorer = ValueScorer::new();
-        let task = Uuid::new_v4();
+        let task = TaskId::new();
         // Create 7 blocked tasks (more than 6 = critical path)
         for _i in 0..7 {
-            let _blocked = Uuid::new_v4();
-            scorer.register_dependency(task, Uuid::new_v4());
+            let _blocked = TaskId::new();
+            scorer.register_dependency(task, TaskId::new());
         }
 
         let score = scorer.score_task(task);
@@ -826,9 +827,9 @@ mod tests {
     #[test]
     fn test_depends_on() {
         let mut scorer = ValueScorer::new();
-        let blocker1 = Uuid::new_v4();
-        let blocker2 = Uuid::new_v4();
-        let blocked = Uuid::new_v4();
+        let blocker1 = TaskId::new();
+        let blocker2 = TaskId::new();
+        let blocked = TaskId::new();
 
         scorer.register_dependency(blocker1, blocked);
         scorer.register_dependency(blocker2, blocked);
@@ -843,8 +844,8 @@ mod tests {
     #[test]
     fn test_supportive_task_blocks_spec_implementing() {
         let mut scorer = ValueScorer::new();
-        let supportive = Uuid::new_v4();
-        let implements = Uuid::new_v4();
+        let supportive = TaskId::new();
+        let implements = TaskId::new();
         let req_id = Uuid::new_v4();
 
         // `implements` task implements a spec requirement
@@ -863,8 +864,8 @@ mod tests {
     #[test]
     fn test_score_tasks_batch() {
         let mut scorer = ValueScorer::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         scorer.register_dependency(task1, task2);
 
@@ -878,12 +879,12 @@ mod tests {
     #[test]
     fn test_blocked_count() {
         let mut scorer = ValueScorer::new();
-        let task = Uuid::new_v4();
+        let task = TaskId::new();
 
         assert_eq!(scorer.blocked_count(task), 0);
 
-        scorer.register_dependency(task, Uuid::new_v4());
-        scorer.register_dependency(task, Uuid::new_v4());
+        scorer.register_dependency(task, TaskId::new());
+        scorer.register_dependency(task, TaskId::new());
 
         assert_eq!(scorer.blocked_count(task), 2);
     }
@@ -891,8 +892,8 @@ mod tests {
     #[test]
     fn test_blocking_count() {
         let mut scorer = ValueScorer::new();
-        let task = Uuid::new_v4();
-        let blocker = Uuid::new_v4();
+        let task = TaskId::new();
+        let blocker = TaskId::new();
 
         assert_eq!(scorer.blocking_count(task), 0);
 
@@ -904,9 +905,9 @@ mod tests {
     #[test]
     fn test_all_dependencies() {
         let mut scorer = ValueScorer::new();
-        let dep1 = Uuid::new_v4();
-        let dep2 = Uuid::new_v4();
-        let dep3 = Uuid::new_v4();
+        let dep1 = TaskId::new();
+        let dep2 = TaskId::new();
+        let dep3 = TaskId::new();
 
         scorer.register_dependency(dep1, dep2);
         scorer.register_dependency(dep1, dep3);
@@ -960,7 +961,7 @@ mod tests {
     #[test]
     fn test_empty_task_id() {
         let scorer = ValueScorer::new();
-        let nil_uuid = Uuid::nil();
+        let nil_uuid = TaskId::from_uuid(Uuid::nil());
 
         let score = scorer.score_task(nil_uuid);
 
@@ -1006,7 +1007,7 @@ mod tests {
 
     #[test]
     fn test_complexity_affects_priority() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let spec = SpecAlignmentScore::implements(); // 4
         let blocking = BlockingImpactScore::some(); // 3
 
@@ -1042,7 +1043,7 @@ mod tests {
 
     #[test]
     fn test_is_discarded() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let score = TaskScore::new(
             task_id,
             SpecAlignmentScore::not_mentioned(), // 1
@@ -1059,7 +1060,7 @@ mod tests {
 
     #[test]
     fn test_is_not_discarded_high_score() {
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
         let score = TaskScore::new(
             task_id,
             SpecAlignmentScore::required(),       // 5
@@ -1078,8 +1079,8 @@ mod tests {
     #[test]
     fn test_score_and_filter_all_above_threshold() {
         let mut scorer = ValueScorer::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // Give both tasks high spec alignment
         scorer.register_spec_link(task1, Uuid::new_v4());
@@ -1094,8 +1095,8 @@ mod tests {
     #[test]
     fn test_score_and_filter_some_discarded() {
         let mut scorer = ValueScorer::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // task1 has spec link (high priority)
         scorer.register_spec_link(task1, Uuid::new_v4());
@@ -1117,8 +1118,8 @@ mod tests {
             discard_threshold: 4.0, // High threshold
         };
         let mut scorer = ValueScorer::with_config(config);
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // task1 has spec link (should give priority ~4.0)
         scorer.register_spec_link(task1, Uuid::new_v4());
@@ -1152,7 +1153,7 @@ mod tests {
             discard_threshold: 1.0, // Very low threshold
         };
         let scorer = ValueScorer::with_config(config);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let (kept, discarded) = scorer.score_and_filter(&[task_id]);
 
@@ -1166,7 +1167,7 @@ mod tests {
     #[test]
     fn test_set_complexity() {
         let mut scorer = ValueScorer::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         scorer.set_complexity(task_id, ComplexityScore::very_complex());
 
@@ -1177,7 +1178,7 @@ mod tests {
     #[test]
     fn test_complexity_defaults_to_moderate() {
         let scorer = ValueScorer::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let score = scorer.score_task(task_id);
         assert_eq!(score.complexity.value(), 3); // Default is moderate
@@ -1186,8 +1187,8 @@ mod tests {
     #[test]
     fn test_register_dependency_with_complexity() {
         let mut scorer = ValueScorer::new();
-        let blocker = Uuid::new_v4();
-        let blocked = Uuid::new_v4();
+        let blocker = TaskId::new();
+        let blocked = TaskId::new();
 
         scorer.register_dependency_with_complexity(blocker, blocked, ComplexityScore::complex());
 
@@ -1198,8 +1199,8 @@ mod tests {
     #[test]
     fn test_complexity_affects_filtering() {
         let mut scorer = ValueScorer::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // Both have spec alignment
         scorer.register_spec_link(task1, Uuid::new_v4());
@@ -1223,8 +1224,8 @@ mod tests {
     #[test]
     fn test_score_and_filter_some_discarded_v2() {
         let mut scorer = ValueScorer::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         // task1 has spec link (high priority)
         scorer.register_spec_link(task1, Uuid::new_v4());
@@ -1274,9 +1275,9 @@ mod tests {
     #[test]
     fn test_score_and_filter_with_explicit_complexity() {
         let mut scorer = ValueScorer::new();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
-        let task3 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
+        let task3 = TaskId::new();
 
         // task1: spec aligned, low complexity -> should be kept
         scorer.register_spec_link(task1, Uuid::new_v4());
@@ -1303,7 +1304,7 @@ mod tests {
     #[test]
     fn test_self_dependency() {
         let mut scorer = ValueScorer::new();
-        let task = Uuid::new_v4();
+        let task = TaskId::new();
 
         // Register self as blocking itself (edge case)
         scorer.register_dependency(task, task);

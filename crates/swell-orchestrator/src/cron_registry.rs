@@ -19,15 +19,15 @@
 use croner::Cron;
 use dashmap::DashMap;
 use std::sync::Arc;
+use swell_core::ids::TaskId;
 use swell_core::SwellError;
 use tracing::info;
-use uuid::Uuid;
 
 /// A cron entry associating a task with a cron expression for scheduling.
 #[derive(Debug, Clone)]
 pub struct CronEntry {
     /// The task ID this entry is associated with
-    pub task_id: Uuid,
+    pub task_id: TaskId,
     /// The cron expression defining the schedule (6-field format with seconds)
     pub expression: String,
     /// The last time this entry was triggered (if any)
@@ -41,7 +41,7 @@ pub struct CronEntry {
 impl CronEntry {
     /// Create a new cron entry
     pub fn new(
-        task_id: Uuid,
+        task_id: TaskId,
         expression: String,
         description: Option<String>,
     ) -> Result<Self, SwellError> {
@@ -96,27 +96,27 @@ impl CronEntry {
 /// operations on different entries without lock contention.
 pub struct CronRegistry {
     /// Maps task ID -> CronEntry
-    entries: DashMap<Uuid, Arc<CronEntry>>,
+    entries: DashMap<TaskId, Arc<CronEntry>>,
     /// Maps cron expression hash -> list of task IDs (for efficient lookup)
     /// This is useful when we want to find all entries with the same expression
-    expression_index: DashMap<String, Vec<Uuid>>,
+    expression_index: DashMap<String, Vec<TaskId>>,
 }
 
 /// Registry event emitted when cron entries change state
 #[derive(Debug, Clone)]
 pub enum CronEvent {
     /// Emitted when a new cron entry is registered
-    CronEntryRegistered { task_id: Uuid, expression: String },
+    CronEntryRegistered { task_id: TaskId, expression: String },
     /// Emitted when a cron entry is removed
-    CronEntryRemoved { task_id: Uuid },
+    CronEntryRemoved { task_id: TaskId },
     /// Emitted when a task's cron expression is updated
     CronEntryUpdated {
-        task_id: Uuid,
+        task_id: TaskId,
         old_expression: String,
         new_expression: String,
     },
     /// Emitted when a task becomes due
-    TaskDue { task_id: Uuid, expression: String },
+    TaskDue { task_id: TaskId, expression: String },
 }
 
 impl CronRegistry {
@@ -131,7 +131,7 @@ impl CronRegistry {
     /// Register a new cron entry for a task.
     ///
     /// Returns an error if the cron expression is invalid.
-    pub fn register(&self, task_id: Uuid, expression: &str) -> Result<(), SwellError> {
+    pub fn register(&self, task_id: TaskId, expression: &str) -> Result<(), SwellError> {
         // Validate and create the entry
         let entry = Arc::new(CronEntry::new(task_id, expression.to_string(), None)?);
 
@@ -159,7 +159,7 @@ impl CronRegistry {
     /// Register a cron entry with a description.
     pub fn register_with_description(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         expression: &str,
         description: &str,
     ) -> Result<(), SwellError> {
@@ -191,7 +191,7 @@ impl CronRegistry {
     /// Remove a cron entry by task ID.
     ///
     /// Returns the removed entry if it existed.
-    pub fn remove(&self, task_id: Uuid) -> Result<Option<Arc<CronEntry>>, SwellError> {
+    pub fn remove(&self, task_id: TaskId) -> Result<Option<Arc<CronEntry>>, SwellError> {
         if let Some((_, entry)) = self.entries.remove(&task_id) {
             // Remove from expression index
             if let Some(mut index) = self.expression_index.get_mut(&entry.expression) {
@@ -215,7 +215,7 @@ impl CronRegistry {
     /// Returns the updated entry.
     pub fn update_expression(
         &self,
-        task_id: Uuid,
+        task_id: TaskId,
         new_expression: &str,
     ) -> Result<Arc<CronEntry>, SwellError> {
         let entry = self
@@ -263,7 +263,7 @@ impl CronRegistry {
     }
 
     /// Get a cron entry by task ID.
-    pub fn get(&self, task_id: Uuid) -> Option<Arc<CronEntry>> {
+    pub fn get(&self, task_id: TaskId) -> Option<Arc<CronEntry>> {
         self.entries.get(&task_id).map(|r| r.value().clone())
     }
 
@@ -302,14 +302,14 @@ impl CronRegistry {
     }
 
     /// Check if a task has a cron entry.
-    pub fn has_entry(&self, task_id: Uuid) -> bool {
+    pub fn has_entry(&self, task_id: TaskId) -> bool {
         self.entries.contains_key(&task_id)
     }
 
     /// Mark an entry as triggered (update last_triggered timestamp).
     ///
     /// Call this after a task is executed to track when it last ran.
-    pub fn mark_triggered(&self, task_id: Uuid) -> Result<(), SwellError> {
+    pub fn mark_triggered(&self, task_id: TaskId) -> Result<(), SwellError> {
         // Clone the entry value while holding the read lock
         let entry = match self.entries.get(&task_id) {
             Some(entry) => entry.value().clone(),
@@ -333,7 +333,7 @@ impl CronRegistry {
     }
 
     /// Get all task IDs.
-    pub fn task_ids(&self) -> Vec<Uuid> {
+    pub fn task_ids(&self) -> Vec<TaskId> {
         self.entries.iter().map(|r| *r.key()).collect()
     }
 }
@@ -361,7 +361,7 @@ mod tests {
     #[test]
     fn test_register_valid_cron_expression() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = registry.register(task_id, "* * * * * *");
         assert!(result.is_ok());
@@ -371,7 +371,7 @@ mod tests {
     #[test]
     fn test_register_invalid_cron_expression_returns_error() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = registry.register(task_id, "not a cron expression");
         assert!(result.is_err());
@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn test_register_duplicate_task_returns_error() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.register(task_id, "* * * * * *").unwrap();
         let result = registry.register(task_id, "0 * * * * *");
@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn test_register_with_description() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry
             .register_with_description(task_id, "* * * * * *", "Every second task")
@@ -406,7 +406,7 @@ mod tests {
     #[test]
     fn test_remove_existing_entry() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.register(task_id, "* * * * * *").unwrap();
         let result = registry.remove(task_id).unwrap();
@@ -418,7 +418,7 @@ mod tests {
     #[test]
     fn test_remove_nonexistent_entry_returns_ok_with_none() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = registry.remove(task_id).unwrap();
         assert!(result.is_none());
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn test_due_entries_every_second_cron_is_due_at_current_second() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.register(task_id, "* * * * * *").unwrap();
 
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn test_due_entries_once_a_year_not_due_unless_jan_1_midnight() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // January 1st at midnight - once a year
         registry.register(task_id, "0 0 1 1 *").unwrap();
@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn test_due_entries_on_jan_1_midnight_is_due() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // January 1st at midnight - once a year
         registry.register(task_id, "0 0 1 1 *").unwrap();
@@ -496,8 +496,8 @@ mod tests {
     #[test]
     fn test_due_entries_multiple_tasks() {
         let registry = new_registry();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         registry.register(task1, "* * * * * *").unwrap(); // Every second
         registry.register(task2, "* * * * * *").unwrap(); // Every second (same pattern)
@@ -514,7 +514,7 @@ mod tests {
     #[test]
     fn test_update_expression() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.register(task_id, "* * * * * *").unwrap();
 
@@ -526,7 +526,7 @@ mod tests {
     #[test]
     fn test_update_expression_nonexistent_returns_error() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = registry.update_expression(task_id, "* * * * * *");
         assert!(result.is_err());
@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn test_get_existing_entry() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.register(task_id, "* * * * * *").unwrap();
 
@@ -549,7 +549,7 @@ mod tests {
     #[test]
     fn test_get_nonexistent_entry_returns_none() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let entry = registry.get(task_id);
         assert!(entry.is_none());
@@ -560,8 +560,8 @@ mod tests {
     #[test]
     fn test_get_by_expression() {
         let registry = new_registry();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         registry.register(task1, "* * * * * *").unwrap();
         registry.register(task2, "* * * * * *").unwrap();
@@ -575,7 +575,7 @@ mod tests {
     #[test]
     fn test_has_entry() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         assert!(!registry.has_entry(task_id));
 
@@ -589,7 +589,7 @@ mod tests {
     #[test]
     fn test_mark_triggered() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.register(task_id, "* * * * * *").unwrap();
 
@@ -602,7 +602,7 @@ mod tests {
     #[test]
     fn test_mark_triggered_nonexistent_returns_error() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         let result = registry.mark_triggered(task_id);
         assert!(result.is_err());
@@ -613,8 +613,8 @@ mod tests {
     #[test]
     fn test_all_entries() {
         let registry = new_registry();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         registry.register(task1, "* * * * * *").unwrap();
         registry.register(task2, "0 * * * * *").unwrap();
@@ -626,8 +626,8 @@ mod tests {
     #[test]
     fn test_task_ids() {
         let registry = new_registry();
-        let task1 = Uuid::new_v4();
-        let task2 = Uuid::new_v4();
+        let task1 = TaskId::new();
+        let task2 = TaskId::new();
 
         registry.register(task1, "* * * * * *").unwrap();
         registry.register(task2, "0 * * * * *").unwrap();
@@ -643,7 +643,7 @@ mod tests {
     #[test]
     fn test_next_scheduled_calculation() {
         let registry = new_registry();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Every 5 minutes
         registry.register(task_id, "0 */5 * * * *").unwrap();
@@ -677,7 +677,7 @@ mod tests {
         ];
 
         for (i, pattern) in patterns.iter().enumerate() {
-            let task_id = Uuid::new_v4();
+            let task_id = TaskId::new();
             let result = registry.register(task_id, pattern);
             assert!(
                 result.is_ok(),
@@ -697,7 +697,7 @@ mod tests {
 
         // Test patterns with known expected behavior
         // Jan 1 midnight - should be due at exactly Jan 1 midnight
-        let task1 = Uuid::new_v4();
+        let task1 = TaskId::new();
         registry.register(task1, "0 0 1 1 *").unwrap();
 
         let jan_1 = chrono::NaiveDate::from_ymd_opt(2025, 1, 1)
@@ -731,7 +731,7 @@ mod tests {
     #[test]
     fn test_concurrent_access() {
         let registry = Arc::new(new_registry());
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         registry.register(task_id, "* * * * * *").unwrap();
 

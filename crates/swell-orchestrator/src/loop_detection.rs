@@ -16,7 +16,7 @@
 //! use swell_orchestrator::loop_detection::{OrchestratorLoopDetector, LoopIntervention};
 //!
 //! let mut detector = OrchestratorLoopDetector::new();
-//! let task_id = uuid::Uuid::new_v4();
+//! let task_id = TaskId::new();
 //!
 //! // Feed tool call results into the detector
 //! detector.record_tool_call(task_id, "read_file", false, serde_json::json!({})).await;
@@ -34,10 +34,10 @@
 //! ```
 
 use serde::{Deserialize, Serialize};
+use swell_core::ids::TaskId;
 use swell_tools::loop_detection::{
     LoopDetectionConfig, LoopPatternType, SharedToolLoopTracker, ToolLoopTracker,
 };
-use uuid::Uuid;
 
 /// The action the orchestrator should take when a loop is detected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,7 +142,7 @@ impl OrchestratorLoopDetector {
     /// execution loop.
     pub async fn record_tool_call(
         &mut self,
-        task_id: Uuid,
+        task_id: TaskId,
         tool_name: impl Into<String>,
         success: bool,
         arguments: serde_json::Value,
@@ -157,7 +157,7 @@ impl OrchestratorLoopDetector {
     ///
     /// This should be called whenever the orchestrator discards an existing
     /// plan and re-runs the planning agent.
-    pub async fn record_replan(&mut self, task_id: Uuid) {
+    pub async fn record_replan(&mut self, task_id: TaskId) {
         self.tracker.record_replan(task_id).await;
     }
 
@@ -166,7 +166,7 @@ impl OrchestratorLoopDetector {
     ///
     /// The returned intervention type is determined by
     /// [`intervention_for_pattern`].
-    pub async fn check(&mut self, task_id: Uuid) -> Option<LoopIntervention> {
+    pub async fn check(&mut self, task_id: TaskId) -> Option<LoopIntervention> {
         let result = self.tracker.analyze(task_id).await;
         if !result.loop_detected {
             return None;
@@ -179,7 +179,7 @@ impl OrchestratorLoopDetector {
     }
 
     /// Reset all state for a task (e.g. after successful completion).
-    pub fn clear(&mut self, task_id: Uuid) {
+    pub fn clear(&mut self, task_id: TaskId) {
         self.tracker.clear(task_id);
     }
 }
@@ -214,7 +214,7 @@ mod tests {
     #[tokio::test]
     async fn test_same_tool_retry_triggers_escalation() {
         let mut detector = OrchestratorLoopDetector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Default threshold is 3 consecutive same-tool failures.
         for _ in 0..3 {
@@ -240,7 +240,7 @@ mod tests {
     #[tokio::test]
     async fn test_same_tool_retry_below_threshold_no_intervention() {
         let mut detector = OrchestratorLoopDetector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Only 2 calls — below the default threshold of 3.
         for _ in 0..2 {
@@ -262,7 +262,7 @@ mod tests {
     #[tokio::test]
     async fn test_oscillation_triggers_strategy_change() {
         let mut detector = OrchestratorLoopDetector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Pattern: read_file → edit_file → read_file → edit_file → read_file
         // produces 3 oscillation counts which equals the default threshold (3).
@@ -297,7 +297,7 @@ mod tests {
     async fn test_no_oscillation_same_tool_repeated() {
         // Using the same tool repeatedly is NOT an oscillation.
         let mut detector = OrchestratorLoopDetector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         for _ in 0..6 {
             detector
@@ -319,7 +319,7 @@ mod tests {
     #[tokio::test]
     async fn test_replanning_loop_triggers_halt() {
         let mut detector = OrchestratorLoopDetector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Default replan threshold is 3.
         for _ in 0..3 {
@@ -343,7 +343,7 @@ mod tests {
     #[tokio::test]
     async fn test_replanning_below_threshold_no_intervention() {
         let mut detector = OrchestratorLoopDetector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // Only 2 replans — below the default threshold of 3.
         for _ in 0..2 {
@@ -407,7 +407,7 @@ mod tests {
     #[tokio::test]
     async fn test_clear_resets_state() {
         let mut detector = OrchestratorLoopDetector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         for _ in 0..3 {
             detector
@@ -429,8 +429,8 @@ mod tests {
     #[tokio::test]
     async fn test_different_tasks_are_independent() {
         let mut detector = OrchestratorLoopDetector::new();
-        let task_a = Uuid::new_v4();
-        let task_b = Uuid::new_v4();
+        let task_a = TaskId::new();
+        let task_b = TaskId::new();
 
         // Task A gets a loop.
         for _ in 0..3 {
@@ -470,7 +470,7 @@ mod tests {
         };
 
         let mut detector = OrchestratorLoopDetector::with_config(config);
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         // 3 consecutive failures: below the custom threshold of 5.
         for _ in 0..3 {
@@ -504,7 +504,7 @@ mod tests {
     #[tokio::test]
     async fn test_intervention_reason_is_non_empty() {
         let mut detector = OrchestratorLoopDetector::new();
-        let task_id = Uuid::new_v4();
+        let task_id = TaskId::new();
 
         for _ in 0..3 {
             detector.record_replan(task_id).await;

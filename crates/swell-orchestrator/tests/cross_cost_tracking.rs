@@ -341,7 +341,7 @@ fn test_stopping_condition_hard_limit_breached_content() {
     // Test all hard limit types
     let time_condition = StoppingCondition::HardLimitBreached {
         limit_type: HardLimitType::MaxTime {
-            task_id: Uuid::nil(),
+            task_id: TaskId::nil(),
         },
         current_value: "3600s".to_string(),
         limit_value: "1800s".to_string(),

@@ -9,13 +9,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
+use swell_core::ids::{AgentId, SessionId, TaskId};
+
 /// Represents an agent interaction log entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationLog {
     pub id: Uuid,
-    pub session_id: Uuid,
-    pub task_id: Option<Uuid>,
-    pub agent_id: Uuid,
+    pub session_id: SessionId,
+    pub task_id: Option<TaskId>,
+    pub agent_id: AgentId,
     pub agent_role: String,
     pub action: ConversationAction,
     pub content: String,
@@ -26,12 +28,12 @@ pub struct ConversationLog {
 impl ConversationLog {
     /// Create a new conversation log entry
     pub fn new(
-        session_id: Uuid,
-        agent_id: Uuid,
+        session_id: SessionId,
+        agent_id: AgentId,
         agent_role: String,
         action: ConversationAction,
         content: String,
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -109,9 +111,9 @@ pub struct RecallQuery {
     /// Keywords to search for (BM25 will be applied)
     pub keywords: Vec<String>,
     /// Filter by session ID
-    pub session_id: Option<Uuid>,
+    pub session_id: Option<SessionId>,
     /// Filter by task ID
-    pub task_id: Option<Uuid>,
+    pub task_id: Option<TaskId>,
     /// Filter by agent role
     pub agent_role: Option<String>,
     /// Filter by action type
@@ -230,12 +232,12 @@ impl SqliteMemoryStore {
     /// Get conversation logs by session ID
     pub async fn get_conversation_logs_by_session(
         &self,
-        session_id: Uuid,
+        session_id: SessionId,
     ) -> Result<Vec<ConversationLog>, SwellError> {
         let rows = sqlx::query(
             "SELECT * FROM conversation_logs WHERE session_id = ? ORDER BY timestamp ASC",
         )
-        .bind(session_id.to_string())
+        .bind(session_id.as_uuid().to_string())
         .fetch_all(self.pool.as_ref())
         .await
         .map_err(|e: sqlx::Error| SwellError::DatabaseError(e.to_string()))?;
@@ -410,18 +412,23 @@ impl SqliteMemoryStore {
             .map_err(|e| SwellError::DatabaseError(format!("Invalid UUID: {}", e)))?;
 
         let session_id_str: String = row.get("session_id");
-        let session_id = Uuid::parse_str(&session_id_str)
+        let session_id_uuid = Uuid::parse_str(&session_id_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid session UUID: {}", e)))?;
+        let session_id = SessionId::from_uuid(session_id_uuid);
 
         let task_id_str: Option<String> = row.get("task_id");
-        let task_id = task_id_str
-            .map(|s| Uuid::parse_str(&s))
-            .transpose()
-            .map_err(|e| SwellError::DatabaseError(format!("Invalid task UUID: {}", e)))?;
+        let task_id: Option<TaskId> = task_id_str
+            .map(|s| {
+                let uuid = Uuid::parse_str(&s)
+                    .map_err(|e| SwellError::DatabaseError(format!("Invalid task UUID: {}", e)))?;
+                Ok::<TaskId, SwellError>(TaskId::from_uuid(uuid))
+            })
+            .transpose()?;
 
         let agent_id_str: String = row.get("agent_id");
-        let agent_id = Uuid::parse_str(&agent_id_str)
+        let agent_id_uuid = Uuid::parse_str(&agent_id_str)
             .map_err(|e| SwellError::DatabaseError(format!("Invalid agent UUID: {}", e)))?;
+        let agent_id = AgentId::from_uuid(agent_id_uuid);
 
         let agent_role: String = row.get("agent_role");
         let action_str: String = row.get("action");
@@ -589,12 +596,12 @@ impl RecallService {
     /// Log an agent interaction
     pub async fn log_interaction(
         &self,
-        session_id: Uuid,
-        agent_id: Uuid,
+        session_id: SessionId,
+        agent_id: AgentId,
         agent_role: String,
         action: ConversationAction,
         content: String,
-        task_id: Option<Uuid>,
+        task_id: Option<TaskId>,
     ) -> Result<Uuid, SwellError> {
         let log = ConversationLog::new(session_id, agent_id, agent_role, action, content, task_id);
         self.store.store_conversation_log(log).await
@@ -608,7 +615,7 @@ impl RecallService {
     /// Get all logs for a session
     pub async fn get_session_logs(
         &self,
-        session_id: Uuid,
+        session_id: SessionId,
     ) -> Result<Vec<ConversationLog>, SwellError> {
         self.store
             .get_conversation_logs_by_session(session_id)
@@ -616,7 +623,7 @@ impl RecallService {
     }
 
     /// Get logs for a specific task
-    pub async fn get_task_logs(&self, task_id: Uuid) -> Result<Vec<RecallResult>, SwellError> {
+    pub async fn get_task_logs(&self, task_id: TaskId) -> Result<Vec<RecallResult>, SwellError> {
         let query = RecallQuery {
             task_id: Some(task_id),
             ..Default::default()
