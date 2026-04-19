@@ -1,0 +1,18 @@
+{
+  "assertions": {
+    "VAL-ERROR-001": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "DaemonError defined with all 10 variants, cargo check -p swell-daemon succeeds" },
+    "VAL-ERROR-002": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "ValidationReason defined with all 5 variants" },
+    "VAL-ERROR-003": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "BudgetClass defined with all 3 variants (TokensExceeded, UsdExceeded, WallClockExceeded)" },
+    "VAL-ERROR-004": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "DaemonError carries #[derive(thiserror::Error)], cargo check -p swell-daemon exits 0" },
+    "VAL-ERROR-005": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "DaemonErrorWire defined with #[serde(tag = 'kind', rename_all = 'snake_case')] and From<&DaemonError> for DaemonErrorWire" },
+    "VAL-ERROR-006": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "rg 'anyhow::Result\\b' returns 0 in swell-daemon/src/ public signatures" },
+    "VAL-ERROR-007": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "rg '\\.to_string\\(\\)\\.contains\\(' returns 0 in swell-daemon/src/ (tests/ exempt)" },
+    "VAL-ERROR-008": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "thiserror.workspace = true in swell-daemon/Cargo.toml" },
+    "VAL-ERROR-009": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "From<anyhow::Error> for DaemonError, From<swell_core::SwellError> for DaemonError, and From<&DaemonError> for DaemonErrorWire all compile" },
+    "VAL-ERROR-010": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "cargo check -p swell-integration-tests exits 0, matches!() assertions against DaemonError variants type-check" },
+    "VAL-ERROR-011": { "status": "passed", "validatedAtMilestone": "refactor-04-daemon-error-enum", "note": "cargo check --workspace exits 0, no semantic duplication with SwellError" },
+    "VAL-CROSS-001": { "status": "passed", "validatedAtMilestone": "regression-audit", "note": "Each refactor compiles independently without circular deps" },
+    "VAL-CROSS-002": { "status": "passed", "validatedAtMilestone": "regression-audit", "note": "Phase A binding rule preserved: no Option-wrapped production subsystems" },
+    "VAL-CROSS-003": { "status": "passed", "validatedAtMilestone": "regression-audit", "note": "Refactor 04 grep (stringly-typed error matching): 0 outside tests/ in swell-daemon" }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "milestone": "refactor-04-daemon-error-enum",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-ERROR-001",
+    "VAL-ERROR-002",
+    "VAL-ERROR-003",
+    "VAL-ERROR-004",
+    "VAL-ERROR-005",
+    "VAL-ERROR-006",
+    "VAL-ERROR-007",
+    "VAL-ERROR-008",
+    "VAL-ERROR-009",
+    "VAL-ERROR-010",
+    "VAL-ERROR-011"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "previousRound": null
+}
