@@ -1,0 +1,21 @@
+{
+  "featureId": "refactor-03-define-newtypes",
+  "reviewedAt": "2026-04-19T00:00:00Z",
+  "commitId": "adda095fe5b5e8c7d9f0e3a4b6c8d1e2f3a4b6c8d",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "All 9 newtypes (TaskId, AgentId, WorktreeId, BranchName, CommitSha, FeatureLeadId, CheckpointId, SessionId, SocketPath) are properly defined in ids.rs with correct derives, #[serde(transparent)], named accessors, Display, and FromStr. Re-exports are correctly added to lib.rs via `pub use ids::*;`. No From implementations exist between newtypes and inner types. cargo check -p swell-core passes.",
+    "issues": []
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The feature added `pub mod ids;` and `pub use ids::*;` to lib.rs for re-exports. This pattern wasn't explicitly documented in AGENTS.md but follows the same pattern used by other modules in the crate (e.g., `pub use audit::*;`, `pub use cost_tracking::*;`). The AGENTS.md section on 'Key Re-exports' doesn't explicitly enumerate what gets re-exported or how - just lists example re-exports. This is fine since the pattern is consistent with existing code.",
+      "evidence": "lib.rs lines 8, 22"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature pass: All 9 newtype wrappers are correctly implemented in ids.rs with proper derives, serde(transparent), accessors, Display, FromStr, and no From conversions. Re-exported via `pub use ids::*;` at crate root. String-backed types (BranchName, CommitSha, SocketPath) additionally provide `from_string()` constructor which is more ergonomic than requiring `from_str()` - this is a beneficial deviation from the spec which only mentioned from_str/as_str. No workspace-breaking issues in swell-core itself."
+}

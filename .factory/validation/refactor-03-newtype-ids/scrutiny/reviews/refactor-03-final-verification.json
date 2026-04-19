@@ -1,0 +1,79 @@
+{
+  "featureId": "refactor-03-final-verification",
+  "reviewedAt": "2026-04-19T12:30:00Z",
+  "commitId": "cd6b79628d47542352773d3a7e880aacf5613e7b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "fail",
+  "codeReview": {
+    "summary": "The commit correctly fixes test compilation errors for TaskId migration by adding is_nil() methods, replacing Uuid::new_v4() with TaskId::new() in test code, and updating method signatures. However, the verification gate VAL-NEWTYPE-014 is FAILING - the grep for domain Uuid fields returns 824 matches instead of the required 0 matches.",
+    "issues": [
+      {
+        "file": "crates/swell-state/src/postgres.rs",
+        "line": 0,
+        "severity": "blocking",
+        "description": "Checkpoint struct still uses `pub id: Uuid` instead of `CheckpointId`. This is one of 85 files with domain Uuid fields that fail VAL-NEWTYPE-014."
+      },
+      {
+        "file": "crates/swell-state/src/session.rs",
+        "line": 0,
+        "severity": "blocking",
+        "description": "Session struct uses `pub id: Uuid` and trait signatures use `session_id: Uuid` instead of SessionId newtype. Fails VAL-NEWTYPE-014."
+      },
+      {
+        "file": "crates/swell-core/src/transcript.rs",
+        "line": 0,
+        "severity": "blocking",
+        "description": "TranscriptEvent and related structs use `pub session_id: Uuid` and `pub entity_id: Uuid` instead of SessionId. Fails VAL-NEWTYPE-014."
+      },
+      {
+        "file": "crates/swell-tools/src/credential_proxy.rs",
+        "line": 0,
+        "severity": "blocking",
+        "description": "CredentialProxy struct uses `pub id: Uuid`, `pub token_id: Uuid`, `pub credential_id: Uuid` - none migrated to newtypes. Fails VAL-NEWTYPE-014."
+      },
+      {
+        "file": "crates/swell-memory/src/learning_pipeline.rs",
+        "line": 0,
+        "severity": "blocking",
+        "description": "LearningEntry and related functions use `pub id: Uuid` and `pub entry_id: Uuid` - not migrated. Fails VAL-NEWTYPE-014."
+      }
+    ]
+  },
+  "verificationGateStatus": {
+    "VAL-NEWTYPE-013": {
+      "description": "cargo test --workspace passes green",
+      "status": "pass",
+      "evidence": "cargo test --workspace exits 0 - verified"
+    },
+    "VAL-NEWTYPE-014": {
+      "description": "rg ':\\s*Uuid\\b' crates/ --type=rust | rg -v 'ids\\.rs|uuid::Uuid' returns 0 matches",
+      "status": "fail",
+      "evidence": "Returns 824 matches across 85 files - verified. Examples: swell-state/src/postgres.rs:pub id: Uuid, swell-state/src/session.rs:pub id: Uuid, swell-core/src/transcript.rs:pub session_id: Uuid"
+    }
+  },
+  "workerVerificationGap": {
+    "description": "The worker did NOT run the verification grep specified in verificationSteps. The handoff only shows 'cargo test --workspace' as verification. The grep would have revealed 824 matches and failed the gate.",
+    "verificationStepsExpected": [
+      "cargo test --workspace",
+      "rg ':\\s*Uuid\\b' crates/ --type=rust | rg -v 'ids\\.rs|uuid::Uuid'"
+    ],
+    "verificationStepsActuallyRun": [
+      "cargo test --workspace"
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The validation contract VAL-NEWTYPE-014 specifies that 'Uuid appears only inside newtype definitions and uuid::Uuid references' but 85 files still have domain fields typed as raw Uuid. This suggests the migration scope was not fully defined or the verification gate was set incorrectly at feature creation time.",
+      "evidence": "rg ':\\s*Uuid\\b' crates/ --type=rust | rg -v 'ids\\.rs|uuid::Uuid' returns 824 matches across 85 files"
+    },
+    {
+      "area": "skills",
+      "observation": "The rust skill and mission procedure did not require running the verification grep before marking the feature complete. The worker followed the skill procedure but the verification gate was never actually checked.",
+      "evidence": "Handoff shows only 'cargo test --workspace' was run. verificationSteps in features.json lists both cargo test AND rg grep, but grep was not executed."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "FAIL - The feature correctly fixes TaskId-related test compilation errors (29 files changed), and VAL-NEWTYPE-013 passes (cargo test --workspace exits 0). However, VAL-NEWTYPE-014 is FAILING with 824 grep matches instead of 0, and the worker never actually ran the verification grep. The feature status shows 'completed' but the verification gate was never passed. Domain fields in 85 files still use raw Uuid types (Checkpoint.id, Session.id, Transcript.session_id, etc.) that should have been migrated to newtypes (CheckpointId, SessionId) per the validation contract."
+}

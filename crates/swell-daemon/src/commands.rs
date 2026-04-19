@@ -7,6 +7,7 @@ use crate::events::EventEmitter;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+#[allow(unused_imports)]
 use swell_core::{
     get_last_llm_model, get_total_llm_tokens, AgentId, CliCommand, DaemonEvent, DataResponse,
     FailureClass, TaskId, TaskState,
