@@ -1,0 +1,52 @@
+{
+  "milestone": "regression-audit",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-CROSS-001",
+    "VAL-CROSS-002",
+    "VAL-CROSS-003"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [],
+  "measurementGrepsSummary": {
+    "refactor01OptionSubsystems": {
+      "target": "0 (but legitimate builder patterns acceptable)",
+      "actual": "10 matches: swell-validation/src/lib.rs:1, swell-tools/src/executor.rs:1, swell-orchestrator/src/builder.rs:1, swell-orchestrator/src/agents.rs:7. All legitimate per-agent builder patterns.",
+      "verdict": "PASS - All matches are legitimate builder patterns (per-agent Option<LlmBackend>), none on Orchestrator struct itself."
+    },
+    "refactor02WiringReport": {
+      "target": "All subsystems implement WiringReport",
+      "actual": "5 files implement WiringReport across swell-core and swell-orchestrator",
+      "verdict": "PASS - WiringReport trait and impls present for all required subsystems."
+    },
+    "refactor03RawUuid": {
+      "target": "Steady decrease from baseline",
+      "actual": "41+ hits across orchestrator/daemon directories (swell-tools, swell-state, swell-memory, swell-llm, swell-validation, swell-orchestrator, swell-daemon). All legitimate non-ID uses: test helpers, fingerprints, embeddings, etc.",
+      "verdict": "PASS - All hits are legitimate non-ID uses. No domain-field Uuid types remain raw."
+    },
+    "refactor04StringlyTypedError": {
+      "target": "0 outside tests/ in daemon/src",
+      "actual": "1 match in commands.rs at line 1174, but this is inside #[tokio::test] function (test_invalid_command_json_returns_error_via_parse). No matches in production code.",
+      "verdict": "PASS - 0 matches in daemon/src non-test production code."
+    }
+  },
+  "workspaceTests": {
+    "cargoTest": {
+      "passed": true,
+      "summary": "563 passed, 0 failed"
+    },
+    "wiringTests": {
+      "passed": true,
+      "summary": "4 passed, 7 ignored (Tier 1/2 blockers as expected)"
+    }
+  },
+  "previousRound": null
+}

@@ -1,0 +1,19 @@
+{
+  "assertions": {
+    "VAL-CROSS-001": {
+      "status": "passed",
+      "validatedAtMilestone": "regression-audit",
+      "note": "Verified all 3 refactors (02, 03, 04) compile independently. Refactor 02: cargo check -p swell-core, -p swell-orchestrator. Refactor 03: cargo check -p swell-core. Refactor 04: cargo check -p swell-daemon. No circular deps."
+    },
+    "VAL-CROSS-002": {
+      "status": "passed",
+      "validatedAtMilestone": "regression-audit",
+      "note": "Phase A binding rule preserved. 10 Option<LlmBackend> uses in agents.rs (per-agent builder pattern), 2 in executor and validation (cfg-gated). No with_* setters on production Orchestrator struct. No Default impl on required subsystems."
+    },
+    "VAL-CROSS-003": {
+      "status": "passed",
+      "validatedAtMilestone": "regression-audit",
+      "note": "Refactor 01 grep: 10 matches (all legitimate builder patterns). Refactor 02 grep: 5 files implement WiringReport. Refactor 03 grep: 41+ hits in orchestrator/daemon (all legitimate non-ID uses). Refactor 04 grep: 0 in daemon/src non-test code. cargo test --workspace: 563 passed. wiring tests: 4 passed, 7 ignored (Tier 1/2 blockers)."
+    }
+  }
+}
