@@ -122,10 +122,22 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --features swell-orchestrator/test-support -- -D warnings -D clippy::dbg_macro -D clippy::todo
 
-  # Standard test job
+  # Standard test job. Runs once permissive (SWELL_STRICT unset) and once
+  # strict, so any test that triggers Daemon startup (e.g. the daemon E2E
+  # job) exercises the SWELL_STRICT=1 codepath instead of dead-coding it.
   test:
-    name: Test workspace
+    name: Test workspace (${{ matrix.strict }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - strict: permissive
+            swell_strict: ""
+          - strict: strict
+            swell_strict: "1"
+    env:
+      SWELL_STRICT: ${{ matrix.swell_strict }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
