@@ -3216,7 +3216,7 @@ mod pipeline_tests {
     #[tokio::test]
     async fn test_validation_message_levels() {
         // Test different validation message levels
-        let messages = vec![
+        let messages = [
             ValidationMessage {
                 level: ValidationLevel::Error,
                 code: None,

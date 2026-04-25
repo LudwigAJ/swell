@@ -586,7 +586,7 @@ mod tests {
         // timeout should be 20 (from user modern)
         assert_eq!(config.get("timeout").unwrap().as_i64().unwrap(), 20);
         // debug should be true (from user modern)
-        assert_eq!(config.get("debug").unwrap().as_bool().unwrap(), true);
+        assert!(config.get("debug").unwrap().as_bool().unwrap());
     }
 
     #[test]

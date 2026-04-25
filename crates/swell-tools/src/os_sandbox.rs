@@ -882,7 +882,7 @@ mod tests {
         let availability = detect_available_sandbox().await;
         println!("Sandbox availability (async): {:?}", availability);
         // This test just verifies detection works
-        assert!(availability.description.len() > 0);
+        assert!(!availability.description.is_empty());
     }
 
     #[test]
@@ -890,7 +890,7 @@ mod tests {
         let availability = detect_available_sandbox_sync();
         println!("Sandbox availability (sync): {:?}", availability);
         // This test just verifies detection works
-        assert!(availability.description.len() > 0);
+        assert!(!availability.description.is_empty());
     }
 
     #[test]

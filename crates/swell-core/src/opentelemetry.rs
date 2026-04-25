@@ -547,10 +547,7 @@ mod tests {
 
         // Small delay - elapsed_ms returns u64 which is always >= 0
         std::thread::sleep(std::time::Duration::from_micros(500));
-        let elapsed = tracker.elapsed_ms();
-
-        // Verify elapsed is reasonable (not zero since we slept)
-        assert!(elapsed >= 0); // u64 is always >= 0, but explicit check documents intent
+        let _elapsed = tracker.elapsed_ms();
 
         // But for 10ms sleep, should get at least 10ms
         let tracker2 = LatencyTracker::new();

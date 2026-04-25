@@ -10,12 +10,12 @@
 //! cannot be controlled by `project_path`. These tests only exercise layers 3-4
 //! (project shared `settings.json` and project modern `settings.local.json`).
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use swell_core::config::ConfigLoader;
 use tempfile::TempDir;
 
 /// Write a JSON config file inside `<dir>/.swell/<name>`.
-fn write_project_config(dir: &PathBuf, name: &str, content: &str) -> PathBuf {
+fn write_project_config(dir: &Path, name: &str, content: &str) -> PathBuf {
     let swell_dir = dir.join(".swell");
     std::fs::create_dir_all(&swell_dir).unwrap();
     let path = swell_dir.join(name);
@@ -34,17 +34,14 @@ fn test_overridden_key_shows_higher_priority_source() {
 
     // Layer 3: project shared — sets timeout to 10 and a unique key
     let layer3_path = write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"timeout": 10, "only_in_layer3": true}"#,
     );
 
     // Layer 4: project modern — overrides timeout to 20
-    let layer4_path = write_project_config(
-        &temp.path().to_path_buf(),
-        "settings.local.json",
-        r#"{"timeout": 20}"#,
-    );
+    let layer4_path =
+        write_project_config(temp.path(), "settings.local.json", r#"{"timeout": 20}"#);
 
     let loader = ConfigLoader::new().with_project_path(temp.path());
     let config = loader.load().unwrap();
@@ -98,9 +95,8 @@ fn test_overridden_key_shows_higher_priority_source() {
         "expected exactly one audit entry for 'only_in_layer3'"
     );
     let l3_entry = &layer3_entries[0];
-    assert_eq!(
+    assert!(
         l3_entry.value.as_bool().unwrap(),
-        true,
         "value for 'only_in_layer3' should be true"
     );
     let l3_source = l3_entry
@@ -128,7 +124,7 @@ fn test_all_settings_appear_in_audit_trail() {
     let temp = TempDir::new().unwrap();
 
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"alpha": 1, "beta": 2, "gamma": 3}"#,
     );
@@ -156,13 +152,9 @@ fn test_no_duplicate_key_paths_in_audit_trail() {
     let temp = TempDir::new().unwrap();
 
     // Both layers define the same three keys.
+    write_project_config(temp.path(), "settings.json", r#"{"x": 1, "y": 2, "z": 3}"#);
     write_project_config(
-        &temp.path().to_path_buf(),
-        "settings.json",
-        r#"{"x": 1, "y": 2, "z": 3}"#,
-    );
-    write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"x": 10, "y": 20, "z": 30}"#,
     );
@@ -191,15 +183,11 @@ fn test_audit_trail_values_match_merged_config() {
     let temp = TempDir::new().unwrap();
 
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"rate": 5, "name": "base"}"#,
     );
-    write_project_config(
-        &temp.path().to_path_buf(),
-        "settings.local.json",
-        r#"{"rate": 99}"#,
-    );
+    write_project_config(temp.path(), "settings.local.json", r#"{"rate": 99}"#);
 
     let loader = ConfigLoader::new().with_project_path(temp.path());
     let config = loader.load().unwrap();

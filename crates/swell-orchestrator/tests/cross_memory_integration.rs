@@ -12,9 +12,7 @@ use swell_core::{
     Plan, PlanStep, RiskLevel, SessionId, StepStatus, SwellError, TaskId,
 };
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
-use swell_orchestrator::{
-    builder::OrchestratorBuilder, ExecutionController, GeneratorAgent, Orchestrator,
-};
+use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, GeneratorAgent};
 use swell_tools::ToolRegistry;
 use uuid::Uuid;
 

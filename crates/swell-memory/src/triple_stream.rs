@@ -1340,7 +1340,7 @@ mod integration_tests {
         // id1 should be first (appears in all 3 streams)
         assert_eq!(fused[0].0, id1);
         // id2 or id3 should be second
-        let second_ids = vec![id2, id3];
+        let second_ids = [id2, id3];
         assert!(second_ids.contains(&fused[1].0));
     }
 
@@ -1421,10 +1421,12 @@ mod integration_tests {
             TripleStreamService::new(memory_store.clone(), semantic_store, recall_service);
 
         // Configure reranking
-        let mut reranker_config = CrossEncoderConfig::default();
-        reranker_config.model_type = RerankerModelType::Simple;
-        reranker_config.max_candidates = 10;
-        reranker_config.max_results = 10;
+        let reranker_config = CrossEncoderConfig {
+            model_type: RerankerModelType::Simple,
+            max_candidates: 10,
+            max_results: 10,
+            ..Default::default()
+        };
 
         let query = TripleStreamQuery {
             query_text: "Rust error handling".to_string(),

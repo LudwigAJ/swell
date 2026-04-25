@@ -1481,7 +1481,7 @@ Users must have strong passwords
         "#;
 
         let criteria = parser.parse(spec);
-        assert!(criteria.len() >= 1);
+        assert!(!criteria.is_empty());
 
         // Check that security criteria are properly categorized
         let security_criteria: Vec<_> = criteria
@@ -1802,7 +1802,7 @@ diff --git a/src/auth.rs b/src/auth.rs
         let plan = engine.create_test_plan(request).await.unwrap();
 
         // Should have uncovered criteria if no tests match
-        assert!(plan.uncovered_criteria.is_empty() || plan.covered_criteria.len() > 0);
+        assert!(plan.uncovered_criteria.is_empty() || !plan.covered_criteria.is_empty());
     }
 
     #[test]
@@ -1846,7 +1846,7 @@ mod gherkin_criterion_tests {
 
         let format = criterion.format.as_ref().unwrap();
         assert!(
-            format.given.len() >= 1,
+            !format.given.is_empty(),
             "Should have at least one Given clause, got {}: {:?}",
             format.given.len(),
             format.given

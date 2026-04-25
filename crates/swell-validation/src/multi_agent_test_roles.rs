@@ -1154,9 +1154,9 @@ diff --git a/src/payment.rs b/src/payment.rs
 
     #[test]
     fn test_strategy_recommendation() {
-        let planner = TestStrategyPlanner::new();
+        let _planner = TestStrategyPlanner::new();
 
-        let request = TestPlanRequest {
+        let _request = TestPlanRequest {
             task_description: "Simple feature".to_string(),
             changed_files: vec!["src/feature.rs".to_string()],
             diff_content: None,
@@ -1165,7 +1165,6 @@ diff --git a/src/payment.rs b/src/payment.rs
 
         // This will fail since we need to actually run async code
         // Just testing struct creation here
-        assert!(true);
     }
 }
 
@@ -1220,9 +1219,9 @@ mod test_generator_agent_tests {
             .cloned()
             .collect();
 
-        let unit_tests = generator.filter_by_type(&all_tests, TestType::Unit);
-        let integration_tests = generator.filter_by_type(&all_tests, TestType::Integration);
-        let property_tests = generator.filter_by_type(&all_tests, TestType::Property);
+        let _unit_tests = generator.filter_by_type(&all_tests, TestType::Unit);
+        let _integration_tests = generator.filter_by_type(&all_tests, TestType::Integration);
+        let _property_tests = generator.filter_by_type(&all_tests, TestType::Property);
 
         // Should have some tests
         assert!(!all_tests.is_empty());
@@ -1441,7 +1440,8 @@ fn test_incomplete() {
 
         assert_eq!(summary.total_tests, 2);
         assert!(summary.avg_quality_score > 0.0);
-        assert!(summary.critical_issues_count >= 0);
+        // critical_issues_count is usize, always >= 0; just check the field is reachable.
+        let _ = summary.critical_issues_count;
     }
 }
 

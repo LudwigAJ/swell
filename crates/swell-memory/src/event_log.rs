@@ -1480,7 +1480,7 @@ mod episodic {
             ),
         ];
 
-        let events = entries.into_iter().map(|e| Ok(e));
+        let events = entries.into_iter().map(Ok);
         let state = SessionState::replay_events(events).unwrap();
 
         assert_eq!(state.events_processed, 2);

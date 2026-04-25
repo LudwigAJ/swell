@@ -473,7 +473,7 @@ mod tests {
     #[test]
     fn test_check_all_tasks_accepted_all_accepted() {
         let conditions = StoppingConditions::new();
-        let states = vec![
+        let states = [
             TaskState::Accepted,
             TaskState::Accepted,
             TaskState::Accepted,
@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn test_check_all_tasks_accepted_some_pending() {
         let conditions = StoppingConditions::new();
-        let states = vec![
+        let states = [
             TaskState::Accepted,
             TaskState::Executing,
             TaskState::Accepted,
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn test_check_all_tasks_accepted_all_rejected() {
         let conditions = StoppingConditions::new();
-        let states = vec![
+        let states = [
             TaskState::Rejected,
             TaskState::Rejected,
             TaskState::Rejected,
@@ -536,7 +536,7 @@ mod tests {
     #[test]
     fn test_check_all_tasks_accepted_single_accepted() {
         let conditions = StoppingConditions::new();
-        let states = vec![TaskState::Accepted];
+        let states = [TaskState::Accepted];
 
         let result = conditions.check_all_tasks_accepted(states.iter());
         assert!(result.is_some());
@@ -633,7 +633,7 @@ mod tests {
     async fn test_check_all_no_conditions() {
         let conditions = StoppingConditions::new();
         let limits = HardLimits::default();
-        let tasks = vec![TaskState::Executing, TaskState::Executing];
+        let tasks = [TaskState::Executing, TaskState::Executing];
 
         let result = conditions
             .check_all(tasks.iter().cloned(), Some(&limits))
@@ -645,7 +645,7 @@ mod tests {
     async fn test_check_all_stop_command_priority() {
         let conditions = StoppingConditions::new();
         let limits = HardLimits::default();
-        let tasks = vec![TaskState::Executing];
+        let tasks = [TaskState::Executing];
 
         // Command stop before checking
         conditions.command_stop(Some("Urgent".to_string())).await;
@@ -665,7 +665,7 @@ mod tests {
     async fn test_check_all_all_tasks_accepted() {
         let conditions = StoppingConditions::new();
         let limits = HardLimits::default();
-        let tasks = vec![TaskState::Accepted, TaskState::Accepted];
+        let tasks = [TaskState::Accepted, TaskState::Accepted];
 
         let result = conditions
             .check_all(tasks.iter().cloned(), Some(&limits))
@@ -691,7 +691,7 @@ mod tests {
     #[test]
     fn test_mixed_terminal_states() {
         let conditions = StoppingConditions::new();
-        let states = vec![
+        let states = [
             TaskState::Accepted,
             TaskState::Escalated, // Terminal but not accepted
             TaskState::Failed,    // Terminal but not accepted
@@ -706,7 +706,7 @@ mod tests {
     #[tokio::test]
     async fn test_check_all_with_no_limits() {
         let conditions = StoppingConditions::new();
-        let tasks = vec![TaskState::Accepted];
+        let tasks = [TaskState::Accepted];
 
         // Passing None for limits should not cause panic
         let result = conditions.check_all(tasks.iter().cloned(), None).await;

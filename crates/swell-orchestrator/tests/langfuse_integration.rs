@@ -8,7 +8,6 @@
 use swell_core::ids::TaskId;
 use swell_core::langfuse::LangfuseConfig;
 use swell_orchestrator::LangfuseExporter;
-use uuid::Uuid;
 
 /// Test helper to create a LangfuseExporter with a mock config.
 /// Uses test keys that won't actually connect to Langfuse.

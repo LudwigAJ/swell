@@ -23,16 +23,27 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build with --no-default-features
         run: cargo build --workspace --no-default-features --release
-      - name: Verify OrchestratorBuilder is stripped from production build
+      - name: Verify swell-daemon does not enable swell-orchestrator/test-support in production deps
+        # Source-level enforcement: if any production [dependencies] line on
+        # `swell-orchestrator` enables `test-support`, the resolved dep graph
+        # carries OrchestratorBuilder and Orchestrator::new_for_test() into
+        # the daemon binary regardless of `--no-default-features`. Asserting
+        # this against `cargo metadata` is the only check that closes the
+        # loophole — symbol-name greps in cargo's build JSON do not, because
+        # cargo only emits target/artifact names there, not exposed types.
         run: |
           set -euo pipefail
-          cargo build --workspace --no-default-features --release \
-            --message-format=json > /tmp/build.json
-          if grep -q '"name":"OrchestratorBuilder"' /tmp/build.json; then
-            echo "ERROR: OrchestratorBuilder leaked into --no-default-features build"
-            exit 1
-          fi
-          echo "OK: OrchestratorBuilder stripped from production build"
+          cargo metadata --format-version=1 --no-deps \
+            | jq -e '
+                [ .packages[]
+                  | select(.name == "swell-daemon")
+                  | .dependencies[]
+                  | select(.name == "swell-orchestrator" and (.kind == null))
+                  | .features
+                ]
+                | all(. == [])
+              ' > /dev/null
+          echo "OK: swell-daemon production dep on swell-orchestrator has no extra features"
 
   # A-07 gate: Block antipattern regressions in the orchestrator.
   # Each grep must return no matches — if any appear, the

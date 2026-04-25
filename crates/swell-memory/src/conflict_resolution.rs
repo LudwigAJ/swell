@@ -1357,15 +1357,15 @@ mod tests {
 
     #[test]
     fn test_conflict_distance_constants() {
-        assert!(CONFLICT_DISTANCE_MIN < CONFLICT_DISTANCE_MAX);
-        assert!(CONFLICT_DISTANCE_MIN > 0.0);
-        assert!(CONFLICT_DISTANCE_MAX < 1.0);
+        const _: () = assert!(CONFLICT_DISTANCE_MIN < CONFLICT_DISTANCE_MAX);
+        const _: () = assert!(CONFLICT_DISTANCE_MIN > 0.0);
+        const _: () = assert!(CONFLICT_DISTANCE_MAX < 1.0);
     }
 
     #[test]
     fn test_low_confidence_threshold() {
-        assert!(LOW_CONFIDENCE_THRESHOLD > 0.0);
-        assert!(LOW_CONFIDENCE_THRESHOLD < 1.0);
-        assert!(LOW_CONFIDENCE_THRESHOLD < 0.6); // Should be below typical confidence
+        const _: () = assert!(LOW_CONFIDENCE_THRESHOLD > 0.0);
+        const _: () = assert!(LOW_CONFIDENCE_THRESHOLD < 1.0);
+        const _: () = assert!(LOW_CONFIDENCE_THRESHOLD < 0.6);
     }
 }

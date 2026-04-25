@@ -2423,8 +2423,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_wiring_manifest_returns_all_subsystems() {
-        use swell_core::wiring::{WiringReport, WiringState};
-
         let orchestrator = OrchestratorBuilder::new().build();
 
         let manifest = orchestrator.wiring_manifest();
@@ -2515,7 +2513,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wiring_manifest_tier2_stubs_return_disabled() {
-        use swell_core::wiring::{WiringReport, WiringState};
+        use swell_core::wiring::WiringState;
 
         let orchestrator = OrchestratorBuilder::new().build();
 
@@ -2543,8 +2541,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_wiring_manifest_each_entry_has_populated_fields() {
-        use swell_core::wiring::WiringReport;
-
         let orchestrator = OrchestratorBuilder::new().build();
 
         let manifest = orchestrator.wiring_manifest();

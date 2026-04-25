@@ -804,7 +804,7 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         let masker = AutoMasker::new();
         // Use built-in pattern
         let text = "Token value: -----BEGIN RSA PRIVATE KEY-----\nMIIXBgIBAAKB\n-----END RSA PRIVATE KEY-----";
-        let masked = masker.mask_secrets(&text);
+        let masked = masker.mask_secrets(text);
 
         assert!(!masked.contains("BEGIN RSA PRIVATE KEY"));
         assert!(masked.contains("[REDACTED]"));
@@ -815,7 +815,7 @@ MIIXBgIBAAKBgQCqGSIb3DQEB
         let masker = AutoMasker::new();
         // Use built-in pattern
         let text = "-----BEGIN RSA PRIVATE KEY-----\nMIIXBgIBAAKB\n-----END RSA PRIVATE KEY-----";
-        let result = masker.mask_secrets_with_result(&text);
+        let result = masker.mask_secrets_with_result(text);
 
         assert!(result.secrets_found >= 1);
         assert!(result.text.contains("[REDACTED]"));

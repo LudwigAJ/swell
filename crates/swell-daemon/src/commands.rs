@@ -675,6 +675,18 @@ pub fn event_to_json(event: &DaemonEvent) -> Result<String, String> {
 }
 
 #[cfg(test)]
+/// Calculate a simple checksum for file content verification.
+/// Uses std::collections::hash_map::DefaultHasher for simplicity in testing.
+fn calculate_file_checksum(path: &std::path::Path) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let content = std::fs::read(path).unwrap_or_default();
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::events::EventEmitter;
@@ -1140,7 +1152,7 @@ mod tests {
         // Transition to Enriched
         {
             let sm = orch.lock().await.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.enrich_task(task.id).unwrap();
         }
 
@@ -1359,7 +1371,7 @@ mod tests {
     #[tokio::test]
     async fn test_parse_task_list_command() {
         let json = r#"{"type":"TaskList"}"#;
-        let command = parse_command(&json).unwrap();
+        let command = parse_command(json).unwrap();
 
         match command {
             CliCommand::TaskList => {}
@@ -1421,7 +1433,7 @@ mod tests {
             .unwrap();
         futures::executor::block_on(async {
             let sm = orch.lock().await.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.enrich_task(task_id).unwrap();
             sm_guard.ready_task(task_id).unwrap();
             sm_guard.assign_task(task_id, AgentId::new()).unwrap();
@@ -1444,7 +1456,7 @@ mod tests {
             .unwrap();
         futures::executor::block_on(async {
             let sm = orch.lock().await.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.enrich_task(task_id).unwrap();
             sm_guard.ready_task(task_id).unwrap();
             sm_guard.assign_task(task_id, AgentId::new()).unwrap();
@@ -2185,7 +2197,7 @@ mod tests {
                 total_tokens,
                 last_model,
                 mcp_health,
-                uptime_seconds,
+                uptime_seconds: _,
                 version,
                 total_budget,
                 total_spent,
@@ -2257,7 +2269,8 @@ mod tests {
             .create_task("Task 1".to_string(), Vec::new())
             .await
             .unwrap();
-        orch.lock()
+        let _ = orch
+            .lock()
             .await
             .create_task("Task 2".to_string(), Vec::new())
             .await;
@@ -2265,7 +2278,7 @@ mod tests {
         // Transition task1 to Enriched state
         {
             let sm = orch.lock().await.state_machine();
-            let mut sm_guard = sm.write().await;
+            let sm_guard = sm.write().await;
             sm_guard.enrich_task(task1.id).unwrap();
         }
 
@@ -2775,16 +2788,4 @@ mod tests {
         assert!(json.contains("test_value"));
         assert!(json.contains("settings.json"));
     }
-}
-
-#[cfg(test)]
-/// Calculate a simple checksum for file content verification.
-/// Uses std::collections::hash_map::DefaultHasher for simplicity in testing.
-fn calculate_file_checksum(path: &std::path::Path) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let content = std::fs::read(path).unwrap_or_default();
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
 }

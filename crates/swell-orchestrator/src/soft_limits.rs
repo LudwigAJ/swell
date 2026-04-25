@@ -1116,8 +1116,10 @@ mod tests {
 
     #[test]
     fn test_task_count_warnings_disabled() {
-        let mut config = SoftLimitsConfig::default();
-        config.task_count_warnings_enabled = false;
+        let config = SoftLimitsConfig {
+            task_count_warnings_enabled: false,
+            ..Default::default()
+        };
 
         let mut soft_limits = SoftLimits::with_config(config);
         let warning = soft_limits.check_task_count_warning(100, 100);
@@ -1126,8 +1128,10 @@ mod tests {
 
     #[test]
     fn test_no_progress_detection_disabled() {
-        let mut config = SoftLimitsConfig::default();
-        config.no_progress_detection_enabled = false;
+        let config = SoftLimitsConfig {
+            no_progress_detection_enabled: false,
+            ..Default::default()
+        };
 
         let mut soft_limits = SoftLimits::with_config(config);
         let task_id = TaskId::new();

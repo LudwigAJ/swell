@@ -777,8 +777,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_tier_at_capacity() {
-        let mut config = TieredStorageConfig::default();
-        config.t0_max_entries = 2;
+        let config = TieredStorageConfig {
+            t0_max_entries: 2,
+            ..Default::default()
+        };
 
         let storage = TieredStorage::new(config);
 
@@ -913,9 +915,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_eviction_with_old_entries() {
-        let mut config = TieredStorageConfig::default();
-        config.inactivity_demotion_days = 0; // Immediate demotion for testing
-        config.t1_to_t2_age_days = 0;
+        let config = TieredStorageConfig {
+            inactivity_demotion_days: 0,
+            t1_to_t2_age_days: 0,
+            ..Default::default()
+        };
 
         let storage = TieredStorage::new(config);
 
@@ -935,8 +939,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_evicted_entries_not_in_cold_overflow() {
-        let mut config = TieredStorageConfig::default();
-        config.t3_max_entries = 2;
+        let config = TieredStorageConfig {
+            t3_max_entries: 2,
+            ..Default::default()
+        };
 
         let storage = TieredStorage::new(config);
 
@@ -961,11 +967,13 @@ mod tests {
     #[tokio::test]
     async fn test_simulate_tier_aging() {
         // This test simulates the scenario where entries age from T1 through T4
-        let mut config = TieredStorageConfig::default();
-        config.t1_to_t2_age_days = 0;
-        config.t2_to_t3_age_days = 0;
-        config.t3_to_t4_age_days = 0;
-        config.inactivity_demotion_days = 0;
+        let config = TieredStorageConfig {
+            t1_to_t2_age_days: 0,
+            t2_to_t3_age_days: 0,
+            t3_to_t4_age_days: 0,
+            inactivity_demotion_days: 0,
+            ..Default::default()
+        };
 
         let storage = TieredStorage::new(config);
 
@@ -999,9 +1007,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_high_access_entries_stay_in_higher_tiers() {
-        let mut config = TieredStorageConfig::default();
-        config.high_access_threshold = 10; // High threshold
-        config.inactivity_demotion_days = 0;
+        let config = TieredStorageConfig {
+            high_access_threshold: 10,
+            inactivity_demotion_days: 0,
+            ..Default::default()
+        };
 
         let storage = TieredStorage::new(config);
 

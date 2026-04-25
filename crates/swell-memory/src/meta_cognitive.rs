@@ -1036,7 +1036,7 @@ mod tests {
 
         // Check that different task types weight differently
         let fast_score = mp.composite_score(TaskType::Fast);
-        assert!(fast_score >= 0.0 && fast_score <= 1.0);
+        assert!((0.0..=1.0).contains(&fast_score));
     }
 
     #[test]

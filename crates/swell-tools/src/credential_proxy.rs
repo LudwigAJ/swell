@@ -883,10 +883,7 @@ mod tests {
     #[tokio::test]
     async fn test_credential_proxy_cleanup() {
         let proxy = CredentialProxy::with_env_defaults();
-        let cleaned = proxy.cleanup_expired().await;
-
-        // Should clean without error even if no expired tokens
-        assert!(cleaned == 0 || cleaned > 0); // Just verify no panic
+        let _cleaned = proxy.cleanup_expired().await;
     }
 
     #[tokio::test]

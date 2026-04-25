@@ -594,9 +594,11 @@ mod tests {
 
     #[test]
     fn test_context_assembler_budget_enforcement() {
-        let mut config = ContextPipelineConfig::default();
-        config.max_tokens = 1000;
-        config.auto_compaction_enabled = true;
+        let config = ContextPipelineConfig {
+            max_tokens: 1000,
+            auto_compaction_enabled: true,
+            ..Default::default()
+        };
 
         let assembler = ContextAssembler::new(config);
         // Total: 400 + 300 + 200 + 150 + 100 = 1150 tokens, max is 1000 - should truncate
@@ -645,10 +647,12 @@ mod tests {
 
     #[test]
     fn test_context_assembler_condensation_level() {
-        let mut config = ContextPipelineConfig::default();
-        config.max_tokens = 100_000;
-        config.warning_threshold = 0.65;
-        config.condensation_threshold = 0.75;
+        let config = ContextPipelineConfig {
+            max_tokens: 100_000,
+            warning_threshold: 0.65,
+            condensation_threshold: 0.75,
+            ..Default::default()
+        };
 
         let assembler = ContextAssembler::new(config);
 
@@ -694,9 +698,11 @@ mod tests {
 
     #[test]
     fn test_context_assembler_max_per_tier() {
-        let mut config = ContextPipelineConfig::default();
-        config.max_items_per_tier = 2;
-        config.auto_compaction_enabled = false;
+        let config = ContextPipelineConfig {
+            max_items_per_tier: 2,
+            auto_compaction_enabled: false,
+            ..Default::default()
+        };
 
         let assembler = ContextAssembler::new(config);
 
@@ -741,9 +747,11 @@ mod tests {
 
     #[test]
     fn test_removed_items_tracked() {
-        let mut config = ContextPipelineConfig::default();
-        config.max_tokens = 500; // Very small budget
-        config.auto_compaction_enabled = true;
+        let config = ContextPipelineConfig {
+            max_tokens: 500,
+            auto_compaction_enabled: true,
+            ..Default::default()
+        };
 
         let assembler = ContextAssembler::new(config);
         // Total: 300 + 150 + 100 = 550 tokens, max is 500 - should truncate
@@ -805,7 +813,7 @@ mod tests {
 
     #[test]
     fn test_graph_expanded_distance_scoring() {
-        let items = vec![
+        let items = [
             TierBuilder::new()
                 .with_graph_expanded("entity", "distance 0", 0)
                 .build(),
@@ -824,9 +832,11 @@ mod tests {
 
     #[test]
     fn test_auto_compaction_disabled() {
-        let mut config = ContextPipelineConfig::default();
-        config.auto_compaction_enabled = false;
-        config.max_tokens = 100;
+        let config = ContextPipelineConfig {
+            auto_compaction_enabled: false,
+            max_tokens: 100,
+            ..Default::default()
+        };
 
         let assembler = ContextAssembler::new(config);
         let items = vec![

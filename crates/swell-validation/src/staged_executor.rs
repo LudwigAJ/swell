@@ -1167,7 +1167,7 @@ mod staged_executor_tests {
         assert!(result.is_ok());
         let staged_result = result.unwrap();
         // Stage 0 may fail (formatting), so we may only get 1 result if it stops
-        assert!(staged_result.stage_results.len() >= 1);
+        assert!(!staged_result.stage_results.is_empty());
     }
 
     #[test]

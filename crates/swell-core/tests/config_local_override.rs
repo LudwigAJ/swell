@@ -4,12 +4,12 @@
 //! - .gitignore template includes settings.local.json
 //! - Missing settings.local.json is silently skipped
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use swell_core::config::ConfigLoader;
 use tempfile::TempDir;
 
 /// Write a JSON config file inside `<dir>/.swell/<name>`.
-fn write_project_config(dir: &PathBuf, name: &str, content: &str) -> PathBuf {
+fn write_project_config(dir: &Path, name: &str, content: &str) -> PathBuf {
     let swell_dir = dir.join(".swell");
     std::fs::create_dir_all(&swell_dir).unwrap();
     let path = swell_dir.join(name);
@@ -28,14 +28,14 @@ fn test_local_override_overrides_settings() {
 
     // Layer 3: settings.json - debug = false
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"debug": false, "timeout": 10, "mode": "shared"}"#,
     );
 
     // Layer 4: settings.local.json - debug = true (should override)
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"debug": true, "timeout": 20}"#,
     );
@@ -44,9 +44,8 @@ fn test_local_override_overrides_settings() {
     let config = loader.load().unwrap();
 
     // debug should be true (override from settings.local.json)
-    assert_eq!(
+    assert!(
         config.get("debug").unwrap().as_bool().unwrap(),
-        true,
         "debug should be overridden to true by settings.local.json"
     );
 
@@ -71,13 +70,13 @@ fn test_local_override_deep_merges_nested_objects() {
     let temp = TempDir::new().unwrap();
 
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"execution": {"timeout": 60, "max_retries": 3, "log_level": "info"}}"#,
     );
 
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"execution": {"timeout": 120, "max_retries": 5}}"#,
     );
@@ -104,13 +103,13 @@ fn test_local_override_extends_arrays() {
     let temp = TempDir::new().unwrap();
 
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"allowed_paths": ["/workspace", "/home"]}"#,
     );
 
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"allowed_paths": ["/tmp", "/workspace"]}"#,
     );
@@ -212,7 +211,7 @@ fn test_missing_local_override_handled_gracefully() {
     let config = loader.load().unwrap();
 
     // Values from settings.json should be available
-    assert_eq!(config.get("debug").unwrap().as_bool().unwrap(), true);
+    assert!(config.get("debug").unwrap().as_bool().unwrap());
     assert_eq!(config.get("timeout").unwrap().as_i64().unwrap(), 30);
 }
 
@@ -263,14 +262,10 @@ fn test_audit_trail_correct_when_local_override_absent() {
 fn test_empty_local_override_file_handled() {
     let temp = TempDir::new().unwrap();
 
-    write_project_config(
-        &temp.path().to_path_buf(),
-        "settings.json",
-        r#"{"timeout": 30}"#,
-    );
+    write_project_config(temp.path(), "settings.json", r#"{"timeout": 30}"#);
 
     // Create an empty settings.local.json
-    write_project_config(&temp.path().to_path_buf(), "settings.local.json", "");
+    write_project_config(temp.path(), "settings.local.json", "");
 
     let loader = ConfigLoader::new().with_project_path(temp.path());
     let config = loader.load().unwrap();
@@ -285,24 +280,20 @@ fn test_invalid_local_override_json_handled() {
     let temp = TempDir::new().unwrap();
 
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"timeout": 30, "debug": false}"#,
     );
 
     // Create a settings.local.json with invalid JSON
-    write_project_config(
-        &temp.path().to_path_buf(),
-        "settings.local.json",
-        "this is not json {",
-    );
+    write_project_config(temp.path(), "settings.local.json", "this is not json {");
 
     let loader = ConfigLoader::new().with_project_path(temp.path());
     let config = loader.load().unwrap();
 
     // Should load successfully with values from settings.json
     assert_eq!(config.get("timeout").unwrap().as_i64().unwrap(), 30);
-    assert_eq!(config.get("debug").unwrap().as_bool().unwrap(), false);
+    assert!(!config.get("debug").unwrap().as_bool().unwrap());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -318,14 +309,14 @@ fn test_local_override_wins_in_full_cascade() {
 
     // Layer 3: project shared
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"level": 3, "source": "settings_json"}"#,
     );
 
     // Layer 4: project modern (local override)
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"level": 4, "source": "settings_local_json"}"#,
     );
@@ -346,14 +337,10 @@ fn test_local_override_wins_in_full_cascade() {
 fn test_env_vars_win_over_local_override() {
     let temp = TempDir::new().unwrap();
 
-    write_project_config(
-        &temp.path().to_path_buf(),
-        "settings.json",
-        r#"{"priority": "file"}"#,
-    );
+    write_project_config(temp.path(), "settings.json", r#"{"priority": "file"}"#);
 
     write_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"priority": "local"}"#,
     );

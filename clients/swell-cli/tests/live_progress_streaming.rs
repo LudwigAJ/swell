@@ -350,7 +350,7 @@ fn test_per_turn_event_sequence_roundtrip() {
     let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
 
-    let events = vec![
+    let events = [
         DaemonEvent::AgentTurnStarted {
             id: task_id,
             agent_role: "Coder".to_string(),
@@ -425,7 +425,7 @@ fn test_multiple_turns_tracked_independently() {
     let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
 
-    let events = vec![
+    let events = [
         // Turn 1
         DaemonEvent::AgentTurnStarted {
             id: task_id,
@@ -532,7 +532,7 @@ fn test_correlation_id_links_per_turn_events() {
     let correlation_id_1 = Uuid::new_v4();
     let correlation_id_2 = Uuid::new_v4();
 
-    let events = vec![
+    let events = [
         // Events with correlation_id_1 (same operation)
         DaemonEvent::AgentTurnStarted {
             id: task_id,
@@ -588,7 +588,7 @@ fn test_validation_pipeline_sequence() {
     let task_id = TaskId::new();
     let correlation_id = Uuid::new_v4();
 
-    let events = vec![
+    let events = [
         DaemonEvent::ValidationStepStarted {
             id: task_id,
             step_name: "lint".to_string(),

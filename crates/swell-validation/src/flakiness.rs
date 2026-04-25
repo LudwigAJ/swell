@@ -1377,7 +1377,7 @@ mod flakiness_detector_tests {
         let mut detector = FlakinessDetector::with_defaults();
 
         // Alternating pattern has highest inconsistency
-        for (_i, passed) in [true, false, true, false, true, false].iter().enumerate() {
+        for passed in [true, false, true, false, true, false].iter() {
             detector.record("test_alt".to_string(), *passed, 100);
         }
 
@@ -1513,7 +1513,7 @@ mod quarantine_pool_tests {
     #[test]
     fn test_quarantine_pool_update_release() {
         let mut pool = QuarantinePool::with_defaults();
-        let mut detector = FlakinessDetector::with_defaults();
+        let detector = FlakinessDetector::with_defaults();
 
         // Add test to quarantine
         pool.quarantine("test_release".to_string(), 0.6);

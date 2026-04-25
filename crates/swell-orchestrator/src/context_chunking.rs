@@ -1057,9 +1057,11 @@ fn other() { println!("other"); }
             ..Default::default()
         };
 
-        let mut pipeline_config = ContextPipelineConfig::default();
-        pipeline_config.max_tokens = 100; // Very small budget
-        pipeline_config.warning_threshold = 0.8;
+        let pipeline_config = ContextPipelineConfig {
+            max_tokens: 100,
+            warning_threshold: 0.8,
+            ..Default::default()
+        };
 
         let mut assembler =
             ContextChunkingAssembler::with_configs(chunking_config, pipeline_config);

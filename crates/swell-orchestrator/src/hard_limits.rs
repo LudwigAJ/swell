@@ -964,7 +964,7 @@ mod tests {
         let started_at = Utc::now() - Duration::seconds(300);
         let elapsed = limits.get_elapsed_secs(started_at);
         // Should be approximately 300 seconds (allow for test execution time)
-        assert!(elapsed >= 299 && elapsed <= 305);
+        assert!((299..=305).contains(&elapsed));
     }
 
     #[test]

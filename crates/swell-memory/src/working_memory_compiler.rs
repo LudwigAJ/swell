@@ -693,7 +693,7 @@ mod tests {
     use super::*;
     use crate::skill_extraction::SkillStep;
     use crate::SqliteMemoryStore;
-    use swell_core::ids::{AgentId, SessionId, TaskId};
+    use swell_core::ids::TaskId;
 
     #[test]
     fn test_budget_default() {
@@ -762,7 +762,7 @@ mod tests {
         let text = "one two three four five";
         let tokens = WorkingMemory::estimate_tokens(text);
         // 5 words * 1.3 = ~6.5, floored to 6
-        assert!(tokens >= 6 && tokens <= 7);
+        assert!((6..=7).contains(&tokens));
     }
 
     #[tokio::test]

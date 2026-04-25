@@ -836,8 +836,8 @@ mod tests {
         let allow = OpaDecision::Allow;
         let deny = OpaDecision::Deny;
 
-        assert_eq!(allow.is_allowed(), true);
-        assert_eq!(deny.is_allowed(), false);
+        assert!(allow.is_allowed());
+        assert!(!deny.is_allowed());
     }
 
     #[tokio::test]

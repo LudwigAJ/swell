@@ -1210,7 +1210,7 @@ mod tests {
         scorer.set_complexity(task1, ComplexityScore::trivial()); // High priority
         scorer.set_complexity(task2, ComplexityScore::very_complex()); // Low priority
 
-        let (kept, discarded) = scorer.score_and_filter(&[task1, task2]);
+        let (kept, _discarded) = scorer.score_and_filter(&[task1, task2]);
 
         // task1 should be kept (high priority due to low complexity)
         // task2 might be discarded depending on threshold

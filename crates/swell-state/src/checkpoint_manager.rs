@@ -388,7 +388,7 @@ mod tests {
 
         // Verify we have checkpoints
         let history = manager.get_history(task.id).await.unwrap();
-        assert!(history.len() >= 1);
+        assert!(!history.is_empty());
     }
 
     #[tokio::test]

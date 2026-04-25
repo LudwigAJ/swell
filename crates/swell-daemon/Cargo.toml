@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 swell-core = { path = "../swell-core" }
 swell-llm = { path = "../swell-llm" }
-swell-orchestrator = { path = "../swell-orchestrator", features = ["test-support"] }
+swell-orchestrator = { path = "../swell-orchestrator" }
 swell-memory = { path = "../swell-memory" }
 tokio.workspace = true
 serde.workspace = true
@@ -27,6 +27,7 @@ hyper = { version = "1.4", features = ["full"] }
 http-body-util = "0.1"
 
 [dev-dependencies]
+swell-orchestrator = { path = "../swell-orchestrator", features = ["test-support"] }
 futures = "0.3"
 tempfile = "3"
 serial_test = "3"

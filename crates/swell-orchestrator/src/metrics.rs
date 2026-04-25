@@ -553,6 +553,7 @@ pub fn create_metrics_collector_with_thresholds(
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     fn create_sample(
         timestamp: DateTime<Utc>,
         total: usize,
@@ -719,8 +720,8 @@ mod tests {
         collector.record_task_completed(task_id, true);
 
         // Task should be removed from tracking
-        assert!(collector.task_start_times.get(&task_id).is_none());
-        assert!(collector.task_costs.get(&task_id).is_none());
+        assert!(!collector.task_start_times.contains_key(&task_id));
+        assert!(!collector.task_costs.contains_key(&task_id));
     }
 
     #[test]

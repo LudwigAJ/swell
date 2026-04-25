@@ -810,7 +810,5 @@ mod tests {
     fn test_kill_switch_guard_with_redis_verifier() {
         let _guard = KillSwitchGuard::new()
             .with_redis_verifier("redis://localhost:6379", "swell:kill_switch");
-        // Guard should be created without error
-        assert!(true);
     }
 }

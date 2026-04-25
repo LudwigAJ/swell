@@ -837,7 +837,7 @@ mod tests {
 
         let resumption = resume_from_packet(&packet);
 
-        assert!(!resumption.decisions.is_empty() || true); // May or may not have decisions
+        let _ = resumption.decisions.is_empty(); // May or may not have decisions
         assert!(resumption.has_active_files());
     }
 

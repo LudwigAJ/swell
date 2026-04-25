@@ -2046,11 +2046,11 @@ mod tests {
             "total_files should be > 0"
         );
         assert!(
-            json_content["total_additions"].as_u64().unwrap_or(0) >= 0,
+            json_content["total_additions"].as_u64().is_some(),
             "total_additions should be present"
         );
         assert!(
-            json_content["total_deletions"].as_u64().unwrap_or(0) >= 0,
+            json_content["total_deletions"].as_u64().is_some(),
             "total_deletions should be present"
         );
 
@@ -2235,10 +2235,10 @@ mod tests {
     #[tokio::test]
     async fn test_search_tool_glob() {
         let dir = tempdir().unwrap();
-        let _file1 = tokio::fs::write(dir.path().join("test1.txt"), "content")
+        tokio::fs::write(dir.path().join("test1.txt"), "content")
             .await
             .unwrap();
-        let _file2 = tokio::fs::write(dir.path().join("test2.txt"), "content")
+        tokio::fs::write(dir.path().join("test2.txt"), "content")
             .await
             .unwrap();
 
@@ -2351,14 +2351,9 @@ mod tests {
         // Use GitTool::new() which is the production entry point
         let _tool = GitTool::new();
 
-        // The production path should have a secret scanner injected
-        // This verifies GitTool::create() is being used (or new() now injects scanner by default)
-        // If we get here without a compile error, the structural wiring exists
-        // The actual secret scanning is tested below
-        assert!(
-            true,
-            "GitTool::new() should have secret scanner for production use"
-        );
+        // The production path should have a secret scanner injected.
+        // Reaching this line without a compile error confirms the structural wiring;
+        // actual secret scanning is exercised below.
     }
 
     /// Test that a GitTool created via the production path (GitTool::create)
@@ -2366,7 +2361,6 @@ mod tests {
     /// This test requires gitleaks or ggshield to be installed.
     #[tokio::test]
     async fn test_git_tool_blocks_commit_when_secrets_detected() {
-        use std::os::unix::fs::PermissionsExt;
         use tempfile::tempdir;
 
         // Skip if no secret scanner is available

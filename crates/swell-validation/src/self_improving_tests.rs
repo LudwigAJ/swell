@@ -1047,7 +1047,7 @@ impl swell_core::ValidationGate for TestValueGate {
 // ============================================================================
 
 #[cfg(test)]
-mod self_improving_tests {
+mod tests {
     use super::*;
 
     #[tokio::test]
@@ -1184,8 +1184,10 @@ mod self_improving_tests {
 
     #[tokio::test]
     async fn test_low_value_retirement() {
-        let mut config = TestValueConfig::default();
-        config.min_value_score = 0.5; // Set higher threshold so failing tests get retired
+        let config = TestValueConfig {
+            min_value_score: 0.5,
+            ..Default::default()
+        };
 
         let tracker = TestValueTracker::new(config);
 
@@ -1209,8 +1211,10 @@ mod self_improving_tests {
 
     #[tokio::test]
     async fn test_protected_test_not_retired() {
-        let mut config = TestValueConfig::default();
-        config.min_value_score = 0.5;
+        let config = TestValueConfig {
+            min_value_score: 0.5,
+            ..Default::default()
+        };
 
         let policy = RetirementPolicy {
             protected_patterns: vec!["integration_".to_string()],

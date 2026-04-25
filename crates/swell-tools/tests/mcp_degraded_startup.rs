@@ -205,7 +205,7 @@ mod mcp_degraded_startup_tests {
 
         // Should be copyable and cloneable
         let _ = degraded;
-        let _ = degraded.clone();
+        let _ = degraded;
     }
 
     /// Test that start_all_servers (original method) still fails on first server failure

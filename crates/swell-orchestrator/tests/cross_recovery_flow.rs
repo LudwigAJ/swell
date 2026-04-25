@@ -21,7 +21,7 @@ use swell_core::{FailureClass, PermissionTier, SwellError, ToolOutput};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
 use swell_orchestrator::{
     builder::OrchestratorBuilder, BackoffStrategy, ExecutionController, FailureScenario,
-    Orchestrator, RecoveryRecipe, RecoveryStep, RecoverySteps,
+    RecoveryRecipe, RecoveryStep, RecoverySteps,
 };
 use swell_tools::ToolRegistry;
 
@@ -62,16 +62,7 @@ fn classify_tool_failure(error: &SwellError, _tool_name: Option<&str>) -> Failur
         }
 
         // Tool errors
-        SwellError::ToolExecutionFailed(msg) => {
-            let msg_lower = msg.to_lowercase();
-            if msg_lower.contains("not found") {
-                FailureClass::ToolError
-            } else if msg_lower.contains("invalid") {
-                FailureClass::ToolError
-            } else {
-                FailureClass::ToolError
-            }
-        }
+        SwellError::ToolExecutionFailed(_msg) => FailureClass::ToolError,
 
         // Permission errors
         SwellError::PermissionDenied(_) => FailureClass::PermissionDenied,

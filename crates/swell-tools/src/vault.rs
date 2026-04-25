@@ -1173,9 +1173,6 @@ mod tests {
     fn test_builder_address() {
         let _builder =
             VaultCredentialProviderBuilder::default().address("https://vault.example.com", "token");
-
-        // Just verify builder doesn't panic
-        assert!(true);
     }
 
     #[test]
@@ -1185,17 +1182,11 @@ mod tests {
             "role-id",
             "secret-id",
         );
-
-        // Just verify builder doesn't panic
-        assert!(true);
     }
 
     #[test]
     fn test_builder_default_ttl() {
         let _builder = VaultCredentialProviderBuilder::default().default_ttl(7200);
-
-        // Just verify builder doesn't panic
-        assert!(true);
     }
 
     #[tokio::test]

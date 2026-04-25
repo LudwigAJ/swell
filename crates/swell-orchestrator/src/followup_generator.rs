@@ -894,8 +894,10 @@ mod tests {
 
     #[test]
     fn test_followup_generator_priority_filtering() {
-        let mut config = FollowUpGeneratorConfig::default();
-        config.min_priority = 80;
+        let config = FollowUpGeneratorConfig {
+            min_priority: 80,
+            ..Default::default()
+        };
 
         let generator = FollowUpGenerator::with_config(config);
         let task = create_test_task_with_validation(

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use swell_core::traits::Tool;
 use swell_core::{PermissionTier, SwellError, ToolOutput, ToolResultContent};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
-use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, Orchestrator};
+use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController};
 use swell_tools::ToolRegistry;
 
 /// A test tool that requires a specific permission tier

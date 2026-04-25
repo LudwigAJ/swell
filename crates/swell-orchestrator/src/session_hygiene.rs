@@ -1159,8 +1159,10 @@ mod tests {
 
     #[test]
     fn test_evaluate_progress_disabled() {
-        let mut config = SessionHygieneConfig::default();
-        config.progress_evaluation_enabled = false;
+        let config = SessionHygieneConfig {
+            progress_evaluation_enabled: false,
+            ..Default::default()
+        };
         let mut hygiene = SessionHygiene::new(config);
 
         let session_id = SessionId::new();
@@ -1243,8 +1245,10 @@ mod tests {
 
     #[test]
     fn test_auto_checkpoint_disabled() {
-        let mut config = SessionHygieneConfig::default();
-        config.auto_checkpoint_enabled = false;
+        let config = SessionHygieneConfig {
+            auto_checkpoint_enabled: false,
+            ..Default::default()
+        };
         let hygiene = SessionHygiene::new(config);
 
         let session_id = SessionId::new();

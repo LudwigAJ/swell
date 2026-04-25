@@ -561,8 +561,10 @@ mod tests {
 
     #[test]
     fn test_disabled_checker_accepts_all() {
-        let mut config = NoveltyCheckerConfig::default();
-        config.enabled = false;
+        let config = NoveltyCheckerConfig {
+            enabled: false,
+            ..Default::default()
+        };
         let _checker = NoveltyChecker::with_config(config.clone());
 
         let mut checker_with_task = NoveltyChecker::with_config(config);
@@ -589,8 +591,10 @@ mod tests {
 
         assert_eq!(checker.config().similarity_threshold, 0.85);
 
-        let mut new_config = NoveltyCheckerConfig::default();
-        new_config.similarity_threshold = 0.95;
+        let new_config = NoveltyCheckerConfig {
+            similarity_threshold: 0.95,
+            ..Default::default()
+        };
         checker.set_config(new_config);
 
         assert_eq!(checker.config().similarity_threshold, 0.95);

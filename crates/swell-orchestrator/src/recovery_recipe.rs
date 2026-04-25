@@ -924,7 +924,7 @@ mod tests {
     fn test_recovery_recipe_new() {
         let recipe = RecoveryRecipe::new();
         assert!(recipe.is_empty());
-        assert!(recipe.len() == 0);
+        assert!(recipe.is_empty());
     }
 
     #[test]
@@ -992,7 +992,7 @@ mod tests {
     #[test]
     fn test_recovery_recipe_default_recipe() {
         let default_steps = vec![RecoveryStep::escalate("Default escalation")];
-        let mut recipe = RecoveryRecipe::with_default(RecoverySteps::from_vec(default_steps));
+        let recipe = RecoveryRecipe::with_default(RecoverySteps::from_vec(default_steps));
 
         // Now unregistered scenarios should return the custom default
         let retrieved = recipe.get(&FailureScenario::from_class(FailureClass::NetworkError));

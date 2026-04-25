@@ -801,7 +801,7 @@ mod tests {
 
         // Initialize loop
         manager.init_loop_detection(task_id);
-        assert!(manager.loop_states.get(&task_id).is_some());
+        assert!(manager.loop_states.contains_key(&task_id));
 
         // Record iterations
         for _ in 0..12 {
@@ -817,7 +817,7 @@ mod tests {
 
         // Remove loop state
         manager.remove_loop_state(task_id);
-        assert!(manager.loop_states.get(&task_id).is_none());
+        assert!(!manager.loop_states.contains_key(&task_id));
     }
 
     #[test]

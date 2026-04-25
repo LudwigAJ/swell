@@ -353,7 +353,7 @@ mod tests {
 
         // Define the expected request and response
         let request_model = "voyage-code-3";
-        let response_embeddings = vec![vec![0.1, 0.2, 0.3, 0.4], vec![0.5, 0.6, 0.7, 0.8]];
+        let response_embeddings = [vec![0.1, 0.2, 0.3, 0.4], vec![0.5, 0.6, 0.7, 0.8]];
 
         let mock_response = serde_json::json!({
             "data": [

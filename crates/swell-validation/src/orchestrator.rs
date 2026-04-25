@@ -443,6 +443,27 @@ impl ValidationOrchestrator {
     }
 }
 
+impl std::fmt::Display for TaskValidationResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TaskValidationResult(")?;
+        write!(f, "passed={}, ", self.passed)?;
+        write!(f, "lint={}, ", self.lint_passed)?;
+        write!(f, "tests={}, ", self.tests_passed)?;
+        write!(f, "security={}, ", self.security_passed)?;
+        if let Some(meta) = &self.execution_metadata {
+            write!(f, "iterations={}, ", meta.iteration_count)?;
+        }
+        write!(f, "duration={}ms", self.total_duration_ms)?;
+        if !self.errors.is_empty() {
+            write!(f, ", errors={}", self.errors.len())?;
+        }
+        if !self.warnings.is_empty() {
+            write!(f, ", warnings={}", self.warnings.len())?;
+        }
+        write!(f, ")")
+    }
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -519,7 +540,8 @@ mod tests {
         assert!(result.is_ok());
 
         let validation_result = result.unwrap();
-        assert!(validation_result.total_duration_ms >= 0);
+        // total_duration_ms is u64, always >= 0; just confirm field is reachable.
+        let _ = validation_result.total_duration_ms;
         assert!(!validation_result.gates_run.is_empty());
     }
 
@@ -747,26 +769,5 @@ mod tests {
 
         let display = format!("{}", result);
         assert!(display.contains("passed"));
-    }
-}
-
-impl std::fmt::Display for TaskValidationResult {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TaskValidationResult(")?;
-        write!(f, "passed={}, ", self.passed)?;
-        write!(f, "lint={}, ", self.lint_passed)?;
-        write!(f, "tests={}, ", self.tests_passed)?;
-        write!(f, "security={}, ", self.security_passed)?;
-        if let Some(meta) = &self.execution_metadata {
-            write!(f, "iterations={}, ", meta.iteration_count)?;
-        }
-        write!(f, "duration={}ms", self.total_duration_ms)?;
-        if !self.errors.is_empty() {
-            write!(f, ", errors={}", self.errors.len())?;
-        }
-        if !self.warnings.is_empty() {
-            write!(f, ", warnings={}", self.warnings.len())?;
-        }
-        write!(f, ")")
     }
 }

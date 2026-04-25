@@ -2357,8 +2357,10 @@ mod test_generator_tests {
 
     #[test]
     fn test_generate_unit_tests_respects_min_confidence() {
-        let mut config = TestGeneratorConfig::default();
-        config.min_confidence = 0.99; // Very high threshold
+        let config = TestGeneratorConfig {
+            min_confidence: 0.99,
+            ..Default::default()
+        };
         let generator = TestGenerator::new(config);
 
         let criteria = vec![AcceptanceCriterion {
@@ -2758,8 +2760,10 @@ mod test_generator_tests {
 
     #[test]
     fn test_generate_proptest_tests_disabled_when_use_proptest_false() {
-        let mut config = TestGeneratorConfig::default();
-        config.use_proptest = false;
+        let config = TestGeneratorConfig {
+            use_proptest: false,
+            ..Default::default()
+        };
         let generator = TestGenerator::new(config);
 
         let criteria = vec![AcceptanceCriterion {
@@ -2779,8 +2783,10 @@ mod test_generator_tests {
 
     #[test]
     fn test_generate_proptest_tests_config_iterations() {
-        let mut config = TestGeneratorConfig::default();
-        config.proptest_iterations = 512;
+        let config = TestGeneratorConfig {
+            proptest_iterations: 512,
+            ..Default::default()
+        };
         let generator = TestGenerator::new(config);
 
         let criteria = vec![AcceptanceCriterion {

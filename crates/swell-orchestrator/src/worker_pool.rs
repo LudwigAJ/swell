@@ -939,13 +939,8 @@ mod tests {
             });
         }
 
-        // Wait for all tasks to complete
-        while let Some(result) = join_set.join_next().await {
-            match result {
-                Ok(()) => {} // Count already updated
-                Err(_) => {} // Count already updated
-            }
-        }
+        // Wait for all tasks to complete (counts are tracked via shared atomics).
+        while join_set.join_next().await.is_some() {}
 
         let success_count = successes.load(Ordering::SeqCst);
         let failure_count = failures.load(Ordering::SeqCst);

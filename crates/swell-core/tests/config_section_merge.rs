@@ -12,12 +12,12 @@
 //! These tests only use layers 3-4 (project shared and project modern).
 
 use serde_json::Value;
-use std::path::PathBuf;
-use swell_core::config::{ConfigLoader, LoadedConfig};
+use std::path::{Path, PathBuf};
+use swell_core::config::ConfigLoader;
 use tempfile::TempDir;
 
 /// Create config file in project .swell directory (layers 3-4 use project_path)
-fn create_project_config(dir: &PathBuf, name: &str, content: &str) -> PathBuf {
+fn create_project_config(dir: &Path, name: &str, content: &str) -> PathBuf {
     let swell_dir = dir.join(".swell");
     std::fs::create_dir_all(&swell_dir).unwrap();
     let path = swell_dir.join(name);
@@ -32,14 +32,14 @@ fn test_scalar_override() {
 
     // Layer 3: project shared - timeout = 10
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"timeout": 10, "debug": false}"#,
     );
 
     // Layer 4: project modern - timeout = 20 (should override)
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"timeout": 20, "debug": true}"#,
     );
@@ -50,7 +50,7 @@ fn test_scalar_override() {
     // timeout should be 20 (override from higher layer)
     assert_eq!(config.get("timeout").unwrap().as_i64().unwrap(), 20);
     // debug should be true (override from higher layer)
-    assert_eq!(config.get("debug").unwrap().as_bool().unwrap(), true);
+    assert!(config.get("debug").unwrap().as_bool().unwrap());
 }
 
 #[test]
@@ -60,14 +60,14 @@ fn test_deep_merge_nested_objects() {
 
     // Layer 3: paths = { a: 1, b: 2 }
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"paths": {"a": 1, "b": 2}}"#,
     );
 
     // Layer 4: paths = { b: 3, c: 4 } (deep merge)
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"paths": {"b": 3, "c": 4}}"#,
     );
@@ -91,14 +91,14 @@ fn test_deep_merge_three_levels() {
 
     // Layer 3: execution = { max_retries: 3, timeout: 60 }
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"execution": {"max_retries": 3, "timeout": 60}}"#,
     );
 
     // Layer 4: execution = { max_retries: 5, log_level: "debug" }
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"execution": {"max_retries": 5, "log_level": "debug"}}"#,
     );
@@ -122,14 +122,14 @@ fn test_unique_extension_arrays() {
 
     // Layer 3: allowed_paths = ["x", "y"]
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"allowed_paths": ["x", "y"]}"#,
     );
 
     // Layer 4: allowed_paths = ["y", "z"] (should extend uniquely)
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"allowed_paths": ["y", "z"]}"#,
     );
@@ -157,14 +157,14 @@ fn test_unique_extension_preserves_order() {
 
     // Layer 3: plugins = ["alpha", "beta"]
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"plugins": ["alpha", "beta"]}"#,
     );
 
     // Layer 4: plugins = ["gamma", "beta"] (beta already exists, gamma is new)
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"plugins": ["gamma", "beta"]}"#,
     );
@@ -189,14 +189,14 @@ fn test_full_replacement_designated_sections() {
 
     // Layer 3: prompts = { sys: "v1" }
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"prompts": {"sys": "version1", "user": "default_user"}}"#,
     );
 
     // Layer 4: prompts = { usr: "v2" } (should fully replace, not merge)
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"prompts": {"usr": "version2"}}"#,
     );
@@ -217,13 +217,13 @@ fn test_full_replacement_prompts_section() {
     let temp = TempDir::new().unwrap();
 
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"prompts": {"system": "old_system", "assistant": "old_assistant"}}"#,
     );
 
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"prompts": {"system": "new_system"}}"#,
     );
@@ -247,14 +247,14 @@ fn test_mixed_merge_strategies() {
 
     // Layer 3: timeout=10, paths={a:1, b:2}, allowed_paths=["x"], prompts={sys:"v1"}
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"timeout": 10, "paths": {"a": 1, "b": 2}, "allowed_paths": ["x"], "prompts": {"sys": "v1"}}"#,
     );
 
     // Layer 4: timeout=20, paths={b:3, c:4}, allowed_paths=["y"], prompts={usr:"v2"}
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"timeout": 20, "paths": {"b": 3, "c": 4}, "allowed_paths": ["y"], "prompts": {"usr": "v2"}}"#,
     );
@@ -294,13 +294,13 @@ fn test_designated_sections_configurable() {
     let temp = TempDir::new().unwrap();
 
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"prompts": {"a": "1"}, "custom_section": {"a": "1"}}"#,
     );
 
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"prompts": {"b": "2"}, "custom_section": {"b": "2"}}"#,
     );
@@ -326,13 +326,13 @@ fn test_deep_merge_does_not_concatenate_strings() {
     let temp = TempDir::new().unwrap();
 
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.json",
         r#"{"connection": {"url": "http://old"}}"#,
     );
 
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"connection": {"url": "http://new"}}"#,
     );
@@ -357,17 +357,9 @@ fn test_empty_arrays_unique_extension() {
     // Empty arrays should not cause issues in unique-extension
     let temp = TempDir::new().unwrap();
 
-    create_project_config(
-        &temp.path().to_path_buf(),
-        "settings.json",
-        r#"{"items": []}"#,
-    );
+    create_project_config(temp.path(), "settings.json", r#"{"items": []}"#);
 
-    create_project_config(
-        &temp.path().to_path_buf(),
-        "settings.local.json",
-        r#"{"items": ["a"]}"#,
-    );
+    create_project_config(temp.path(), "settings.local.json", r#"{"items": ["a"]}"#);
 
     let loader = ConfigLoader::new().with_project_path(temp.path());
     let config = loader.load().unwrap();
@@ -383,14 +375,10 @@ fn test_array_with_primitives_only() {
     // Arrays containing objects might need different handling
     let temp = TempDir::new().unwrap();
 
-    create_project_config(
-        &temp.path().to_path_buf(),
-        "settings.json",
-        r#"{"tags": ["a", "b"]}"#,
-    );
+    create_project_config(temp.path(), "settings.json", r#"{"tags": ["a", "b"]}"#);
 
     create_project_config(
-        &temp.path().to_path_buf(),
+        temp.path(),
         "settings.local.json",
         r#"{"tags": ["b", "c"]}"#,
     );

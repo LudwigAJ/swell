@@ -811,8 +811,10 @@ mod tests {
 
         assert_eq!(detector.config().similarity_threshold, 0.90);
 
-        let mut new_config = NonNovelRetryConfig::default();
-        new_config.similarity_threshold = 0.80;
+        let new_config = NonNovelRetryConfig {
+            similarity_threshold: 0.80,
+            ..Default::default()
+        };
         detector.set_config(new_config);
 
         assert_eq!(detector.config().similarity_threshold, 0.80);

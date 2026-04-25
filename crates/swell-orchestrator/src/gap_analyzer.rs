@@ -1345,7 +1345,7 @@ mod tests {
     #[test]
     fn test_gap_analyzer_mock_spec_with_missing_items() {
         // Create mock requirements: 3 implemented, 2 missing
-        let mock_requirements = vec![
+        let mock_requirements = [
             // Implemented requirements
             SpecRequirement {
                 id: "MOCK-001".to_string(),
@@ -1406,7 +1406,7 @@ mod tests {
         // Use default requirements which should have ORCH-001 through ORCH-010 all implemented
         // But we verify that MOCK-004 and MOCK-005 (missing status) are reported as missing
         let analyzer = GapAnalyzer::new();
-        let report = analyzer.analyze();
+        let _report = analyzer.analyze();
 
         // The default spec has MOCK-* requirements mixed in? No, it doesn't.
         // We need to verify the default spec has all MustHave implemented and 0 missing

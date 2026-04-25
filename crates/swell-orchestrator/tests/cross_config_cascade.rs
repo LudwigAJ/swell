@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use swell_core::config::ConfigLoader;
 use swell_llm::mock::MockLlm;
-use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, Orchestrator};
+use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController};
 use swell_tools::ToolRegistry;
 use tempfile::TempDir;
 

@@ -2423,7 +2423,7 @@ mod tests {
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
 
-        let mut controller =
+        let controller =
             ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
         // Trigger FullStop

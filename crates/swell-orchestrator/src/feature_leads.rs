@@ -782,8 +782,8 @@ mod tests {
         // Both segments should have ~10 steps each
         let first_count = segments[0].1.len();
         let second_count = segments[1].1.len();
-        assert!(first_count >= 9 && first_count <= 11);
-        assert!(second_count >= 9 && second_count <= 11);
+        assert!((9..=11).contains(&first_count));
+        assert!((9..=11).contains(&second_count));
     }
 
     /// Test that segment_plan for small subgraph (≤15) doesn't trigger spawning
@@ -860,7 +860,6 @@ mod tests {
     #[test]
     fn test_subgraph_size_threshold_concept() {
         use crate::task_graph::TaskGraph;
-        use swell_core::TaskState;
 
         let mut graph = TaskGraph::new();
 

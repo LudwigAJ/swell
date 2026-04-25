@@ -1300,7 +1300,7 @@ mod tests {
 
         let result = analyzer.analyze(rejection).await.unwrap();
         assert!(result.anti_patterns_extracted > 0);
-        assert!(result.conventions_extracted > 0 || result.anti_patterns.len() > 0);
+        assert!(result.conventions_extracted > 0 || !result.anti_patterns.is_empty());
     }
 
     #[tokio::test]

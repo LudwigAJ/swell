@@ -847,7 +847,7 @@ mod tests {
         let c2 = vec![
             -10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
         ];
-        let centers = vec![c1, c2];
+        let centers = [c1, c2];
 
         // Generate tight clusters around each center
         for i in 0..num_vectors {

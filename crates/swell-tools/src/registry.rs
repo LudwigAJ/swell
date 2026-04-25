@@ -897,14 +897,12 @@ mod tests {
     /// A mock tool for testing
     struct MockTool {
         name: String,
-        category: ToolCategory,
     }
 
     impl MockTool {
-        fn new(name: &str, category: ToolCategory) -> Self {
+        fn new(name: &str, _category: ToolCategory) -> Self {
             Self {
                 name: name.to_string(),
-                category,
             }
         }
     }
@@ -1542,7 +1540,7 @@ mod tests {
             )
             .await;
 
-        let plugin_tool = registry.get("priority_tool".into()).await;
+        let plugin_tool = registry.get("priority_tool").await;
         assert!(plugin_tool.is_some());
 
         // Now register in Runtime layer
@@ -1554,7 +1552,7 @@ mod tests {
             .await;
 
         // Should still return a tool (Runtime takes precedence)
-        let runtime_tool = registry.get("priority_tool".into()).await;
+        let runtime_tool = registry.get("priority_tool").await;
         assert!(runtime_tool.is_some());
     }
 
@@ -1579,7 +1577,7 @@ mod tests {
             .await;
 
         // Should still return a tool (Plugin takes precedence over Builtin)
-        let tool = registry.get("priority_tool".into()).await;
+        let tool = registry.get("priority_tool").await;
         assert!(tool.is_some());
     }
 
@@ -1608,7 +1606,7 @@ mod tests {
             .await;
 
         // get() should return the Runtime version (highest priority)
-        let tool = registry.get("layered_tool".into()).await;
+        let tool = registry.get("layered_tool").await;
         assert!(tool.is_some());
 
         // list_by_layer should show tools in each layer
@@ -1769,21 +1767,21 @@ mod tests {
             )
             .await;
 
-        assert!(registry.contains("unreg_tool".into()).await);
+        assert!(registry.contains("unreg_tool").await);
 
         // Unregister should remove from highest priority layer first (Runtime)
-        assert!(registry.unregister("unreg_tool".into()).await);
+        assert!(registry.unregister("unreg_tool").await);
 
         // Tool should still be there (Plugin and Builtin versions remain)
-        assert!(registry.contains("unreg_tool".into()).await);
+        assert!(registry.contains("unreg_tool").await);
 
         // Unregister again - should remove Plugin
-        assert!(registry.unregister("unreg_tool".into()).await);
-        assert!(registry.contains("unreg_tool".into()).await);
+        assert!(registry.unregister("unreg_tool").await);
+        assert!(registry.contains("unreg_tool").await);
 
         // Unregister again - should remove Builtin
-        assert!(registry.unregister("unreg_tool".into()).await);
+        assert!(registry.unregister("unreg_tool").await);
         // Now tool should be gone
-        assert!(!registry.contains("unreg_tool".into()).await);
+        assert!(!registry.contains("unreg_tool").await);
     }
 }

@@ -666,6 +666,18 @@ impl Default for StackedPrConfig {
     }
 }
 
+// Need to impl Default for PrStackManager with config
+impl PrStackManager {
+    /// Create manager with custom config
+    pub fn new_with_config(config: StackedPrConfig) -> Self {
+        Self {
+            stacks: HashMap::new(),
+            max_pr_lines: config.max_pr_lines,
+            min_pr_lines: config.min_pr_lines,
+        }
+    }
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -975,7 +987,7 @@ mod tests {
         let prs = manager.calculate_splits(task_id, &changes).unwrap();
 
         // Should be split
-        assert!(prs.len() > 0);
+        assert!(!prs.is_empty());
     }
 
     #[test]
@@ -1054,7 +1066,7 @@ mod tests {
             assert!(high_risk_pr.is_some());
             // High risk PR should not depend on others
             let high_pr = high_risk_pr.unwrap();
-            assert!(high_pr.depends_on.is_empty() || high_pr.depends_on.len() == 0);
+            assert!(high_pr.depends_on.is_empty() || high_pr.depends_on.is_empty());
         }
     }
 
@@ -1128,7 +1140,7 @@ mod tests {
 
     #[test]
     fn test_file_change_risk_ordering() {
-        let mut changes = vec![
+        let mut changes = [
             PrFileChange {
                 path: "low.rs".to_string(),
                 content: "// low".to_string(),
@@ -1203,17 +1215,5 @@ mod tests {
         assert!(display.contains("pr-1"));
         assert!(display.contains("300"));
         assert!(display.contains("200"));
-    }
-}
-
-// Need to impl Default for PrStackManager with config
-impl PrStackManager {
-    /// Create manager with custom config
-    pub fn new_with_config(config: StackedPrConfig) -> Self {
-        Self {
-            stacks: HashMap::new(),
-            max_pr_lines: config.max_pr_lines,
-            min_pr_lines: config.min_pr_lines,
-        }
     }
 }

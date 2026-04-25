@@ -816,8 +816,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cross_encoder_service_disabled() {
-        let mut config = CrossEncoderConfig::default();
-        config.enabled = false;
+        let config = CrossEncoderConfig {
+            enabled: false,
+            ..Default::default()
+        };
         let service = CrossEncoderService::with_simple_reranker(config);
 
         let candidates = create_test_candidates();
@@ -829,8 +831,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cross_encoder_service_max_candidates() {
-        let mut config = CrossEncoderConfig::default();
-        config.max_candidates = 2;
+        let config = CrossEncoderConfig {
+            max_candidates: 2,
+            ..Default::default()
+        };
         let service = CrossEncoderService::with_simple_reranker(config);
 
         let candidates = create_test_candidates();
@@ -842,8 +846,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cross_encoder_service_max_results() {
-        let mut config = CrossEncoderConfig::default();
-        config.max_results = 1;
+        let config = CrossEncoderConfig {
+            max_results: 1,
+            ..Default::default()
+        };
         let service = CrossEncoderService::with_simple_reranker(config);
 
         let candidates = create_test_candidates();

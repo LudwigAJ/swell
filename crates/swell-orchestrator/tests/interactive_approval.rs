@@ -7,7 +7,7 @@
 //! This test module validates VAL-OBS-005: Interactive approval workflow
 
 use swell_core::{AutonomyLevel, Plan, PlanStep, RiskLevel, StepStatus, TaskId, TaskState};
-use swell_orchestrator::{builder::OrchestratorBuilder, Orchestrator};
+use swell_orchestrator::builder::OrchestratorBuilder;
 use uuid::Uuid;
 
 /// Helper to create a test plan for a task.

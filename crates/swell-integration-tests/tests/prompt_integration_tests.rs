@@ -442,7 +442,7 @@ async fn test_validate_task_completion_multiple_files() {
     let validation_result = result.unwrap();
 
     // Verify that multiple files are tracked
-    assert_eq!(validation_result.gates_run.len() > 0, true);
+    assert!(!validation_result.gates_run.is_empty());
 }
 
 /// Test 8: Validate task completion with max iterations reached

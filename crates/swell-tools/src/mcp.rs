@@ -2610,7 +2610,7 @@ mod mcp_treesitter_tests {
         // Verify we have tests for all expected tree-sitter tools
         // This ensures we don't forget to add tests for new tools
 
-        let core_tools = vec![
+        let core_tools = [
             "get_ast",
             "get_node_at_position",
             "run_query",

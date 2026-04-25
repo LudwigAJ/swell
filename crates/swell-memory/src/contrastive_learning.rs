@@ -2208,7 +2208,7 @@ mod tests {
 
         // Should have both the existing and new preconditions
         assert!(
-            result.preconditions.len() >= 1,
+            !result.preconditions.is_empty(),
             "Should preserve existing preconditions"
         );
 

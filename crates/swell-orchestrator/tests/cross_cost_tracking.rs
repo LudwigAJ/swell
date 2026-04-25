@@ -17,7 +17,7 @@ use swell_orchestrator::{
     builder::OrchestratorBuilder,
     hard_limits::{HardLimits, HardLimitsConfig},
     stopping_conditions::{HardLimitType, StoppingCondition, StoppingConditions},
-    ExecutionController, Orchestrator,
+    ExecutionController,
 };
 use swell_tools::ToolRegistry;
 

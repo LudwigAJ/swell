@@ -749,7 +749,10 @@ def outer():
             .iter()
             .filter(|c| c.chunk_type == ChunkType::Function)
             .collect();
-        assert!(functions.len() >= 1, "Expected at least one function chunk");
+        assert!(
+            !functions.is_empty(),
+            "Expected at least one function chunk"
+        );
     }
 
     #[test]

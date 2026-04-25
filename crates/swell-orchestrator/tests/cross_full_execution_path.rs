@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use swell_core::{AutonomyLevel, LlmBackend, Plan, PlanStep, RiskLevel, StepStatus, TaskId};
 use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
-use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController, Orchestrator};
+use swell_orchestrator::{builder::OrchestratorBuilder, ExecutionController};
 use swell_tools::ToolRegistry;
 use uuid::Uuid;
 
@@ -234,12 +234,9 @@ async fn test_execution_controller_returns_validation_result() {
         validation_result.ai_review_passed
     );
 
-    // Verify the result has the expected structure
-    // (actual values depend on EvaluatorAgent implementation)
-    assert!(
-        validation_result.passed || !validation_result.passed,
-        "ValidationResult should have a valid passed field"
-    );
+    // Verify the result has the expected structure (actual values depend on EvaluatorAgent
+    // implementation). Reading `.passed` is enough to confirm the field exists and is accessible.
+    let _ = validation_result.passed;
 }
 
 /// Test: ScenarioMockLlm supports multi-turn conversations for agent turn loops.

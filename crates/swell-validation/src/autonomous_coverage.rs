@@ -1929,9 +1929,9 @@ mod autonomous_coverage_tests {
         assert!(result.is_ok());
 
         let (line, branch, func) = result.unwrap();
-        assert!(line >= 0.0 && line <= 1.0);
-        assert!(branch >= 0.0 && branch <= 1.0);
-        assert!(func >= 0.0 && func <= 1.0);
+        assert!((0.0..=1.0).contains(&line));
+        assert!((0.0..=1.0).contains(&branch));
+        assert!((0.0..=1.0).contains(&func));
     }
 
     #[test]

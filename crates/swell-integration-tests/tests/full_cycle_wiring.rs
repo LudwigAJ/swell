@@ -240,10 +240,8 @@ async fn wiring_validation_orchestrator_blocks_done_on_failure() {
     //
     // We verify the field exists by the fact that the code compiles and runs.
     // If ValidationOrchestrator was not wired, execute_task would fail at runtime.
-    assert!(
-        true, // Structural verification: if we get here, ExecutionController was constructed
-        "ExecutionController must be constructed with ValidationOrchestrator"
-    );
+    // Structural verification: reaching this line means ExecutionController was constructed
+    // with ValidationOrchestrator (the constructor would have panicked otherwise).
 
     // Verify the orchestration path can be traversed: Daemon -> Orchestrator -> ExecutionController
     // This ensures the production wiring chain is intact.

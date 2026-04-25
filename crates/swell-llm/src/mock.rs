@@ -856,7 +856,7 @@ mod tests {
         assert_eq!(tool_use.arguments["path"], "/tmp/test.txt");
 
         // Second event should be ToolResult
-        let _tool_result = match &events[1] {
+        match &events[1] {
             Ok(StreamEvent::ToolResult {
                 tool_call_id,
                 result,
@@ -971,7 +971,7 @@ mod tests {
         assert!(events.len() >= 5);
 
         // Check ToolResult has success=false
-        let _tool_result = match &events[1] {
+        match &events[1] {
             Ok(StreamEvent::ToolResult {
                 tool_call_id,
                 result,
@@ -1423,7 +1423,7 @@ mod tests {
         assert!(matches!(
             tool_step,
             ScenarioStep::ToolUse { id, name, arguments: _, result: _, success }
-            if id == "id1" && name == "tool_name" && success == true
+            if id == "id1" && name == "tool_name" && success
         ));
 
         let combined = ScenarioStep::text_with_tool_use(
@@ -1437,7 +1437,7 @@ mod tests {
         assert!(matches!(
             combined,
             ScenarioStep::TextWithToolUse { text, id, name: _, arguments: _, result: _, success }
-            if text == "text content" && id == "id2" && success == false
+            if text == "text content" && id == "id2" && !success
         ));
     }
 
