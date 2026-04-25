@@ -151,7 +151,7 @@ pub struct EventEmitter {
     /// Shared immutable event log
     log: Arc<RwLock<ImmutableEventLog>>,
     /// Broadcast channel for real-time event subscribers
-    broadcast_tx: Arc<RwLock<Option<broadcast::Sender<DaemonEvent>>>>,
+    broadcast_tx: broadcast::Sender<DaemonEvent>,
 }
 
 impl EventEmitter {
@@ -160,26 +160,13 @@ impl EventEmitter {
         let (tx, _) = broadcast::channel(100);
         Self {
             log: Arc::new(RwLock::new(ImmutableEventLog::new())),
-            broadcast_tx: Arc::new(RwLock::new(Some(tx))),
+            broadcast_tx: tx,
         }
     }
 
     /// Subscribe to events. Returns a receiver that will receive all subsequent events.
-    pub async fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
-        let tx = self.broadcast_tx.read().await;
-        if let Some(sender) = tx.as_ref() {
-            sender.subscribe()
-        } else {
-            // If no sender, create a channel that will never receive
-            let (tx, rx) = broadcast::channel(1);
-            tx.send(DaemonEvent::Error {
-                message: "EventEmitter shutting down".to_string(),
-                failure_class: None,
-                correlation_id: Uuid::nil(),
-            })
-            .ok();
-            rx
-        }
+    pub fn subscribe(&self) -> broadcast::Receiver<DaemonEvent> {
+        self.broadcast_tx.subscribe()
     }
 
     /// Generate a new correlation ID for tracking related events
@@ -188,12 +175,9 @@ impl EventEmitter {
     }
 
     /// Broadcast an event to all subscribers
-    async fn broadcast(&self, event: &DaemonEvent) {
-        let tx = self.broadcast_tx.read().await;
-        if let Some(sender) = tx.as_ref() {
-            // Ignore send errors (subscriber lag is expected)
-            let _ = sender.send(event.clone());
-        }
+    fn broadcast(&self, event: &DaemonEvent) {
+        // Ignore send errors (no subscribers / subscriber lag are both expected)
+        let _ = self.broadcast_tx.send(event.clone());
     }
 
     /// Emit a TaskCreated event and record it in the log
@@ -214,7 +198,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -239,7 +223,7 @@ impl EventEmitter {
         );
 
         // Broadcast first to unblock any waiting watchers
-        self.broadcast(&event).await;
+        self.broadcast(&event);
 
         // Record to log after broadcast to reduce lock contention
         let mut log = self.log.write().await;
@@ -272,7 +256,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -299,7 +283,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -329,7 +313,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -356,7 +340,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -389,7 +373,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -426,7 +410,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -457,7 +441,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -498,7 +482,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -526,7 +510,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -560,7 +544,7 @@ impl EventEmitter {
         );
 
         drop(log);
-        self.broadcast(&event).await;
+        self.broadcast(&event);
         event
     }
 
@@ -967,7 +951,7 @@ mod tests {
         let correlation_id = EventEmitter::new_correlation_id();
 
         // Subscribe before emitting
-        let mut rx = emitter.subscribe().await;
+        let mut rx = emitter.subscribe();
 
         // Emit an event
         emitter
@@ -997,8 +981,8 @@ mod tests {
         let correlation_id = EventEmitter::new_correlation_id();
 
         // Subscribe multiple receivers
-        let mut rx1 = emitter.subscribe().await;
-        let mut rx2 = emitter.subscribe().await;
+        let mut rx1 = emitter.subscribe();
+        let mut rx2 = emitter.subscribe();
 
         // Emit an event
         emitter

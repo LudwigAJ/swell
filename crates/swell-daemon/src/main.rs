@@ -113,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_emitter = daemon.event_emitter();
     tokio::spawn(async move {
         // Subscribe to all daemon events for WebSocket broadcasting
-        let mut event_rx = event_emitter.subscribe().await;
+        let mut event_rx = event_emitter.subscribe();
 
         loop {
             match event_rx.recv().await {
