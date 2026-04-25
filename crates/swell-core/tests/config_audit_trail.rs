@@ -10,6 +10,7 @@
 //! cannot be controlled by `project_path`. These tests only exercise layers 3-4
 //! (project shared `settings.json` and project modern `settings.local.json`).
 
+use serial_test::serial;
 use std::path::{Path, PathBuf};
 use swell_core::config::ConfigLoader;
 use tempfile::TempDir;
@@ -242,6 +243,7 @@ fn test_empty_config_yields_empty_audit_trail() {
 /// Note: the loader converts `SWELL_FOO_BAR` → key_path `foo.bar`
 /// (prefix stripped, lowercased, underscores → dots).
 #[test]
+#[serial]
 fn test_env_var_entries_have_no_source_file() {
     let temp = TempDir::new().unwrap();
 

@@ -4,6 +4,7 @@
 //! - .gitignore template includes settings.local.json
 //! - Missing settings.local.json is silently skipped
 
+use serial_test::serial;
 use std::path::{Path, PathBuf};
 use swell_core::config::ConfigLoader;
 use tempfile::TempDir;
@@ -334,6 +335,7 @@ fn test_local_override_wins_in_full_cascade() {
 
 /// Environment variables still win over settings.local.json (layer 5)
 #[test]
+#[serial]
 fn test_env_vars_win_over_local_override() {
     let temp = TempDir::new().unwrap();
 
