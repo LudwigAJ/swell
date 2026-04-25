@@ -28,9 +28,8 @@ use swell_tools::{
     resource_limits::{SessionLimits, SessionResourceTracker},
     ToolRegistry,
 };
-use swell_validation::{
-    orchestrator::{TaskCompletionInput, TaskExecutionMetadata, ValidationOrchestrator},
-    ValidationPipeline,
+use swell_validation::orchestrator::{
+    TaskCompletionInput, TaskExecutionMetadata, ValidationOrchestrator,
 };
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -200,10 +199,6 @@ pub struct ExecutionController {
     /// This is the audited production entry point that runs all configured validation gates.
     /// VAL-WIRING-004: Runtime success depends on ValidationOrchestrator validation, not only local default validation.
     validation_orchestrator: ValidationOrchestrator,
-    /// Backward-compatible pipeline field (deprecated, prefer validation_orchestrator).
-    /// Kept for existing code that may still reference it directly.
-    #[allow(dead_code)]
-    validation_pipeline: ValidationPipeline,
     /// Kill switch for emergency stops and pause/resume
     kill_switch: OrchestratorKillSwitch,
     /// Resource tracker for session limits
@@ -258,37 +253,6 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_orchestrator: ValidationOrchestrator::default(),
-            validation_pipeline: ValidationPipeline::new(),
-            kill_switch: OrchestratorKillSwitch::new(),
-            resource_tracker: SessionResourceTracker::with_default_limits(),
-            max_concurrent: MAX_CONCURRENT_AGENTS,
-            max_iterations: DEFAULT_MAX_ITERATIONS,
-            context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
-            tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
-            frozen_specs: std::sync::RwLock::new(HashMap::new()),
-            feature_leads: std::sync::RwLock::new(HashMap::new()),
-            drift_detector: DriftDetector::new(),
-            modified_files: std::sync::RwLock::new(HashSet::new()),
-            drift_check_interval_seconds: 0,
-            uncertainty_manager: Arc::new(UncertaintyManager::new()),
-            default_confidence_threshold: 0.5,
-            uncertainty_timeout_secs: 3600,
-        }
-    }
-
-    /// Create a new ExecutionController with a custom validation pipeline.
-    pub fn with_pipeline(
-        orchestrator: Weak<Orchestrator>,
-        llm: Arc<dyn LlmBackend>,
-        tool_registry: Arc<ToolRegistry>,
-        validation_pipeline: ValidationPipeline,
-    ) -> Self {
-        Self {
-            orchestrator,
-            llm,
-            tool_registry,
-            validation_orchestrator: ValidationOrchestrator::default(),
-            validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
@@ -324,38 +288,6 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_orchestrator: ValidationOrchestrator::default(),
-            validation_pipeline: ValidationPipeline::new(),
-            kill_switch: OrchestratorKillSwitch::new(),
-            resource_tracker: SessionResourceTracker::with_default_limits(),
-            max_concurrent: MAX_CONCURRENT_AGENTS,
-            max_iterations,
-            context_compaction_threshold: DEFAULT_CONTEXT_COMPACTION_THRESHOLD,
-            tail_message_count: DEFAULT_TAIL_MESSAGE_COUNT,
-            frozen_specs: std::sync::RwLock::new(HashMap::new()),
-            feature_leads: std::sync::RwLock::new(HashMap::new()),
-            drift_detector: DriftDetector::new(),
-            modified_files: std::sync::RwLock::new(HashSet::new()),
-            drift_check_interval_seconds: 0,
-            uncertainty_manager: Arc::new(UncertaintyManager::new()),
-            default_confidence_threshold: 0.5,
-            uncertainty_timeout_secs: 3600,
-        }
-    }
-
-    /// Create a new ExecutionController with custom validation pipeline and max_iterations.
-    pub fn with_pipeline_and_max_iterations(
-        orchestrator: Weak<Orchestrator>,
-        llm: Arc<dyn LlmBackend>,
-        tool_registry: Arc<ToolRegistry>,
-        validation_pipeline: ValidationPipeline,
-        max_iterations: u32,
-    ) -> Self {
-        Self {
-            orchestrator,
-            llm,
-            tool_registry,
-            validation_orchestrator: ValidationOrchestrator::default(),
-            validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
@@ -379,7 +311,6 @@ impl ExecutionController {
     /// * `orchestrator` - The orchestrator for task coordination
     /// * `llm` - The LLM backend for agent reasoning
     /// * `tool_registry` - The tool registry for tool execution
-    /// * `validation_pipeline` - Custom validation pipeline
     /// * `max_iterations` - Maximum iterations for the turn loop (hard cap)
     /// * `context_compaction_threshold` - Token threshold for triggering context compaction
     /// * `tail_message_count` - Number of tail messages to always preserve
@@ -387,7 +318,6 @@ impl ExecutionController {
         orchestrator: Weak<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
-        validation_pipeline: ValidationPipeline,
         max_iterations: u32,
         context_compaction_threshold: usize,
         tail_message_count: usize,
@@ -397,7 +327,6 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_orchestrator: ValidationOrchestrator::default(),
-            validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
             max_concurrent: MAX_CONCURRENT_AGENTS,
@@ -421,7 +350,6 @@ impl ExecutionController {
     /// * `orchestrator` - The orchestrator for task coordination
     /// * `llm` - The LLM backend for agent reasoning
     /// * `tool_registry` - The tool registry for tool execution
-    /// * `validation_pipeline` - Custom validation pipeline
     /// * `max_iterations` - Maximum iterations for the turn loop (hard cap)
     /// * `context_compaction_threshold` - Token threshold for triggering context compaction
     /// * `tail_message_count` - Number of tail messages to always preserve
@@ -431,7 +359,6 @@ impl ExecutionController {
         orchestrator: Weak<Orchestrator>,
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
-        validation_pipeline: ValidationPipeline,
         max_iterations: u32,
         context_compaction_threshold: usize,
         tail_message_count: usize,
@@ -442,7 +369,6 @@ impl ExecutionController {
             llm,
             tool_registry,
             validation_orchestrator: ValidationOrchestrator::default(),
-            validation_pipeline,
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::new(session_limits),
             max_concurrent: MAX_CONCURRENT_AGENTS,
@@ -1563,7 +1489,6 @@ impl Clone for ExecutionController {
             llm: self.llm.clone(),
             tool_registry: self.tool_registry.clone(),
             validation_orchestrator: self.validation_orchestrator.clone(),
-            validation_pipeline: self.validation_pipeline.clone(),
             kill_switch: self.kill_switch.clone(),
             resource_tracker: self.resource_tracker.clone(),
             max_concurrent: self.max_concurrent,
@@ -1725,18 +1650,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_execution_controller_with_pipeline_and_max_iterations() {
-        use swell_validation::ValidationPipeline;
-
         let orchestrator = OrchestratorBuilder::new().build();
         let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
         let tool_registry = Arc::new(ToolRegistry::new());
-        let validation_pipeline = ValidationPipeline::new();
-
-        let controller = ExecutionController::with_pipeline_and_max_iterations(
+        let controller = ExecutionController::with_max_iterations(
             Arc::downgrade(&orchestrator),
             mock_llm,
             tool_registry,
-            validation_pipeline,
             10,
         );
 
@@ -1858,7 +1778,6 @@ mod tests {
             Arc::downgrade(&orchestrator),
             mock_llm,
             tool_registry,
-            ValidationPipeline::new(),
             DEFAULT_MAX_ITERATIONS,
             threshold,
             tail_count,

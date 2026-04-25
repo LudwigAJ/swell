@@ -372,7 +372,6 @@ async fn test_execution_controller_enforces_cascade_max_iterations() {
         Arc::downgrade(&orchestrator),
         mock_llm.clone(),
         tool_registry.clone(),
-        swell_validation::ValidationPipeline::new(),
         max_iterations,
         100_000, // context_compaction_threshold
         10,      // tail_message_count
