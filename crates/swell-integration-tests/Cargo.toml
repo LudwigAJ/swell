@@ -24,6 +24,10 @@ path = "tests/prompt_integration_tests.rs"
 name = "full_cycle_wiring"
 path = "tests/full_cycle_wiring.rs"
 
+[[test]]
+name = "production_orchestrator_smoke"
+path = "tests/production_orchestrator_smoke.rs"
+
 [dependencies]
 swell-core = { path = "../swell-core" }
 swell-llm = { path = "../swell-llm" }
