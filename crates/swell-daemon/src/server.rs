@@ -73,15 +73,6 @@ impl Daemon {
         self.shutdown_flag.load(Ordering::Relaxed)
     }
 
-    /// Request shutdown - this signals all tasks to stop accepting new work
-    /// This method is available for programmatic shutdown (e.g., via internal API)
-    #[allow(dead_code)]
-    fn request_shutdown(&self) {
-        info!("Shutdown requested, stopping new connections...");
-        self.shutdown_flag.store(true, Ordering::Relaxed);
-        let _ = self.shutdown_tx.send(true);
-    }
-
     /// Get the event emitter for the daemon
     pub fn event_emitter(&self) -> Arc<EventEmitter> {
         Arc::clone(&self.event_emitter)

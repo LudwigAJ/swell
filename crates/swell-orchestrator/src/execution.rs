@@ -178,18 +178,6 @@ pub const DEFAULT_CONTEXT_COMPACTION_THRESHOLD: usize = 100_000;
 /// Default number of tail messages to always preserve during compaction.
 pub const DEFAULT_TAIL_MESSAGE_COUNT: usize = 10;
 
-/// A pending tool call tracked during stream processing
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct PendingToolCall {
-    /// The tool call ID used to match with ToolResult
-    id: String,
-    /// The tool name
-    name: String,
-    /// The tool arguments
-    arguments: serde_json::Value,
-}
-
 /// Manages concurrent task execution with up to 6 agents
 pub struct ExecutionController {
     orchestrator: Weak<Orchestrator>,
