@@ -59,7 +59,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 /// Scope of credential access - limits what a credential can be used for
@@ -583,10 +583,17 @@ impl CredentialProxy {
                     || cred_lower.contains("apikey") && !is_llm_credential
                     || cred_lower.contains("_api_") && !is_llm_credential && !is_git_credential
             }
-            _ => {
-                // Unknown operation type - allow with caution
-                // This permits custom credential types
-                true
+            unknown => {
+                // Deny by default for unrecognised operation types. This guards
+                // against typos, future variants that haven't been wired into
+                // the matcher, and any caller-supplied string that didn't go
+                // through the typed `ScopeKind`/`ToolOperation` paths.
+                warn!(
+                    credential_key = credential_key,
+                    operation_type = unknown,
+                    "CredentialProxy: denying access for unknown operation type",
+                );
+                false
             }
         }
     }
@@ -1196,6 +1203,37 @@ mod tests {
             "AWS_ACCESS_KEY_ID should be allowed for API scope, got: {:?}",
             result
         );
+    }
+
+    #[tokio::test]
+    async fn test_unknown_operation_type_denied_by_default() {
+        // Regression: prior behaviour returned `true` for any unrecognised
+        // operation type, which let typos / future variants / attacker-supplied
+        // strings bypass the entire allow-list. The matcher must deny by
+        // default.
+        let provider = MockCredentialProvider::new();
+        let proxy = CredentialProxy::new(provider);
+
+        for bogus_op in [
+            "garbage-op-type",
+            "",
+            "LLM", // case-sensitive; "llm" is allowed, "LLM" must not be
+            "exec",
+            "../../../etc/passwd",
+        ] {
+            assert!(
+                !proxy.is_credential_allowed_for_scope("ANTHROPIC_API_KEY", bogus_op),
+                "unknown operation type {bogus_op:?} must NOT permit credential access",
+            );
+            assert!(
+                !proxy.is_credential_allowed_for_scope("GITHUB_TOKEN", bogus_op),
+                "unknown operation type {bogus_op:?} must NOT permit credential access",
+            );
+            assert!(
+                !proxy.is_credential_allowed_for_scope("AWS_ACCESS_KEY_ID", bogus_op),
+                "unknown operation type {bogus_op:?} must NOT permit credential access",
+            );
+        }
     }
 
     #[tokio::test]
