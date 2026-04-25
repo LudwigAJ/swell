@@ -9,7 +9,7 @@ use swell_memory::SqliteMemoryStore;
 use swell_orchestrator::Orchestrator;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{watch, OnceCell};
 use tokio::time::{interval, timeout, Duration};
 use tracing::{error, info, warn};
 
@@ -39,8 +39,9 @@ pub struct Daemon {
     shutdown_rx: watch::Receiver<bool>,
     /// Time when the daemon was started
     start_time: std::time::Instant,
-    /// Memory recall service for querying conversation logs (using Mutex for interior mutability)
-    recall_service: Arc<Mutex<Option<RecallService>>>,
+    /// Memory recall service for querying conversation logs.
+    /// Set exactly once during `run()`; absence is encoded by `get()` returning `None`.
+    recall_service: Arc<OnceCell<RecallService>>,
 }
 
 impl Daemon {
@@ -63,7 +64,7 @@ impl Daemon {
             shutdown_tx: Arc::new(shutdown_tx),
             shutdown_rx,
             start_time: std::time::Instant::now(),
-            recall_service: Arc::new(Mutex::new(None)),
+            recall_service: Arc::new(OnceCell::new()),
         }
     }
 
@@ -107,7 +108,7 @@ impl Daemon {
     }
 
     /// Get the recall service (if initialized)
-    pub fn recall_service(&self) -> Arc<Mutex<Option<RecallService>>> {
+    pub fn recall_service(&self) -> Arc<OnceCell<RecallService>> {
         Arc::clone(&self.recall_service)
     }
 
@@ -237,9 +238,9 @@ impl Daemon {
             Ok(store) => {
                 // The conversation_logs schema is now initialized automatically in create()
                 let recall = RecallService::new(store);
-                // Store the recall service using the Mutex
-                let mut guard = self.recall_service.lock().await;
-                *guard = Some(recall);
+                if self.recall_service.set(recall).is_err() {
+                    warn!("Recall service was already initialized; ignoring duplicate init");
+                }
                 info!(path = %memory_db_path.display(), "Memory recall service initialized");
             }
             Err(e) => {
@@ -399,7 +400,7 @@ async fn handle_connection_with_shutdown(
     mut shutdown_rx: watch::Receiver<bool>,
     active_connections: Arc<AtomicUsize>,
     start_time: std::time::Instant,
-    recall_service: Arc<Mutex<Option<RecallService>>>,
+    recall_service: Arc<OnceCell<RecallService>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Check if shutdown was already requested before we started
     if *shutdown_rx.borrow() {

@@ -14,7 +14,7 @@ use swell_core::{
 };
 use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
-use tokio::sync::Mutex;
+use tokio::sync::OnceCell;
 use tracing::{error, info, warn};
 #[allow(unused_imports)]
 use uuid::Uuid;
@@ -48,7 +48,7 @@ pub async fn handle_command(
     event_emitter: Arc<EventEmitter>,
     active_connections: Arc<AtomicUsize>,
     start_time: std::time::Instant,
-    recall_service: Arc<Mutex<Option<RecallService>>>,
+    recall_service: Arc<OnceCell<RecallService>>,
 ) -> DaemonEvent {
     match command {
         CliCommand::TaskCreate { description } => {
@@ -533,8 +533,7 @@ pub async fn handle_command(
             let correlation_id = EventEmitter::new_correlation_id();
 
             // Get the recall service
-            let guard = recall_service.lock().await;
-            match guard.as_ref() {
+            match recall_service.get() {
                 Some(recall) => {
                     // Parse keywords from query string
                     let keywords: Vec<String> =
@@ -717,7 +716,6 @@ mod tests {
     use serial_test::serial;
     use std::sync::Arc;
     use swell_core::{Plan, PlanStep, RiskLevel, StepStatus, TaskId};
-    use tokio::sync::Mutex;
 
     fn create_test_plan(task_id: TaskId) -> Plan {
         Plan {
@@ -770,7 +768,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -798,7 +796,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -827,7 +825,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -864,7 +862,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -901,7 +899,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -941,7 +939,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -970,7 +968,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1001,7 +999,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1029,7 +1027,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1068,7 +1066,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1099,7 +1097,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1130,7 +1128,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1171,7 +1169,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1270,7 +1268,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1295,7 +1293,7 @@ mod tests {
                 Arc::clone(&emitter),
                 Arc::clone(&active_connections),
                 create_test_start_time(),
-                Arc::new(Mutex::new(None)),
+                Arc::new(OnceCell::new()),
             )
             .await;
             match event {
@@ -1316,7 +1314,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1344,7 +1342,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1491,7 +1489,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1521,7 +1519,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1552,7 +1550,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1586,7 +1584,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1614,7 +1612,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1646,7 +1644,7 @@ mod tests {
                 Arc::clone(&emitter),
                 Arc::clone(&active_connections),
                 create_test_start_time(),
-                Arc::new(Mutex::new(None)),
+                Arc::new(OnceCell::new()),
             )
             .await;
         }
@@ -1659,7 +1657,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1688,7 +1686,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1719,7 +1717,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1749,7 +1747,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1790,7 +1788,7 @@ mod tests {
                 Arc::clone(&emitter),
                 Arc::clone(&active_connections),
                 create_test_start_time(),
-                Arc::new(Mutex::new(None)),
+                Arc::new(OnceCell::new()),
             )
             .await;
         }
@@ -1826,7 +1824,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1861,7 +1859,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -1902,7 +1900,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2027,7 +2025,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2059,7 +2057,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2115,7 +2113,7 @@ mod tests {
             Arc::clone(&emitter),
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2177,7 +2175,7 @@ mod tests {
             emitter,
             Arc::clone(&active_connections),
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2231,7 +2229,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2277,7 +2275,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2490,7 +2488,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2569,7 +2567,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2629,7 +2627,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2684,7 +2682,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
@@ -2734,7 +2732,7 @@ mod tests {
             emitter,
             active_connections,
             create_test_start_time(),
-            Arc::new(Mutex::new(None)),
+            Arc::new(OnceCell::new()),
         )
         .await;
 
