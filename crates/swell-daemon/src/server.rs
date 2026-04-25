@@ -26,7 +26,7 @@ const WATCH_POLL_INTERVAL_MS: u64 = 500;
 const SHUTDOWN_BROADCAST_INTERVAL_SECS: u64 = 1;
 
 pub struct Daemon {
-    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
+    orchestrator: Arc<Orchestrator>,
     event_emitter: Arc<EventEmitter>,
     socket_path: SocketPath,
     /// Flag indicating shutdown has been requested
@@ -55,7 +55,7 @@ impl Daemon {
     pub fn new(socket_path: SocketPath, llm: Arc<dyn LlmBackend>) -> Self {
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
-            orchestrator: Arc::new(Mutex::new(Orchestrator::new(llm))),
+            orchestrator: Orchestrator::new(llm),
             event_emitter: Arc::new(EventEmitter::new()),
             socket_path,
             shutdown_flag: Arc::new(AtomicBool::new(false)),
@@ -87,7 +87,7 @@ impl Daemon {
     }
 
     /// Get the orchestrator for the daemon
-    pub fn orchestrator(&self) -> Arc<Mutex<Arc<Orchestrator>>> {
+    pub fn orchestrator(&self) -> Arc<Orchestrator> {
         Arc::clone(&self.orchestrator)
     }
 
@@ -123,8 +123,7 @@ impl Daemon {
     async fn print_wiring_manifest(&self) {
         use std::io::Write;
 
-        let orchestrator = self.orchestrator.lock().await;
-        let manifest = orchestrator.wiring_manifest();
+        let manifest = self.orchestrator.wiring_manifest();
 
         // Collect affected subsystems for SWELL_STRICT=1
         let degraded_or_disabled: Vec<_> = manifest
@@ -395,7 +394,7 @@ async fn handle_sigterm(
 /// Handle a connection with shutdown awareness
 async fn handle_connection_with_shutdown(
     stream: UnixStream,
-    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
+    orchestrator: Arc<Orchestrator>,
     event_emitter: Arc<EventEmitter>,
     mut shutdown_rx: watch::Receiver<bool>,
     active_connections: Arc<AtomicUsize>,
@@ -476,19 +475,16 @@ async fn handle_connection_with_shutdown(
 async fn handle_watch_connection(
     mut stream: UnixStream,
     task_id: TaskId,
-    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
+    orchestrator: Arc<Orchestrator>,
     event_emitter: Arc<EventEmitter>,
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(task_id = %task_id, "Starting watch connection");
 
     // Verify task exists and get current state
-    let current_state = {
-        let orch = orchestrator.lock().await;
-        match orch.get_task(task_id).await {
-            Ok(task) => Some(task.state),
-            Err(_) => None,
-        }
+    let current_state = match orchestrator.get_task(task_id).await {
+        Ok(task) => Some(task.state),
+        Err(_) => None,
     };
 
     // Send initial state or error

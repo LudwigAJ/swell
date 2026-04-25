@@ -505,10 +505,8 @@ async fn list_tasks(
     State(state): State<AppState>,
     Query(query): Query<TaskListQuery>,
 ) -> Json<Vec<Task>> {
-    let orch_arc = state.daemon.orchestrator();
-    let orchestrator = orch_arc.lock().await;
+    let orchestrator = state.daemon.orchestrator();
     let tasks = orchestrator.get_all_tasks().await;
-    drop(orchestrator);
 
     let filtered: Vec<Task> = if let Some(state_filter) = query.state {
         tasks
@@ -533,10 +531,8 @@ async fn get_task(
     State(state): State<AppState>,
     Path(task_id): Path<TaskId>,
 ) -> Result<Json<Task>, StatusCode> {
-    let orch_arc = state.daemon.orchestrator();
-    let orchestrator = orch_arc.lock().await;
+    let orchestrator = state.daemon.orchestrator();
     let result = orchestrator.get_task(task_id).await;
-    drop(orchestrator);
 
     match result {
         Ok(task) => Ok(Json(task)),

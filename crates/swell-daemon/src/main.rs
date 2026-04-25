@@ -139,8 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let orchestrator = daemon.orchestrator();
     tokio::spawn(async move {
         // Subscribe to orchestrator events for agent registration
-        let orch = orchestrator.lock().await;
-        let mut event_rx = orch.subscribe();
+        let mut event_rx = orchestrator.subscribe();
 
         loop {
             match event_rx.recv().await {

@@ -44,7 +44,7 @@ use uuid::Uuid;
 /// - Orchestrator errors
 pub async fn handle_command(
     command: CliCommand,
-    orchestrator: Arc<Mutex<Arc<Orchestrator>>>,
+    orchestrator: Arc<Orchestrator>,
     event_emitter: Arc<EventEmitter>,
     active_connections: Arc<AtomicUsize>,
     start_time: std::time::Instant,
@@ -52,7 +52,7 @@ pub async fn handle_command(
 ) -> DaemonEvent {
     match command {
         CliCommand::TaskCreate { description } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             let task = orch.create_task(description.clone(), Vec::new()).await;
             match task {
                 Ok(task) => {
@@ -71,7 +71,7 @@ pub async fn handle_command(
             }
         }
         CliCommand::TaskApprove { task_id } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             // Verify task exists before attempting to approve
             match orch.get_task(task_id).await {
                 Ok(task) => {
@@ -108,7 +108,7 @@ pub async fn handle_command(
             }
         }
         CliCommand::TaskReject { task_id, reason } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             // Verify task exists
             match orch.get_task(task_id).await {
                 Ok(task) => {
@@ -148,7 +148,7 @@ pub async fn handle_command(
             }
         }
         CliCommand::TaskCancel { task_id } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             // Verify task exists
             match orch.get_task(task_id).await {
                 Ok(task) => {
@@ -168,7 +168,7 @@ pub async fn handle_command(
             }
         }
         CliCommand::TaskList => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             let tasks = orch.get_all_tasks().await;
             info!(task_count = tasks.len(), "Task list requested");
             // Use proper DataResponse variant for typed query response
@@ -179,7 +179,7 @@ pub async fn handle_command(
             }))
         }
         CliCommand::TaskWatch { task_id } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             match orch.get_task(task_id).await {
                 Ok(task) => {
                     info!(task_id = %task_id, state = ?task.state, "Task watch requested");
@@ -198,7 +198,7 @@ pub async fn handle_command(
             }
         }
         CliCommand::TaskPause { task_id, reason } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             match orch.pause_task(task_id, reason.clone()).await {
                 Ok(()) => {
                     info!(task_id = %task_id, reason = %reason, "Task paused by operator");
@@ -217,7 +217,7 @@ pub async fn handle_command(
             }
         }
         CliCommand::TaskResume { task_id } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             match orch.resume_task(task_id).await {
                 Ok(()) => {
                     info!(task_id = %task_id, "Task resumed by operator");
@@ -268,7 +268,7 @@ pub async fn handle_command(
             task_id,
             instruction,
         } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             match orch.inject_instruction(task_id, instruction.clone()).await {
                 Ok(()) => {
                     info!(task_id = %task_id, instruction = %instruction, "Instruction injected by operator");
@@ -293,7 +293,7 @@ pub async fn handle_command(
             }
         }
         CliCommand::TaskModifyScope { task_id, scope } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             match orch.modify_scope(task_id, scope.clone()).await {
                 Ok(()) => {
                     info!(task_id = %task_id, files = ?scope.files, "Task scope modified by operator");
@@ -322,7 +322,7 @@ pub async fn handle_command(
             }
         }
         CliCommand::TaskGet { task_id } => {
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             match orch.get_task(task_id).await {
                 Ok(task) => {
                     info!(task_id = %task_id, state = ?task.state, "Task details requested");
@@ -346,7 +346,7 @@ pub async fn handle_command(
         }
         CliCommand::DaemonStatus => {
             info!("Daemon status requested");
-            let orch = orchestrator.lock().await;
+            let orch = &orchestrator;
             let tasks = orch.get_all_tasks().await;
 
             // Count tasks by state
@@ -737,8 +737,8 @@ mod tests {
         }
     }
 
-    fn create_test_orchestrator() -> Arc<Mutex<Arc<Orchestrator>>> {
-        Arc::new(Mutex::new(Orchestrator::new_for_test()))
+    fn create_test_orchestrator() -> Arc<Orchestrator> {
+        Orchestrator::new_for_test()
     }
 
     fn create_test_event_emitter() -> Arc<EventEmitter> {
@@ -847,17 +847,15 @@ mod tests {
 
         // First create a task
         let task = orch
-            .lock()
-            .await
             .create_task("Test task".to_string(), Vec::new())
             .await
             .unwrap();
         let plan = create_test_plan(task.id);
-        orch.lock().await.set_plan(task.id, plan).await.unwrap();
+        orch.set_plan(task.id, plan).await.unwrap();
 
         // Call start_task to transition to AwaitingApproval (or Executing if autonomy doesn't need approval)
         // Default autonomy level is Guided, which needs plan approval
-        orch.lock().await.start_task(task.id).await.unwrap();
+        orch.start_task(task.id).await.unwrap();
 
         let command = CliCommand::TaskApprove { task_id: task.id };
         let event = handle_command(
@@ -923,16 +921,14 @@ mod tests {
 
         // Create a task and set it up for rejection
         let task = orch
-            .lock()
-            .await
             .create_task("Test task".to_string(), Vec::new())
             .await
             .unwrap();
         let plan = create_test_plan(task.id);
-        orch.lock().await.set_plan(task.id, plan).await.unwrap();
+        orch.set_plan(task.id, plan).await.unwrap();
 
         // Call start_task to transition to AwaitingApproval
-        orch.lock().await.start_task(task.id).await.unwrap();
+        orch.start_task(task.id).await.unwrap();
 
         let command = CliCommand::TaskReject {
             task_id: task.id,
@@ -994,8 +990,6 @@ mod tests {
 
         // Create a task
         let task = orch
-            .lock()
-            .await
             .create_task("Test task".to_string(), Vec::new())
             .await
             .unwrap();
@@ -1058,18 +1052,12 @@ mod tests {
 
         // Create some tasks
         let _ = orch
-            .lock()
-            .await
             .create_task("Task 1".to_string(), Vec::new())
             .await;
         let _ = orch
-            .lock()
-            .await
             .create_task("Task 2".to_string(), Vec::new())
             .await;
         let _ = orch
-            .lock()
-            .await
             .create_task("Task 3".to_string(), Vec::new())
             .await;
 
@@ -1131,8 +1119,6 @@ mod tests {
 
         // Create a task (starts in Created state)
         let task = orch
-            .lock()
-            .await
             .create_task("Test task".to_string(), Vec::new())
             .await
             .unwrap();
@@ -1165,17 +1151,15 @@ mod tests {
 
         // Create a task
         let task = orch
-            .lock()
-            .await
             .create_task("Test task".to_string(), Vec::new())
             .await
             .unwrap();
         let plan = create_test_plan(task.id);
-        orch.lock().await.set_plan(task.id, plan).await.unwrap();
+        orch.set_plan(task.id, plan).await.unwrap();
 
         // Transition to Enriched
         {
-            let sm = orch.lock().await.state_machine();
+            let sm = orch.state_machine();
             let sm_guard = sm.write().await;
             sm_guard.enrich_task(task.id).unwrap();
         }
@@ -1443,20 +1427,19 @@ mod tests {
 
     // --- Operator Intervention Tests ---
 
-    fn create_test_task_in_executing_state(orch: &Arc<Mutex<Arc<Orchestrator>>>) -> TaskId {
+    fn create_test_task_in_executing_state(orch: &Arc<Orchestrator>) -> TaskId {
         let task_id = futures::executor::block_on(async {
-            orch.lock()
-                .await
+            orch
                 .create_task("Test task".to_string(), Vec::new())
                 .await
                 .unwrap()
                 .id
         });
         let plan = create_test_plan(task_id);
-        futures::executor::block_on(async { orch.lock().await.set_plan(task_id, plan).await })
+        futures::executor::block_on(async { orch.set_plan(task_id, plan).await })
             .unwrap();
         futures::executor::block_on(async {
-            let sm = orch.lock().await.state_machine();
+            let sm = orch.state_machine();
             let sm_guard = sm.write().await;
             sm_guard.enrich_task(task_id).unwrap();
             sm_guard.ready_task(task_id).unwrap();
@@ -1466,20 +1449,19 @@ mod tests {
         task_id
     }
 
-    fn create_test_task_in_validating_state(orch: &Arc<Mutex<Arc<Orchestrator>>>) -> TaskId {
+    fn create_test_task_in_validating_state(orch: &Arc<Orchestrator>) -> TaskId {
         let task_id = futures::executor::block_on(async {
-            orch.lock()
-                .await
+            orch
                 .create_task("Test task".to_string(), Vec::new())
                 .await
                 .unwrap()
                 .id
         });
         let plan = create_test_plan(task_id);
-        futures::executor::block_on(async { orch.lock().await.set_plan(task_id, plan).await })
+        futures::executor::block_on(async { orch.set_plan(task_id, plan).await })
             .unwrap();
         futures::executor::block_on(async {
-            let sm = orch.lock().await.state_machine();
+            let sm = orch.state_machine();
             let sm_guard = sm.write().await;
             sm_guard.enrich_task(task_id).unwrap();
             sm_guard.ready_task(task_id).unwrap();
@@ -1590,8 +1572,6 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         let task = orch
-            .lock()
-            .await
             .create_task("Test task".to_string(), Vec::new())
             .await
             .unwrap();
@@ -1783,8 +1763,6 @@ mod tests {
 
         // Verify instruction was stored
         let instructions = orch
-            .lock()
-            .await
             .get_injected_instructions(task_id)
             .await
             .unwrap();
@@ -1818,8 +1796,6 @@ mod tests {
         }
 
         let instructions = orch
-            .lock()
-            .await
             .get_injected_instructions(task_id)
             .await
             .unwrap();
@@ -1898,7 +1874,7 @@ mod tests {
         }
 
         // Verify scope was stored
-        let current_scope = orch.lock().await.get_task_scope(task_id).await.unwrap();
+        let current_scope = orch.get_task_scope(task_id).await.unwrap();
         assert_eq!(current_scope.files.len(), 2);
         assert_eq!(current_scope.directories.len(), 2);
     }
@@ -1931,7 +1907,7 @@ mod tests {
         .await;
 
         // Verify original scope was saved
-        let task = orch.lock().await.get_task(task_id).await.unwrap();
+        let task = orch.get_task(task_id).await.unwrap();
         assert!(task.original_scope.is_some());
         assert_eq!(task.original_scope.as_ref().unwrap().files.len(), 0); // Default empty
     }
@@ -2071,8 +2047,6 @@ mod tests {
 
         // Create a task
         let task = orch
-            .lock()
-            .await
             .create_task("Test task description".to_string(), Vec::new())
             .await
             .unwrap();
@@ -2128,13 +2102,11 @@ mod tests {
 
         // Create a task with a plan
         let task = orch
-            .lock()
-            .await
             .create_task("Test task with plan".to_string(), Vec::new())
             .await
             .unwrap();
         let plan = create_test_plan(task.id);
-        orch.lock().await.set_plan(task.id, plan).await.unwrap();
+        orch.set_plan(task.id, plan).await.unwrap();
 
         let command = CliCommand::TaskGet { task_id: task.id };
         let event = handle_command(
@@ -2192,13 +2164,9 @@ mod tests {
 
         // Create some tasks
         let _ = orch
-            .lock()
-            .await
             .create_task("Task 1".to_string(), Vec::new())
             .await;
         let _ = orch
-            .lock()
-            .await
             .create_task("Task 2".to_string(), Vec::new())
             .await;
 
@@ -2288,20 +2256,16 @@ mod tests {
 
         // Create tasks - they start in Created state
         let task1 = orch
-            .lock()
-            .await
             .create_task("Task 1".to_string(), Vec::new())
             .await
             .unwrap();
         let _ = orch
-            .lock()
-            .await
             .create_task("Task 2".to_string(), Vec::new())
             .await;
 
         // Transition task1 to Enriched state
         {
-            let sm = orch.lock().await.state_machine();
+            let sm = orch.state_machine();
             let sm_guard = sm.write().await;
             sm_guard.enrich_task(task1.id).unwrap();
         }

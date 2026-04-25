@@ -108,7 +108,7 @@ async fn wiring_daemon_holds_llm_backend() {
 
     // The orchestrator must hold the EXACT Arc we provided — not a clone, not a new backend
     let orch = daemon.orchestrator();
-    let held = orch.lock().await.llm_backend();
+    let held = orch.llm_backend();
     assert!(
         Arc::ptr_eq(&held, &llm),
         "orchestrator must hold the EXACT Arc we provided — not a newly-constructed backend, not a clone"
@@ -145,7 +145,7 @@ async fn wiring_orchestrator_holds_execution_controller() {
 
     // The orchestrator must expose an ExecutionController
     let orch = daemon.orchestrator();
-    let exec_controller = orch.lock().await.execution_controller();
+    let exec_controller = orch.execution_controller();
 
     // The ExecutionController's LLM must be the EXACT Arc we provided
     // NOTE: ExecutionController doesn't expose llm() directly, but we can verify
@@ -227,7 +227,7 @@ async fn wiring_validation_orchestrator_blocks_done_on_failure() {
 
     // Get the execution controller from the orchestrator
     let orch = daemon.orchestrator();
-    let exec_controller = orch.lock().await.execution_controller();
+    let exec_controller = orch.execution_controller();
 
     // Verify that ExecutionController has a ValidationOrchestrator field.
     // This is the key assertion: the wiring from Tier 1.3 must exist.
