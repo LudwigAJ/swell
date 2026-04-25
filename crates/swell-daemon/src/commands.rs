@@ -221,11 +221,35 @@ pub async fn handle_command(
             match orch.resume_task(task_id).await {
                 Ok(()) => {
                     info!(task_id = %task_id, "Task resumed by operator");
-                    let task = orch.get_task(task_id).await.unwrap();
                     let correlation_id = EventEmitter::new_correlation_id();
-                    event_emitter
-                        .emit_task_state_changed(task_id, task.state, correlation_id)
-                        .await
+                    match orch.get_task(task_id).await {
+                        Ok(task) => {
+                            event_emitter
+                                .emit_task_state_changed(task_id, task.state, correlation_id)
+                                .await
+                        }
+                        Err(e) => {
+                            // Resume succeeded but the task vanished between
+                            // the resume and the read. Surface the
+                            // inconsistency instead of panicking on the
+                            // operator path.
+                            warn!(
+                                task_id = %task_id,
+                                error = %e,
+                                "Task resumed but state lookup failed",
+                            );
+                            event_emitter
+                                .emit_error(
+                                    format!(
+                                        "Task resumed but state lookup failed: {}",
+                                        e
+                                    ),
+                                    None,
+                                    correlation_id,
+                                )
+                                .await
+                        }
+                    }
                 }
                 Err(e) => {
                     warn!(task_id = %task_id, error = %e, "Failed to resume task");

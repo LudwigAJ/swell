@@ -1030,11 +1030,17 @@ impl Orchestrator {
 
             if let Some(non_novel) = non_novel_result {
                 if !non_novel.is_novel {
-                    // Non-novel retry detected - force strategy change
+                    // `is_novel == false` is constructed in
+                    // NonNovelResult::non_novel(), which always sets
+                    // forced_action to Some. expect_forced_action() is the
+                    // canonical accessor and panics with a clear message if
+                    // that invariant is ever broken.
+                    let forced_action = non_novel.expect_forced_action();
+
                     warn!(
                         task_id = %task_id,
                         similarity = %non_novel.max_similarity,
-                        forced_action = %non_novel.forced_action.as_ref().unwrap(),
+                        forced_action = %forced_action,
                         "Non-novel retry detected, forcing strategy change"
                     );
 
@@ -1045,8 +1051,8 @@ impl Orchestrator {
                             task_id,
                             similarity: non_novel.max_similarity,
                             similar_to_iteration: non_novel.most_similar_iteration.unwrap_or(0),
-                            forced_action: non_novel.forced_action.unwrap(),
-                            reason: non_novel.reason.unwrap_or_default(),
+                            forced_action,
+                            reason: non_novel.reason.clone().unwrap_or_default(),
                         });
 
                     // Handle forced action based on type

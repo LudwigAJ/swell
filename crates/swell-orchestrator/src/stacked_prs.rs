@@ -82,8 +82,8 @@ impl PrStackManager {
     pub fn create_stack(&mut self, task_id: TaskId, base_branch: BranchName) -> PrStack {
         let stack = PrStack::new(task_id, base_branch.clone());
         info!(task_id = %task_id, base_branch = %base_branch, "Created new PR stack");
-        self.stacks.insert(task_id, stack);
-        self.stacks.get(&task_id).unwrap().clone()
+        self.stacks.insert(task_id, stack.clone());
+        stack
     }
 
     /// Get an existing stack for a task
