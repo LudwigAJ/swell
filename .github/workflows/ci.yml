@@ -109,6 +109,19 @@ jobs:
           fi
           echo "OK: no antipatterns detected"
 
+  # Clippy gate: block lint regressions across the workspace.
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --features swell-orchestrator/test-support -- -D warnings -D clippy::dbg_macro -D clippy::todo
+
   # Standard test job
   test:
     name: Test workspace
