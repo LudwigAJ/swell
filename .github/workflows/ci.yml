@@ -160,3 +160,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo test (daemon socket smoke)
         run: cargo test -p swell-daemon --test socket_e2e
+
+  # Binary-level smoke test: builds the real swell-daemon and swell
+  # binaries and drives them through the CLI. Catches packaging
+  # regressions (arg parsing, env var defaults) that the in-process
+  # tests can't see, and pins the bug we found 2026-04-26 where
+  # `swell cancel` emitted the right event but never persisted the
+  # state change.
+  smoke-test:
+    name: Binary smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build daemon and CLI
+        run: cargo build --bin swell-daemon --bin swell
+      - name: run smoke script
+        run: ./scripts/smoke_test.sh

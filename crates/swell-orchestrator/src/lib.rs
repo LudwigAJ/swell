@@ -979,6 +979,15 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Mark a task as Failed. Used by `TaskCancel` to make cancellation
+    /// observable in subsequent `TaskList` / `TaskGet` queries.
+    pub async fn fail_task(&self, task_id: TaskId) -> Result<(), SwellError> {
+        let sm = self.state_machine.write().await;
+        sm.fail_task(task_id)?;
+        info!(task_id = %task_id, "Task failed");
+        Ok(())
+    }
+
     /// Transition to validating state
     pub async fn start_validation(&self, task_id: TaskId) -> Result<(), SwellError> {
         let sm = self.state_machine.write().await;

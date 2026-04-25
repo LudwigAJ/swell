@@ -149,15 +149,31 @@ pub async fn handle_command(
         }
         CliCommand::TaskCancel { task_id } => {
             let orch = &orchestrator;
-            // Verify task exists
+            // Verify task exists, then transition to Failed in the state
+            // machine BEFORE emitting the event — otherwise `list` keeps
+            // showing the task in its previous state and the cancel is
+            // a no-op visible only on the event stream.
             match orch.get_task(task_id).await {
-                Ok(task) => {
-                    info!(task_id = %task_id, state = ?task.state, "Task cancelled");
-                    let correlation_id = EventEmitter::new_correlation_id();
-                    event_emitter
-                        .emit_task_state_changed(task_id, TaskState::Failed, correlation_id)
-                        .await
-                }
+                Ok(task) => match orch.fail_task(task_id).await {
+                    Ok(()) => {
+                        info!(task_id = %task_id, prev_state = ?task.state, "Task cancelled");
+                        let correlation_id = EventEmitter::new_correlation_id();
+                        event_emitter
+                            .emit_task_state_changed(task_id, TaskState::Failed, correlation_id)
+                            .await
+                    }
+                    Err(e) => {
+                        warn!(task_id = %task_id, error = %e, "Failed to cancel task");
+                        let correlation_id = EventEmitter::new_correlation_id();
+                        event_emitter
+                            .emit_error(
+                                format!("Failed to cancel task: {}", e),
+                                None,
+                                correlation_id,
+                            )
+                            .await
+                    }
+                },
                 Err(e) => {
                     warn!(task_id = %task_id, error = %e, "Task not found for cancellation");
                     let correlation_id = EventEmitter::new_correlation_id();
@@ -995,7 +1011,7 @@ mod tests {
 
         let event = handle_command(
             command,
-            orch,
+            Arc::clone(&orch),
             emitter,
             active_connections,
             create_test_start_time(),
@@ -1010,6 +1026,17 @@ mod tests {
             }
             other => panic!("Expected TaskStateChanged event, got: {:?}", other),
         }
+
+        // Regression: TaskCancel must persist the state change in the
+        // orchestrator, not just emit a one-shot event. A subsequent
+        // get_task must return Failed, otherwise `swell list` will
+        // keep showing the old state and operators see a phantom cancel.
+        let after = orch.get_task(task.id).await.expect("task still present");
+        assert_eq!(
+            after.state,
+            TaskState::Failed,
+            "TaskCancel must persist Failed state into the orchestrator"
+        );
     }
 
     // --- TaskList Tests ---
