@@ -278,6 +278,67 @@ impl From<anyhow::Error> for DaemonError {
     }
 }
 
+#[doc(hidden)]
+impl DaemonErrorWire {
+    /// Exhaustive list of every variant for round-trip testing.
+    ///
+    /// The internal `match` is exhaustive, so adding a new variant to
+    /// `DaemonErrorWire` without updating this helper is a compile error —
+    /// keeping the round-trip suite honest as the wire format evolves.
+    pub fn all_variants_for_test() -> Vec<Self> {
+        // Sentinel match: extending DaemonErrorWire without extending the helper
+        // breaks compilation here.
+        let _exhaustive = |w: &Self| match w {
+            Self::TaskNotFound { .. } => (),
+            Self::ValidationFailed { .. } => (),
+            Self::HookDenied { .. } => (),
+            Self::BudgetExceeded { .. } => (),
+            Self::WorktreeAllocFailed { .. } => (),
+            Self::CommitFailed { .. } => (),
+            Self::Llm { .. } => (),
+            Self::Config { .. } => (),
+            Self::ShuttingDown => (),
+            Self::Internal { .. } => (),
+        };
+        let _ = _exhaustive;
+
+        vec![
+            Self::TaskNotFound {
+                task_id: "task-1".to_string(),
+            },
+            Self::ValidationFailed {
+                task_id: "task-2".to_string(),
+                reason: "test_failure".to_string(),
+            },
+            Self::HookDenied {
+                hook: "policy".to_string(),
+                detail: "denied".to_string(),
+            },
+            Self::BudgetExceeded {
+                task_id: "task-3".to_string(),
+                class: "tokens_exceeded".to_string(),
+            },
+            Self::WorktreeAllocFailed {
+                message: "out of worktrees".to_string(),
+            },
+            Self::CommitFailed {
+                task_id: "task-4".to_string(),
+                message: "merge conflict".to_string(),
+            },
+            Self::Llm {
+                message: "rate limited".to_string(),
+            },
+            Self::Config {
+                message: "missing key".to_string(),
+            },
+            Self::ShuttingDown,
+            Self::Internal {
+                message: "boom".to_string(),
+            },
+        ]
+    }
+}
+
 impl From<swell_core::SwellError> for DaemonError {
     fn from(err: swell_core::SwellError) -> Self {
         match err {
