@@ -146,3 +146,17 @@ jobs:
         run: cargo check --workspace --all-targets --features swell-orchestrator/test-support
       - name: cargo test (orchestrator execution suite)
         run: cargo test -p swell-orchestrator --lib --features test-support execution::
+
+  # Daemon end-to-end socket test: spawns Daemon::run(), opens a
+  # UnixStream client, sends TaskCreate, asserts a TaskCreated event
+  # comes back. Catches socket / serialization regressions that unit
+  # tests miss.
+  daemon-e2e:
+    name: Daemon socket E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test (daemon socket smoke)
+        run: cargo test -p swell-daemon --test socket_e2e
