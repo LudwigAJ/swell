@@ -25,6 +25,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use swell_core::ids::AgentId;
+use swell_core::types::AgentRole;
 use thiserror::Error;
 use tracing::debug;
 
@@ -714,9 +716,39 @@ allow {
 // Helper Functions
 // =============================================================================
 
-/// Create an OPA input from a tool operation and agent context
-pub fn create_opa_input(agent_id: &str, role: &str, operation: &ToolOperation) -> OpaInput {
-    let subject = OpaSubject::new(agent_id, role, operation.risk_level());
+/// Stable string slug for an [`AgentRole`], matching the serde `snake_case` form.
+///
+/// Kept hand-written rather than going through serde so that policy decisions
+/// are not silently affected by a future serde rename.
+fn agent_role_slug(role: AgentRole) -> &'static str {
+    match role {
+        AgentRole::Planner => "planner",
+        AgentRole::Generator => "generator",
+        AgentRole::Evaluator => "evaluator",
+        AgentRole::Coder => "coder",
+        AgentRole::TestWriter => "test_writer",
+        AgentRole::Reviewer => "reviewer",
+        AgentRole::Refactorer => "refactorer",
+        AgentRole::DocWriter => "doc_writer",
+        AgentRole::Researcher => "researcher",
+    }
+}
+
+/// Create an OPA input from a tool operation and agent context.
+///
+/// Takes typed `AgentId` / `AgentRole` so callers cannot pass a freeform
+/// string and silently mis-target a policy. The strings inside `OpaSubject`
+/// remain because OPA's JSON input contract requires them.
+pub fn create_opa_input(
+    agent_id: &AgentId,
+    role: AgentRole,
+    operation: &ToolOperation,
+) -> OpaInput {
+    let subject = OpaSubject::new(
+        &agent_id.to_string(),
+        agent_role_slug(role),
+        operation.risk_level(),
+    );
     let action = OpaAction::from_operation(operation);
     let resource = OpaResource::from_operation(operation);
 
@@ -745,10 +777,11 @@ mod tests {
             path: std::path::PathBuf::from("/workspace/src/main.rs"),
         };
 
-        let input = create_opa_input("planner", "agent", &op);
+        let agent_id = AgentId::new();
+        let input = create_opa_input(&agent_id, AgentRole::Planner, &op);
 
-        assert_eq!(input.subject.agent_id, "planner");
-        assert_eq!(input.subject.role, "agent");
+        assert_eq!(input.subject.agent_id, agent_id.to_string());
+        assert_eq!(input.subject.role, "planner");
         assert_eq!(input.action.action_type, "read");
         assert_eq!(input.resource.resource_type, "file");
     }
