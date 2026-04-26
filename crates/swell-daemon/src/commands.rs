@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 #[allow(unused_imports)]
 use swell_core::{
-    get_last_llm_model, get_total_llm_tokens, AgentId, CliCommand, DaemonEvent, DataResponse,
-    FailureClass, TaskId, TaskState,
+    get_last_llm_model, get_total_llm_tokens, AgentId, AutonomyLevel, CliCommand, DaemonEvent,
+    DataResponse, FailureClass, TaskId, TaskState,
 };
 use swell_memory::recall::{RecallQuery, RecallService};
 use swell_orchestrator::Orchestrator;
@@ -195,6 +195,19 @@ pub async fn handle_command(
                         prev_state = ?task.state,
                         "Task execution requested via CLI"
                     );
+                    // Treat an explicit `swell execute` as user authorization:
+                    // promote autonomy to FullAuto so `start_task` doesn't park
+                    // the task at the AwaitingApproval gate after planning.
+                    if let Err(e) = orch
+                        .set_autonomy_level(task_id, AutonomyLevel::FullAuto)
+                        .await
+                    {
+                        warn!(
+                            task_id = %task_id,
+                            error = %e,
+                            "Failed to promote task to FullAuto for execution"
+                        );
+                    }
                     let exec_orch = orch.clone();
                     let exec_emitter = event_emitter.clone();
                     tokio::spawn(async move {

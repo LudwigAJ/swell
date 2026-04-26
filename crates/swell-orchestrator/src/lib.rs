@@ -979,6 +979,24 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Promote a task's autonomy level. Used by `TaskExecute` to treat an
+    /// explicit `swell execute <id>` as authorization, bypassing the
+    /// approval gate that would otherwise halt the pipeline at planning
+    /// time for Guided autonomy.
+    pub async fn set_autonomy_level(
+        &self,
+        task_id: TaskId,
+        autonomy_level: swell_core::AutonomyLevel,
+    ) -> Result<(), SwellError> {
+        let sm = self.state_machine.read().await;
+        sm.with_task_mut(task_id, |task| {
+            task.autonomy_level = autonomy_level;
+            Ok(())
+        })?;
+        info!(task_id = %task_id, autonomy_level = ?autonomy_level, "Task autonomy level updated");
+        Ok(())
+    }
+
     /// Mark a task as Failed. Used by `TaskCancel` to make cancellation
     /// observable in subsequent `TaskList` / `TaskGet` queries.
     pub async fn fail_task(&self, task_id: TaskId) -> Result<(), SwellError> {

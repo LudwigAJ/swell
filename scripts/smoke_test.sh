@@ -142,12 +142,23 @@ PIPE_STATE=""
 for _ in $(seq 1 50); do
   PIPE_STATE="$("${CLI_BIN}" list --json \
     | python3 -c "import json,sys; tasks=json.load(sys.stdin); print(next(t['state'] for t in tasks if t['id']=='${PIPE_TID}'))")"
-  [[ "${PIPE_STATE}" == "COMPLETED" || "${PIPE_STATE}" == "FAILED" ]] && break
+  [[ "${PIPE_STATE}" == "COMPLETED" || "${PIPE_STATE}" == "FAILED" || "${PIPE_STATE}" == "REJECTED" ]] && break
   sleep 0.1
 done
-[[ "${PIPE_STATE}" == "COMPLETED" || "${PIPE_STATE}" == "FAILED" ]] \
+[[ "${PIPE_STATE}" == "COMPLETED" || "${PIPE_STATE}" == "FAILED" || "${PIPE_STATE}" == "REJECTED" ]] \
   || fail "pipeline did not reach terminal state; saw '${PIPE_STATE}'"
 ok "pipeline reached terminal state (${PIPE_STATE})"
+
+# 6. Pipeline must transition through VALIDATING. This is the assertion
+#    that pinned a real bug 2026-04-26: `execute_task` used to plough
+#    past the AwaitingApproval gate, so `start_validation` errored with
+#    "Cannot validate task in state AWAITING_APPROVAL" and the task
+#    never reached the Evaluator's validation phase. Asserting on the
+#    transition log here regresses-pins that fix.
+CLEAN="$(clean_log)"
+echo "${CLEAN}" | grep -q "to=VALIDATING" \
+  || { echo "${CLEAN}" | tail -60; fail "task never transitioned to VALIDATING"; }
+ok "task reached VALIDATING phase"
 
 echo
 echo "all smoke checks passed"

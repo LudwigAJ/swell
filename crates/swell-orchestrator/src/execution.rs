@@ -21,7 +21,7 @@ use swell_core::traits::Agent;
 use swell_core::TaskId;
 use swell_core::{
     AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, Plan, SessionId, StreamEvent,
-    SwellError, ToolOutput, ToolResultContent, ValidationResult,
+    SwellError, TaskState, ToolOutput, ToolResultContent, ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
 use swell_tools::{
@@ -707,8 +707,41 @@ impl ExecutionController {
         // Step 2: Transition through states to executing
         self.orchestrator().start_task(task_id).await?;
 
-        // Get updated task after planning
+        // `start_task` honors the approval gate for non-FullAuto autonomy:
+        // it transitions Enriched → AwaitingApproval and returns Ok without
+        // reaching Executing. Continuing to run Generator/Evaluator from
+        // that state guarantees a misleading "Cannot validate task in state
+        // AwaitingApproval" error at validation time. Halt cleanly here so
+        // the caller (CLI / orchestrator client) sees the gate rather than
+        // a downstream state-machine failure.
         let task = self.orchestrator().get_task(task_id).await?;
+        if task.state == TaskState::AwaitingApproval {
+            info!(
+                task_id = %task_id,
+                "Task awaiting approval after planning; pipeline halted at gate"
+            );
+            let released = file_lock_manager
+                .release_all_for_task(task_id_for_cleanup)
+                .await;
+            info!(
+                task_id = %task_id,
+                locks_released = released,
+                "File locks released while task awaits approval"
+            );
+            return Ok(ValidationResult {
+                passed: false,
+                lint_passed: false,
+                tests_passed: false,
+                security_passed: false,
+                ai_review_passed: false,
+                errors: vec![
+                    "Task awaiting plan approval (autonomy level requires it). \
+                     Approve via `swell approve <id>` to continue."
+                        .to_string(),
+                ],
+                warnings: vec![],
+            });
+        }
 
         // Step 2a: Check if we need to spawn a FeatureLead for complex tasks
         if let Some(ref plan) = task.plan {
