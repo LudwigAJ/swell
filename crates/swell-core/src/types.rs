@@ -635,6 +635,12 @@ pub enum CliCommand {
     TaskCancel {
         task_id: TaskId,
     },
+    /// Drive a task through the Planner → Generator → Evaluator pipeline.
+    /// The daemon spawns the execution and returns immediately; progress
+    /// is observed via the watch stream / `TaskGet`.
+    TaskExecute {
+        task_id: TaskId,
+    },
     TaskList,
     TaskWatch {
         task_id: TaskId,

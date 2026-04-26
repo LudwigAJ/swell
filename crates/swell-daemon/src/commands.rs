@@ -183,6 +183,68 @@ pub async fn handle_command(
                 }
             }
         }
+        CliCommand::TaskExecute { task_id } => {
+            let orch = orchestrator.clone();
+            // Verify the task exists before spawning. The pipeline itself is
+            // long-running, so we ack immediately with a state-changed event
+            // and let the caller observe progress via the watch stream.
+            match orch.get_task(task_id).await {
+                Ok(task) => {
+                    info!(
+                        task_id = %task_id,
+                        prev_state = ?task.state,
+                        "Task execution requested via CLI"
+                    );
+                    let exec_orch = orch.clone();
+                    let exec_emitter = event_emitter.clone();
+                    tokio::spawn(async move {
+                        let controller = exec_orch.execution_controller();
+                        match controller.execute_task(task_id).await {
+                            Ok(result) => {
+                                info!(
+                                    task_id = %task_id,
+                                    passed = result.passed,
+                                    "Task execution finished"
+                                );
+                            }
+                            Err(e) => {
+                                error!(
+                                    task_id = %task_id,
+                                    error = %e,
+                                    "Task execution failed; marking task Failed"
+                                );
+                                if let Err(fail_err) = exec_orch.fail_task(task_id).await {
+                                    warn!(
+                                        task_id = %task_id,
+                                        error = %fail_err,
+                                        "Failed to mark task Failed after execution error"
+                                    );
+                                }
+                                let correlation_id = EventEmitter::new_correlation_id();
+                                exec_emitter
+                                    .emit_task_state_changed(
+                                        task_id,
+                                        TaskState::Failed,
+                                        correlation_id,
+                                    )
+                                    .await;
+                            }
+                        }
+                    });
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_task_state_changed(task_id, TaskState::Executing, correlation_id)
+                        .await
+                }
+                Err(e) => {
+                    warn!(task_id = %task_id, error = %e, "Task not found for execution");
+                    let correlation_id = EventEmitter::new_correlation_id();
+                    event_emitter
+                        .emit_error(format!("Task not found: {}", e), None, correlation_id)
+                        .await
+                }
+            }
+        }
         CliCommand::TaskList => {
             let orch = &orchestrator;
             let tasks = orch.get_all_tasks().await;

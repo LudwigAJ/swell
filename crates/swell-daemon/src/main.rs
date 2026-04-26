@@ -8,6 +8,29 @@ use swell_llm::{AnthropicBackend, LlmBackend, MockLlm, OpenAIBackend};
 use swell_orchestrator::OrchestratorEvent;
 use tracing::{info, warn};
 
+/// Plan-shaped JSON the dev-mode `MockLlm` returns. The PlannerAgent
+/// parses this directly as its plan output, so a smoke run actually
+/// reaches the Generator/Evaluator stages instead of bouncing on a
+/// JSON parse error at planning time. Keep the shape minimal — the
+/// fields that PlannerAgent reads are `steps[]`,
+/// `total_estimated_tokens`, and `risk_assessment`.
+const MOCK_PLAN_RESPONSE: &str = r#"{
+    "steps": [
+        {
+            "description": "Smoke-test placeholder step",
+            "affected_files": [],
+            "expected_tests": [],
+            "risk_level": "low"
+        }
+    ],
+    "total_estimated_tokens": 100,
+    "risk_assessment": "Smoke test (MockLlm)"
+}"#;
+
+fn mock_llm(model: &str) -> Arc<dyn LlmBackend> {
+    Arc::new(MockLlm::with_response(model, MOCK_PLAN_RESPONSE)) as Arc<dyn LlmBackend>
+}
+
 /// Construct an LLM backend from environment configuration.
 ///
 /// The backend is selected based on `SWELL_PROVIDER` env var (defaults to "anthropic").
@@ -27,7 +50,7 @@ fn construct_llm_backend() -> Arc<dyn LlmBackend> {
 
             if api_key == "mock" {
                 info!(model = %model, "Using MockLlm backend (ANTHROPIC_API_KEY not set)");
-                Arc::new(MockLlm::new(&model)) as Arc<dyn LlmBackend>
+                mock_llm(&model)
             } else {
                 info!(model = %model, provider = %provider, "Using AnthropicBackend");
                 Arc::new(AnthropicBackend::new(&model, &api_key)) as Arc<dyn LlmBackend>
@@ -41,7 +64,7 @@ fn construct_llm_backend() -> Arc<dyn LlmBackend> {
 
             if api_key == "mock" {
                 info!(model = %model, "Using MockLlm backend (OPENAI_API_KEY not set)");
-                Arc::new(MockLlm::new(&model)) as Arc<dyn LlmBackend>
+                mock_llm(&model)
             } else {
                 match OpenAIBackend::new(&model, &api_key) {
                     Ok(backend) => {
@@ -50,14 +73,14 @@ fn construct_llm_backend() -> Arc<dyn LlmBackend> {
                     }
                     Err(e) => {
                         warn!(error = %e, model = %model, "Failed to create OpenAIBackend, using MockLlm");
-                        Arc::new(MockLlm::new(&model)) as Arc<dyn LlmBackend>
+                        mock_llm(&model)
                     }
                 }
             }
         }
         _ => {
             warn!(provider = %provider, "Unknown SWELL_PROVIDER, using MockLlm");
-            Arc::new(MockLlm::new(&model)) as Arc<dyn LlmBackend>
+            mock_llm(&model)
         }
     }
 }

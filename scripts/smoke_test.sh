@@ -88,5 +88,66 @@ TASKS_FAILED="$("${CLI_BIN}" status | grep -E '^\s+Failed:' | awk '{print $2}')"
 [[ "${TASKS_FAILED}" == "1" ]] || fail "status didn't reflect cancelled task; saw '${TASKS_FAILED}'"
 ok "status counts cancelled task as Failed"
 
+# 5. Multi-agent pipeline handoff: `swell execute` must drive the task
+#    through PlannerAgent → GeneratorAgent → EvaluatorAgent. We assert
+#    on the daemon log lines the agents emit, not on terminal task
+#    state — under MockLlm the Evaluator stage cannot satisfy the
+#    state-machine precondition, so the task ends Failed; what we want
+#    to prove here is that handoff *occurred*, which closes the wiring
+#    gap where `execute_task` was unreachable from the CLI surface.
+"${CLI_BIN}" task "pipeline handoff smoke" >/dev/null
+PIPE_TID="$("${CLI_BIN}" list --json | python3 -c "import json,sys; tasks=json.load(sys.stdin); print(next(t['id'] for t in tasks if t['description']=='pipeline handoff smoke'))")"
+[[ "${PIPE_TID}" =~ ^[0-9a-f-]{36}$ ]] || fail "could not find pipeline-handoff task id"
+"${CLI_BIN}" execute "${PIPE_TID}" >/dev/null || fail "swell execute failed"
+
+# The tracing subscriber writes ANSI color codes around field names
+# (e.g. `\x1b[3magent\x1b[0m=Planner`), so a literal `grep agent=Planner`
+# never matches. Strip ANSI escapes once, then assert on the
+# human-readable message bodies the agents emit at each handoff.
+ANSI_STRIP='s/\x1b\[[0-9;]*[a-zA-Z]//g'
+clean_log() { sed "${ANSI_STRIP}" "${DAEMON_LOG}"; }
+
+# Wait up to 5s for the spawned pipeline to log all three agent stages.
+for _ in $(seq 1 50); do
+  CLEAN="$(clean_log)"
+  if   echo "${CLEAN}" | grep -q "Starting plan generation" \
+    && echo "${CLEAN}" | grep -q "handing off to Generator" \
+    && echo "${CLEAN}" | grep -q "Starting code generation" \
+    && echo "${CLEAN}" | grep -q "handing off .* to Evaluator"; then
+    break
+  fi
+  sleep 0.1
+done
+
+CLEAN="$(clean_log)"
+echo "${CLEAN}" | grep -q "Starting plan generation" \
+  || { echo "${CLEAN}" | tail -60; fail "PlannerAgent did not start"; }
+ok "PlannerAgent ran"
+
+echo "${CLEAN}" | grep -q "handing off to Generator" \
+  || { echo "${CLEAN}" | tail -60; fail "Planner did not hand off to Generator"; }
+ok "Planner → Generator handoff"
+
+echo "${CLEAN}" | grep -q "Starting code generation" \
+  || { echo "${CLEAN}" | tail -60; fail "GeneratorAgent did not start"; }
+ok "GeneratorAgent ran"
+
+echo "${CLEAN}" | grep -q "handing off .* to Evaluator" \
+  || { echo "${CLEAN}" | tail -60; fail "Generator did not hand off to Evaluator"; }
+ok "Generator → Evaluator handoff"
+
+# Pipeline must reach a terminal state within a few seconds (Failed is
+# expected under MockLlm; success or failure both close the wiring loop).
+PIPE_STATE=""
+for _ in $(seq 1 50); do
+  PIPE_STATE="$("${CLI_BIN}" list --json \
+    | python3 -c "import json,sys; tasks=json.load(sys.stdin); print(next(t['state'] for t in tasks if t['id']=='${PIPE_TID}'))")"
+  [[ "${PIPE_STATE}" == "COMPLETED" || "${PIPE_STATE}" == "FAILED" ]] && break
+  sleep 0.1
+done
+[[ "${PIPE_STATE}" == "COMPLETED" || "${PIPE_STATE}" == "FAILED" ]] \
+  || fail "pipeline did not reach terminal state; saw '${PIPE_STATE}'"
+ok "pipeline reached terminal state (${PIPE_STATE})"
+
 echo
 echo "all smoke checks passed"

@@ -130,6 +130,20 @@ async fn main() {
                 }
             }
         }
+        "execute" => {
+            if args.len() < 3 {
+                Err(CliError::MissingArgument("task-id".to_string()))
+            } else {
+                match Uuid::parse_str(&args[2]) {
+                    Ok(uuid) => {
+                        let task_id = TaskId::from_uuid(uuid);
+                        let cmd = CliCommand::TaskExecute { task_id };
+                        send_command(&socket_path, cmd).await
+                    }
+                    Err(e) => Err(CliError::InvalidUuid(e.to_string())),
+                }
+            }
+        }
         "cancel" => {
             if args.len() < 3 {
                 Err(CliError::MissingArgument("task-id".to_string()))
@@ -961,6 +975,7 @@ Usage:
     swell watch <task-id>        Watch task status
     swell approve <task-id>      Approve task plan
     swell reject <task-id> [--reason <reason>]   Reject task plan
+    swell execute <task-id>       Run a task through the Planner→Generator→Evaluator pipeline
     swell cancel <task-id>        Cancel a task
     swell pause <task-id> [--reason <reason>]   Pause a running task
     swell resume <task-id>       Resume a paused task
