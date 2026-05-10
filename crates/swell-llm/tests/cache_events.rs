@@ -240,7 +240,9 @@ data: {\"type\":\"message_stop\"}\n\n";
             } => Some(e),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("Expected Usage event with cache_creation tokens, got: {events:?}"));
+        .unwrap_or_else(|| {
+            panic!("Expected Usage event with cache_creation tokens, got: {events:?}")
+        });
 
     if let StreamEvent::Usage {
         cache_creation_input_tokens,

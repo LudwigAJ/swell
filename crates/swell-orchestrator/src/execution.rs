@@ -178,6 +178,34 @@ pub const DEFAULT_CONTEXT_COMPACTION_THRESHOLD: usize = 100_000;
 /// Default number of tail messages to always preserve during compaction.
 pub const DEFAULT_TAIL_MESSAGE_COUNT: usize = 10;
 
+#[cfg(any(test, feature = "test-support"))]
+static EXECUTE_TASK_INVOCATIONS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+#[cfg(any(test, feature = "test-support"))]
+static VALIDATION_ORCHESTRATOR_INVOCATIONS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Reset test-only wiring probes for daemon/integration smoke tests.
+#[cfg(any(test, feature = "test-support"))]
+pub fn reset_wiring_probe_counts() {
+    use std::sync::atomic::Ordering;
+
+    EXECUTE_TASK_INVOCATIONS.store(0, Ordering::SeqCst);
+    VALIDATION_ORCHESTRATOR_INVOCATIONS.store(0, Ordering::SeqCst);
+}
+
+/// Return test-only wiring probe counts: `(execute_task, validation_orchestrator)`.
+#[cfg(any(test, feature = "test-support"))]
+pub fn wiring_probe_counts() -> (usize, usize) {
+    use std::sync::atomic::Ordering;
+
+    (
+        EXECUTE_TASK_INVOCATIONS.load(Ordering::SeqCst),
+        VALIDATION_ORCHESTRATOR_INVOCATIONS.load(Ordering::SeqCst),
+    )
+}
+
 /// Manages concurrent task execution with up to 6 agents
 pub struct ExecutionController {
     orchestrator: Weak<Orchestrator>,
@@ -589,6 +617,9 @@ impl ExecutionController {
     ///
     /// For complex tasks (>15 steps), a FeatureLead sub-orchestrator may be spawned.
     pub async fn execute_task(&self, task_id: TaskId) -> Result<ValidationResult, SwellError> {
+        #[cfg(any(test, feature = "test-support"))]
+        EXECUTE_TASK_INVOCATIONS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         info!(task_id = %task_id, "Starting task execution");
 
         // Get the task and its estimated files for lock acquisition
@@ -734,11 +765,9 @@ impl ExecutionController {
                 tests_passed: false,
                 security_passed: false,
                 ai_review_passed: false,
-                errors: vec![
-                    "Task awaiting plan approval (autonomy level requires it). \
+                errors: vec!["Task awaiting plan approval (autonomy level requires it). \
                      Approve via `swell approve <id>` to continue."
-                        .to_string(),
-                ],
+                    .to_string()],
                 warnings: vec![],
             });
         }
@@ -928,6 +957,8 @@ impl ExecutionController {
             .validation_orchestrator
             .validate_task_completion(validation_input)
             .await;
+        #[cfg(any(test, feature = "test-support"))]
+        VALIDATION_ORCHESTRATOR_INVOCATIONS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         // Step 6: Build final validation result from ValidationOrchestrator output
         let (validation_passed, mut errors) = match orchestrator_result {
@@ -1869,14 +1900,14 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: "Short message".to_string(),
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
             LlmMessage {
                 role: swell_llm::LlmRole::Assistant,
                 content: "Short response".to_string(),
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
         ];
 
         let result = controller.compact_context(&messages);
@@ -1898,8 +1929,8 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: format!("Message number {}", i),
                 tool_call_id: None,
-            ..Default::default()
-        })
+                ..Default::default()
+            })
             .collect();
 
         let result = controller.compact_context(&messages);
@@ -1939,8 +1970,8 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: format!("Old message {}", i),
                 tool_call_id: None,
-            ..Default::default()
-        });
+                ..Default::default()
+            });
         }
 
         // This represents the tool_use message (Assistant role, no tool_call_id)
@@ -1965,8 +1996,8 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: format!("Tail message {}", i),
                 tool_call_id: None,
-            ..Default::default()
-        });
+                ..Default::default()
+            });
         }
 
         let result = controller.compact_context(&messages);
@@ -2008,8 +2039,8 @@ mod tests {
                     i
                 ),
                 tool_call_id: None,
-            ..Default::default()
-        })
+                ..Default::default()
+            })
             .collect();
 
         // Verify we start over threshold
@@ -2075,8 +2106,8 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: format!("Old message {}", i),
                 tool_call_id: None,
-            ..Default::default()
-        });
+                ..Default::default()
+            });
         }
 
         // Message 3: tool_use
@@ -2160,14 +2191,14 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: "Short".to_string(),
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
             LlmMessage {
                 role: swell_llm::LlmRole::Assistant,
                 content: "Also short".to_string(),
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
         ];
 
         let total = ExecutionController::estimate_total_tokens(&messages);

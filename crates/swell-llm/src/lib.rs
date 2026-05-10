@@ -27,9 +27,9 @@ pub mod traits;
 pub mod wiring;
 
 pub use anthropic::AnthropicBackend;
-pub use providers::{AnthropicProvider, ProviderCaps};
 pub use mock::{MockLlm, ScenarioMockLlm, ScenarioStep};
 pub use openai::OpenAIBackend;
+pub use providers::{AnthropicProvider, ProviderCaps};
 pub use retry::{calculate_backoff, is_retryable_status, LlmRetryConfig};
 pub use router::{
     CostOptimizer, ModelRoute, ModelRouter, ModelRouterBuilder, RouteConfig, TaskType,

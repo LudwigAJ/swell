@@ -1329,9 +1329,8 @@ mod tests {
             ) -> Result<
                 std::pin::Pin<
                     Box<
-                        dyn futures::Stream<
-                                Item = Result<swell_core::StreamEvent, SwellError>,
-                            > + Send,
+                        dyn futures::Stream<Item = Result<swell_core::StreamEvent, SwellError>>
+                            + Send,
                     >,
                 >,
                 SwellError,
@@ -1370,9 +1369,8 @@ mod tests {
             ) -> Result<
                 std::pin::Pin<
                     Box<
-                        dyn futures::Stream<
-                                Item = Result<swell_core::StreamEvent, SwellError>,
-                            > + Send,
+                        dyn futures::Stream<Item = Result<swell_core::StreamEvent, SwellError>>
+                            + Send,
                     >,
                 >,
                 SwellError,

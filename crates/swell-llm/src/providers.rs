@@ -251,10 +251,7 @@ impl ProviderCaps {
     /// alone. This is how users adjust an unknown gateway without
     /// shipping a new variant — see
     /// [`swell_core::llm_config::ProviderCapsOverride`].
-    pub fn with_override(
-        mut self,
-        ov: &swell_core::llm_config::ProviderCapsOverride,
-    ) -> Self {
+    pub fn with_override(mut self, ov: &swell_core::llm_config::ProviderCapsOverride) -> Self {
         if let Some(v) = ov.supports_top_k {
             self.supports_top_k = v;
         }
@@ -348,7 +345,10 @@ mod tests {
 
     #[test]
     fn no_url_defaults_to_anthropic() {
-        assert_eq!(AnthropicProvider::detect(None), AnthropicProvider::Anthropic);
+        assert_eq!(
+            AnthropicProvider::detect(None),
+            AnthropicProvider::Anthropic
+        );
     }
 
     #[test]

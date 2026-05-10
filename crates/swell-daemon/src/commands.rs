@@ -331,10 +331,7 @@ pub async fn handle_command(
                             );
                             event_emitter
                                 .emit_error(
-                                    format!(
-                                        "Task resumed but state lookup failed: {}",
-                                        e
-                                    ),
+                                    format!("Task resumed but state lookup failed: {}", e),
                                     None,
                                     correlation_id,
                                 )
@@ -1151,15 +1148,9 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create some tasks
-        let _ = orch
-            .create_task("Task 1".to_string(), Vec::new())
-            .await;
-        let _ = orch
-            .create_task("Task 2".to_string(), Vec::new())
-            .await;
-        let _ = orch
-            .create_task("Task 3".to_string(), Vec::new())
-            .await;
+        let _ = orch.create_task("Task 1".to_string(), Vec::new()).await;
+        let _ = orch.create_task("Task 2".to_string(), Vec::new()).await;
+        let _ = orch.create_task("Task 3".to_string(), Vec::new()).await;
 
         let command = CliCommand::TaskList;
         let event = handle_command(
@@ -1529,15 +1520,13 @@ mod tests {
 
     fn create_test_task_in_executing_state(orch: &Arc<Orchestrator>) -> TaskId {
         let task_id = futures::executor::block_on(async {
-            orch
-                .create_task("Test task".to_string(), Vec::new())
+            orch.create_task("Test task".to_string(), Vec::new())
                 .await
                 .unwrap()
                 .id
         });
         let plan = create_test_plan(task_id);
-        futures::executor::block_on(async { orch.set_plan(task_id, plan).await })
-            .unwrap();
+        futures::executor::block_on(async { orch.set_plan(task_id, plan).await }).unwrap();
         futures::executor::block_on(async {
             let sm = orch.state_machine();
             let sm_guard = sm.write().await;
@@ -1551,15 +1540,13 @@ mod tests {
 
     fn create_test_task_in_validating_state(orch: &Arc<Orchestrator>) -> TaskId {
         let task_id = futures::executor::block_on(async {
-            orch
-                .create_task("Test task".to_string(), Vec::new())
+            orch.create_task("Test task".to_string(), Vec::new())
                 .await
                 .unwrap()
                 .id
         });
         let plan = create_test_plan(task_id);
-        futures::executor::block_on(async { orch.set_plan(task_id, plan).await })
-            .unwrap();
+        futures::executor::block_on(async { orch.set_plan(task_id, plan).await }).unwrap();
         futures::executor::block_on(async {
             let sm = orch.state_machine();
             let sm_guard = sm.write().await;
@@ -1862,10 +1849,7 @@ mod tests {
         }
 
         // Verify instruction was stored
-        let instructions = orch
-            .get_injected_instructions(task_id)
-            .await
-            .unwrap();
+        let instructions = orch.get_injected_instructions(task_id).await.unwrap();
         assert_eq!(instructions.len(), 1);
         assert_eq!(instructions[0], "Remember to check the logs first");
     }
@@ -1895,10 +1879,7 @@ mod tests {
             .await;
         }
 
-        let instructions = orch
-            .get_injected_instructions(task_id)
-            .await
-            .unwrap();
+        let instructions = orch.get_injected_instructions(task_id).await.unwrap();
         assert_eq!(instructions.len(), 3);
     }
 
@@ -2263,12 +2244,8 @@ mod tests {
         let active_connections = create_test_active_connections();
 
         // Create some tasks
-        let _ = orch
-            .create_task("Task 1".to_string(), Vec::new())
-            .await;
-        let _ = orch
-            .create_task("Task 2".to_string(), Vec::new())
-            .await;
+        let _ = orch.create_task("Task 1".to_string(), Vec::new()).await;
+        let _ = orch.create_task("Task 2".to_string(), Vec::new()).await;
 
         let command = CliCommand::DaemonStatus;
         let event = handle_command(
@@ -2359,9 +2336,7 @@ mod tests {
             .create_task("Task 1".to_string(), Vec::new())
             .await
             .unwrap();
-        let _ = orch
-            .create_task("Task 2".to_string(), Vec::new())
-            .await;
+        let _ = orch.create_task("Task 2".to_string(), Vec::new()).await;
 
         // Transition task1 to Enriched state
         {

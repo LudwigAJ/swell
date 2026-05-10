@@ -402,7 +402,8 @@ impl ValidationGate for LintGate {
                 messages: vec![ValidationMessage {
                     level: ValidationLevel::Info,
                     code: Some("LINT_SKIPPED_OUT_OF_TREE".to_string()),
-                    message: "Lint skipped — task changed no files inside the workspace.".to_string(),
+                    message: "Lint skipped — task changed no files inside the workspace."
+                        .to_string(),
                     file: None,
                     line: None,
                 }],
@@ -886,7 +887,8 @@ impl ValidationGate for TestGate {
                 messages: vec![ValidationMessage {
                     level: ValidationLevel::Info,
                     code: Some("TEST_SKIPPED_OUT_OF_TREE".to_string()),
-                    message: "Tests skipped — task changed no files inside the workspace.".to_string(),
+                    message: "Tests skipped — task changed no files inside the workspace."
+                        .to_string(),
                     file: None,
                     line: None,
                 }],
@@ -1952,14 +1954,14 @@ Please provide your review in the specified JSON format.
                 role: LlmRole::System,
                 content: self.prompt_template.clone(),
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_prompt,
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
         ];
 
         let config = LlmConfig {

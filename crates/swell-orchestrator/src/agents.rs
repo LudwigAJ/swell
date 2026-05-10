@@ -9,12 +9,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use swell_core::traits::Agent;
+use swell_core::traits::LlmToolChoice;
 use swell_core::{
     AgentContext, AgentId, AgentResult, AgentRole, LlmBackend, LlmConfig, LlmMessage, LlmRole,
     LlmToolCall, LlmToolDefinition, MemoryBlock, Plan, PlanStep, RiskLevel, StepStatus, SwellError,
     TaskId, ToolCallResult, ToolOutput, ToolResultContent, ValidationGate,
 };
-use swell_core::traits::LlmToolChoice;
 use swell_state::CheckpointManager;
 use swell_tools::ToolRegistry;
 use tracing::{debug, info};
@@ -676,14 +676,14 @@ impl Agent for PlannerAgent {
                 role: LlmRole::System,
                 content: self.system_prompt.clone(),
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_message,
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
         ];
 
         // Force structured output via a single tool the model MUST call.
@@ -862,11 +862,7 @@ fn tool_timeout_seconds() -> u64 {
 
 /// Run post-tool hooks (cargo fmt / clippy) for file-mutating tool calls.
 /// No-ops when the tool didn't modify a file or the path can't be resolved.
-async fn run_post_tool_hooks(
-    tool_name: &str,
-    tool_args: &serde_json::Value,
-    workspace_path: &str,
-) {
+async fn run_post_tool_hooks(tool_name: &str, tool_args: &serde_json::Value, workspace_path: &str) {
     if !matches!(tool_name, "write_file" | "edit_file") {
         return;
     }
@@ -1086,10 +1082,15 @@ impl GeneratorAgent {
             // Anthropic, and any other compatible backend) emits a real
             // tool_use block we can read off `response.tool_calls`.
             let (tool_call_opt, response, action_tokens) = if let Some(llm) = &self.llm {
-                self.decide_action_with_llm(&conversation, &tools, llm).await?
+                self.decide_action_with_llm(&conversation, &tools, llm)
+                    .await?
             } else {
                 let action = self.decide_action_heuristic(
-                    react_loop.steps.last().map(|s| s.thought.as_str()).unwrap_or(""),
+                    react_loop
+                        .steps
+                        .last()
+                        .map(|s| s.thought.as_str())
+                        .unwrap_or(""),
                     step,
                 )?;
                 let (n, a) = self.parse_action(&action);
@@ -1098,11 +1099,7 @@ impl GeneratorAgent {
                     name: n,
                     arguments: a,
                 };
-                (
-                    Some(synthetic),
-                    swell_core::LlmResponse::default(),
-                    0u64,
-                )
+                (Some(synthetic), swell_core::LlmResponse::default(), 0u64)
             };
             step_tokens += action_tokens;
 
@@ -1188,9 +1185,7 @@ impl GeneratorAgent {
                 if let Some(intervention) = guard.check(task.id).await {
                     let pattern = match &intervention {
                         crate::loop_detection::LoopIntervention::Halt { .. } => "halt",
-                        crate::loop_detection::LoopIntervention::Escalation { .. } => {
-                            "escalation"
-                        }
+                        crate::loop_detection::LoopIntervention::Escalation { .. } => "escalation",
                         crate::loop_detection::LoopIntervention::StrategyChange { .. } => {
                             "strategy_change"
                         }
@@ -1448,7 +1443,11 @@ impl GeneratorAgent {
                 // to the text body when no Error block is present.
                 let err = {
                     let e = extract_error_from_content(&result.content);
-                    if e.is_empty() { text.clone() } else { e }
+                    if e.is_empty() {
+                        text.clone()
+                    } else {
+                        e
+                    }
                 };
                 info!(tool = %tool_name, error = %err, "Tool reported failure");
                 Ok(format!("FAILED: {}", err))
@@ -4513,14 +4512,14 @@ Generate the modified file content. Respond ONLY with JSON in this format:
                     role: LlmRole::User,
                     content: prompt,
                     tool_call_id: None,
-            ..Default::default()
-        }];
+                    ..Default::default()
+                }];
 
                 let config = LlmConfig {
                     temperature: 0.3,
                     max_tokens: 8000,
                     stop_sequences: None,
-            ..Default::default()
+                    ..Default::default()
                 };
 
                 match llm.chat(messages, None, config).await {
@@ -6677,14 +6676,14 @@ impl Agent for DocWriterAgent {
                 role: LlmRole::System,
                 content: system_prompt,
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_message,
                 tool_call_id: None,
-            ..Default::default()
-        },
+                ..Default::default()
+            },
         ];
 
         let config = LlmConfig {

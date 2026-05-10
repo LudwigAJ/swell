@@ -476,11 +476,16 @@ impl Orchestrator {
             FileEditTool, ReadFileTool, SearchTool, ShellTool, WriteFileTool,
         };
         let r = &self.tool_registry;
-        r.register_builtin(ReadFileTool::new(), ToolCategory::File).await;
-        r.register_builtin(WriteFileTool::new(), ToolCategory::File).await;
-        r.register_builtin(FileEditTool::new(), ToolCategory::File).await;
-        r.register_builtin(ShellTool::new(), ToolCategory::Shell).await;
-        r.register_builtin(SearchTool::new(), ToolCategory::Search).await;
+        r.register_builtin(ReadFileTool::new(), ToolCategory::File)
+            .await;
+        r.register_builtin(WriteFileTool::new(), ToolCategory::File)
+            .await;
+        r.register_builtin(FileEditTool::new(), ToolCategory::File)
+            .await;
+        r.register_builtin(ShellTool::new(), ToolCategory::Shell)
+            .await;
+        r.register_builtin(SearchTool::new(), ToolCategory::Search)
+            .await;
     }
 
     /// Load MCP servers from `.swell/mcp.json` (when present), spawn each
@@ -539,10 +544,7 @@ impl Orchestrator {
                 total += 1;
             }
         }
-        tracing::info!(
-            mcp_tool_count = total,
-            "MCP tool registration complete"
-        );
+        tracing::info!(mcp_tool_count = total, "MCP tool registration complete");
     }
 
     /// Create a new orchestrator without LLM backend for testing purposes.
@@ -1331,9 +1333,7 @@ impl Orchestrator {
     /// Shared loop detector consulted by the generator's ReAct loop. The
     /// orchestrator owns one instance per process; agents borrow it to
     /// record tool calls and check for loop interventions.
-    pub fn loop_detector(
-        &self,
-    ) -> Arc<RwLock<crate::loop_detection::OrchestratorLoopDetector>> {
+    pub fn loop_detector(&self) -> Arc<RwLock<crate::loop_detection::OrchestratorLoopDetector>> {
         self.loop_detector.clone()
     }
 

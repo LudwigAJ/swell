@@ -743,7 +743,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
-            ..Default::default()
+                    ..Default::default()
                 },
             )
             .await
@@ -772,7 +772,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
-            ..Default::default()
+                    ..Default::default()
                 },
             )
             .await
@@ -801,7 +801,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
-            ..Default::default()
+                    ..Default::default()
                 },
             )
             .await;
@@ -842,7 +842,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
-            ..Default::default()
+                    ..Default::default()
                 },
             )
             .await
@@ -911,7 +911,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
-            ..Default::default()
+                    ..Default::default()
                 },
             )
             .await
@@ -973,7 +973,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
-            ..Default::default()
+                    ..Default::default()
                 },
             )
             .await

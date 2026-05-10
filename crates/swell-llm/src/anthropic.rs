@@ -16,13 +16,13 @@ use crate::{
     LlmRequestOverrides, LlmResponse, LlmRetryConfig, LlmRole, LlmStopReason, LlmThinkingBlock,
     LlmToolChoice, LlmToolDefinition, LlmUsage,
 };
+use anthropic_client::ApiErrorKind as SdkApiErrorKind;
 use anthropic_client::{
     CacheControl, CacheControlTtl, Client, ContentBlock as SdkContentBlock, ContentBlockParam,
     Error as SdkError, Message as SdkMessage, MessageCountTokensParams, MessageCreateParams,
     MessageParam, MessageStreamEvent, Model as SdkModel, ModelInfo, RequestOptions,
     StopReason as SdkStopReason, SystemPromptBlock, Tool as SdkTool, ToolChoice as SdkToolChoice,
 };
-use anthropic_client::ApiErrorKind as SdkApiErrorKind;
 use anthropic_types::ContentBlockDelta;
 use async_trait::async_trait;
 use futures::Stream;
@@ -149,7 +149,13 @@ impl AnthropicBackend {
         base_url: Option<String>,
         provider: AnthropicProvider,
     ) -> Self {
-        Self::with_provider_and_retry(model, api_key, base_url, provider, LlmRetryConfig::default())
+        Self::with_provider_and_retry(
+            model,
+            api_key,
+            base_url,
+            provider,
+            LlmRetryConfig::default(),
+        )
     }
 
     /// Same as [`Self::with_provider`] with a custom retry config.
@@ -468,8 +474,7 @@ impl LlmBackend for AnthropicBackend {
             .map_err(map_sdk_error)?;
         let latency_ms = latency.elapsed_ms();
 
-        let (content, tool_calls, thinking, thinking_blocks) =
-            collect_response_content(&message);
+        let (content, tool_calls, thinking, thinking_blocks) = collect_response_content(&message);
         let usage = build_usage(&message.usage);
 
         let tracer = self.tracer();
@@ -639,7 +644,12 @@ fn saturating_u32(value: u64) -> u32 {
 
 fn collect_response_content(
     message: &SdkMessage,
-) -> (String, Vec<LlmToolCall>, Option<String>, Vec<LlmThinkingBlock>) {
+) -> (
+    String,
+    Vec<LlmToolCall>,
+    Option<String>,
+    Vec<LlmThinkingBlock>,
+) {
     let mut content = String::new();
     let mut tool_calls = Vec::new();
     let mut thinking_concat = String::new();
@@ -689,9 +699,10 @@ fn convert_stop_reason(r: &SdkStopReason) -> LlmStopReason {
 }
 
 fn build_usage(u: &anthropic_client::Usage) -> LlmUsage {
-    let server_tool_use_count = u.server_tool_use.as_ref().map(|s| {
-        u64::from(s.web_fetch_requests).saturating_add(u64::from(s.web_search_requests))
-    });
+    let server_tool_use_count = u
+        .server_tool_use
+        .as_ref()
+        .map(|s| u64::from(s.web_fetch_requests).saturating_add(u64::from(s.web_search_requests)));
     let (cache_5m, cache_1h) = u
         .cache_creation
         .as_ref()
@@ -836,8 +847,7 @@ impl<S> StreamAdapter<S> {
                         .push_back(Ok(StreamEvent::ThinkingDelta { text: thinking }));
                 }
                 ContentBlockDelta::Signature { signature } => {
-                    self.thinking_blocks.entry(index).or_default().signature =
-                        Some(signature);
+                    self.thinking_blocks.entry(index).or_default().signature = Some(signature);
                 }
                 _ => {}
             },
@@ -872,7 +882,9 @@ impl<S> StreamAdapter<S> {
                     self.pending.push_back(Ok(StreamEvent::Usage {
                         input_tokens: u.input_tokens.unwrap_or(0) as u64,
                         output_tokens: u.output_tokens as u64,
-                        cache_creation_input_tokens: u.cache_creation_input_tokens.map(|v| v as u64),
+                        cache_creation_input_tokens: u
+                            .cache_creation_input_tokens
+                            .map(|v| v as u64),
                         cache_read_input_tokens: u.cache_read_input_tokens.map(|v| v as u64),
                     }));
                 }
@@ -886,7 +898,9 @@ impl<S> StreamAdapter<S> {
                     self.pending.push_back(Ok(StreamEvent::Usage {
                         input_tokens: u.input_tokens as u64,
                         output_tokens: u.output_tokens as u64,
-                        cache_creation_input_tokens: u.cache_creation_input_tokens.map(|v| v as u64),
+                        cache_creation_input_tokens: u
+                            .cache_creation_input_tokens
+                            .map(|v| v as u64),
                         cache_read_input_tokens: u.cache_read_input_tokens.map(|v| v as u64),
                     }));
                 }
@@ -925,12 +939,11 @@ impl<S> StreamAdapter<S> {
                 self.finished = true;
             }
             MessageStreamEvent::Error { error } => {
-                self.pending
-                    .push_back(Err(SwellError::LlmError(format!(
-                        "Anthropic stream error: {} ({})",
-                        error.message,
-                        error.error_type.as_str()
-                    ))));
+                self.pending.push_back(Err(SwellError::LlmError(format!(
+                    "Anthropic stream error: {} ({})",
+                    error.message,
+                    error.error_type.as_str()
+                ))));
             }
             MessageStreamEvent::Ping | MessageStreamEvent::Other { .. } => {}
         }
@@ -1107,11 +1120,8 @@ mod tests {
 
     #[test]
     fn provider_unknown_gateway_falls_back_to_custom() {
-        let backend = AnthropicBackend::with_base_url(
-            "some-model",
-            "sk-test",
-            "https://example.com/v1",
-        );
+        let backend =
+            AnthropicBackend::with_base_url("some-model", "sk-test", "https://example.com/v1");
         assert_eq!(backend.provider(), &AnthropicProvider::Custom);
     }
 

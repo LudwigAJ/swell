@@ -523,8 +523,8 @@ async fn test_execution_continues_after_tool_failure() {
         role: swell_llm::LlmRole::User,
         content: "Use the failing tool".to_string(),
         tool_call_id: None,
-            ..Default::default()
-        }];
+        ..Default::default()
+    }];
 
     let result = controller.execute_turn_loop(messages, None).await;
 
@@ -630,8 +630,8 @@ async fn test_multiple_failure_types_recovery() {
         role: swell_llm::LlmRole::User,
         content: "Try multiple failing tools".to_string(),
         tool_call_id: None,
-            ..Default::default()
-        }];
+        ..Default::default()
+    }];
 
     let result = controller.execute_turn_loop(messages, None).await;
 
@@ -753,8 +753,8 @@ async fn test_git_commit_network_failure_recovery() {
         role: swell_llm::LlmRole::User,
         content: "Commit and push changes".to_string(),
         tool_call_id: None,
-            ..Default::default()
-        }];
+        ..Default::default()
+    }];
 
     let result = controller.execute_turn_loop(messages, None).await;
 
@@ -962,8 +962,8 @@ async fn test_full_recovery_flow() {
         role: swell_llm::LlmRole::User,
         content: "Use the rate limited tool".to_string(),
         tool_call_id: None,
-            ..Default::default()
-        }];
+        ..Default::default()
+    }];
 
     let result = controller.execute_turn_loop(messages, None).await;
 
@@ -1043,8 +1043,8 @@ async fn test_recovery_flow_permission_denied() {
         role: swell_llm::LlmRole::User,
         content: "Try the permission tool".to_string(),
         tool_call_id: None,
-            ..Default::default()
-        }];
+        ..Default::default()
+    }];
 
     let result = controller.execute_turn_loop(messages, None).await;
 
@@ -1134,8 +1134,8 @@ async fn test_recovery_flow_timeout() {
         role: swell_llm::LlmRole::User,
         content: "Use the slow tool".to_string(),
         tool_call_id: None,
-            ..Default::default()
-        }];
+        ..Default::default()
+    }];
 
     let result = controller.execute_turn_loop(messages, None).await;
 
