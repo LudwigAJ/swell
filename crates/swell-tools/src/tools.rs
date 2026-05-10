@@ -513,8 +513,21 @@ impl Tool for ShellTool {
         let timeout_duration =
             Duration::from_secs(args.timeout_secs.unwrap_or(self.default_timeout_secs));
 
-        let mut cmd = tokio::process::Command::new(&args.command);
-        cmd.args(args.args.as_deref().unwrap_or(&[]));
+        // Some LLMs (e.g. MiniMax) ignore the schema's `command`/`args` split
+        // and pass an entire shell-line as `command` (e.g. "mkdir -p /tmp/foo").
+        // If `command` contains whitespace and no separate `args` were supplied,
+        // route the whole thing through `sh -c` so it actually runs.
+        let invocation_args = args.args.as_deref().unwrap_or(&[]);
+        let command_has_spaces = args.command.trim().contains(char::is_whitespace);
+        let mut cmd = if command_has_spaces && invocation_args.is_empty() {
+            let mut shell_cmd = tokio::process::Command::new("sh");
+            shell_cmd.arg("-c").arg(&args.command);
+            shell_cmd
+        } else {
+            let mut direct = tokio::process::Command::new(&args.command);
+            direct.args(invocation_args);
+            direct
+        };
 
         if let Some(ref dir) = args.working_dir {
             cmd.current_dir(dir);
@@ -526,12 +539,32 @@ impl Tool for ShellTool {
         match result {
             Ok(Ok(output)) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
-                let _stderr = String::from_utf8_lossy(&output.stderr);
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let success = output.status.success();
+                let exit_code = output.status.code().unwrap_or(-1);
 
-                info!(command = %args.command, "Shell command executed");
+                info!(
+                    command = %args.command,
+                    exit_code,
+                    "Shell command executed"
+                );
+
+                // Combine stdout + stderr in failure output so the model
+                // (and the operator reading the trace) actually sees what
+                // went wrong. Empty stderr was a major cause of the
+                // generator wandering aimlessly after a failed command.
+                let body = if success {
+                    stdout.to_string()
+                } else {
+                    format!(
+                        "exit_code: {}\nstdout:\n{}\nstderr:\n{}",
+                        exit_code, stdout, stderr
+                    )
+                };
+
                 Ok(ToolOutput {
-                    is_error: !output.status.success(),
-                    content: vec![ToolResultContent::Text(stdout.to_string())],
+                    is_error: !success,
+                    content: vec![ToolResultContent::Text(body)],
                 })
             }
             Ok(Err(e)) => Err(SwellError::ToolExecutionFailed(format!(
@@ -1342,13 +1375,31 @@ impl SearchTool {
         path: &str,
         case_insensitive: bool,
     ) -> Result<ToolOutput, SwellError> {
-        let mut cmd = tokio::process::Command::new("grep");
-        if case_insensitive {
-            cmd.arg("-i");
-        }
-        cmd.args(["-n", "-r", "--"]);
-        cmd.arg(pattern);
-        cmd.arg(path);
+        // Prefer ripgrep when available — it respects .gitignore, skips
+        // hidden + binary files by default, and is dramatically faster on
+        // large workspaces (a recursive `grep -r` against the swell repo
+        // root traverses target/ and references/ for minutes). Fall back
+        // to plain grep only if ripgrep is missing.
+        let use_rg = which::which("rg").is_ok();
+        let mut cmd = if use_rg {
+            let mut c = tokio::process::Command::new("rg");
+            c.args(["--line-number", "--no-heading", "--color=never"]);
+            if case_insensitive {
+                c.arg("--ignore-case");
+            } else {
+                c.arg("--smart-case");
+            }
+            c.arg("--max-count").arg(self.max_results.to_string());
+            c.arg("--").arg(pattern).arg(path);
+            c
+        } else {
+            let mut c = tokio::process::Command::new("grep");
+            if case_insensitive {
+                c.arg("-i");
+            }
+            c.args(["-n", "-r", "--"]).arg(pattern).arg(path);
+            c
+        };
 
         let output = cmd
             .output()

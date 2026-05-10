@@ -582,7 +582,8 @@ async fn test_capturing_mock_stores_prompts() {
         role: LlmRole::User,
         content: "First request".to_string(),
         tool_call_id: None,
-    }];
+            ..Default::default()
+        }];
     let _ = capturing_mock
         .chat(messages1, None, Default::default())
         .await;
@@ -592,7 +593,8 @@ async fn test_capturing_mock_stores_prompts() {
         role: LlmRole::User,
         content: "Second request".to_string(),
         tool_call_id: None,
-    }];
+            ..Default::default()
+        }];
     let _ = capturing_mock
         .chat(messages2, None, Default::default())
         .await;

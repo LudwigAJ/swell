@@ -12,7 +12,12 @@ thiserror.workspace = true
 reqwest = { workspace = true, features = ["stream", "json", "rustls-tls"], default-features = false }
 async-trait.workspace = true
 futures.workspace = true
+futures-util.workspace = true
 tracing.workspace = true
+
+# Community Anthropic Rust SDK — backs AnthropicBackend.
+anthropic-client = { git = "https://github.com/LudwigAJ/community-anthropic-sdk-rust", branch = "main" }
+anthropic-types = { git = "https://github.com/LudwigAJ/community-anthropic-sdk-rust", branch = "main" }
 chrono.workspace = true
 uuid.workspace = true
 

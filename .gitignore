@@ -2,7 +2,7 @@
 
 # Build artifacts
 /target/
-
+.agents
 # IDE
 .idea/
 .vscode/
@@ -22,3 +22,10 @@ Thumbs.db
 # plan
 /plan/**
 plan/**
+
+# Swell local config — never commit secrets or local overrides
+.swell/settings.local.json
+.swell/.task-state.json
+.swell/checkpoints/
+.env
+.env.local

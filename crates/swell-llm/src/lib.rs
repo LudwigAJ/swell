@@ -11,7 +11,7 @@
 //! let backend = AnthropicBackend::new("claude-sonnet-4-20250514", "sk-ant-api03-...");
 //! let config = LlmConfig::default();
 //! let messages = vec![
-//!     LlmMessage { role: LlmRole::User, content: "Hello".to_string() }
+//!     LlmMessage { role: LlmRole::User, content: "Hello".to_string(), ..Default::default() }
 //! ];
 //! let response = backend.chat(messages, None, config).await?;
 //! ```
@@ -20,12 +20,14 @@ pub mod anthropic;
 pub mod credential;
 pub mod mock;
 pub mod openai;
+pub mod providers;
 pub mod retry;
 pub mod router;
 pub mod traits;
 pub mod wiring;
 
 pub use anthropic::AnthropicBackend;
+pub use providers::{AnthropicProvider, ProviderCaps};
 pub use mock::{MockLlm, ScenarioMockLlm, ScenarioStep};
 pub use openai::OpenAIBackend;
 pub use retry::{calculate_backoff, is_retryable_status, LlmRetryConfig};
@@ -66,6 +68,7 @@ mod tests {
             temperature: 0.7,
             max_tokens: 4096,
             stop_sequences: None,
+            ..Default::default()
         };
         let messages = vec![LlmMessage {
             role: LlmRole::User,

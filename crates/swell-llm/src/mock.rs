@@ -211,7 +211,9 @@ impl LlmBackend for ScenarioMockLlm {
                     total_tokens: input_tokens + output_tokens,
                     cache_creation_input_tokens: None,
                     cache_read_input_tokens: None,
+                    ..Default::default()
                 },
+                ..Default::default()
             }),
             ScenarioStep::ToolUse {
                 id,
@@ -231,7 +233,9 @@ impl LlmBackend for ScenarioMockLlm {
                     total_tokens: input_tokens + output_tokens,
                     cache_creation_input_tokens: None,
                     cache_read_input_tokens: None,
+                    ..Default::default()
                 },
+                ..Default::default()
             }),
             ScenarioStep::TextWithToolUse {
                 text,
@@ -252,7 +256,9 @@ impl LlmBackend for ScenarioMockLlm {
                     total_tokens: input_tokens + output_tokens,
                     cache_creation_input_tokens: None,
                     cache_read_input_tokens: None,
+                    ..Default::default()
                 },
+                ..Default::default()
             }),
         }
     }
@@ -591,7 +597,9 @@ impl LlmBackend for MockLlm {
                 total_tokens: input_tokens + output_tokens,
                 cache_creation_input_tokens: None,
                 cache_read_input_tokens: None,
+                ..Default::default()
             },
+            ..Default::default()
         })
     }
 
@@ -735,6 +743,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
+            ..Default::default()
                 },
             )
             .await
@@ -763,6 +772,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
+            ..Default::default()
                 },
             )
             .await
@@ -791,6 +801,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
+            ..Default::default()
                 },
             )
             .await;
@@ -831,6 +842,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
+            ..Default::default()
                 },
             )
             .await
@@ -899,6 +911,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
+            ..Default::default()
                 },
             )
             .await
@@ -960,6 +973,7 @@ mod tests {
                     temperature: 0.7,
                     max_tokens: 4096,
                     stop_sequences: None,
+            ..Default::default()
                 },
             )
             .await

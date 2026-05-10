@@ -320,6 +320,35 @@ pub use orchestrator::{
     TaskCompletionInput, TaskExecutionMetadata, TaskValidationResult, ValidationOrchestrator,
 };
 
+/// Returns true when at least one of `changed_files` resolves to a path inside
+/// `workspace_path`. We canonicalize when possible so that symlink-y paths
+/// and `./foo` resolve correctly; on failure we fall back to a string-prefix
+/// check so we never spuriously skip a gate just because canonicalization
+/// failed for an unrelated reason.
+fn changed_files_touch_workspace(changed_files: &[String], workspace_path: &str) -> bool {
+    if changed_files.is_empty() {
+        return false;
+    }
+    let workspace = std::path::Path::new(workspace_path);
+    let workspace_canon = workspace.canonicalize().ok();
+    for raw in changed_files {
+        let p = std::path::Path::new(raw);
+        let abs = if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            workspace.join(p)
+        };
+        if let (Ok(file_canon), Some(ws_canon)) = (abs.canonicalize(), workspace_canon.as_ref()) {
+            if file_canon.starts_with(ws_canon) {
+                return true;
+            }
+        } else if abs.starts_with(workspace) {
+            return true;
+        }
+    }
+    false
+}
+
 // ============================================================================
 // Lint Gate
 // ============================================================================
@@ -362,6 +391,24 @@ impl ValidationGate for LintGate {
 
     async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
         let workspace_path = context.workspace_path.clone();
+        if !changed_files_touch_workspace(&context.changed_files, &workspace_path) {
+            tracing::debug!(
+                gate = "lint",
+                workspace = %workspace_path,
+                "No changed files inside workspace — skipping gate"
+            );
+            return Ok(ValidationOutcome {
+                passed: true,
+                messages: vec![ValidationMessage {
+                    level: ValidationLevel::Info,
+                    code: Some("LINT_SKIPPED_OUT_OF_TREE".to_string()),
+                    message: "Lint skipped — task changed no files inside the workspace.".to_string(),
+                    file: None,
+                    line: None,
+                }],
+                artifacts: vec![],
+            });
+        }
         let cfg = self
             .config
             .clone()
@@ -828,6 +875,24 @@ impl ValidationGate for TestGate {
 
     async fn validate(&self, context: ValidationContext) -> Result<ValidationOutcome, SwellError> {
         let workspace_path = context.workspace_path.clone();
+        if !changed_files_touch_workspace(&context.changed_files, &workspace_path) {
+            tracing::debug!(
+                gate = "test",
+                workspace = %workspace_path,
+                "No changed files inside workspace — skipping gate"
+            );
+            return Ok(ValidationOutcome {
+                passed: true,
+                messages: vec![ValidationMessage {
+                    level: ValidationLevel::Info,
+                    code: Some("TEST_SKIPPED_OUT_OF_TREE".to_string()),
+                    message: "Tests skipped — task changed no files inside the workspace.".to_string(),
+                    file: None,
+                    line: None,
+                }],
+                artifacts: vec![],
+            });
+        }
         let cfg = self
             .config
             .clone()
@@ -1482,7 +1547,7 @@ impl SecurityGate {
         if !results.scan_success {
             if let Some(ref err) = results.error_message {
                 messages.push(ValidationMessage {
-                    level: ValidationLevel::Warning,
+                    level: ValidationLevel::Info,
                     code: Some("SEC_SCAN_UNAVAILABLE".to_string()),
                     message: err.clone(),
                     file: None,
@@ -1607,13 +1672,18 @@ impl ValidationGate for SecurityGate {
         // Convert to validation messages
         let messages = self.findings_to_messages(&results);
 
-        // Determine if validation passed
-        // Security scan itself must succeed
-        // And we must not have blocking findings
-        let scan_passed = results.scan_success;
-        let no_blocking_findings = !results.has_blocking_findings();
+        // Determine if validation passed.
+        // If no scanner is installed we treat the gate as skipped (passed=true) — missing
+        // optional tooling must not fail tasks. Once a scanner is present and runs, we
+        // require no blocking / high findings as before.
+        let scanner_unavailable = !results.scan_success
+            && results
+                .error_message
+                .as_deref()
+                .map(|e| e.contains("No security scanner available"))
+                .unwrap_or(false);
 
-        // If block_on_high is set, any high severity findings block
+        let no_blocking_findings = !results.has_blocking_findings();
         let no_high_findings = if self.block_on_high {
             let (critical_high, _, _) = results.count_by_severity();
             critical_high == 0
@@ -1621,7 +1691,11 @@ impl ValidationGate for SecurityGate {
             true
         };
 
-        let passed = scan_passed && no_blocking_findings && no_high_findings;
+        let passed = if scanner_unavailable {
+            true
+        } else {
+            results.scan_success && no_blocking_findings && no_high_findings
+        };
 
         Ok(ValidationOutcome {
             passed,
@@ -1878,18 +1952,21 @@ Please provide your review in the specified JSON format.
                 role: LlmRole::System,
                 content: self.prompt_template.clone(),
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_prompt,
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
         ];
 
         let config = LlmConfig {
             temperature: 0.3, // Lower temperature for more consistent reviews
             max_tokens: 8192,
             stop_sequences: None,
+            ..Default::default()
         };
 
         // Get LLM backend

@@ -28,7 +28,9 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use swell_core::{LlmBackend, LlmConfig, LlmMessage, LlmResponse, LlmToolDefinition, SwellError};
+use swell_core::{
+    LlmBackend, LlmConfig, LlmErrorKind, LlmMessage, LlmResponse, LlmToolDefinition, SwellError,
+};
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
 
@@ -509,6 +511,22 @@ impl ModelRouter {
                         "Model route failed, trying fallback"
                     );
 
+                    // Terminal API errors (auth, invalid request, ...) are
+                    // permanent for THIS request — don't waste budget trying
+                    // every fallback with the same broken inputs/credentials.
+                    if let SwellError::LlmApiError { kind, .. } = &e {
+                        if kind.is_terminal() {
+                            tracing::error!(
+                                target: "model_fallback",
+                                model = %model_name,
+                                task_type = ?task_type,
+                                kind = ?kind,
+                                "Terminal API error — aborting fallback chain"
+                            );
+                            return Err(e);
+                        }
+                    }
+
                     last_error = Some(e);
                 }
                 Err(_) => {
@@ -664,6 +682,20 @@ impl Default for ModelRouter {
 
 /// Determine the reason for a fallback based on the error type
 fn determine_fallback_reason(error: &SwellError) -> &'static str {
+    if let SwellError::LlmApiError { kind, .. } = error {
+        return match kind {
+            LlmErrorKind::RateLimit => "rate_limit",
+            LlmErrorKind::Authentication => "auth_error",
+            LlmErrorKind::Permission => "permission_error",
+            LlmErrorKind::InvalidRequest => "invalid_request",
+            LlmErrorKind::NotFound => "not_found",
+            LlmErrorKind::Conflict => "conflict",
+            LlmErrorKind::UnprocessableEntity => "unprocessable",
+            LlmErrorKind::InternalServer => "server_error",
+            LlmErrorKind::Overloaded => "overloaded",
+            LlmErrorKind::Unknown(_) => "unknown_api_error",
+        };
+    }
     let error_str = error.to_string().to_lowercase();
 
     if error_str.contains("rate limit") || error_str.contains("429") {
@@ -1104,6 +1136,7 @@ mod tests {
             temperature: 0.7,
             max_tokens: 4096,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = router
@@ -1137,6 +1170,7 @@ mod tests {
             temperature: 0.7,
             max_tokens: 1024,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = router
@@ -1169,6 +1203,7 @@ mod tests {
             temperature: 0.7,
             max_tokens: 1024,
             stop_sequences: None,
+            ..Default::default()
         };
 
         // Should work with Fast backend
@@ -1201,6 +1236,7 @@ mod tests {
             temperature: 0.7,
             max_tokens: 1024,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = router
@@ -1257,6 +1293,132 @@ mod tests {
 
         assert_eq!(router.primary_model(TaskType::Coding), Some("test-model"));
         assert_eq!(router.primary_model(TaskType::Fast), None);
+    }
+
+    #[tokio::test]
+    async fn test_terminal_auth_error_short_circuits_fallback() {
+        // A backend that returns LlmApiError{Authentication}: the router
+        // must abort the chain rather than waste a call on the fallback.
+        struct AuthFailing;
+        #[async_trait::async_trait]
+        impl LlmBackend for AuthFailing {
+            fn model(&self) -> &str {
+                "auth-failing"
+            }
+            async fn chat(
+                &self,
+                _: Vec<LlmMessage>,
+                _: Option<Vec<LlmToolDefinition>>,
+                _: LlmConfig,
+            ) -> Result<LlmResponse, SwellError> {
+                Err(SwellError::LlmApiError {
+                    kind: LlmErrorKind::Authentication,
+                    status: 401,
+                    request_id: None,
+                    message: "bad key".into(),
+                })
+            }
+            async fn health_check(&self) -> bool {
+                false
+            }
+            async fn stream(
+                &self,
+                _: Vec<LlmMessage>,
+                _: Option<Vec<LlmToolDefinition>>,
+                _: LlmConfig,
+            ) -> Result<
+                std::pin::Pin<
+                    Box<
+                        dyn futures::Stream<
+                                Item = Result<swell_core::StreamEvent, SwellError>,
+                            > + Send,
+                    >,
+                >,
+                SwellError,
+            > {
+                unreachable!()
+            }
+        }
+
+        // Track whether the fallback was ever called.
+        let fallback_calls = Arc::new(AtomicU64::new(0));
+        struct CountingMock {
+            counter: Arc<AtomicU64>,
+        }
+        #[async_trait::async_trait]
+        impl LlmBackend for CountingMock {
+            fn model(&self) -> &str {
+                "counting"
+            }
+            async fn chat(
+                &self,
+                _: Vec<LlmMessage>,
+                _: Option<Vec<LlmToolDefinition>>,
+                _: LlmConfig,
+            ) -> Result<LlmResponse, SwellError> {
+                self.counter.fetch_add(1, Ordering::Relaxed);
+                Ok(LlmResponse::default())
+            }
+            async fn health_check(&self) -> bool {
+                true
+            }
+            async fn stream(
+                &self,
+                _: Vec<LlmMessage>,
+                _: Option<Vec<LlmToolDefinition>>,
+                _: LlmConfig,
+            ) -> Result<
+                std::pin::Pin<
+                    Box<
+                        dyn futures::Stream<
+                                Item = Result<swell_core::StreamEvent, SwellError>,
+                            > + Send,
+                    >,
+                >,
+                SwellError,
+            > {
+                unreachable!()
+            }
+        }
+
+        let mut router = ModelRouter::new();
+        router.register(
+            TaskType::Default,
+            "auth-failing",
+            Arc::new(AuthFailing),
+            vec![(
+                "counting".to_string(),
+                Arc::new(CountingMock {
+                    counter: fallback_calls.clone(),
+                }) as Arc<dyn LlmBackend>,
+            )],
+        );
+
+        let err = router
+            .route(
+                TaskType::Default,
+                vec![LlmMessage {
+                    role: crate::LlmRole::User,
+                    content: "hi".into(),
+                    ..Default::default()
+                }],
+                None,
+                LlmConfig::default(),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            SwellError::LlmApiError {
+                kind: LlmErrorKind::Authentication,
+                ..
+            }
+        ));
+        assert_eq!(
+            fallback_calls.load(Ordering::Relaxed),
+            0,
+            "fallback must not be called on terminal auth error"
+        );
     }
 
     #[tokio::test]

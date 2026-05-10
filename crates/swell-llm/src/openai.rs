@@ -1,5 +1,19 @@
 //! OpenAI API backend with OpenTelemetry instrumentation.
 //!
+//! # ⚠️ Status: PARKED
+//!
+//! This is a hand-rolled OpenAI client kept for reference. It is NOT
+//! currently wired into the daemon. The plan is to replace it with a
+//! community OpenAI Rust SDK once one is available, mirroring how the
+//! Anthropic backend now leans on `anthropic-client`. The `daemon` will
+//! emit a warning and fall back to `MockLlm` if a config sets
+//! `backend = "openai"`. To use OpenAI-shaped models today, route them
+//! through an Anthropic-compatible gateway (e.g. OpenRouter) and
+//! configure them with `backend = "anthropic"`.
+//!
+//! Do not extend this file — file new feature work against the
+//! Anthropic backend or wait for the OpenAI SDK migration.
+//!
 //! # SSE Streaming Support
 //!
 //! This backend supports Server-Sent Events (SSE) streaming via the `stream()` method.
@@ -20,7 +34,7 @@ use std::pin::Pin;
 use std::time::Duration;
 use swell_core::{
     opentelemetry::{gen_ai, pricing, GenAiSpanExt, LatencyTracker},
-    record_llm_cost, LlmToolCall, StreamEvent, SwellError,
+    record_llm_cost, LlmErrorKind, LlmToolCall, StreamEvent, SwellError,
 };
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -216,10 +230,12 @@ impl OpenAIBackend {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             warn!(status = %status, body = %body, "OpenAI API error");
-            return Err(SwellError::LlmError(format!(
-                "API error {}: {}",
-                status, body
-            )));
+            return Err(SwellError::LlmApiError {
+                kind: LlmErrorKind::from_http_status(status.as_u16()),
+                status: status.as_u16(),
+                request_id: None,
+                message: body,
+            });
         }
 
         let (tx, rx) = mpsc::channel::<Result<StreamEvent, SwellError>>(100);
@@ -751,10 +767,12 @@ impl LlmBackend for OpenAIBackend {
                     body = %body,
                     "OpenAI API error: max retries exceeded"
                 );
-                return Err(SwellError::LlmError(format!(
-                    "API error {} after {} attempts: {}",
-                    status, attempt, body
-                )));
+                return Err(SwellError::LlmApiError {
+                    kind: LlmErrorKind::from_http_status(status.as_u16()),
+                    status: status.as_u16(),
+                    request_id: None,
+                    message: format!("after {attempt} attempts: {body}"),
+                });
             } else {
                 // Non-retryable error (400, 401, 403) - fail immediately
                 let body = resp.text().await.unwrap_or_default();
@@ -763,10 +781,12 @@ impl LlmBackend for OpenAIBackend {
                     body = %body,
                     "OpenAI API non-retryable error"
                 );
-                return Err(SwellError::LlmError(format!(
-                    "API error {}: {}",
-                    status, body
-                )));
+                return Err(SwellError::LlmApiError {
+                    kind: LlmErrorKind::from_http_status(status.as_u16()),
+                    status: status.as_u16(),
+                    request_id: None,
+                    message: body,
+                });
             }
         };
 
@@ -846,7 +866,9 @@ impl LlmBackend for OpenAIBackend {
                 total_tokens: api_response.usage.total_tokens,
                 cache_creation_input_tokens: None,
                 cache_read_input_tokens: None,
+                ..Default::default()
             },
+            ..Default::default()
         })
     }
 

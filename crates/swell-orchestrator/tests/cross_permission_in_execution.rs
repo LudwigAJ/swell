@@ -132,7 +132,8 @@ async fn test_agent_continues_after_permission_denial() {
         role: swell_llm::LlmRole::User,
         content: "Try to use the denied tool".to_string(),
         tool_call_id: None,
-    }];
+            ..Default::default()
+        }];
 
     let result = controller.execute_turn_loop(messages, None).await;
 
@@ -230,7 +231,8 @@ async fn test_turn_loop_handles_permission_denial_gracefully() {
         role: swell_llm::LlmRole::User,
         content: "Try to use the denied tool".to_string(),
         tool_call_id: None,
-    }];
+            ..Default::default()
+        }];
 
     // Execute turn loop - should handle denial gracefully
     let result = controller.execute_turn_loop(messages, None).await;
@@ -331,7 +333,8 @@ async fn test_multiple_denied_tools_do_not_crash() {
         role: swell_llm::LlmRole::User,
         content: "Try both denied tools".to_string(),
         tool_call_id: None,
-    }];
+            ..Default::default()
+        }];
 
     let result = controller.execute_turn_loop(messages, None).await;
 

@@ -42,12 +42,14 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Write a function".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let config = swell_llm::LlmConfig {
             temperature: 0.7,
             max_tokens: 4096,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = router
@@ -83,12 +85,14 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Write a function".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let config = swell_llm::LlmConfig {
             temperature: 0.7,
             max_tokens: 4096,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = router
@@ -124,12 +128,14 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Write a function".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let config = swell_llm::LlmConfig {
             temperature: 0.7,
             max_tokens: 4096,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = router
@@ -165,12 +171,14 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Write a function".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let config = swell_llm::LlmConfig {
             temperature: 0.7,
             max_tokens: 4096,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let result = router.route(TaskType::Coding, messages, None, config).await;
@@ -298,12 +306,14 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Code review task".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let config = swell_llm::LlmConfig {
             temperature: 0.7,
             max_tokens: 4096,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = router

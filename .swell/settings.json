@@ -9,7 +9,8 @@
     "max_task_timeout_seconds": 300,
     "max_retry_iterations": 3,
     "max_tool_call_iterations": 15,
-    "no_progress_iterations": 5
+    "no_progress_iterations": 5,
+    "tool_timeout_seconds": 60
   },
   "autonomy": {
     "default_level": "L2-Guided",
@@ -71,6 +72,39 @@
     "max_active_branches": 20,
     "worktree_retain_days": 7,
     "commit_metadata": true
+  },
+  "llm": {
+    "default": "minimax-m2.7",
+    "models": {
+      "minimax-m2.7": {
+        "backend": "anthropic",
+        "model": "MiniMax-M2.7",
+        "base_url": "https://api.minimax.io/anthropic",
+        "env": { "API_KEY": "${MINIMAX_API_KEY}" }
+      },
+      "minimax-m2.5": {
+        "backend": "anthropic",
+        "model": "MiniMax-M2.5",
+        "base_url": "https://api.minimax.io/anthropic",
+        "env": { "API_KEY": "${MINIMAX_API_KEY}" }
+      },
+      "claude-sonnet-4": {
+        "backend": "anthropic",
+        "model": "claude-sonnet-4-20250514",
+        "env": { "API_KEY": "${ANTHROPIC_API_KEY}" }
+      },
+      "gpt-4o": {
+        "backend": "openai",
+        "model": "gpt-4o",
+        "env": { "API_KEY": "${OPENAI_API_KEY}" }
+      },
+      "openrouter-default": {
+        "backend": "openai",
+        "model": "openai/gpt-4o",
+        "base_url": "https://openrouter.ai/api/v1",
+        "env": { "API_KEY": "${OPENROUTER_API_KEY}" }
+      }
+    }
   },
   "safety": {
     "denied_commands": [

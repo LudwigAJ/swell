@@ -1021,10 +1021,28 @@ pub enum StreamEvent {
         cache_read_input_tokens: Option<u64>,
     },
 
+    /// Extended-thinking text delta (Anthropic). Emitted between
+    /// `ContentBlockStart` and `ContentBlockStop`. Text only — for the
+    /// per-block typed view (including signature) wait for
+    /// `ThinkingBlockComplete`.
+    ThinkingDelta {
+        /// The delta of thinking text in this event.
+        text: String,
+    },
+
+    /// A complete thinking block with its (optional) signature, emitted
+    /// once per block at `ContentBlockStop`. Consumers that need to echo
+    /// the assistant turn back into history (MiniMax tool-call loops)
+    /// should collect these and attach to the next `LlmMessage`.
+    ThinkingBlockComplete {
+        thinking: String,
+        signature: Option<String>,
+    },
+
     /// Stream completion event
     MessageStop {
-        /// The reason the stream ended (e.g., "end_turn", "max_tokens", "stop_sequence")
-        stop_reason: Option<String>,
+        /// The reason the stream ended.
+        stop_reason: Option<crate::traits::LlmStopReason>,
     },
 
     /// Error event during streaming

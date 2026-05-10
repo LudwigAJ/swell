@@ -8,6 +8,7 @@ pub mod events;
 pub mod ids;
 pub mod kill_switch;
 pub mod langfuse;
+pub mod llm_config;
 pub mod opentelemetry;
 pub mod session_compaction;
 pub mod trace_waterfall;
@@ -32,7 +33,7 @@ pub use cost_tracking::{
     ModelCostInfo, TaskCostSummary, TaskOutcome,
 };
 pub use dependency_graph::{DependencyGraph, DependencyQuery, GraphStats, ImpactResult};
-pub use error::SwellError;
+pub use error::{LlmErrorKind, SwellError};
 pub use events::{
     AgentSessionId, CrossTaskCorrelationId, EventStore, ObservableEvent, Outcome, RequestId,
     SpanId, ToolInvocation, TraceId, TurnSummaryEvent,

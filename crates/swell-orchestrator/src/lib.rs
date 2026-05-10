@@ -392,11 +392,19 @@ pub struct Orchestrator {
     file_lock_manager: Arc<FileLockManager>,
     /// Non-novel retry detector for preventing repetitive failed attempts
     non_novel_detector: Arc<RwLock<NonNovelRetryDetector>>,
+    /// Tool-call loop detector consulted by the GeneratorAgent's ReAct loop.
+    /// Wraps swell-tools' `ToolLoopTracker` and translates patterns into
+    /// `LoopIntervention` (Halt / Escalation / StrategyChange).
+    loop_detector: Arc<RwLock<crate::loop_detection::OrchestratorLoopDetector>>,
     /// Frozen spec registry for verifying task traceability to the frozen spec (VAL-ORCH-009)
     frozen_registry: FrozenRequirementRegistry,
     /// LLM backend for agent execution - required for production use.
     /// This is the production LLM backend (Anthropic, OpenAI, etc.) that agents use.
     llm_backend: Arc<dyn swell_llm::LlmBackend>,
+    /// Tool registry shared with the execution controller. Exposed so the
+    /// daemon can register default tools (`read_file`, `write_file`,
+    /// `edit_file`, `shell`, `search`) at startup.
+    tool_registry: Arc<ToolRegistry>,
     /// Execution controller that runs the Planner → Generator → Evaluator pipeline.
     /// Constructed with the injected LLM backend and tool registry for production use.
     /// The construction cycle is broken by giving ExecutionController a
@@ -425,6 +433,7 @@ impl Orchestrator {
         let tool_registry = Arc::new(ToolRegistry::new());
         let llm_for_controller = Arc::clone(&llm);
         let tool_registry_for_controller = Arc::clone(&tool_registry);
+        let tool_registry_for_self = Arc::clone(&tool_registry);
 
         Arc::new_cyclic(|weak_self: &Weak<Orchestrator>| Self {
             state_machine: Arc::new(RwLock::new(TaskStateMachine::new())),
@@ -438,14 +447,102 @@ impl Orchestrator {
             novelty_checker: Arc::new(RwLock::new(NoveltyChecker::new())),
             file_lock_manager: Arc::new(FileLockManager::new()),
             non_novel_detector: Arc::new(RwLock::new(NonNovelRetryDetector::new())),
+            loop_detector: Arc::new(RwLock::new(
+                crate::loop_detection::OrchestratorLoopDetector::new(),
+            )),
             frozen_registry: FrozenRequirementRegistry::new(vec![]),
             llm_backend: llm,
+            tool_registry: tool_registry_for_self,
             execution_controller: Arc::new(ExecutionController::new(
                 weak_self.clone(),
                 llm_for_controller,
                 tool_registry_for_controller,
             )),
         })
+    }
+
+    /// Tool registry shared with the execution controller.
+    pub fn tool_registry(&self) -> Arc<ToolRegistry> {
+        Arc::clone(&self.tool_registry)
+    }
+
+    /// Register the default set of built-in tools (`read_file`,
+    /// `write_file`, `edit_file`, `shell`, `search`). Idempotent — safe
+    /// to call once per orchestrator after construction. Async because
+    /// the registry's `register` is async.
+    pub async fn register_default_tools(&self) {
+        use swell_tools::registry::ToolCategory;
+        use swell_tools::tools::{
+            FileEditTool, ReadFileTool, SearchTool, ShellTool, WriteFileTool,
+        };
+        let r = &self.tool_registry;
+        r.register_builtin(ReadFileTool::new(), ToolCategory::File).await;
+        r.register_builtin(WriteFileTool::new(), ToolCategory::File).await;
+        r.register_builtin(FileEditTool::new(), ToolCategory::File).await;
+        r.register_builtin(ShellTool::new(), ToolCategory::Shell).await;
+        r.register_builtin(SearchTool::new(), ToolCategory::Search).await;
+    }
+
+    /// Load MCP servers from `.swell/mcp.json` (when present), spawn each
+    /// configured server, run the handshake, discover tools and register
+    /// them into the shared `ToolRegistry` as `McpToolWrapper`s. Silently
+    /// no-op when the config file does not exist — MCP is optional.
+    ///
+    /// Per-server failures (process spawn, handshake, tools/list) are
+    /// logged and skipped so a single broken server can't take down the
+    /// whole agent. This mirrors `start_all_servers_degraded`.
+    pub async fn register_mcp_tools(&self, config_path: std::path::PathBuf) {
+        use swell_tools::mcp::McpToolWrapper;
+        use swell_tools::mcp_config::McpConfigManager;
+        use swell_tools::registry::ToolCategory;
+
+        if !config_path.exists() {
+            tracing::info!(
+                path = %config_path.display(),
+                "No MCP config found — skipping MCP server registration"
+            );
+            return;
+        }
+
+        let manager = match McpConfigManager::new(&config_path).await {
+            Ok(m) => Arc::new(m),
+            Err(e) => {
+                tracing::warn!(path = %config_path.display(), error = %e, "Failed to load MCP config");
+                return;
+            }
+        };
+
+        let _health = manager.start_all_servers_degraded().await;
+
+        let server_tools = match manager.list_all_tools().await {
+            Ok(map) => map,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to list MCP tools after server start");
+                return;
+            }
+        };
+
+        let mut total = 0usize;
+        for (server_name, tools) in server_tools {
+            for tool_info in tools {
+                let client = match manager.get_or_start_server(&server_name).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!(server = %server_name, error = %e, "MCP server unavailable for tool registration");
+                        continue;
+                    }
+                };
+                let wrapper = McpToolWrapper::new(tool_info, client);
+                self.tool_registry
+                    .register_runtime(wrapper, ToolCategory::Mcp)
+                    .await;
+                total += 1;
+            }
+        }
+        tracing::info!(
+            mcp_tool_count = total,
+            "MCP tool registration complete"
+        );
     }
 
     /// Create a new orchestrator without LLM backend for testing purposes.
@@ -1229,6 +1326,15 @@ impl Orchestrator {
     /// Get the checkpoint manager for direct access (use sparingly)
     pub fn checkpoint_manager(&self) -> Arc<CheckpointManager> {
         self.checkpoint_manager.clone()
+    }
+
+    /// Shared loop detector consulted by the generator's ReAct loop. The
+    /// orchestrator owns one instance per process; agents borrow it to
+    /// record tool calls and check for loop interventions.
+    pub fn loop_detector(
+        &self,
+    ) -> Arc<RwLock<crate::loop_detection::OrchestratorLoopDetector>> {
+        self.loop_detector.clone()
     }
 
     /// Get MCP server health status for all configured servers.

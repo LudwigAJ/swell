@@ -261,6 +261,7 @@ async fn test_scenario_mock_llm_sequences_responses_correctly() {
             role: swell_llm::LlmRole::User,
             content: format!("Request {}", i),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let response = mock_llm

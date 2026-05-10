@@ -11,9 +11,10 @@ use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::{
     AgentContext, AgentId, AgentResult, AgentRole, LlmBackend, LlmConfig, LlmMessage, LlmRole,
-    MemoryBlock, Plan, PlanStep, RiskLevel, StepStatus, SwellError, TaskId, ToolCallResult,
-    ToolOutput, ToolResultContent, ValidationGate,
+    LlmToolCall, LlmToolDefinition, MemoryBlock, Plan, PlanStep, RiskLevel, StepStatus, SwellError,
+    TaskId, ToolCallResult, ToolOutput, ToolResultContent, ValidationGate,
 };
+use swell_core::traits::LlmToolChoice;
 use swell_state::CheckpointManager;
 use swell_tools::ToolRegistry;
 use tracing::{debug, info};
@@ -34,6 +35,113 @@ fn extract_text_from_content(content: &[ToolResultContent]) -> String {
         Some(ToolResultContent::Image { data, .. }) => data.clone(),
         None => String::new(),
     }
+}
+
+/// If a tool call wrote or edited a file, return the path so the
+/// Generator can report truthful `changed_files`. The set of write
+/// tools is closed: `write_file`, `edit_file`, `multi_edit`. Anything
+/// else is a no-op for the changed-files set.
+fn changed_path_from_tool_call(tc: &ToolCallResult) -> Option<String> {
+    match tc.tool_name.as_str() {
+        "write_file" | "edit_file" | "multi_edit" => {
+            // Only count successful writes — failed tool calls didn't
+            // mutate the workspace.
+            if tc.result.is_err() {
+                return None;
+            }
+            tc.arguments
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        }
+        _ => None,
+    }
+}
+
+/// System prompt used for every turn of the generator's ReAct loop.
+/// Kept short on purpose — the actual tool catalog and per-step context
+/// is now communicated via structured `tools` + the conversation history,
+/// not via a wall-of-text prompt rebuilt on every iteration.
+const GENERATOR_REACT_SYSTEM_PROMPT: &str = "You are the GENERATOR agent for SWELL, an autonomous Rust coding engine.\n\
+You implement code changes one step at a time using the provided tools. Each turn you must call exactly one tool.\n\n\
+Rules:\n\
+- For brand-new files, call `write_file` directly. Do NOT call `read_file` first on a path you intend to create.\n\
+- Before editing an existing file, read it once to see its current contents.\n\
+- Never call the same tool with the same arguments twice in a row — if the prior tool_result already gave you the answer, take the next concrete action toward the step goal.\n\
+- Prefer file tools (`read_file`/`write_file`/`edit_file`) over `shell` for file operations.\n\
+- Stop calling tools and rely on the orchestrator once a mutation succeeds and the step is satisfied.";
+
+/// Tool definitions advertised to the model during the generator's ReAct
+/// loop. Mirrors the four built-in tools the executor knows how to dispatch
+/// (read_file, write_file, edit_file, shell). Passing these as proper
+/// `tools` (instead of inlining a JSON schema in the prompt) means the
+/// model emits real `tool_use` blocks and we can echo prior turns back as
+/// conversation history — required for MiniMax to remember what it already
+/// tried, and required by the Anthropic API to attach `tool_result` blocks.
+fn react_tool_definitions() -> Vec<LlmToolDefinition> {
+    vec![
+        LlmToolDefinition {
+            name: "read_file".to_string(),
+            description: "Read the contents of a file at the given workspace-relative path."
+                .to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": { "path": { "type": "string" } },
+                "required": ["path"]
+            }),
+        },
+        LlmToolDefinition {
+            name: "write_file".to_string(),
+            description: "Create a new file or overwrite an existing one with the full content. Prefer this over edit_file when creating brand-new files.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "content": { "type": "string" }
+                },
+                "required": ["path", "content"]
+            }),
+        },
+        LlmToolDefinition {
+            name: "edit_file".to_string(),
+            description: "Replace an exact substring in an existing file. Use after reading the file.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "old_str": { "type": "string" },
+                    "new_str": { "type": "string" }
+                },
+                "required": ["path", "old_str", "new_str"]
+            }),
+        },
+        LlmToolDefinition {
+            name: "shell".to_string(),
+            description: "Run a shell command. The `command` field is the program name only (e.g. \"mkdir\", \"ls\", \"git\"); pass any arguments in `args` (e.g. command=\"mkdir\", args=[\"-p\", \"/tmp/foo\"]). For file creation prefer `write_file` over `shell` — `write_file` will create missing parent directories as needed.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": { "type": "string", "description": "Program name only, no spaces (e.g. \"mkdir\")." },
+                    "args": { "type": "array", "items": { "type": "string" }, "description": "List of arguments, one per array element." }
+                },
+                "required": ["command"]
+            }),
+        },
+    ]
+}
+
+/// Pull a JSON object out of an LLM response that may be wrapped in a
+/// markdown code fence (```json … ```) or surrounded by prose. We
+/// don't try to be clever — we look for the first `{` and the last `}`
+/// and trust serde to reject anything not well-formed.
+fn extract_json_object(s: &str) -> &str {
+    let trimmed = s.trim();
+    if let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) {
+        if end >= start {
+            return &trimmed[start..=end];
+        }
+    }
+    trimmed
 }
 
 /// Extract error message from ToolResultContent if present
@@ -568,31 +676,78 @@ impl Agent for PlannerAgent {
                 role: LlmRole::System,
                 content: self.system_prompt.clone(),
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_message,
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
         ];
 
-        // Call the LLM
+        // Force structured output via a single tool the model MUST call.
+        // This is the SDK-supported way to constrain JSON shape across every
+        // Anthropic-compatible gateway (incl. MiniMax, which weights user >
+        // system aggressively and ignores plain "return JSON" instructions).
+        let emit_plan_tool = LlmToolDefinition {
+            name: "emit_plan".to_string(),
+            description: "Emit the execution plan as a structured object. Call this exactly once with the full plan.".to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "description": { "type": "string" },
+                                "affected_files": { "type": "array", "items": { "type": "string" } },
+                                "expected_tests": { "type": "array", "items": { "type": "string" } },
+                                "risk_level": { "type": "string", "enum": ["low", "medium", "high"] }
+                            },
+                            "required": ["description"]
+                        }
+                    },
+                    "total_estimated_tokens": { "type": "integer", "minimum": 0 },
+                    "risk_assessment": { "type": "string" }
+                },
+                "required": ["steps", "risk_assessment"]
+            }),
+        };
+
         let config = LlmConfig {
             temperature: 0.3, // Lower temperature for more deterministic planning
             max_tokens: 4096,
             stop_sequences: None,
+            tool_choice: Some(LlmToolChoice::Tool {
+                name: "emit_plan".to_string(),
+            }),
+            ..Default::default()
         };
 
-        let response = self.llm.chat(messages, None, config).await?;
+        let response = self
+            .llm
+            .chat(messages, Some(vec![emit_plan_tool]), config)
+            .await?;
 
-        // Parse the plan from LLM response
-        let plan_json: serde_json::Value =
-            serde_json::from_str(&response.content).map_err(|e| {
+        // Prefer the forced tool_use block. Fall back to free-form JSON parsing
+        // for backends that don't honour tool_choice (legacy MockLlm etc.).
+        let plan_json: serde_json::Value = if let Some(call) = response
+            .tool_calls
+            .as_ref()
+            .and_then(|calls| calls.iter().find(|c| c.name == "emit_plan"))
+        {
+            call.arguments.clone()
+        } else {
+            let raw = extract_json_object(&response.content);
+            serde_json::from_str(raw).map_err(|e| {
                 SwellError::LlmError(format!(
-                    "Failed to parse plan JSON: {}. Raw content: {}",
+                    "Planner did not emit_plan tool_use and content was not parseable JSON: {}. Raw content: {}",
                     e, &response.content
                 ))
-            })?;
+            })?
+        };
 
         // Convert JSON to Plan structure
         let steps: Vec<PlanStep> = plan_json["steps"]
@@ -693,6 +848,50 @@ impl Agent for PlannerAgent {
     }
 }
 
+/// Per-tool wall-clock timeout. Default 60s. Override via env var
+/// `SWELL_TOOL_TIMEOUT_SECS`. Surfaced in `.swell/settings.json` as
+/// `execution.tool_timeout_seconds` for forward compatibility once a
+/// runtime settings loader exists.
+fn tool_timeout_seconds() -> u64 {
+    std::env::var("SWELL_TOOL_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(60)
+}
+
+/// Run post-tool hooks (cargo fmt / clippy) for file-mutating tool calls.
+/// No-ops when the tool didn't modify a file or the path can't be resolved.
+async fn run_post_tool_hooks(
+    tool_name: &str,
+    tool_args: &serde_json::Value,
+    workspace_path: &str,
+) {
+    if !matches!(tool_name, "write_file" | "edit_file") {
+        return;
+    }
+    let path = tool_args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .or_else(|| tool_args.get("file_path").and_then(|v| v.as_str()));
+    let Some(path) = path else { return };
+
+    let manager = swell_tools::post_tool_hooks::PostToolHookManager::new();
+    let workspace = std::path::Path::new(workspace_path);
+    let results = manager
+        .execute_hooks(tool_name, workspace, &[path.to_string()])
+        .await;
+    for r in results {
+        if !r.success {
+            tracing::debug!(
+                hook = %r.hook_name,
+                stderr = %r.stderr,
+                "Post-tool hook reported non-success (non-fatal)"
+            );
+        }
+    }
+}
+
 /// Generator agent - implements code based on plans using ReAct loop
 #[derive(Clone)]
 pub struct GeneratorAgent {
@@ -703,6 +902,11 @@ pub struct GeneratorAgent {
     max_iterations: u32,
     /// Memory blocks for context injection into LLM prompts
     memory_blocks: Vec<MemoryBlock>,
+    /// Shared loop detector. When set, every tool call inside the ReAct
+    /// loop is recorded and the loop bails out as soon as the detector
+    /// reports a `LoopIntervention` (Halt / Escalation / StrategyChange).
+    loop_detector:
+        Option<Arc<tokio::sync::RwLock<crate::loop_detection::OrchestratorLoopDetector>>>,
 }
 
 impl GeneratorAgent {
@@ -715,6 +919,7 @@ impl GeneratorAgent {
             checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
             memory_blocks: Vec::new(),
+            loop_detector: None,
         }
     }
 
@@ -727,6 +932,7 @@ impl GeneratorAgent {
             checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
             memory_blocks: Vec::new(),
+            loop_detector: None,
         }
     }
 
@@ -739,6 +945,7 @@ impl GeneratorAgent {
             checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
             memory_blocks: Vec::new(),
+            loop_detector: None,
         }
     }
 
@@ -755,12 +962,24 @@ impl GeneratorAgent {
             checkpoint_manager: None,
             max_iterations: DEFAULT_REACT_MAX_ITERATIONS,
             memory_blocks: Vec::new(),
+            loop_detector: None,
         }
     }
 
     /// Add a checkpoint manager to enable checkpointing after each tool call
     pub fn with_checkpoint_manager(mut self, checkpoint_manager: Arc<CheckpointManager>) -> Self {
         self.checkpoint_manager = Some(checkpoint_manager);
+        self
+    }
+
+    /// Attach a shared loop detector. The ReAct loop will record every
+    /// tool execution and bail out via `SwellError::LoopDetected` as soon
+    /// as the detector returns a `LoopIntervention`.
+    pub fn with_loop_detector(
+        mut self,
+        detector: Arc<tokio::sync::RwLock<crate::loop_detection::OrchestratorLoopDetector>>,
+    ) -> Self {
+        self.loop_detector = Some(detector);
         self
     }
 
@@ -781,7 +1000,7 @@ impl GeneratorAgent {
         let mut step_tool_calls = Vec::new();
         let mut step_tokens = 0u64;
 
-        // Build initial context for the agent
+        // Build initial context for the agent (for the local ReAct summary).
         let initial_thought = format!(
             "I need to implement: {}\n\
              Affected files: {:?}\n\
@@ -789,41 +1008,138 @@ impl GeneratorAgent {
              Workspace: {}",
             step.description, step.affected_files, step.risk_level, workspace_path
         );
-
         react_loop.think(initial_thought);
 
-        // ReAct loop: Think → Act → Observe → Repeat
-        while react_loop.should_continue() {
-            // Get the current thought from the loop
-            let current_thought = react_loop
-                .steps
-                .last()
-                .map(|s| s.thought.clone())
-                .unwrap_or_default();
+        // Build the conversation that we hand to the model on every turn.
+        // Critically: assistant turns (with their tool_use blocks and any
+        // thinking blocks) and user tool_result turns are *appended* to
+        // this Vec — we no longer rebuild a fresh single-message prompt
+        // each iteration. Without this, MiniMax has no memory of what it
+        // already tried and re-issues the same call indefinitely.
+        //
+        // Tool catalog: pull live from the registry so MCP-discovered tools
+        // and any other layered tools reach the model alongside the builtins.
+        // Falls back to the static builtin list when no registry is wired
+        // (e.g. some tests).
+        let tools = match self.tool_registry.as_ref() {
+            Some(registry) => {
+                let registrations = registry.list().await;
+                if registrations.is_empty() {
+                    react_tool_definitions()
+                } else {
+                    registrations
+                        .into_iter()
+                        .map(|reg| LlmToolDefinition {
+                            name: reg.name,
+                            description: reg.description,
+                            input_schema: reg.tool.input_schema(),
+                        })
+                        .collect()
+                }
+            }
+            None => react_tool_definitions(),
+        };
+        let memory_context = if self.memory_blocks.is_empty() {
+            String::new()
+        } else {
+            let mut ctx = String::from("\n\n## Relevant Context\n\n");
+            for block in &self.memory_blocks {
+                ctx.push_str(&format!(
+                    "- [{}] {}\n  {}\n\n",
+                    format!("{:?}", block.block_type).to_lowercase(),
+                    block.label,
+                    block.content
+                ));
+            }
+            ctx
+        };
+        let mut conversation: Vec<LlmMessage> = vec![
+            LlmMessage {
+                role: LlmRole::System,
+                content: GENERATOR_REACT_SYSTEM_PROMPT.to_string(),
+                ..Default::default()
+            },
+            LlmMessage {
+                role: LlmRole::User,
+                content: format!(
+                    "## Step\n{}\n\n## Affected files\n{:?}\n\n## Risk level\n{:?}\n\n## Workspace\n{}{}\n\nChoose tools to make progress on this step. Prefer write_file when creating brand-new files.",
+                    step.description,
+                    step.affected_files,
+                    step.risk_level,
+                    workspace_path,
+                    memory_context,
+                ),
+                ..Default::default()
+            },
+        ];
 
-            // Use LLM to decide next action if available, otherwise use simple heuristics
-            let (action, action_tokens) = if let Some(llm) = &self.llm {
-                let (action_str, tokens) = self
-                    .decide_action_with_llm(&current_thought, step, llm)
-                    .await?;
-                (action_str, tokens)
+        // Counts how many times the loop detector has tripped on this step.
+        // We rescue once: on the first trip, inject a synthetic user message
+        // ("you already did X; now do Y") and continue. Only fail outright
+        // if the model loops *again* immediately after the rescue.
+        let mut rescues_used: u32 = 0;
+        const MAX_RESCUES: u32 = 1;
+
+        while react_loop.should_continue() {
+            // Ask the LLM to choose the next tool. With the proper
+            // conversation history + tool definitions, MiniMax (and
+            // Anthropic, and any other compatible backend) emits a real
+            // tool_use block we can read off `response.tool_calls`.
+            let (tool_call_opt, response, action_tokens) = if let Some(llm) = &self.llm {
+                self.decide_action_with_llm(&conversation, &tools, llm).await?
             } else {
-                (self.decide_action_heuristic(&current_thought, step)?, 0u64)
+                let action = self.decide_action_heuristic(
+                    react_loop.steps.last().map(|s| s.thought.as_str()).unwrap_or(""),
+                    step,
+                )?;
+                let (n, a) = self.parse_action(&action);
+                let synthetic = LlmToolCall {
+                    id: format!("heur_{}", react_loop.steps.len()),
+                    name: n,
+                    arguments: a,
+                };
+                (
+                    Some(synthetic),
+                    swell_core::LlmResponse::default(),
+                    0u64,
+                )
+            };
+            step_tokens += action_tokens;
+
+            // Model declared the step done with text only (no tool_use).
+            // Treat as graceful completion — record the final reasoning and
+            // exit the ReAct loop with success.
+            let Some(tool_call) = tool_call_opt else {
+                let final_text = if response.content.is_empty() {
+                    "(model ended turn without text or tool call)".to_string()
+                } else {
+                    response.content.clone()
+                };
+                info!(
+                    step_id = %step.id,
+                    summary = %final_text,
+                    "Generator step completed via text-only end_turn",
+                );
+                react_loop.observe(format!("OK: {}", final_text));
+                break;
             };
 
-            step_tokens += action_tokens;
-            react_loop.act(action.clone());
+            // Translate the tool_use block into the {action,args} JSON the
+            // existing executor understands. Keeps execute_action unchanged.
+            let action_json = serde_json::json!({
+                "action": tool_call.name,
+                "args": tool_call.arguments,
+            })
+            .to_string();
+            react_loop.act(action_json.clone());
 
-            // Execute the action using tools and record the tool call result
             let start_time = std::time::Instant::now();
-            let observation = self.execute_action(&action, workspace_path).await?;
+            let observation = self.execute_action(&action_json, workspace_path).await?;
             let duration_ms = start_time.elapsed().as_millis() as u64;
 
-            // Parse the action to extract tool_name and arguments for the tool call result
-            let (tool_name, tool_args) = self.parse_action(&action);
             let tool_result = ToolCallResult {
-                tool_name,
-                arguments: tool_args,
+                tool_name: tool_call.name.clone(),
+                arguments: tool_call.arguments.clone(),
                 result: if observation.starts_with("OK:") {
                     Ok(observation.clone())
                 } else {
@@ -833,7 +1149,96 @@ impl GeneratorAgent {
             };
             step_tool_calls.push(tool_result.clone());
 
-            // Checkpoint after each tool call if checkpoint manager is configured
+            // Echo the assistant turn back into the conversation, including
+            // any thinking blocks (MiniMax requires this when reasoning is
+            // bound to a signature) and the tool_use block itself. Then
+            // append the user-side tool_result message keyed by the same
+            // tool_use id. Without this echo we'd send a fresh prompt next
+            // turn and the model would forget everything it just did.
+            conversation.push(LlmMessage {
+                role: LlmRole::Assistant,
+                content: response.content.clone(),
+                tool_calls: Some(vec![tool_call.clone()]),
+                tool_call_id: None,
+                tool_result_is_error: false,
+                thinking_blocks: response.thinking_blocks.clone(),
+            });
+            conversation.push(LlmMessage {
+                role: LlmRole::User,
+                content: observation.clone(),
+                tool_calls: None,
+                tool_call_id: Some(tool_call.id.clone()),
+                tool_result_is_error: tool_result.result.is_err(),
+                thinking_blocks: Vec::new(),
+            });
+
+            // Loop detection: record this tool call and bail out (or rescue)
+            // if the shared detector reports a `LoopIntervention`.
+            if let Some(detector) = &self.loop_detector {
+                let success = tool_result.result.is_ok();
+                let mut guard = detector.write().await;
+                guard
+                    .record_tool_call(
+                        task.id,
+                        tool_result.tool_name.clone(),
+                        success,
+                        tool_result.arguments.clone(),
+                    )
+                    .await;
+                if let Some(intervention) = guard.check(task.id).await {
+                    let pattern = match &intervention {
+                        crate::loop_detection::LoopIntervention::Halt { .. } => "halt",
+                        crate::loop_detection::LoopIntervention::Escalation { .. } => {
+                            "escalation"
+                        }
+                        crate::loop_detection::LoopIntervention::StrategyChange { .. } => {
+                            "strategy_change"
+                        }
+                    };
+                    let reason = intervention.reason().to_string();
+                    drop(guard);
+
+                    if rescues_used < MAX_RESCUES {
+                        rescues_used += 1;
+                        tracing::warn!(
+                            task_id = %task.id,
+                            pattern = %pattern,
+                            reason = %reason,
+                            "Loop detector tripped; injecting rescue nudge and continuing"
+                        );
+                        // Clear the tracker so the rescue isn't immediately
+                        // re-tripped on the same accumulated history.
+                        if let Some(detector) = &self.loop_detector {
+                            detector.write().await.clear(task.id);
+                        }
+                        let nudge = format!(
+                            "You have called `{tool}` repeatedly with the same arguments. The most recent result was:\n{obs}\n\nDo NOT call `{tool}` again with these arguments. Take the next step toward completing the plan: typically that means calling `write_file` (for new files) or `edit_file` (for changes), or finishing if the step is already done.",
+                            tool = tool_result.tool_name,
+                            obs = observation,
+                        );
+                        conversation.push(LlmMessage {
+                            role: LlmRole::User,
+                            content: nudge.clone(),
+                            ..Default::default()
+                        });
+                        react_loop.think(nudge);
+                        continue;
+                    }
+
+                    tracing::warn!(
+                        task_id = %task.id,
+                        pattern = %pattern,
+                        reason = %reason,
+                        rescues_used,
+                        "Loop detector tripped after rescue; aborting step"
+                    );
+                    return Err(SwellError::LoopDetected {
+                        reason,
+                        pattern: pattern.to_string(),
+                    });
+                }
+            }
+
             if let Some(ref checkpoint_manager) = self.checkpoint_manager {
                 if let Err(e) = checkpoint_manager.checkpoint(task).await {
                     tracing::warn!(task_id = %task.id, error = %e, "Failed to checkpoint after tool call, continuing anyway");
@@ -844,16 +1249,17 @@ impl GeneratorAgent {
 
             react_loop.observe(observation.clone());
 
-            // Check if we succeeded (observation indicates completion)
-            if self.is_step_complete(&observation) {
+            let last_was_mutation = matches!(
+                tool_result.tool_name.as_str(),
+                "write_file" | "edit_file" | "multi_edit"
+            );
+            if last_was_mutation && self.is_step_complete(&observation) {
                 react_loop.success(format!("Step completed successfully: {}", step.description));
                 break;
             }
 
-            // Check for failures
             if observation.contains("ERROR:") || observation.contains("FAILED:") {
                 let reflection = react_loop.failure(observation.clone());
-                // Add reflection as new thought for next iteration
                 react_loop.think(reflection);
             }
         }
@@ -869,7 +1275,8 @@ impl GeneratorAgent {
 
     /// Parse action JSON to extract tool name and arguments
     fn parse_action(&self, action_json: &str) -> (String, serde_json::Value) {
-        let action: serde_json::Value = serde_json::from_str(action_json).unwrap_or_else(|_| {
+        let cleaned = extract_json_object(action_json);
+        let action: serde_json::Value = serde_json::from_str(cleaned).unwrap_or_else(|_| {
             serde_json::json!({
                 "action": "shell",
                 "args": {"command": action_json}
@@ -882,114 +1289,41 @@ impl GeneratorAgent {
         (tool_name, tool_args)
     }
 
-    /// Use LLM to decide the next action based on current thought
+    /// Ask the LLM for the next action, given the full prior conversation
+    /// (system + initial user + every prior assistant tool_use + tool_result)
+    /// and the structured tool catalog. Returns the parsed tool_use block,
+    /// the full response (so the caller can echo content + thinking_blocks
+    /// back into history) and the token count.
     async fn decide_action_with_llm(
         &self,
-        thought: &str,
-        step: &PlanStep,
+        conversation: &[LlmMessage],
+        tools: &[LlmToolDefinition],
         llm: &Arc<dyn LlmBackend>,
-    ) -> Result<(String, u64), SwellError> {
-        // Build memory context if memory blocks are available
-        let memory_context = if !self.memory_blocks.is_empty() {
-            let mut ctx = "## Relevant Context\n\n".to_string();
-            for block in &self.memory_blocks {
-                ctx.push_str(&format!(
-                    "- [{}] {}\n  {}\n\n",
-                    format!("{:?}", block.block_type).to_lowercase(),
-                    block.label,
-                    block.content
-                ));
-            }
-            ctx
-        } else {
-            String::new()
-        };
-
-        let prompt = format!(
-            r#"<role>
-You are the GENERATOR agent for SWELL, an autonomous coding engine built in Rust.
-Your job is to implement code changes following a structured plan using the ReAct loop pattern.
-</role>
-
-<task>
-Decide the next action to take based on your current thinking and the step requirements.
-
-Think step-by-step before output:
-1. What is the current state of the implementation?
-2. What information do I need to gather?
-3. What action would move the implementation forward?
-4. Is this action safe and reversible?
-</task>
-
-<context>
-Current task: {}
-Affected files: {:?}
-Risk level: {}
-
-Current thinking:
-{}
-
-Handoff from previous agent:
-- What was done: Plan created with {} step(s)
-- Where artifacts are: Files listed above
-- How to verify: Run tests for affected files
-- Known issues: None reported
-- What's next: Implement the step above
-</context>
-{}
-<constraints>
-Do NOT:
-- Hallucinate file contents or assume implementation details without reading them
-- Make permanent changes without reading existing code first
-- Skip validation or testing requirements
-- Leave TODOs, placeholders, or incomplete implementations
-- Use shell commands for file operations when file tools are available
-
-Follow TDD enforcement strictly:
-- write test -> verify fail -> implement -> verify pass -> commit
-</constraints>
-
-<few_shot_examples>
-Example 1 - Starting a new file:
-Thought: "I need to implement a new user authentication module"
-Action: {{"action": "read_file", "args": {{"path": "src/auth/mod.rs"}}}}
-Observation: "File does not exist yet"
-
-Example 2 - After reading existing file:
-Thought: "I see the User struct, now I need to add the password field"
-Action: {{"action": "edit_file", "args": {{"path": "src/models/user.rs", "old_str": "struct User {{", "new_str": "struct User {{\n    password_hash: String,"}}}}
-Observation: "OK: Field added successfully"
-
-Example 3 - Running tests after implementation:
-Thought: "Implementation complete, need to verify tests pass"
-Action: {{"action": "shell", "args": {{"command": "cargo test", "args": ["--lib"]}}}}
-Observation: "OK: All tests passed"
-</few_shot_examples>
-
-<output_format>
-Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{"param": "value"}}}}"#,
-            step.description,
-            step.affected_files,
-            format!("{:?}", step.risk_level),
-            thought,
-            step.affected_files.len(),
-            memory_context
-        );
-
-        let messages = vec![LlmMessage {
-            role: LlmRole::User,
-            content: prompt,
-            tool_call_id: None,
-        }];
-
+    ) -> Result<(Option<LlmToolCall>, swell_core::LlmResponse, u64), SwellError> {
         let config = LlmConfig {
             temperature: 0.3,
-            max_tokens: 500,
+            max_tokens: 4096,
             stop_sequences: None,
+            // Force the model to actually pick one of our tools — across
+            // every Anthropic-compatible gateway this prevents free-form
+            // text replies that the executor can't dispatch. Some gateways
+            // (e.g. MiniMax) ignore this hint, so we still tolerate a
+            // text-only "I'm done" reply downstream.
+            tool_choice: Some(LlmToolChoice::Any),
+            ..Default::default()
         };
 
-        let response = llm.chat(messages, None, config).await?;
-        Ok((response.content, response.usage.total_tokens))
+        let response = llm
+            .chat(conversation.to_vec(), Some(tools.to_vec()), config)
+            .await?;
+
+        let tool_call = response
+            .tool_calls
+            .as_ref()
+            .and_then(|calls| calls.first().cloned());
+
+        let tokens = response.usage.total_tokens;
+        Ok((tool_call, response, tokens))
     }
 
     /// Simple heuristic-based action decision when LLM is not available
@@ -1028,14 +1362,16 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
     async fn execute_action(
         &self,
         action_json: &str,
-        _workspace_path: &str,
+        workspace_path: &str,
     ) -> Result<String, SwellError> {
         let registry = self.tool_registry.as_ref().ok_or_else(|| {
             SwellError::ToolExecutionFailed("No tool registry configured".to_string())
         })?;
 
-        // Try to parse the action JSON
-        let action: serde_json::Value = serde_json::from_str(action_json).unwrap_or_else(|_| {
+        // Models routinely wrap action JSON in ```json … ``` fences or
+        // include a brief preamble; strip that before parsing.
+        let cleaned = extract_json_object(action_json);
+        let action: serde_json::Value = serde_json::from_str(cleaned).unwrap_or_else(|_| {
             // If not valid JSON, treat it as a simple command
             serde_json::json!({
                 "action": "shell",
@@ -1043,22 +1379,82 @@ Respond ONLY with the action in JSON format: {{"action": "tool_name", "args": {{
             })
         });
 
-        let tool_name = action["action"].as_str().unwrap_or("shell");
-        let tool_args = &action["args"];
+        let tool_name = action["action"].as_str().unwrap_or("shell").to_string();
 
-        // Execute the tool
-        if let Some(tool) = registry.get(tool_name).await {
-            let result: swell_core::ToolOutput = tool.execute(tool_args.clone()).await?;
+        // Inject the per-task workspace as the default `working_dir` for
+        // shell calls when the model didn't supply one. Without this, the
+        // shell tool runs in the daemon's cwd (the swell repo) regardless
+        // of where the task's files actually live — a frequent cause of
+        // "command exited 1, no useful stderr" wandering.
+        let mut tool_args = action["args"].clone();
+        if tool_name == "shell" {
+            let needs_cwd = tool_args
+                .get("working_dir")
+                .map(|v| v.is_null() || v.as_str().map(|s| s.is_empty()).unwrap_or(true))
+                .unwrap_or(true);
+            if needs_cwd && !workspace_path.is_empty() {
+                if !tool_args.is_object() {
+                    tool_args = serde_json::json!({});
+                }
+                if let Some(obj) = tool_args.as_object_mut() {
+                    obj.insert(
+                        "working_dir".to_string(),
+                        serde_json::Value::String(workspace_path.to_string()),
+                    );
+                }
+            }
+        }
+        let tool_args = &tool_args;
+
+        info!(tool = %tool_name, args = %tool_args, "Generator invoking tool");
+
+        // Execute the tool, guarded by a wall-clock timeout. Without
+        // this a runaway tool (e.g. recursive grep over the workspace)
+        // can hang the entire ReAct loop indefinitely. The default is
+        // 60s, overridable via the SWELL_TOOL_TIMEOUT_SECS env var
+        // (until a real settings loader picks up
+        // `execution.tool_timeout_seconds` from .swell/settings.json).
+        if let Some(tool) = registry.get(&tool_name).await {
+            let timeout_secs = tool_timeout_seconds();
+            let exec_fut = tool.execute(tool_args.clone());
+            let result = match tokio::time::timeout(
+                std::time::Duration::from_secs(timeout_secs),
+                exec_fut,
+            )
+            .await
+            {
+                Ok(r) => r?,
+                Err(_) => {
+                    tracing::warn!(
+                        tool = %tool_name,
+                        timeout_secs,
+                        "Tool execution timed out"
+                    );
+                    return Ok(format!(
+                        "FAILED: Tool '{}' timed out after {}s — try a narrower scope or a different approach",
+                        tool_name, timeout_secs
+                    ));
+                }
+            };
             let text = extract_text_from_content(&result.content);
             if !result.is_error {
+                info!(tool = %tool_name, "Tool succeeded");
+                run_post_tool_hooks(&tool_name, tool_args, workspace_path).await;
                 Ok(format!("OK: {}", text))
             } else {
-                Ok(format!(
-                    "FAILED: {}",
-                    extract_error_from_content(&result.content)
-                ))
+                // Tools may report failure via either an Error content
+                // block or a plain Text body (ShellTool does the latter
+                // so the model sees stdout+stderr+exit_code). Fall back
+                // to the text body when no Error block is present.
+                let err = {
+                    let e = extract_error_from_content(&result.content);
+                    if e.is_empty() { text.clone() } else { e }
+                };
+                info!(tool = %tool_name, error = %err, "Tool reported failure");
+                Ok(format!("FAILED: {}", err))
             }
         } else {
+            info!(tool = %tool_name, "Tool not found in registry");
             Ok(format!("ERROR: Tool '{}' not found", tool_name))
         }
     }
@@ -1120,10 +1516,10 @@ impl Agent for GeneratorAgent {
             }
         };
 
-        let mut all_outputs = Vec::new();
-        let mut tool_call_results = Vec::new();
+        let mut all_outputs: Vec<String> = Vec::new();
+        let mut tool_call_results: Vec<ToolCallResult> = Vec::new();
         let mut total_tokens = 0u64;
-        let mut changed_files = Vec::new();
+        let mut changed_files: Vec<String> = Vec::new();
 
         // If no tool registry is configured, return a simple success result (MVP behavior)
         let has_tool_registry = self.tool_registry.is_some();
@@ -1150,18 +1546,21 @@ impl Agent for GeneratorAgent {
             });
         }
 
-        // Execute each step in the plan using ReAct loop
+        // Execute each step in the plan using ReAct loop. Truthful
+        // `changed_files` comes from observed write-tool invocations,
+        // not from `step.affected_files` (which is the planner's
+        // intent, not evidence of execution).
         for step in &plan.steps {
-            // Track files changed by this step
-            for file in &step.affected_files {
-                if !changed_files.contains(file) {
-                    changed_files.push(file.clone());
-                }
-            }
-
             let (step_output, step_tool_calls, step_tokens) = agent_with_memory
                 .execute_step_with_react(step, &context.task, workspace_path)
                 .await?;
+            for tc in &step_tool_calls {
+                if let Some(path) = changed_path_from_tool_call(tc) {
+                    if !changed_files.contains(&path) {
+                        changed_files.push(path);
+                    }
+                }
+            }
             all_outputs.push(step_output);
             tool_call_results.extend(step_tool_calls);
             total_tokens += step_tokens;
@@ -2455,12 +2854,14 @@ Respond in JSON format: {{"complete": true/false, "confidence": 0.0-1.0}}"#,
             role: LlmRole::User,
             content: prompt,
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let config = LlmConfig {
             temperature: 0.0,
             max_tokens: 200,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = llm.chat(messages, None, config).await?;
@@ -4112,12 +4513,14 @@ Generate the modified file content. Respond ONLY with JSON in this format:
                     role: LlmRole::User,
                     content: prompt,
                     tool_call_id: None,
-                }];
+            ..Default::default()
+        }];
 
                 let config = LlmConfig {
                     temperature: 0.3,
                     max_tokens: 8000,
                     stop_sequences: None,
+            ..Default::default()
                 };
 
                 match llm.chat(messages, None, config).await {
@@ -4912,12 +5315,14 @@ Only report actual issues, not suggestions. Be specific and actionable."#,
             role: LlmRole::User,
             content: prompt,
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let config = LlmConfig {
             temperature: 0.3,
             max_tokens: 3000,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = llm.chat(messages, None, config).await?;
@@ -5574,12 +5979,14 @@ Focus on impactful refactorings that preserve behavior. Be specific and actionab
             role: LlmRole::User,
             content: prompt,
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let config = LlmConfig {
             temperature: 0.3,
             max_tokens: 3000,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = llm.chat(messages, None, config).await?;
@@ -6270,18 +6677,21 @@ impl Agent for DocWriterAgent {
                 role: LlmRole::System,
                 content: system_prompt,
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
             LlmMessage {
                 role: LlmRole::User,
                 content: user_message,
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
         ];
 
         let config = LlmConfig {
             temperature: 0.3,
             max_tokens: 4096,
             stop_sequences: None,
+            ..Default::default()
         };
 
         let response = llm.chat(messages, None, config).await?;

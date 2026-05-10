@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use swell_core::config::ConfigLoader;
 use swell_core::ids::SocketPath;
 use swell_core::init_tracing;
+use swell_core::llm_config::{LlmBackendKind, LlmConfig, ResolvedProfile};
 use swell_core::opentelemetry::{init_tracer_provider, OtelConfig};
 use swell_daemon::dashboard::{start_dashboard_server, DashboardState};
 use swell_daemon::Daemon;
-use swell_llm::{AnthropicBackend, LlmBackend, MockLlm, OpenAIBackend};
+use swell_llm::{AnthropicBackend, AnthropicProvider, LlmBackend, MockLlm};
 use swell_orchestrator::OrchestratorEvent;
 use tracing::{info, warn};
 
@@ -31,56 +33,130 @@ fn mock_llm(model: &str) -> Arc<dyn LlmBackend> {
     Arc::new(MockLlm::with_response(model, MOCK_PLAN_RESPONSE)) as Arc<dyn LlmBackend>
 }
 
-/// Construct an LLM backend from environment configuration.
+/// Construct an LLM backend by reading the `llm` block from the
+/// layered config (`~/.swell/settings.json`, `.swell/settings.json`,
+/// `.swell/settings.local.json`, …). `${VAR}` references inside
+/// `env.API_KEY` are resolved against the process environment, so
+/// secrets stay out of the JSON file.
 ///
-/// The backend is selected based on `SWELL_PROVIDER` env var (defaults to "anthropic").
-/// Model is configured via `SWELL_MODEL` env var.
-/// API keys are read from `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
+/// Falls back to `MockLlm` when no `llm` section is present, the
+/// referenced env var is missing, or the resolved profile fails to
+/// produce a working backend. This is the dev-mode path the smoke
+/// test exercises.
 fn construct_llm_backend() -> Arc<dyn LlmBackend> {
-    let provider = std::env::var("SWELL_PROVIDER").unwrap_or_else(|_| "anthropic".to_string());
-    let model =
-        std::env::var("SWELL_MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string());
-
-    match provider.as_str() {
-        "anthropic" => {
-            let api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_else(|_| {
-                warn!("ANTHROPIC_API_KEY not set, using MockLlm for development");
-                "mock".to_string()
-            });
-
-            if api_key == "mock" {
-                info!(model = %model, "Using MockLlm backend (ANTHROPIC_API_KEY not set)");
-                mock_llm(&model)
-            } else {
-                info!(model = %model, provider = %provider, "Using AnthropicBackend");
-                Arc::new(AnthropicBackend::new(&model, &api_key)) as Arc<dyn LlmBackend>
-            }
+    let loaded = match ConfigLoader::new().load() {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %e, "Failed to load settings; using MockLlm");
+            return mock_llm("mock");
         }
-        "openai" => {
-            let api_key = std::env::var("OPENAI_API_KEY").unwrap_or_else(|_| {
-                warn!("OPENAI_API_KEY not set, using MockLlm for development");
-                "mock".to_string()
-            });
+    };
 
-            if api_key == "mock" {
-                info!(model = %model, "Using MockLlm backend (OPENAI_API_KEY not set)");
-                mock_llm(&model)
-            } else {
-                match OpenAIBackend::new(&model, &api_key) {
-                    Ok(backend) => {
-                        info!(model = %model, provider = %provider, "Using OpenAIBackend");
-                        Arc::new(backend) as Arc<dyn LlmBackend>
-                    }
-                    Err(e) => {
-                        warn!(error = %e, model = %model, "Failed to create OpenAIBackend, using MockLlm");
-                        mock_llm(&model)
-                    }
+    let llm_value = match loaded.get("llm") {
+        Some(v) => v.clone(),
+        None => {
+            info!("No `llm` section in settings; using MockLlm");
+            return mock_llm("mock");
+        }
+    };
+
+    let llm_cfg: LlmConfig = match serde_json::from_value(llm_value) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(error = %e, "Malformed `llm` section in settings; using MockLlm");
+            return mock_llm("mock");
+        }
+    };
+
+    let resolved = match llm_cfg.resolve(None) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(error = %e, "Failed to resolve LLM profile; using MockLlm");
+            return mock_llm("mock");
+        }
+    };
+
+    backend_from_profile(resolved)
+}
+
+fn backend_from_profile(p: ResolvedProfile) -> Arc<dyn LlmBackend> {
+    match p.backend {
+        LlmBackendKind::Anthropic => {
+            // Capability gating priority:
+            //   1. explicit `llm.models.<alias>.provider` in .swell  (durable)
+            //   2. URL substring detection                            (fallback)
+            //   3. Anthropic native                                   (default)
+            let pinned = p.provider.as_deref().and_then(|name| {
+                let parsed = AnthropicProvider::from_settings_name(name);
+                if parsed.is_none() {
+                    warn!(
+                        alias = %p.alias,
+                        provider = %name,
+                        "Unknown provider name in .swell; falling back to URL detection"
+                    );
                 }
-            }
+                parsed
+            });
+            info!(
+                alias = %p.alias,
+                model = %p.model,
+                base_url = ?p.base_url,
+                provider = ?pinned.as_ref().map(|p| p.name()),
+                "Using AnthropicBackend"
+            );
+            // Resolve the provider profile: explicit pin wins, else URL
+            // detection, else the Anthropic default. Then layer the
+            // user's per-field caps overrides (`llm.models.<alias>.caps`)
+            // on top — that's how unrecognised gateways get configured
+            // without us shipping a code change.
+            let provider = pinned
+                .clone()
+                .unwrap_or_else(|| swell_llm::AnthropicProvider::detect(p.base_url.as_deref()));
+            let backend = if p.caps.is_empty() {
+                match (pinned, p.base_url.clone()) {
+                    (Some(prov), base_url) => {
+                        AnthropicBackend::with_provider(&p.model, &p.api_key, base_url, prov)
+                    }
+                    (None, Some(url)) => {
+                        AnthropicBackend::with_base_url(&p.model, &p.api_key, &url)
+                    }
+                    (None, None) => AnthropicBackend::new(&p.model, &p.api_key),
+                }
+            } else {
+                info!(alias = %p.alias, "Applying user caps overrides from .swell");
+                AnthropicBackend::with_provider_caps_and_retry(
+                    &p.model,
+                    &p.api_key,
+                    p.base_url.clone(),
+                    provider,
+                    &p.caps,
+                    swell_llm::LlmRetryConfig::default(),
+                )
+            };
+            // Best-effort startup model validation. Spawned so a slow or
+            // unavailable /v1/models endpoint does not delay daemon startup.
+            let validator = backend.clone();
+            tokio::spawn(async move {
+                validator.warn_if_unknown_model().await;
+            });
+            Arc::new(backend) as Arc<dyn LlmBackend>
         }
-        _ => {
-            warn!(provider = %provider, "Unknown SWELL_PROVIDER, using MockLlm");
-            mock_llm(&model)
+        LlmBackendKind::Openai => {
+            // OpenAI backend is parked. The legacy hand-rolled client in
+            // `swell-llm/src/openai.rs` is intentionally not wired in
+            // until a community OpenAI Rust SDK is available — see the
+            // doc comment on `LlmBackendKind::Openai`. To use OpenAI-
+            // shaped models today, route them through an Anthropic-
+            // compatible gateway (e.g. via OpenRouter) and configure
+            // them with `backend = "anthropic"`.
+            warn!(
+                alias = %p.alias,
+                model = %p.model,
+                "backend = \"openai\" is not currently supported (waiting on a community OpenAI Rust SDK). \
+                 Falling back to MockLlm. Configure the model via `backend = \"anthropic\"` against an \
+                 Anthropic-compatible gateway instead."
+            );
+            mock_llm(&p.model)
         }
     }
 }
@@ -125,6 +201,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(path = %socket_path, port = dashboard_port, "Starting swell-daemon");
 
     let daemon = Arc::new(Daemon::new(socket_path, llm_backend));
+
+    // Register the default tool set on the orchestrator's shared
+    // registry so agents can actually invoke `read_file`,
+    // `write_file`, `edit_file`, `shell`, and `search`. Without this
+    // the registry is empty and every tool call fails with
+    // `Tool not found`.
+    daemon.orchestrator().register_default_tools().await;
+
+    // Best-effort MCP tool registration. No-ops if .swell/mcp.json is absent.
+    let mcp_config_path = std::env::var("SWELL_MCP_CONFIG")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from(".swell/mcp.json"));
+    daemon
+        .orchestrator()
+        .register_mcp_tools(mcp_config_path)
+        .await;
+
     let dashboard_state = DashboardState::new(daemon.event_emitter());
 
     // Clone for the dashboard task before moving into spawned task

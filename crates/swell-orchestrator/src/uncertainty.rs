@@ -285,6 +285,7 @@ impl ClarificationResponse {
             role: swell_llm::LlmRole::System,
             content,
             tool_call_id: None,
+            ..Default::default()
         })
     }
 }

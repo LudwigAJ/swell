@@ -790,7 +790,8 @@ impl ExecutionController {
             self.llm.clone(),
             self.tool_registry.clone(),
         )
-        .with_checkpoint_manager(self.orchestrator().checkpoint_manager());
+        .with_checkpoint_manager(self.orchestrator().checkpoint_manager())
+        .with_loop_detector(self.orchestrator().loop_detector());
 
         let session_id = SessionId::new();
         let context = AgentContext {
@@ -1104,8 +1105,16 @@ impl ExecutionController {
                 }
             };
 
-            // Process the stream
-            let mut current_tool_call: Option<(String, String, serde_json::Value)> = None;
+            // Process the stream. Tool execution happens after MessageStop so
+            // the conversation is shaped to Anthropic's contract:
+            //   assistant(thinking + text + tool_use) -> user(tool_result, ...)
+            // Thinking blocks (with signatures) are echoed back on the next
+            // turn — required by MiniMax's Anthropic-compatible endpoint to
+            // keep the reasoning chain coherent across tool calls.
+            let mut pending_tool_uses: Vec<swell_core::LlmToolCall> = Vec::new();
+            let mut prerecorded_results: std::collections::HashMap<String, (String, bool)> =
+                std::collections::HashMap::new();
+            let mut thinking_blocks: Vec<swell_core::traits::LlmThinkingBlock> = Vec::new();
             let mut accumulated_text = String::new();
 
             use futures::StreamExt;
@@ -1121,6 +1130,28 @@ impl ExecutionController {
                             "Received text delta"
                         );
                     }
+                    Ok(StreamEvent::ThinkingDelta { text }) => {
+                        debug!(
+                            turn = turn_number,
+                            delta_len = text.len(),
+                            "Received thinking delta"
+                        );
+                    }
+                    Ok(StreamEvent::ThinkingBlockComplete {
+                        thinking,
+                        signature,
+                    }) => {
+                        debug!(
+                            turn = turn_number,
+                            thinking_len = thinking.len(),
+                            has_signature = signature.is_some(),
+                            "Received complete thinking block"
+                        );
+                        thinking_blocks.push(swell_core::traits::LlmThinkingBlock {
+                            thinking,
+                            signature,
+                        });
+                    }
                     Ok(StreamEvent::ToolUse { tool_call }) => {
                         debug!(
                             turn = turn_number,
@@ -1128,49 +1159,23 @@ impl ExecutionController {
                             tool_id = %tool_call.id,
                             "Received tool use event"
                         );
-                        // Store the tool call to be executed when we get the result
-                        current_tool_call =
-                            Some((tool_call.id, tool_call.name, tool_call.arguments));
+                        pending_tool_uses.push(tool_call);
                     }
                     Ok(StreamEvent::ToolResult {
                         tool_call_id,
-                        result: _,
+                        result,
                         success,
                     }) => {
+                        // Synthetic event emitted only by MockLlm. Stash the
+                        // pre-recorded result so the post-stream pump prefers
+                        // it over running the live tool.
                         debug!(
                             turn = turn_number,
                             tool_call_id = %tool_call_id,
                             success = success,
-                            "Received tool result event"
+                            "Received pre-recorded tool result (mock)"
                         );
-                        // If we have a pending tool call, execute it
-                        if let Some((id, name, arguments)) = current_tool_call.take() {
-                            let tool_result = self.execute_tool(&name, arguments.clone()).await;
-                            let (was_success, result_str) = match tool_result {
-                                Ok(output) => {
-                                    (!output.is_error, extract_text_from_content(&output.content))
-                                }
-                                Err(e) => (false, e.to_string()),
-                            };
-                            // Clone id before passing to add_tool_call since it moves
-                            let id_clone = id.clone();
-                            summary.add_tool_call(
-                                name,
-                                id_clone,
-                                arguments,
-                                result_str.clone(),
-                                was_success,
-                            );
-
-                            // Add tool result to messages using Assistant role
-                            // Include tool_call_id to track the tool_use/tool_result pair
-                            // for context compaction
-                            messages.push(LlmMessage {
-                                role: swell_llm::LlmRole::Assistant,
-                                content: result_str,
-                                tool_call_id: Some(id),
-                            });
-                        }
+                        prerecorded_results.insert(tool_call_id, (result, success));
                     }
                     Ok(StreamEvent::Usage {
                         input_tokens,
@@ -1188,7 +1193,7 @@ impl ExecutionController {
                         );
                     }
                     Ok(StreamEvent::MessageStop { stop_reason }) => {
-                        summary.stop_reason = stop_reason;
+                        summary.stop_reason = stop_reason.map(|r| r.as_str().to_string());
                         debug!(turn = turn_number, "Received message stop event");
                     }
                     Ok(StreamEvent::Error { message }) => {
@@ -1207,6 +1212,52 @@ impl ExecutionController {
                         all_summaries.push(summary);
                         return Err(e);
                     }
+                }
+            }
+
+            // Pump tool_use → tool_result turns the way Anthropic expects:
+            //   1. one assistant message echoing accumulated text + every
+            //      tool_use block emitted this turn (preserves ids).
+            //   2. one user message per tool result, carrying tool_call_id and
+            //      the is_error flag so failures are visible to the model.
+            // This unifies the real-backend path (run the tool ourselves) with
+            // the mock path (use the pre-recorded result from the synthetic
+            // StreamEvent::ToolResult).
+            if !pending_tool_uses.is_empty() {
+                messages.push(LlmMessage {
+                    role: swell_llm::LlmRole::Assistant,
+                    content: accumulated_text.clone(),
+                    tool_calls: Some(pending_tool_uses.clone()),
+                    thinking_blocks: thinking_blocks.clone(),
+                    ..Default::default()
+                });
+
+                for tu in pending_tool_uses.drain(..) {
+                    let (result_str, was_success) =
+                        if let Some((res, suc)) = prerecorded_results.remove(&tu.id) {
+                            (res, suc)
+                        } else {
+                            match self.execute_tool(&tu.name, tu.arguments.clone()).await {
+                                Ok(output) => {
+                                    (extract_text_from_content(&output.content), !output.is_error)
+                                }
+                                Err(e) => (e.to_string(), false),
+                            }
+                        };
+                    summary.add_tool_call(
+                        tu.name.clone(),
+                        tu.id.clone(),
+                        tu.arguments.clone(),
+                        result_str.clone(),
+                        was_success,
+                    );
+                    messages.push(LlmMessage {
+                        role: swell_llm::LlmRole::User,
+                        content: result_str,
+                        tool_call_id: Some(tu.id),
+                        tool_result_is_error: !was_success,
+                        ..Default::default()
+                    });
                 }
             }
 
@@ -1720,6 +1771,7 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Say hello".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;
@@ -1752,6 +1804,7 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Say hello".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;
@@ -1780,6 +1833,7 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Say hello".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;
@@ -1815,12 +1869,14 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: "Short message".to_string(),
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
             LlmMessage {
                 role: swell_llm::LlmRole::Assistant,
                 content: "Short response".to_string(),
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
         ];
 
         let result = controller.compact_context(&messages);
@@ -1842,7 +1898,8 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: format!("Message number {}", i),
                 tool_call_id: None,
-            })
+            ..Default::default()
+        })
             .collect();
 
         let result = controller.compact_context(&messages);
@@ -1882,21 +1939,24 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: format!("Old message {}", i),
                 tool_call_id: None,
-            });
+            ..Default::default()
+        });
         }
 
         // This represents the tool_use message (Assistant role, no tool_call_id)
         messages.push(LlmMessage {
             role: swell_llm::LlmRole::Assistant,
             content: r#"{"name": "file_read", "arguments": {"path": "/tmp/test.txt"}}"#.to_string(),
-            tool_call_id: None, // tool_use doesn't have tool_call_id
+            tool_call_id: None, // tool_use doesn't have tool_call_id,
+            ..Default::default()
         });
 
         // This represents the tool_result (Assistant role, with tool_call_id)
         messages.push(LlmMessage {
             role: swell_llm::LlmRole::Assistant,
             content: "File contents here".to_string(),
-            tool_call_id: Some("call_123".to_string()), // Links to the tool_use
+            tool_call_id: Some("call_123".to_string()), // Links to the tool_use,
+            ..Default::default()
         });
 
         // Tail messages (always preserved)
@@ -1905,7 +1965,8 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: format!("Tail message {}", i),
                 tool_call_id: None,
-            });
+            ..Default::default()
+        });
         }
 
         let result = controller.compact_context(&messages);
@@ -1947,7 +2008,8 @@ mod tests {
                     i
                 ),
                 tool_call_id: None,
-            })
+            ..Default::default()
+        })
             .collect();
 
         // Verify we start over threshold
@@ -1989,7 +2051,8 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: "This is a medium length message that should be around 200 chars when repeated five times".to_string(),
                 tool_call_id: None,
-            })
+            ..Default::default()
+        })
             .collect();
 
         let result = controller.compact_context(&messages);
@@ -2012,7 +2075,8 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: format!("Old message {}", i),
                 tool_call_id: None,
-            });
+            ..Default::default()
+        });
         }
 
         // Message 3: tool_use
@@ -2020,6 +2084,7 @@ mod tests {
             role: swell_llm::LlmRole::Assistant,
             content: r#"{"name": "file_read", "arguments": {"path": "/tmp/test.txt"}}"#.to_string(),
             tool_call_id: None,
+            ..Default::default()
         });
 
         // Message 4: tool_result with tool_call_id="call_1" - THIS IS IN THE TAIL
@@ -2027,6 +2092,7 @@ mod tests {
             role: swell_llm::LlmRole::Assistant,
             content: "File contents".to_string(),
             tool_call_id: Some("call_1".to_string()),
+            ..Default::default()
         });
 
         // Message 5: tool_use
@@ -2034,6 +2100,7 @@ mod tests {
             role: swell_llm::LlmRole::Assistant,
             content: r#"{"name": "shell", "arguments": {"cmd": "ls"}}"#.to_string(),
             tool_call_id: None,
+            ..Default::default()
         });
 
         // Message 6: tool_result with tool_call_id="call_2"
@@ -2041,6 +2108,7 @@ mod tests {
             role: swell_llm::LlmRole::Assistant,
             content: "ls output".to_string(),
             tool_call_id: Some("call_2".to_string()),
+            ..Default::default()
         });
 
         // Tail count is 2, so messages 5 and 6 are in the tail
@@ -2076,6 +2144,7 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Hello world this is a test message".to_string(),
             tool_call_id: None,
+            ..Default::default()
         };
 
         let tokens = ExecutionController::estimate_message_tokens(&msg);
@@ -2091,12 +2160,14 @@ mod tests {
                 role: swell_llm::LlmRole::User,
                 content: "Short".to_string(),
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
             LlmMessage {
                 role: swell_llm::LlmRole::Assistant,
                 content: "Also short".to_string(),
                 tool_call_id: None,
-            },
+            ..Default::default()
+        },
         ];
 
         let total = ExecutionController::estimate_total_tokens(&messages);
@@ -2331,6 +2402,7 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Hello".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;
@@ -2429,6 +2501,7 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Hello".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;
@@ -2466,6 +2539,7 @@ mod tests {
             role: swell_llm::LlmRole::User,
             content: "Hello".to_string(),
             tool_call_id: None,
+            ..Default::default()
         }];
 
         let result = controller.execute_turn_loop(messages, None).await;

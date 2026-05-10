@@ -30,16 +30,38 @@ use uuid::Uuid;
 // LLM Backend Protocol
 // ============================================================================
 
-/// A message in an LLM conversation
+/// A message in an LLM conversation.
+///
+/// `content` carries the text portion. `tool_calls`, when present on an
+/// assistant message, carries the tool_use blocks that need to be echoed
+/// back to the API on the next turn (Anthropic requires the prior
+/// assistant turn's tool_use blocks when responding with tool_result).
+/// `tool_call_id`, when present on a user message, marks that message as
+/// a tool_result for the named tool_use id.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LlmMessage {
     pub role: LlmRole,
     pub content: String,
-    /// Optional tool call ID - used to track tool_use/tool_result pairs
-    /// for context compaction. When present, indicates this message is
-    /// a result of the specified tool call.
+    /// Tool calls emitted by the assistant on this turn. Required when
+    /// echoing the assistant turn back to the API in a multi-turn tool
+    /// loop — Anthropic rejects tool_result messages whose preceding
+    /// assistant turn lacks the matching tool_use block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<LlmToolCall>>,
+    /// When present, this message is a tool_result for the named
+    /// tool_use id. `content` carries the result body as text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    /// Mark a tool_result as an error so the model can react to failure.
+    /// Ignored on non-tool_result messages. Routes to the SDK's
+    /// `tool_result_error` block on Anthropic.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub tool_result_is_error: bool,
+    /// Thinking blocks to echo back as part of an assistant turn. Required
+    /// for multi-turn tool-call flows on providers that bind reasoning to
+    /// signatures (MiniMax's Anthropic-compatible endpoint). Empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thinking_blocks: Vec<LlmThinkingBlock>,
 }
 
 impl Default for LlmMessage {
@@ -47,7 +69,10 @@ impl Default for LlmMessage {
         Self {
             role: LlmRole::User,
             content: String::new(),
+            tool_calls: None,
             tool_call_id: None,
+            tool_result_is_error: false,
+            thinking_blocks: Vec::new(),
         }
     }
 }
@@ -62,15 +87,86 @@ pub enum LlmRole {
 // Re-export LlmToolCall from types for convenience
 pub use crate::LlmToolCall;
 
+/// One Anthropic-style thinking block carried alongside a message turn.
+///
+/// MiniMax's Anthropic-compatible endpoint requires the *full* assistant
+/// response — including thinking blocks with their signatures — to be
+/// echoed back in the next turn's history when tool calls are involved,
+/// or the reasoning chain breaks. We carry the block verbatim so we can
+/// round-trip it on the request side via `ContentBlockParam::thinking`
+/// or `thinking_with_signature`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LlmThinkingBlock {
+    pub thinking: String,
+    /// Some providers (Anthropic itself, MiniMax in some setups) attach a
+    /// signature; others omit it. Echo back exactly what we received.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+}
+
+/// Why the model stopped generating. Mirrors `anthropic_client::StopReason`
+/// with `Other(String)` for forward-compatible round-tripping.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LlmStopReason {
+    EndTurn,
+    MaxTokens,
+    StopSequence,
+    ToolUse,
+    PauseTurn,
+    Refusal,
+    Other(String),
+}
+
+impl LlmStopReason {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::EndTurn => "end_turn",
+            Self::MaxTokens => "max_tokens",
+            Self::StopSequence => "stop_sequence",
+            Self::ToolUse => "tool_use",
+            Self::PauseTurn => "pause_turn",
+            Self::Refusal => "refusal",
+            Self::Other(s) => s.as_str(),
+        }
+    }
+
+    pub fn from_wire(s: &str) -> Self {
+        match s {
+            "end_turn" => Self::EndTurn,
+            "max_tokens" => Self::MaxTokens,
+            "stop_sequence" => Self::StopSequence,
+            "tool_use" => Self::ToolUse,
+            "pause_turn" => Self::PauseTurn,
+            "refusal" => Self::Refusal,
+            other => Self::Other(other.to_string()),
+        }
+    }
+}
+
 /// Response from an LLM
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct LlmResponse {
     pub content: String,
     pub tool_calls: Option<Vec<LlmToolCall>>,
     pub usage: LlmUsage,
+    /// Why the model stopped generating, when reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<LlmStopReason>,
+    /// Extended-thinking text (Anthropic only). Concatenated across thinking
+    /// blocks for cheap inspection. Empty/None when thinking was not enabled
+    /// or not returned. For round-tripping back into a follow-up turn, use
+    /// `thinking_blocks` (which preserves per-block signatures).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    /// Typed thinking blocks with optional signatures. Required to echo the
+    /// assistant turn back to providers that bind reasoning to signatures
+    /// (notably MiniMax's Anthropic-compatible endpoint).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thinking_blocks: Vec<LlmThinkingBlock>,
 }
 
-/// Token usage statistics (four-dimensional for Anthropic cache support)
+/// Token usage statistics (four-dimensional for Anthropic cache support).
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct LlmUsage {
     pub input_tokens: u64,
@@ -82,6 +178,62 @@ pub struct LlmUsage {
     /// Tokens read from provider-managed cache (Anthropic)
     #[serde(default)]
     pub cache_read_input_tokens: Option<u64>,
+    /// Cache writes attributed to the 5-minute ephemeral TTL, when reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_5m_input_tokens: Option<u64>,
+    /// Cache writes attributed to the 1-hour TTL, when reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_1h_input_tokens: Option<u64>,
+    /// Server-side tool invocations (web search + code exec), when reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_tool_use_count: Option<u64>,
+    /// Service tier the request was billed under (e.g. `"standard"`,
+    /// `"priority"`, `"batch"`), when reported.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<String>,
+}
+
+/// Cache TTL hint for a system block.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmCacheTtl {
+    /// 5-minute ephemeral cache (the API default).
+    #[default]
+    Ephemeral,
+    /// 1-hour ephemeral cache; cheaper for long-lived agent sessions.
+    OneHour,
+}
+
+/// Per-request overrides applied on top of the backend's defaults. All
+/// fields are optional. Only Anthropic honours these today; other backends
+/// silently ignore unknown overrides.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct LlmRequestOverrides {
+    /// Hard request timeout in milliseconds. `None` keeps the backend default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    /// Override the backend's `max_retries` for this request only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+    /// Extra `anthropic-beta` opt-ins for this request.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub betas: Vec<String>,
+}
+
+/// How the model should choose tools when `tools` is present.
+/// Mirrors Anthropic's `tool_choice` field.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum LlmToolChoice {
+    /// Model decides whether to call a tool.
+    #[default]
+    Auto,
+    /// Model must call some tool (any from the list).
+    Any,
+    /// Model must call this specific tool.
+    Tool { name: String },
+    /// Model must NOT call any tool (force text reply).
+    None,
 }
 
 /// Configuration for an LLM call
@@ -90,6 +242,27 @@ pub struct LlmConfig {
     pub temperature: f32,
     pub max_tokens: u64,
     pub stop_sequences: Option<Vec<String>>,
+    /// Anthropic-only nucleus sampling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    /// Anthropic-only top-k sampling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<u32>,
+    /// Tool selection strategy. Defaults to `auto` when tools are present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<LlmToolChoice>,
+    /// Anthropic extended-thinking budget in tokens. `None` disables.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_budget_tokens: Option<u32>,
+    /// Anthropic `metadata.user_id` for trace correlation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata_user_id: Option<String>,
+    /// Cache TTL applied to system blocks. Defaults to 5-minute ephemeral.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_ttl: Option<LlmCacheTtl>,
+    /// Per-request overrides routed via the SDK's `*_with` helpers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_overrides: Option<LlmRequestOverrides>,
 }
 
 impl Default for LlmConfig {
@@ -98,6 +271,13 @@ impl Default for LlmConfig {
             temperature: 1.0,
             max_tokens: 8192,
             stop_sequences: None,
+            top_p: None,
+            top_k: None,
+            tool_choice: None,
+            thinking_budget_tokens: None,
+            metadata_user_id: None,
+            cache_ttl: None,
+            request_overrides: None,
         }
     }
 }
