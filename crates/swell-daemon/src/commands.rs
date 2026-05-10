@@ -79,9 +79,49 @@ pub async fn handle_command(
                     // Call approve_task which transitions AwaitingApproval → Ready → Assigned → Executing
                     match orch.approve_task(task_id).await {
                         Ok(()) => {
+                            let exec_orch = orch.clone();
+                            let exec_emitter = event_emitter.clone();
+                            tokio::spawn(async move {
+                                let controller = exec_orch.execution_controller();
+                                match controller.execute_task(task_id).await {
+                                    Ok(result) => {
+                                        info!(
+                                            task_id = %task_id,
+                                            passed = result.passed,
+                                            "Approved task execution finished"
+                                        );
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            task_id = %task_id,
+                                            error = %e,
+                                            "Approved task execution failed; marking task Failed"
+                                        );
+                                        if let Err(fail_err) = exec_orch.fail_task(task_id).await {
+                                            warn!(
+                                                task_id = %task_id,
+                                                error = %fail_err,
+                                                "Failed to mark task Failed after approved execution error"
+                                            );
+                                        }
+                                        let correlation_id = EventEmitter::new_correlation_id();
+                                        exec_emitter
+                                            .emit_task_state_changed(
+                                                task_id,
+                                                TaskState::Failed,
+                                                correlation_id,
+                                            )
+                                            .await;
+                                    }
+                                }
+                            });
                             let correlation_id = EventEmitter::new_correlation_id();
                             let event = event_emitter
-                                .emit_task_state_changed(task_id, TaskState::Ready, correlation_id)
+                                .emit_task_state_changed(
+                                    task_id,
+                                    TaskState::Executing,
+                                    correlation_id,
+                                )
                                 .await;
                             event
                         }

@@ -16,17 +16,19 @@ use crate::{
 use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use swell_core::traits::Agent;
 use swell_core::TaskId;
 use swell_core::{
     AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, Plan, SessionId, StreamEvent,
-    SwellError, TaskState, ToolOutput, ToolResultContent, ValidationResult,
+    SwellError, Task, TaskState, ToolOutput, ToolResultContent, ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
 use swell_tools::{
     resource_limits::{SessionLimits, SessionResourceTracker},
-    ToolRegistry,
+    BranchStrategy, CommitMetadata, CommitRequest, CommitStrategy, CommitStrategyError,
+    ToolRegistry, WorktreeAllocation, WorktreePool, WorktreePoolConfig,
 };
 use swell_validation::orchestrator::{
     TaskCompletionInput, TaskExecutionMetadata, ValidationOrchestrator,
@@ -211,6 +213,12 @@ pub struct ExecutionController {
     orchestrator: Weak<Orchestrator>,
     llm: Arc<dyn LlmBackend>,
     tool_registry: Arc<ToolRegistry>,
+    /// Git worktree pool used to isolate task execution from the root workspace.
+    worktree_pool: Arc<WorktreePool>,
+    /// Branch naming/limit strategy used for task worktree branches.
+    branch_strategy: Arc<BranchStrategy>,
+    /// Commit strategy used to create task provenance commits after validation passes.
+    commit_strategy: Arc<CommitStrategy>,
     /// The high-level validation orchestrator for task completion validation.
     /// This is the audited production entry point that runs all configured validation gates.
     /// VAL-WIRING-004: Runtime success depends on ValidationOrchestrator validation, not only local default validation.
@@ -249,6 +257,27 @@ pub struct ExecutionController {
 }
 
 impl ExecutionController {
+    fn default_worktree_pool() -> Arc<WorktreePool> {
+        let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Arc::new(WorktreePool::new(WorktreePoolConfig {
+            base_repo: workspace.clone(),
+            worktree_dir: workspace.join(".swell").join("worktrees"),
+            pool_size: 0,
+            prefix: "agent".to_string(),
+        }))
+    }
+
+    fn default_branch_strategy() -> Arc<BranchStrategy> {
+        Arc::new(BranchStrategy::from_settings(
+            Some("agent".to_string()),
+            Some(20),
+        ))
+    }
+
+    fn default_commit_strategy(llm: &Arc<dyn LlmBackend>) -> Arc<CommitStrategy> {
+        Arc::new(CommitStrategy::new("swell-daemon").with_default_model(llm.model().to_string()))
+    }
+
     /// Create a new ExecutionController with injected dependencies.
     ///
     /// # Arguments
@@ -264,10 +293,16 @@ impl ExecutionController {
         llm: Arc<dyn LlmBackend>,
         tool_registry: Arc<ToolRegistry>,
     ) -> Self {
+        let worktree_pool = Self::default_worktree_pool();
+        let branch_strategy = Self::default_branch_strategy();
+        let commit_strategy = Self::default_commit_strategy(&llm);
         Self {
             orchestrator,
             llm,
             tool_registry,
+            worktree_pool,
+            branch_strategy,
+            commit_strategy,
             validation_orchestrator: ValidationOrchestrator::default(),
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
@@ -299,10 +334,16 @@ impl ExecutionController {
         tool_registry: Arc<ToolRegistry>,
         max_iterations: u32,
     ) -> Self {
+        let worktree_pool = Self::default_worktree_pool();
+        let branch_strategy = Self::default_branch_strategy();
+        let commit_strategy = Self::default_commit_strategy(&llm);
         Self {
             orchestrator,
             llm,
             tool_registry,
+            worktree_pool,
+            branch_strategy,
+            commit_strategy,
             validation_orchestrator: ValidationOrchestrator::default(),
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
@@ -338,10 +379,16 @@ impl ExecutionController {
         context_compaction_threshold: usize,
         tail_message_count: usize,
     ) -> Self {
+        let worktree_pool = Self::default_worktree_pool();
+        let branch_strategy = Self::default_branch_strategy();
+        let commit_strategy = Self::default_commit_strategy(&llm);
         Self {
             orchestrator,
             llm,
             tool_registry,
+            worktree_pool,
+            branch_strategy,
+            commit_strategy,
             validation_orchestrator: ValidationOrchestrator::default(),
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::with_default_limits(),
@@ -380,10 +427,16 @@ impl ExecutionController {
         tail_message_count: usize,
         session_limits: SessionLimits,
     ) -> Self {
+        let worktree_pool = Self::default_worktree_pool();
+        let branch_strategy = Self::default_branch_strategy();
+        let commit_strategy = Self::default_commit_strategy(&llm);
         Self {
             orchestrator,
             llm,
             tool_registry,
+            worktree_pool,
+            branch_strategy,
+            commit_strategy,
             validation_orchestrator: ValidationOrchestrator::default(),
             kill_switch: OrchestratorKillSwitch::new(),
             resource_tracker: SessionResourceTracker::new(session_limits),
@@ -418,6 +471,120 @@ impl ExecutionController {
     /// Get a reference to the resource tracker
     pub fn resource_tracker(&self) -> &SessionResourceTracker {
         &self.resource_tracker
+    }
+
+    /// Worktree pool used by the production task execution path.
+    pub fn worktree_pool(&self) -> Arc<WorktreePool> {
+        Arc::clone(&self.worktree_pool)
+    }
+
+    /// Branch strategy used by the production task execution path.
+    pub fn branch_strategy(&self) -> Arc<BranchStrategy> {
+        Arc::clone(&self.branch_strategy)
+    }
+
+    /// Commit strategy used by the production task execution path.
+    pub fn commit_strategy(&self) -> Arc<CommitStrategy> {
+        Arc::clone(&self.commit_strategy)
+    }
+
+    async fn is_git_worktree(path: &Path) -> bool {
+        let output = tokio::process::Command::new("git")
+            .args(["rev-parse", "--is-inside-work-tree"])
+            .current_dir(path)
+            .output()
+            .await;
+
+        matches!(output, Ok(output) if output.status.success()
+            && String::from_utf8_lossy(&output.stdout).trim() == "true")
+    }
+
+    async fn allocate_task_worktree(
+        &self,
+        task: &Task,
+    ) -> Result<Option<WorktreeAllocation>, SwellError> {
+        let workspace = self.worktree_pool.config().base_repo.clone();
+        if !Self::is_git_worktree(&workspace).await {
+            warn!(
+                task_id = %task.id,
+                workspace = %workspace.display(),
+                "Workspace is not a git worktree; running task in current workspace"
+            );
+            return Ok(None);
+        }
+
+        if self.branch_strategy.is_at_limit().await {
+            return Err(SwellError::ToolExecutionFailed(
+                "Branch limit exceeded for task worktree allocation".to_string(),
+            ));
+        }
+
+        let branch_name = self
+            .branch_strategy
+            .generate_branch_name(task.id, &task.description);
+        if !BranchStrategy::is_valid_branch_name(&branch_name) {
+            return Err(SwellError::ToolExecutionFailed(format!(
+                "Invalid task branch name generated: {}",
+                branch_name
+            )));
+        }
+
+        let agent_id = task.assigned_agent.unwrap_or_default();
+        let allocation = self
+            .worktree_pool
+            .allocate_for_branch(
+                agent_id,
+                task.id,
+                swell_core::ids::BranchName::new(&branch_name),
+            )
+            .await?;
+        self.branch_strategy
+            .register_branch(branch_name.clone(), task.id)
+            .await;
+
+        Ok(Some(allocation))
+    }
+
+    async fn commit_successful_task(
+        &self,
+        task: &Task,
+        result: &ValidationResult,
+        workspace_path: &Path,
+    ) -> Result<(), SwellError> {
+        let validation_status = if result.passed { "passed" } else { "failed" };
+        let metadata = CommitMetadata::new()
+            .with_generated_by("swell-daemon")
+            .with_task_id(task.id)
+            .with_model(self.llm.model().to_string())
+            .with_extra("Agent-role", "Generator")
+            .with_extra("Validation-status", validation_status);
+        let request = CommitRequest::new(format!("Implement task {}", task.id))
+            .with_description(task.description.clone())
+            .with_metadata(metadata);
+
+        match self.commit_strategy.commit(request, workspace_path).await {
+            Ok(commit) => {
+                info!(
+                    task_id = %task.id,
+                    commit_hash = %commit.commit_hash,
+                    files_changed = commit.files_changed,
+                    "Task changes committed after successful validation"
+                );
+                Ok(())
+            }
+            Err(CommitStrategyError::NothingToCommit(reason)) => {
+                info!(
+                    task_id = %task.id,
+                    reason = %reason,
+                    "No task changes to commit after successful validation"
+                );
+                Ok(())
+            }
+            Err(e) => Err(SwellError::ToolExecutionFailed(format!(
+                "Task commit failed: {}",
+                e
+            ))),
+        }
     }
 
     /// Get a mutable reference to the resource tracker for recording usage
@@ -735,8 +902,14 @@ impl ExecutionController {
             }
         }
 
-        // Step 2: Transition through states to executing
-        self.orchestrator().start_task(task_id).await?;
+        // Step 2: Transition through states to executing. A task may already be
+        // in Executing when this controller is resumed from the daemon approval
+        // path (`TaskApprove` performs the approval transition before spawning
+        // execution).
+        let pre_start_task = self.orchestrator().get_task(task_id).await?;
+        if pre_start_task.state != TaskState::Executing {
+            self.orchestrator().start_task(task_id).await?;
+        }
 
         // `start_task` honors the approval gate for non-FullAuto autonomy:
         // it transitions Enriched → AwaitingApproval and returns Ok without
@@ -771,6 +944,12 @@ impl ExecutionController {
                 warnings: vec![],
             });
         }
+
+        let worktree_allocation = self.allocate_task_worktree(&task).await?;
+        let workspace_path = worktree_allocation
+            .as_ref()
+            .map(|allocation| allocation.path.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".".to_string());
 
         // Step 2a: Check if we need to spawn a FeatureLead for complex tasks
         if let Some(ref plan) = task.plan {
@@ -827,10 +1006,24 @@ impl ExecutionController {
             task,
             memory_blocks: Vec::new(),
             session_id,
-            workspace_path: None,
+            workspace_path: Some(workspace_path.clone()),
         };
 
-        let generator_result: AgentResult = generator.execute(context).await?;
+        let generator_result: AgentResult = match generator.execute(context).await {
+            Ok(result) => result,
+            Err(e) => {
+                if worktree_allocation.is_some() {
+                    if let Err(release_err) = self.worktree_pool.release(task_id).await {
+                        warn!(
+                            task_id = %task_id,
+                            error = %release_err,
+                            "Failed to release worktree after generator error"
+                        );
+                    }
+                }
+                return Err(e);
+            }
+        };
 
         // VAL-ORCH-014: Check if agent confidence dropped below threshold.
         // If confidence_score is present and below threshold, emit a structured clarification
@@ -939,7 +1132,7 @@ impl ExecutionController {
         let changed_files = task.enrichment.enriched_files.clone();
         let validation_input = TaskCompletionInput {
             task_id,
-            workspace_path: ".".to_string(),
+            workspace_path: workspace_path.clone(),
             changed_files,
             plan: task.plan.clone(),
             execution_metadata: Some(TaskExecutionMetadata {
@@ -999,6 +1192,15 @@ impl ExecutionController {
             errors,
             warnings: vec![],
         };
+
+        if result.passed {
+            if worktree_allocation.is_some() {
+                self.commit_successful_task(&task, &result, Path::new(&workspace_path))
+                    .await?;
+            }
+        } else if worktree_allocation.is_some() {
+            self.worktree_pool.release(task_id).await?;
+        }
 
         // Step 7: Complete the task with validation result
         self.orchestrator()
@@ -1591,6 +1793,9 @@ impl Clone for ExecutionController {
             orchestrator: self.orchestrator.clone(),
             llm: self.llm.clone(),
             tool_registry: self.tool_registry.clone(),
+            worktree_pool: Arc::clone(&self.worktree_pool),
+            branch_strategy: Arc::clone(&self.branch_strategy),
+            commit_strategy: Arc::clone(&self.commit_strategy),
             validation_orchestrator: self.validation_orchestrator.clone(),
             kill_switch: self.kill_switch.clone(),
             resource_tracker: self.resource_tracker.clone(),

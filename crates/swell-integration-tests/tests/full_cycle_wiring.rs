@@ -75,8 +75,108 @@
 #![allow(unreachable_code)] // `todo!()` placeholders for un-shipped APIs
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use swell_core::ids::SocketPath;
+use serial_test::serial;
+use swell_core::ids::{SocketPath, TaskId};
+use swell_core::{CliCommand, DaemonEvent, TaskState};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::UnixStream;
+
+async fn send_command(socket_path: &SocketPath, cmd: CliCommand) -> DaemonEvent {
+    let mut stream = UnixStream::connect(socket_path.as_path_buf())
+        .await
+        .expect("client connect");
+
+    let payload = serde_json::to_vec(&cmd).expect("serialize CliCommand");
+    stream.write_all(&payload).await.expect("write payload");
+    stream.shutdown().await.expect("shutdown write half");
+
+    let mut response = Vec::new();
+    stream
+        .read_to_end(&mut response)
+        .await
+        .expect("read response");
+
+    serde_json::from_slice(&response).expect("response must deserialize as DaemonEvent")
+}
+
+async fn wait_for_socket(socket_path: &SocketPath) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if socket_path.as_path_buf().exists() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("daemon socket never bound at {}", socket_path);
+}
+
+async fn wait_for_terminal_state(
+    orchestrator: &swell_orchestrator::Orchestrator,
+    task_id: TaskId,
+) -> swell_core::Task {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let task = orchestrator.get_task(task_id).await.expect("task exists");
+        if matches!(
+            task.state,
+            TaskState::Accepted | TaskState::Rejected | TaskState::Failed
+        ) {
+            return task;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            panic!(
+                "task did not reach terminal state; last state was {:?}",
+                task.state
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+async fn git(cwd: &std::path::Path, args: &[&str]) -> String {
+    let output = tokio::process::Command::new("git")
+        .args(args)
+        .current_dir(cwd)
+        .output()
+        .await
+        .expect("git command starts");
+    assert!(
+        output.status.success(),
+        "git {:?} failed\nstdout:\n{}\nstderr:\n{}",
+        args,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).to_string()
+}
+
+async fn setup_git_workspace(root: &std::path::Path) {
+    let swell_dir = root.join(".swell");
+    std::fs::create_dir_all(&swell_dir).expect("create .swell");
+    std::fs::create_dir_all(root.join("src")).expect("create src");
+    std::fs::write(
+        root.join("src/lib.rs"),
+        "pub fn existing() -> &'static str { \"base\" }\n",
+    )
+    .expect("write src/lib.rs");
+    std::fs::write(
+        swell_dir.join("validation.json"),
+        r#"{
+  "version": "1.0.0",
+  "lint": { "commands": [["true"]], "output_format": "generic" },
+  "test": { "commands": [["true"]], "concurrency": "parallel" }
+}"#,
+    )
+    .expect("write validation config");
+
+    git(root, &["init", "-q"]).await;
+    git(root, &["config", "user.email", "swell-test@example.com"]).await;
+    git(root, &["config", "user.name", "Swell Test"]).await;
+    git(root, &["add", "-A"]).await;
+    git(root, &["commit", "-q", "-m", "init"]).await;
+}
 
 // -----------------------------------------------------------------------------
 // Tier 1.1 — LlmBackend is threaded from daemon into orchestrator.
@@ -264,31 +364,218 @@ async fn wiring_validation_orchestrator_blocks_done_on_failure() {
 /// WIRING INVARIANT: each task runs in an isolated worktree under
 /// `<workspace>/.swell/worktrees/`, not in the workspace root.
 #[tokio::test]
-#[ignore = "Blocked by Tier 1.4 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+#[serial]
 async fn wiring_task_runs_in_allocated_worktree() {
-    // Expected shape:
-    //     - tempdir as workspace root with a git-initialized repo.
-    //     - Start daemon pointing at that workspace.
-    //     - Submit a scripted task that writes `src/foo.rs`.
-    //     - Assert the file exists under the allocated worktree path, NOT
-    //       under the workspace root, until the commit lands.
-    //     - Assert the worktree path begins with `<workspace>/.swell/worktrees/`.
-    todo!("WorktreePool allocation not yet wired into execution controller")
+    use swell_daemon::Daemon;
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+    use tempfile::TempDir;
+
+    std::env::remove_var("SWELL_STRICT");
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    setup_git_workspace(temp_dir.path()).await;
+    std::env::set_current_dir(temp_dir.path()).expect("chdir to temp workspace");
+
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "worktree-wiring",
+        vec![
+            ScenarioStep::text(
+                r#"{
+  "steps": [
+    {
+      "description": "Write the generated worktree file",
+      "affected_files": ["src/foo.rs"],
+      "expected_tests": [],
+      "risk_level": "low"
+    }
+  ],
+  "total_estimated_tokens": 100,
+  "risk_assessment": "Low risk worktree smoke"
+}"#,
+            ),
+            ScenarioStep::tool_use(
+                "write_foo",
+                "write_file",
+                serde_json::json!({
+                    "path": "src/foo.rs",
+                    "content": "pub fn generated() -> &'static str { \"worktree\" }\n"
+                }),
+                "wrote file",
+                true,
+            ),
+            ScenarioStep::text("done"),
+        ],
+    ));
+    let socket_path = SocketPath::new(temp_dir.path().join("worktree.sock"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    daemon.orchestrator().register_default_tools().await;
+    let orchestrator = daemon.orchestrator();
+
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+    });
+    wait_for_socket(&socket_path).await;
+
+    let created = send_command(
+        &socket_path,
+        CliCommand::TaskCreate {
+            description: "worktree allocation smoke".to_string(),
+        },
+    )
+    .await;
+    let task_id = match created {
+        DaemonEvent::TaskCreated { id, .. } => id,
+        other => panic!("expected TaskCreated, got {other:?}"),
+    };
+
+    let execute_ack = send_command(&socket_path, CliCommand::TaskExecute { task_id }).await;
+    assert!(
+        matches!(
+            execute_ack,
+            DaemonEvent::TaskStateChanged {
+                state: TaskState::Executing,
+                ..
+            }
+        ),
+        "expected TaskExecute Executing ack, got {execute_ack:?}"
+    );
+
+    let final_task = wait_for_terminal_state(&orchestrator, task_id).await;
+    assert_eq!(final_task.state, TaskState::Accepted);
+
+    let allocation = orchestrator
+        .worktree_pool()
+        .get_allocation(task_id)
+        .await
+        .expect("task should retain a worktree allocation after successful validation");
+    let expected_worktree_root = temp_dir
+        .path()
+        .join(".swell")
+        .join("worktrees")
+        .canonicalize()
+        .expect("canonical worktree root");
+    let allocation_path = allocation
+        .path
+        .canonicalize()
+        .expect("canonical allocation");
+    assert!(
+        allocation_path.starts_with(&expected_worktree_root),
+        "allocation path must be under .swell/worktrees, got {}",
+        allocation.path.display()
+    );
+    assert!(
+        allocation.path.join("src/foo.rs").exists(),
+        "generated file must exist inside the allocated worktree"
+    );
+    assert!(
+        !temp_dir.path().join("src/foo.rs").exists(),
+        "generated file must not be written to the root workspace"
+    );
+
+    daemon_task.abort();
 }
 
 /// WIRING INVARIANT: on successful validation, CommitStrategy produces a
-/// branch `swell/<task-id>` with a commit whose trailers contain
-/// `Task-Id: <task-id>`.
+/// task branch with a commit whose trailers contain `Task-id: <task-id>`.
 #[tokio::test]
-#[ignore = "Blocked by Tier 1.4 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+#[serial]
 async fn wiring_success_produces_branch_and_commit_trailer() {
-    // Expected shape:
-    //     - Run a task to successful Done.
-    //     - Inspect git: `git branch --list swell/<task-id>` must match one line.
-    //     - Inspect commit: `git log -1 swell/<task-id>` must contain
-    //       `Task-Id: <task-id>` in the message body.
-    //     - If the trailer is missing, CommitStrategy was bypassed.
-    todo!("CommitStrategy not yet wired into execution controller post-validation")
+    use swell_daemon::Daemon;
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+    use tempfile::TempDir;
+
+    std::env::remove_var("SWELL_STRICT");
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    setup_git_workspace(temp_dir.path()).await;
+    std::env::set_current_dir(temp_dir.path()).expect("chdir to temp workspace");
+
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "commit-wiring",
+        vec![
+            ScenarioStep::text(
+                r#"{
+  "steps": [
+    {
+      "description": "Write the generated commit file",
+      "affected_files": ["src/bar.rs"],
+      "expected_tests": [],
+      "risk_level": "low"
+    }
+  ],
+  "total_estimated_tokens": 100,
+  "risk_assessment": "Low risk commit smoke"
+}"#,
+            ),
+            ScenarioStep::tool_use(
+                "write_bar",
+                "write_file",
+                serde_json::json!({
+                    "path": "src/bar.rs",
+                    "content": "pub fn committed() -> &'static str { \"branch\" }\n"
+                }),
+                "wrote file",
+                true,
+            ),
+            ScenarioStep::text("done"),
+        ],
+    ));
+    let socket_path = SocketPath::new(temp_dir.path().join("commit.sock"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    daemon.orchestrator().register_default_tools().await;
+    let orchestrator = daemon.orchestrator();
+
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+    });
+    wait_for_socket(&socket_path).await;
+
+    let created = send_command(
+        &socket_path,
+        CliCommand::TaskCreate {
+            description: "commit strategy smoke".to_string(),
+        },
+    )
+    .await;
+    let task_id = match created {
+        DaemonEvent::TaskCreated { id, .. } => id,
+        other => panic!("expected TaskCreated, got {other:?}"),
+    };
+
+    let _ = send_command(&socket_path, CliCommand::TaskExecute { task_id }).await;
+    let final_task = wait_for_terminal_state(&orchestrator, task_id).await;
+    assert_eq!(final_task.state, TaskState::Accepted);
+
+    let allocation = orchestrator
+        .worktree_pool()
+        .get_allocation(task_id)
+        .await
+        .expect("task should retain a worktree allocation after successful validation");
+    let branch = allocation.branch.as_str();
+    assert!(
+        branch.starts_with("agent/"),
+        "task branch should use the configured agent prefix, got {branch}"
+    );
+
+    let branches = git(temp_dir.path(), &["branch", "--list", branch]).await;
+    assert!(
+        branches.contains(branch),
+        "expected task branch {branch} to exist, branches output: {branches}"
+    );
+
+    let message = git(temp_dir.path(), &["log", "-1", "--format=%B", branch]).await;
+    assert!(
+        message.contains(&format!("Task-id: {}", task_id)),
+        "commit message must contain task trailer, got:\n{message}"
+    );
+    assert!(
+        message.contains("Generated-by: swell-daemon"),
+        "commit message must contain generator trailer, got:\n{message}"
+    );
+
+    daemon_task.abort();
 }
 
 // -----------------------------------------------------------------------------
@@ -408,6 +695,9 @@ async fn wiring_manifest_reports_all_subsystems() {
         "FrozenRequirementRegistry",
         "LlmBackend",
         "ExecutionController",
+        "WorktreePool",
+        "BranchStrategy",
+        "CommitStrategy",
         "CostGuard",
         "PreToolHookManager",
     ];
@@ -419,11 +709,11 @@ async fn wiring_manifest_reports_all_subsystems() {
         );
     }
 
-    // Verify total count: 13 subsystems (11 wired + 2 Tier-2 stubs)
+    // Verify total count: 16 subsystems (14 wired + 2 Tier-2 stubs)
     assert_eq!(
         manifest.len(),
-        13,
-        "Expected exactly 13 subsystems in manifest, got {}: {names:?}",
+        16,
+        "Expected exactly 16 subsystems in manifest, got {}: {names:?}",
         manifest.len()
     );
 }

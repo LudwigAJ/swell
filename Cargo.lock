@@ -6264,6 +6264,7 @@ name = "swell-integration-tests"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "serial_test",
  "swell-core",
  "swell-daemon",
  "swell-llm",

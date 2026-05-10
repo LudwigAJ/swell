@@ -30,6 +30,7 @@ use crate::{ExecutionController, Orchestrator};
 use swell_llm::LlmBackend;
 use swell_state::CheckpointManager;
 use swell_tools::mcp_config::McpConfigManager;
+use swell_tools::{BranchStrategy, CommitStrategy, WorktreePool};
 
 // ========================================================================
 // Orchestrator wiring report
@@ -527,6 +528,96 @@ impl WiringReport for ExecutionControllerReport {
 
     fn identity(&self) -> String {
         format!("ExecutionController@{:p}", Arc::as_ptr(&self.inner))
+    }
+
+    fn state(&self) -> WiringState {
+        WiringState::Enabled
+    }
+}
+
+/// Wrapper for WorktreePool (Arc<WorktreePool>)
+pub struct WorktreePoolReport {
+    pub(crate) inner: Arc<WorktreePool>,
+}
+
+impl WorktreePoolReport {
+    /// Create a new WorktreePoolReport wrapping the given Arc.
+    pub fn new(inner: Arc<WorktreePool>) -> Self {
+        Self { inner }
+    }
+}
+
+impl WiringReport for WorktreePoolReport {
+    fn name(&self) -> &'static str {
+        "WorktreePool"
+    }
+
+    fn identity(&self) -> String {
+        format!(
+            "WorktreePool@{:p}:{}",
+            Arc::as_ptr(&self.inner),
+            self.inner.config().worktree_dir.display()
+        )
+    }
+
+    fn state(&self) -> WiringState {
+        WiringState::Enabled
+    }
+}
+
+/// Wrapper for BranchStrategy (Arc<BranchStrategy>)
+pub struct BranchStrategyReport {
+    pub(crate) inner: Arc<BranchStrategy>,
+}
+
+impl BranchStrategyReport {
+    /// Create a new BranchStrategyReport wrapping the given Arc.
+    pub fn new(inner: Arc<BranchStrategy>) -> Self {
+        Self { inner }
+    }
+}
+
+impl WiringReport for BranchStrategyReport {
+    fn name(&self) -> &'static str {
+        "BranchStrategy"
+    }
+
+    fn identity(&self) -> String {
+        format!(
+            "BranchStrategy@{:p}:{}",
+            Arc::as_ptr(&self.inner),
+            self.inner.config().branch_prefix
+        )
+    }
+
+    fn state(&self) -> WiringState {
+        WiringState::Enabled
+    }
+}
+
+/// Wrapper for CommitStrategy (Arc<CommitStrategy>)
+pub struct CommitStrategyReport {
+    pub(crate) inner: Arc<CommitStrategy>,
+}
+
+impl CommitStrategyReport {
+    /// Create a new CommitStrategyReport wrapping the given Arc.
+    pub fn new(inner: Arc<CommitStrategy>) -> Self {
+        Self { inner }
+    }
+}
+
+impl WiringReport for CommitStrategyReport {
+    fn name(&self) -> &'static str {
+        "CommitStrategy"
+    }
+
+    fn identity(&self) -> String {
+        format!(
+            "CommitStrategy@{:p}:{}",
+            Arc::as_ptr(&self.inner),
+            self.inner.generator_id()
+        )
     }
 
     fn state(&self) -> WiringState {

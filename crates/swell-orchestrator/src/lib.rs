@@ -254,7 +254,7 @@ use swell_core::{
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
 use swell_tools::{
     mcp_config::{McpConfigManager, McpServerHealth},
-    ToolRegistry,
+    BranchStrategy, CommitStrategy, ToolRegistry, WorktreePool,
 };
 use tokio::sync::{broadcast, RwLock};
 use tracing::{debug, info, warn};
@@ -573,6 +573,21 @@ impl Orchestrator {
         Arc::clone(&self.execution_controller)
     }
 
+    /// Worktree pool used by the execution controller for task isolation.
+    pub fn worktree_pool(&self) -> Arc<WorktreePool> {
+        self.execution_controller.worktree_pool()
+    }
+
+    /// Branch strategy used for task worktree branch naming and limits.
+    pub fn branch_strategy(&self) -> Arc<BranchStrategy> {
+        self.execution_controller.branch_strategy()
+    }
+
+    /// Commit strategy used for task provenance commits after validation.
+    pub fn commit_strategy(&self) -> Arc<CommitStrategy> {
+        self.execution_controller.commit_strategy()
+    }
+
     /// Subscribe to orchestrator events.
     /// Returns a receiver that will receive all subsequent events.
     pub fn subscribe(&self) -> broadcast::Receiver<OrchestratorEvent> {
@@ -672,6 +687,19 @@ impl Orchestrator {
             reports.push(Box::new(ExecutionControllerReport::new(Arc::clone(
                 &self.execution_controller,
             ))));
+        }
+
+        // Git/worktree subsystems owned by ExecutionController
+        {
+            reports.push(Box::new(wiring::WorktreePoolReport::new(
+                self.execution_controller.worktree_pool(),
+            )));
+            reports.push(Box::new(wiring::BranchStrategyReport::new(
+                self.execution_controller.branch_strategy(),
+            )));
+            reports.push(Box::new(wiring::CommitStrategyReport::new(
+                self.execution_controller.commit_strategy(),
+            )));
         }
 
         // Tier-2 stubs (always Disabled)
@@ -2618,6 +2646,18 @@ mod tests {
             "Missing ExecutionController in manifest"
         );
         assert!(
+            names.contains(&"WorktreePool"),
+            "Missing WorktreePool in manifest"
+        );
+        assert!(
+            names.contains(&"BranchStrategy"),
+            "Missing BranchStrategy in manifest"
+        );
+        assert!(
+            names.contains(&"CommitStrategy"),
+            "Missing CommitStrategy in manifest"
+        );
+        assert!(
             names.contains(&"CostGuard"),
             "Missing CostGuard in manifest"
         );
@@ -2626,7 +2666,7 @@ mod tests {
             "Missing PreToolHookManager in manifest"
         );
 
-        // Verify total count: 13 subsystems (12 wired + 2 Tier-2 stubs)
+        // Verify total count: 16 subsystems (14 wired + 2 Tier-2 stubs)
         // Wait - let's count from the manifest:
         // 1. TaskStateMachine
         // 2. AgentPool
@@ -2639,14 +2679,17 @@ mod tests {
         // 9. FrozenRequirementRegistry
         // 10. LlmBackend
         // 11. ExecutionController
-        // 12. CostGuard
-        // 13. PreToolHookManager
+        // 12. WorktreePool
+        // 13. BranchStrategy
+        // 14. CommitStrategy
+        // 15. CostGuard
+        // 16. PreToolHookManager
         // Actually looking at the code, I see we're also including the Orchestrator itself
         // Let's check the actual count:
         let total_count = manifest.len();
         assert!(
-            total_count >= 13,
-            "Expected at least 13 subsystems, got {total_count}: {names:?}"
+            total_count >= 16,
+            "Expected at least 16 subsystems, got {total_count}: {names:?}"
         );
     }
 
@@ -2709,23 +2752,26 @@ mod tests {
         let manifest = orchestrator.wiring_manifest();
 
         // Based on the Orchestrator struct fields:
-        // 11 wired subsystems + 2 Tier-2 stubs = 13 total
+        // 14 wired subsystems + 2 Tier-2 stubs = 16 total
         // Let me count:
         // 1. state_machine: Arc<RwLock<TaskStateMachine>>
         // 2. agent_pool: Arc<RwLock<AgentPool>>
         // 3. checkpoint_manager: Arc<CheckpointManager>
-        // 4. event_sender: broadcast::Sender<OrchestratorEvent> - NOT a subsystem, skip
-        // 5. feature_lead_manager: Arc<RwLock<FeatureLeadManager>>
-        // 6. mcp_manager: Arc<McpConfigManager>
-        // 7. novelty_checker: Arc<RwLock<NoveltyChecker>>
-        // 8. file_lock_manager: Arc<FileLockManager>
-        // 9. non_novel_detector: Arc<RwLock<NonNovelRetryDetector>>
-        // 10. frozen_registry: FrozenRequirementRegistry
-        // 11. llm_backend: Arc<dyn LlmBackend>
-        // 12. execution_controller: Arc<ExecutionController>
-        // 13. CostGuard (Tier-2 stub)
-        // 14. PreToolHookManager (Tier-2 stub)
-        // Total: 13 entries
-        assert_eq!(manifest.len(), 13, "Expected 13 subsystems in manifest");
+        // event_sender: broadcast::Sender<OrchestratorEvent> - NOT a subsystem, skip
+        // 4. feature_lead_manager: Arc<RwLock<FeatureLeadManager>>
+        // 5. mcp_manager: Arc<McpConfigManager>
+        // 6. novelty_checker: Arc<RwLock<NoveltyChecker>>
+        // 7. file_lock_manager: Arc<FileLockManager>
+        // 8. non_novel_detector: Arc<RwLock<NonNovelRetryDetector>>
+        // 9. frozen_registry: FrozenRequirementRegistry
+        // 10. llm_backend: Arc<dyn LlmBackend>
+        // 11. execution_controller: Arc<ExecutionController>
+        // 12. WorktreePool
+        // 13. BranchStrategy
+        // 14. CommitStrategy
+        // 15. CostGuard (Tier-2 stub)
+        // 16. PreToolHookManager (Tier-2 stub)
+        // Total: 16 entries
+        assert_eq!(manifest.len(), 16, "Expected 16 subsystems in manifest");
     }
 }

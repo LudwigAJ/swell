@@ -314,6 +314,78 @@ impl WorktreePool {
         Ok(allocation)
     }
 
+    /// Allocate a new task-specific git worktree on the provided branch.
+    ///
+    /// The original pool API pre-provisions anonymous `worktree/<prefix>/<id>`
+    /// branches. Production task execution needs a branch whose name is derived
+    /// from the task, so this method creates and records one worktree on demand
+    /// while still using the same allocation tracking and release APIs.
+    pub async fn allocate_for_branch(
+        &self,
+        agent_id: AgentId,
+        task_id: TaskId,
+        branch: BranchName,
+    ) -> Result<WorktreeAllocation, SwellError> {
+        let id = WorktreeId::new();
+        let task_id_str = task_id.to_string();
+        let task_short = task_id_str.split('-').next().unwrap_or("task");
+        let path = self
+            .config
+            .worktree_dir
+            .join(format!("{}-{}", self.config.prefix, task_short));
+        let path_str = path.to_string_lossy().to_string();
+        let branch_name = branch.as_str().to_string();
+
+        tokio::fs::create_dir_all(&self.config.worktree_dir)
+            .await
+            .map_err(SwellError::IoError)?;
+
+        let output = tokio::process::Command::new("git")
+            .args(["worktree", "add", "-b", &branch_name, &path_str])
+            .current_dir(&self.config.base_repo)
+            .output()
+            .await
+            .map_err(|e| SwellError::ToolExecutionFailed(e.to_string()))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(SwellError::ToolExecutionFailed(format!(
+                "Failed to create task worktree for branch '{}': {}",
+                branch_name, stderr
+            )));
+        }
+
+        let mut worktree = Worktree::new(id, path);
+        worktree.ready = true;
+        worktree.branch = Some(branch);
+        worktree.allocate(agent_id, task_id);
+
+        let allocation =
+            WorktreeAllocation::new(&worktree, agent_id, task_id).ok_or_else(|| {
+                SwellError::ToolExecutionFailed("Worktree missing branch".to_string())
+            })?;
+
+        {
+            let mut worktrees = self.worktrees.write().await;
+            worktrees.push(worktree);
+        }
+        {
+            let mut allocations = self.allocations.write().await;
+            allocations.insert(task_id, allocation.clone());
+        }
+
+        info!(
+            worktree_id = %allocation.worktree_id,
+            agent_id = %agent_id,
+            task_id = %task_id,
+            path = %allocation.path.display(),
+            branch = %allocation.branch,
+            "Task-specific worktree allocated to agent"
+        );
+
+        Ok(allocation)
+    }
+
     /// Release a worktree allocation after task completion
     pub async fn release(&self, task_id: TaskId) -> Result<(), SwellError> {
         let allocation = {

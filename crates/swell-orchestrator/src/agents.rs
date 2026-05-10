@@ -7,6 +7,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use swell_core::traits::Agent;
 use swell_core::traits::LlmToolChoice;
@@ -1396,6 +1397,23 @@ impl GeneratorAgent {
                         "working_dir".to_string(),
                         serde_json::Value::String(workspace_path.to_string()),
                     );
+                }
+            }
+        }
+        if matches!(tool_name.as_str(), "read_file" | "write_file" | "edit_file") {
+            if let Some(obj) = tool_args.as_object_mut() {
+                if let Some(path) = obj.get("path").and_then(|v| v.as_str()) {
+                    if !Path::new(path).is_absolute() && !workspace_path.is_empty() {
+                        obj.insert(
+                            "path".to_string(),
+                            serde_json::Value::String(
+                                Path::new(workspace_path)
+                                    .join(path)
+                                    .to_string_lossy()
+                                    .to_string(),
+                            ),
+                        );
+                    }
                 }
             }
         }
