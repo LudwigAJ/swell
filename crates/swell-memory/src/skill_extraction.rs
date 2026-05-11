@@ -605,7 +605,11 @@ impl SkillExtractor {
         }
 
         for skill in skills {
-            let filename = format!("{}.v{}.json", skill.name.replace(' ', "_"), skill.version);
+            let filename = format!(
+                "{}.v{}.json",
+                Self::safe_skill_filename(&skill.name),
+                skill.version
+            );
             let filepath = skills_dir.join(&filename);
 
             let json = serde_json::to_string_pretty(skill).map_err(|e| {
@@ -618,6 +622,28 @@ impl SkillExtractor {
         }
 
         Ok(())
+    }
+
+    fn safe_skill_filename(name: &str) -> String {
+        let mut filename = String::with_capacity(name.len());
+        let mut last_was_underscore = false;
+
+        for ch in name.chars() {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                filename.push(ch);
+                last_was_underscore = false;
+            } else if !last_was_underscore {
+                filename.push('_');
+                last_was_underscore = true;
+            }
+        }
+
+        let filename = filename.trim_matches('_');
+        if filename.is_empty() {
+            "skill".to_string()
+        } else {
+            filename.to_string()
+        }
     }
 
     /// Load all skills from the .skills directory
@@ -803,7 +829,7 @@ impl SkillExtractor {
         let skills_dir = self.workspace_path.join(&self.config.store_path);
         let filename = format!(
             "{}.v{}.json",
-            updated_skill.name.replace(' ', "_"),
+            Self::safe_skill_filename(&updated_skill.name),
             updated_skill.version
         );
         let filepath = skills_dir.join(&filename);
@@ -1003,6 +1029,13 @@ mod tests {
 
         let sim3 = extractor.calculate_similarity("", "test");
         assert_eq!(sim3, 0.0, "Empty string should return 0 similarity");
+    }
+
+    #[tokio::test]
+    async fn test_skill_extractor_sanitizes_path_like_skill_names() {
+        let filename =
+            SkillExtractor::safe_skill_filename("write_file in /tmp/swell/worktrees/task/src");
+        assert_eq!(filename, "write_file_in_tmp_swell_worktrees_task_src");
     }
 
     #[tokio::test]

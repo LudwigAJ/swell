@@ -1,7 +1,7 @@
 //! Wiring diagnostics for orchestrator subsystems.
 //!
 //! This module provides wiring report implementations for orchestrator-internal
-//! types and stubs for Tier-2 subsystems that are not yet wired.
+//! types and status reports for Tier-2 subsystems.
 //!
 //! # Orphan Rule Note
 //!
@@ -195,15 +195,15 @@ impl WiringReport for AgentPool {
 }
 
 // ========================================================================
-// Tier-2 stubs - CostGuard, PreToolHookManager
-// These are not yet wired in production, so they return Disabled.
+// Tier-2 runtime reports.
+// CostGuard, kill switch controls, pre-tool command denial, and sandbox
+// pre-hook routing are reached through production daemon/execution paths.
 // ========================================================================
 
-/// CostGuard stub - Tier 2.1 not wired.
+/// CostGuard runtime report.
 ///
-/// This is a placeholder for the cost guard subsystem that should
-/// enforce budget limits during task execution. It is not yet
-/// implemented in production.
+/// The execution controller records agent token usage on the task and pauses
+/// execution when the task reaches its configured token budget.
 #[derive(Debug)]
 pub struct CostGuard;
 
@@ -217,15 +217,35 @@ impl WiringReport for CostGuard {
     }
 
     fn state(&self) -> WiringState {
-        WiringState::Disabled("Tier 2.1 not wired".to_string())
+        WiringState::Enabled
     }
 }
 
-/// PreToolHookManager stub - Tier 2.2 not wired.
+/// KillSwitch runtime report.
 ///
-/// This is a placeholder for the pre-tool hook manager that should
-/// allow custom logic to run before tool execution. It is not yet
-/// implemented in production.
+/// Daemon socket commands can now trigger/reset/query the `OrchestratorKillSwitch`
+/// owned by `ExecutionController`; the turn loop checks it before each turn.
+#[derive(Debug)]
+pub struct KillSwitch;
+
+impl WiringReport for KillSwitch {
+    fn name(&self) -> &'static str {
+        "KillSwitch"
+    }
+
+    fn identity(&self) -> String {
+        "DaemonCommand -> ExecutionController::kill_switch".to_string()
+    }
+
+    fn state(&self) -> WiringState {
+        WiringState::Enabled
+    }
+}
+
+/// PreToolHookManager runtime report.
+///
+/// The production generator path now executes tool calls through ToolExecutor,
+/// which installs command-denial hooks and the sandbox pre-hook.
 #[derive(Debug)]
 pub struct PreToolHookManager;
 
@@ -239,7 +259,71 @@ impl WiringReport for PreToolHookManager {
     }
 
     fn state(&self) -> WiringState {
-        WiringState::Disabled("Tier 2.2 not wired".to_string())
+        WiringState::Enabled
+    }
+}
+
+/// `swell-sandbox` router runtime report.
+///
+/// `ToolExecutor` now links the lower-level `swell-sandbox` crate and consults
+/// its backend probes before shell sandbox execution falls back to the
+/// process-level OS sandbox.
+#[derive(Debug)]
+pub struct SwellSandboxRouter;
+
+impl WiringReport for SwellSandboxRouter {
+    fn name(&self) -> &'static str {
+        "SwellSandboxRouter"
+    }
+
+    fn identity(&self) -> String {
+        "swell-tools::sandbox_router -> swell-sandbox".to_string()
+    }
+
+    fn state(&self) -> WiringState {
+        WiringState::Enabled
+    }
+}
+
+/// LanceDB vector backend runtime report.
+///
+/// `TripleStreamService` can now carry a `VectorBackend`, and the existing
+/// `LanceDbVectorStore` implements that trait for semantic retrieval.
+#[derive(Debug)]
+pub struct MemoryVectorBackend;
+
+impl WiringReport for MemoryVectorBackend {
+    fn name(&self) -> &'static str {
+        "MemoryVectorBackend"
+    }
+
+    fn identity(&self) -> String {
+        "swell-memory::LanceDbVectorStore as VectorBackend".to_string()
+    }
+
+    fn state(&self) -> WiringState {
+        WiringState::Enabled
+    }
+}
+
+/// Skill extraction runtime report.
+///
+/// `ExecutionController` now invokes `SkillExtractionService` after successful
+/// validated generation and writes candidate skills under `.swell/skills/_candidates`.
+#[derive(Debug)]
+pub struct SkillExtraction;
+
+impl WiringReport for SkillExtraction {
+    fn name(&self) -> &'static str {
+        "SkillExtraction"
+    }
+
+    fn identity(&self) -> String {
+        "ExecutionController -> swell-memory::SkillExtractionService".to_string()
+    }
+
+    fn state(&self) -> WiringState {
+        WiringState::Enabled
     }
 }
 

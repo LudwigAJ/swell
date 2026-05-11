@@ -484,6 +484,14 @@ impl From<DaemonEvent> for DashboardEvent {
                     message: format!("Daemon health: {}s uptime, v{}", uptime_seconds, version),
                     correlation_id: Uuid::nil(),
                 },
+                DataResponse::KillSwitchStatus { state, .. } => DashboardEvent::TaskProgress {
+                    id: TaskId::nil(),
+                    message: format!(
+                        "Kill switch: {}",
+                        if state.active { "active" } else { "inactive" }
+                    ),
+                    correlation_id: Uuid::nil(),
+                },
             },
         }
     }

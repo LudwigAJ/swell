@@ -1,7 +1,10 @@
 use dashmap::DashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
-use swell_core::{AgentId, Plan, PriorAttempt, SwellError, Task, TaskId, TaskState};
+use swell_core::{
+    AgentId, Goal, Milestone, MilestoneId, Plan, PriorAttempt, Project, ProjectId, SwellError,
+    Task, TaskId, TaskState,
+};
 use tracing::{info, warn};
 
 use crate::task_enrichment::{
@@ -20,13 +23,123 @@ pub struct TaskStateMachine {
     /// don't block each other. The RwLock inside each task allows writes
     /// to individual tasks without locking the entire state machine.
     tasks: DashMap<TaskId, Arc<RwLock<Task>>>,
+    /// Project roots for the Goal → Milestone → Task spine.
+    projects: DashMap<ProjectId, Arc<RwLock<Project>>>,
+    /// Milestones grouped by project. Tasks remain in `tasks`; milestones hold
+    /// task IDs and each task has an optional back-reference.
+    milestones: DashMap<MilestoneId, Arc<RwLock<Milestone>>>,
 }
 
 impl TaskStateMachine {
     pub fn new() -> Self {
         Self {
             tasks: DashMap::new(),
+            projects: DashMap::new(),
+            milestones: DashMap::new(),
         }
+    }
+
+    /// Create a new project root.
+    pub fn create_project(&self, goal: Goal) -> Project {
+        let project = Project::new(goal);
+        let id = project.id;
+        info!(project_id = %id, "Creating new project");
+        self.projects
+            .insert(id, Arc::new(RwLock::new(project.clone())));
+        project
+    }
+
+    /// Get a project by ID.
+    pub fn get_project(&self, id: ProjectId) -> Result<Project, SwellError> {
+        self.projects
+            .get(&id)
+            .map(|r| r.read().unwrap().clone())
+            .ok_or_else(|| SwellError::InvalidStateTransition(format!("Project {id} not found")))
+    }
+
+    /// Return all projects.
+    pub fn get_all_projects(&self) -> Vec<Project> {
+        self.projects
+            .iter()
+            .map(|entry| entry.value().read().unwrap().clone())
+            .collect()
+    }
+
+    /// Create a milestone and attach it to its project.
+    pub fn create_milestone(
+        &self,
+        project_id: ProjectId,
+        title: String,
+    ) -> Result<Milestone, SwellError> {
+        let project_entry = self.projects.get(&project_id).ok_or_else(|| {
+            SwellError::InvalidStateTransition(format!("Project {project_id} not found"))
+        })?;
+        let project_arc = project_entry.value().clone();
+        drop(project_entry);
+
+        let milestone = Milestone::new(project_id, title);
+        let milestone_id = milestone.id;
+        self.milestones
+            .insert(milestone_id, Arc::new(RwLock::new(milestone.clone())));
+        {
+            let mut project = project_arc
+                .write()
+                .map_err(|_| SwellError::InvalidStateTransition("Poisoned lock".into()))?;
+            project.milestones.push(milestone_id);
+            project.updated_at = chrono::Utc::now();
+        }
+
+        info!(project_id = %project_id, milestone_id = %milestone_id, "Creating new milestone");
+        Ok(milestone)
+    }
+
+    /// Get a milestone by ID.
+    pub fn get_milestone(&self, id: MilestoneId) -> Result<Milestone, SwellError> {
+        self.milestones
+            .get(&id)
+            .map(|r| r.read().unwrap().clone())
+            .ok_or_else(|| SwellError::InvalidStateTransition(format!("Milestone {id} not found")))
+    }
+
+    /// Get all milestones for a project.
+    pub fn get_milestones_for_project(
+        &self,
+        project_id: ProjectId,
+    ) -> Result<Vec<Milestone>, SwellError> {
+        let project = self.get_project(project_id)?;
+        project
+            .milestones
+            .iter()
+            .map(|id| self.get_milestone(*id))
+            .collect()
+    }
+
+    /// Link an existing task to a milestone.
+    pub fn assign_task_to_milestone(
+        &self,
+        task_id: TaskId,
+        milestone_id: MilestoneId,
+    ) -> Result<(), SwellError> {
+        let milestone_entry = self.milestones.get(&milestone_id).ok_or_else(|| {
+            SwellError::InvalidStateTransition(format!("Milestone {milestone_id} not found"))
+        })?;
+        let milestone_arc = milestone_entry.value().clone();
+        drop(milestone_entry);
+
+        self.with_task_mut(task_id, |task| {
+            task.milestone = Some(milestone_id);
+            Ok(())
+        })?;
+
+        let mut milestone = milestone_arc
+            .write()
+            .map_err(|_| SwellError::InvalidStateTransition("Poisoned lock".into()))?;
+        if !milestone.tasks.contains(&task_id) {
+            milestone.tasks.push(task_id);
+            milestone.updated_at = chrono::Utc::now();
+        }
+
+        Ok(())
     }
 
     /// Create a new task
@@ -1423,5 +1536,41 @@ mod tests {
             // If enriched_files is empty, there would be no related tests
             // But we expect some test files to be discovered
         );
+    }
+
+    #[test]
+    fn test_create_project_and_milestone_links_project() {
+        let sm = TaskStateMachine::new();
+        let project = sm.create_project(Goal::project_root("build flow spine"));
+        let milestone = sm
+            .create_milestone(project.id, "model".to_string())
+            .expect("milestone created");
+
+        let stored_project = sm.get_project(project.id).expect("project exists");
+        assert_eq!(stored_project.milestones, vec![milestone.id]);
+
+        let project_milestones = sm
+            .get_milestones_for_project(project.id)
+            .expect("milestones load");
+        assert_eq!(project_milestones.len(), 1);
+        assert_eq!(project_milestones[0].title, "model");
+    }
+
+    #[test]
+    fn test_assign_task_to_milestone_sets_bidirectional_link() {
+        let sm = TaskStateMachine::new();
+        let project = sm.create_project(Goal::project_root("build flow spine"));
+        let milestone = sm
+            .create_milestone(project.id, "model".to_string())
+            .expect("milestone created");
+        let task = sm.create_task("loose task".to_string());
+
+        sm.assign_task_to_milestone(task.id, milestone.id)
+            .expect("task assigned");
+
+        let stored_task = sm.get_task(task.id).expect("task exists");
+        assert_eq!(stored_task.milestone, Some(milestone.id));
+        let stored_milestone = sm.get_milestone(milestone.id).expect("milestone exists");
+        assert_eq!(stored_milestone.tasks, vec![task.id]);
     }
 }

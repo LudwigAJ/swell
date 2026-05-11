@@ -230,9 +230,9 @@ pub use value_scorer::{
 };
 pub use wiring::{
     AgentPoolReport, CheckpointManagerReport, CostGuard, ExecutionControllerReport,
-    FeatureLeadManagerReport, FileLockManagerReport, FrozenRequirementRegistryReport,
-    LlmBackendReport, McpConfigManagerReport, NonNovelRetryDetectorReport, NoveltyCheckerReport,
-    PreToolHookManager, TaskStateMachineReport,
+    FeatureLeadManagerReport, FileLockManagerReport, FrozenRequirementRegistryReport, KillSwitch,
+    LlmBackendReport, McpConfigManagerReport, MemoryVectorBackend, NonNovelRetryDetectorReport,
+    NoveltyCheckerReport, PreToolHookManager, SkillExtraction, TaskStateMachineReport,
 };
 pub use work_graph::{
     CodeChangeRef, GraphMetadata, NodeMetadata, NodeStatus, SpecLink, TestResultRef, WorkGraph,
@@ -249,7 +249,8 @@ pub use swell_tools::web_search::{DomainSearchTool, FetchPageTool, WebSearchTool
 
 use std::sync::{Arc, Weak};
 use swell_core::{
-    AgentId, AgentRole, Checkpoint, Plan, SwellError, Task, TaskId, TaskState, ValidationResult,
+    AgentId, AgentRole, Checkpoint, Goal, Milestone, MilestoneId, Plan, Project, ProjectId,
+    SwellError, Task, TaskId, TaskState, ValidationResult,
 };
 use swell_state::{traits::in_memory::InMemoryCheckpointStore, CheckpointManager};
 use swell_tools::{
@@ -600,7 +601,7 @@ impl Orchestrator {
     /// [`Orchestrator`], including:
     /// - Internal subsystems ([`TaskStateMachine`], [`AgentPool`], [`CheckpointManager`], etc.)
     /// - Wired external subsystems ([`ExecutionController`], LLM backend, etc.)
-    /// - Tier-2 stubs ([`CostGuard`], [`PreToolHookManager`]) that return [`WiringState::Disabled`]
+    /// - Tier-2 status reports ([`CostGuard`], [`PreToolHookManager`])
     ///
     /// Returns a vector of [`Box<dyn WiringReport>`] where each entry has
     /// [`WiringReport::name()`], [`WiringReport::identity()`], and [`WiringReport::state()`]
@@ -702,10 +703,14 @@ impl Orchestrator {
             )));
         }
 
-        // Tier-2 stubs (always Disabled)
+        // Tier-2 status reports
         {
             reports.push(Box::new(wiring::CostGuard));
+            reports.push(Box::new(wiring::KillSwitch));
             reports.push(Box::new(wiring::PreToolHookManager));
+            reports.push(Box::new(wiring::SwellSandboxRouter));
+            reports.push(Box::new(wiring::MemoryVectorBackend));
+            reports.push(Box::new(wiring::SkillExtraction));
         }
 
         reports
@@ -982,6 +987,59 @@ impl Orchestrator {
         sm.get_all_tasks()
     }
 
+    /// Create a new project root for milestone/task grouping.
+    pub async fn create_project(&self, goal: Goal) -> Project {
+        let sm = self.state_machine.write().await;
+        sm.create_project(goal)
+    }
+
+    /// Get a project by ID.
+    pub async fn get_project(&self, id: ProjectId) -> Result<Project, SwellError> {
+        let sm = self.state_machine.read().await;
+        sm.get_project(id)
+    }
+
+    /// Get all projects.
+    pub async fn get_all_projects(&self) -> Vec<Project> {
+        let sm = self.state_machine.read().await;
+        sm.get_all_projects()
+    }
+
+    /// Create a milestone within a project.
+    pub async fn create_milestone(
+        &self,
+        project_id: ProjectId,
+        title: String,
+    ) -> Result<Milestone, SwellError> {
+        let sm = self.state_machine.write().await;
+        sm.create_milestone(project_id, title)
+    }
+
+    /// Get a milestone by ID.
+    pub async fn get_milestone(&self, id: MilestoneId) -> Result<Milestone, SwellError> {
+        let sm = self.state_machine.read().await;
+        sm.get_milestone(id)
+    }
+
+    /// Get all milestones linked to a project.
+    pub async fn get_milestones_for_project(
+        &self,
+        project_id: ProjectId,
+    ) -> Result<Vec<Milestone>, SwellError> {
+        let sm = self.state_machine.read().await;
+        sm.get_milestones_for_project(project_id)
+    }
+
+    /// Link an existing loose task to a milestone.
+    pub async fn assign_task_to_milestone(
+        &self,
+        task_id: TaskId,
+        milestone_id: MilestoneId,
+    ) -> Result<(), SwellError> {
+        let sm = self.state_machine.write().await;
+        sm.assign_task_to_milestone(task_id, milestone_id)
+    }
+
     /// Get tasks by state
     pub async fn get_tasks_by_state(&self, state: TaskState) -> Vec<Task> {
         let sm = self.state_machine.read().await;
@@ -1122,6 +1180,42 @@ impl Orchestrator {
         })?;
         info!(task_id = %task_id, autonomy_level = ?autonomy_level, "Task autonomy level updated");
         Ok(())
+    }
+
+    /// Set a task token budget. Used by CostGuard tests and future policy
+    /// configuration surfaces.
+    pub async fn set_task_token_budget(
+        &self,
+        task_id: TaskId,
+        token_budget: u64,
+    ) -> Result<(), SwellError> {
+        let sm = self.state_machine.read().await;
+        sm.with_task_mut(task_id, |task| {
+            task.token_budget = token_budget;
+            Ok(())
+        })?;
+        info!(task_id = %task_id, token_budget, "Task token budget updated");
+        Ok(())
+    }
+
+    /// Add token usage to a task and return the updated snapshot.
+    pub async fn record_task_tokens(
+        &self,
+        task_id: TaskId,
+        tokens_used: u64,
+    ) -> Result<swell_core::Task, SwellError> {
+        let sm = self.state_machine.read().await;
+        let task = sm.with_task_mut(task_id, |task| {
+            task.tokens_used = task.tokens_used.saturating_add(tokens_used);
+            Ok(task.clone())
+        })?;
+        info!(
+            task_id = %task_id,
+            tokens_used = task.tokens_used,
+            token_budget = task.token_budget,
+            "Task token usage recorded"
+        );
+        Ok(task)
     }
 
     /// Mark a task as Failed. Used by `TaskCancel` to make cancellation
@@ -1792,6 +1886,36 @@ mod tests {
             .unwrap();
 
         assert_ne!(task1.id, task2.id);
+    }
+
+    #[tokio::test]
+    async fn test_project_milestone_orchestrator_api_links_task() {
+        let orchestrator = OrchestratorBuilder::new().build();
+        let project = orchestrator
+            .create_project(Goal::project_root("build flow spine"))
+            .await;
+        let milestone = orchestrator
+            .create_milestone(project.id, "model".to_string())
+            .await
+            .expect("milestone created");
+        let task = orchestrator
+            .create_task("loose task".to_string(), vec![])
+            .await
+            .expect("task created");
+
+        orchestrator
+            .assign_task_to_milestone(task.id, milestone.id)
+            .await
+            .expect("task assigned to milestone");
+
+        let stored_task = orchestrator.get_task(task.id).await.expect("task exists");
+        assert_eq!(stored_task.milestone, Some(milestone.id));
+        let project_milestones = orchestrator
+            .get_milestones_for_project(project.id)
+            .await
+            .expect("project milestones load");
+        assert_eq!(project_milestones.len(), 1);
+        assert_eq!(project_milestones[0].tasks, vec![task.id]);
     }
 
     // --- get_task Tests ---
@@ -2600,7 +2724,7 @@ mod tests {
         // Should include: TaskStateMachine, AgentPool, CheckpointManager,
         // FeatureLeadManager, McpConfigManager, NoveltyChecker, FileLockManager,
         // NonNovelRetryDetector, FrozenRequirementRegistry, LlmBackend,
-        // ExecutionController, CostGuard, PreToolHookManager
+        // ExecutionController, CostGuard, KillSwitch, PreToolHookManager
         assert!(
             names.contains(&"TaskStateMachine"),
             "Missing TaskStateMachine in manifest"
@@ -2662,11 +2786,27 @@ mod tests {
             "Missing CostGuard in manifest"
         );
         assert!(
+            names.contains(&"KillSwitch"),
+            "Missing KillSwitch in manifest"
+        );
+        assert!(
             names.contains(&"PreToolHookManager"),
             "Missing PreToolHookManager in manifest"
         );
+        assert!(
+            names.contains(&"SwellSandboxRouter"),
+            "Missing SwellSandboxRouter in manifest"
+        );
+        assert!(
+            names.contains(&"MemoryVectorBackend"),
+            "Missing MemoryVectorBackend in manifest"
+        );
+        assert!(
+            names.contains(&"SkillExtraction"),
+            "Missing SkillExtraction in manifest"
+        );
 
-        // Verify total count: 16 subsystems (14 wired + 2 Tier-2 stubs)
+        // Verify total count: 20 subsystems.
         // Wait - let's count from the manifest:
         // 1. TaskStateMachine
         // 2. AgentPool
@@ -2683,37 +2823,66 @@ mod tests {
         // 13. BranchStrategy
         // 14. CommitStrategy
         // 15. CostGuard
-        // 16. PreToolHookManager
+        // 16. KillSwitch
+        // 17. PreToolHookManager
+        // 18. SwellSandboxRouter
+        // 19. MemoryVectorBackend
+        // 20. SkillExtraction
         // Actually looking at the code, I see we're also including the Orchestrator itself
         // Let's check the actual count:
         let total_count = manifest.len();
         assert!(
-            total_count >= 16,
-            "Expected at least 16 subsystems, got {total_count}: {names:?}"
+            total_count >= 20,
+            "Expected at least 20 subsystems, got {total_count}: {names:?}"
         );
     }
 
     #[tokio::test]
-    async fn test_wiring_manifest_tier2_stubs_return_disabled() {
+    async fn test_wiring_manifest_tier2_reports_have_expected_states() {
         use swell_core::wiring::WiringState;
 
         let orchestrator = OrchestratorBuilder::new().build();
 
         let manifest = orchestrator.wiring_manifest();
 
-        // Find CostGuard and PreToolHookManager and verify they're Disabled
+        // CostGuard, kill switch control, pre-tool denial, and sandbox pre-hook
+        // routing are now reached through production daemon/execution paths.
         for report in manifest.iter() {
             match report.name() {
                 "CostGuard" => {
                     assert!(
-                        matches!(report.state(), WiringState::Disabled(msg) if msg.contains("Tier 2.1")),
-                        "CostGuard should be Disabled with Tier 2.1 reason"
+                        matches!(report.state(), WiringState::Enabled),
+                        "CostGuard should be Enabled"
+                    );
+                }
+                "KillSwitch" => {
+                    assert!(
+                        matches!(report.state(), WiringState::Enabled),
+                        "KillSwitch should be Enabled"
                     );
                 }
                 "PreToolHookManager" => {
                     assert!(
-                        matches!(report.state(), WiringState::Disabled(msg) if msg.contains("Tier 2.2")),
-                        "PreToolHookManager should be Disabled with Tier 2.2 reason"
+                        matches!(report.state(), WiringState::Enabled),
+                        "PreToolHookManager should be Enabled"
+                    );
+                }
+                "SwellSandboxRouter" => {
+                    assert!(
+                        matches!(report.state(), WiringState::Enabled),
+                        "SwellSandboxRouter should be Enabled"
+                    );
+                }
+                "MemoryVectorBackend" => {
+                    assert!(
+                        matches!(report.state(), WiringState::Enabled),
+                        "MemoryVectorBackend should be Enabled"
+                    );
+                }
+                "SkillExtraction" => {
+                    assert!(
+                        matches!(report.state(), WiringState::Enabled),
+                        "SkillExtraction should be Enabled"
                     );
                 }
                 _ => {}
@@ -2752,7 +2921,7 @@ mod tests {
         let manifest = orchestrator.wiring_manifest();
 
         // Based on the Orchestrator struct fields:
-        // 14 wired subsystems + 2 Tier-2 stubs = 16 total
+        // 20 enabled subsystems = 20 total
         // Let me count:
         // 1. state_machine: Arc<RwLock<TaskStateMachine>>
         // 2. agent_pool: Arc<RwLock<AgentPool>>
@@ -2769,9 +2938,13 @@ mod tests {
         // 12. WorktreePool
         // 13. BranchStrategy
         // 14. CommitStrategy
-        // 15. CostGuard (Tier-2 stub)
-        // 16. PreToolHookManager (Tier-2 stub)
-        // Total: 16 entries
-        assert_eq!(manifest.len(), 16, "Expected 16 subsystems in manifest");
+        // 15. CostGuard
+        // 16. KillSwitch
+        // 17. PreToolHookManager
+        // 18. SwellSandboxRouter
+        // 19. MemoryVectorBackend
+        // 20. SkillExtraction
+        // Total: 20 entries
+        assert_eq!(manifest.len(), 20, "Expected 20 subsystems in manifest");
     }
 }

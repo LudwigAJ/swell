@@ -33,8 +33,10 @@ pub mod os_sandbox;
 pub mod permissions;
 pub mod post_tool_hooks;
 pub mod pr_creation;
+pub mod pre_tool_hooks;
 pub mod registry;
 pub mod resource_limits;
+pub mod sandbox_router;
 pub mod secret_scanning;
 pub mod self_healing_ci;
 pub mod skill;
@@ -118,6 +120,7 @@ pub use post_tool_hooks::{
 pub use pr_creation::{
     EvidenceSummary, PrCreationError, PrCreator, PrCreatorConfig, PrLabel, PrMetadata, PrResult,
 };
+pub use pre_tool_hooks::{CommandDenyHook, PreToolDecision, PreToolHook, PreToolHookManager};
 pub use registry::{
     normalize_tool_name, CategoryInfo, NormalizedToolName, ToolCategory, ToolRegistration,
     ToolRegistry,
@@ -125,6 +128,10 @@ pub use registry::{
 pub use resource_limits::{
     LimitCheckResult, LimitState, ResourceLimitError, ResourceLimitResult, SessionLimits,
     SessionResourceTracker,
+};
+pub use sandbox_router::{
+    reset_sandbox_router_probe_count, sandbox_router_probe_count, SandboxBackend, SandboxRoute,
+    SandboxRouter,
 };
 pub use secret_scanning::{
     install_precommit_hook, DetectedSecret, SecretScanResult, SecretScanner, SecretScannerConfig,

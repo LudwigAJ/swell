@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::cost_tracking::ModelCostInfo;
-use crate::ids::{AgentId, SessionId, TaskId};
+use crate::ids::{AgentId, MilestoneId, ProjectId, SessionId, TaskId};
 
 /// Task lifecycle states as defined in the orchestrator spec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,6 +92,192 @@ impl std::fmt::Display for TaskState {
     }
 }
 
+/// A high-level goal/objective linked to a task or used as a project root.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Goal {
+    /// Unique identifier
+    pub id: Uuid,
+    /// Task ID this goal originally belongs to.
+    ///
+    /// Project roots reuse the existing traceability goal shape. During the
+    /// additive migration, project-level goals may carry a nil task id until
+    /// project-scoped traceability storage is introduced.
+    pub task_id: TaskId,
+    /// Goal description
+    pub description: String,
+    /// When goal was created
+    pub created_at: DateTime<Utc>,
+    /// When goal was last updated
+    pub updated_at: DateTime<Utc>,
+    /// Goal status
+    pub status: GoalStatus,
+    /// Linked criteria IDs (forward links)
+    pub criteria_ids: Vec<Uuid>,
+}
+
+impl Goal {
+    /// Create a new task-linked goal.
+    pub fn new(description: impl Into<String>, task_id: TaskId) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            task_id,
+            description: description.into(),
+            created_at: now,
+            updated_at: now,
+            status: GoalStatus::Active,
+            criteria_ids: Vec::new(),
+        }
+    }
+
+    /// Create a project-root goal before a root task exists.
+    pub fn project_root(description: impl Into<String>) -> Self {
+        Self::new(description, TaskId::nil())
+    }
+
+    /// Update the goal status.
+    pub fn with_status(mut self, status: GoalStatus) -> Self {
+        self.status = status;
+        self.updated_at = Utc::now();
+        self
+    }
+}
+
+/// Goal completion status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GoalStatus {
+    /// Goal is active and being worked on
+    Active,
+    /// Goal has been achieved
+    Achieved,
+    /// Goal has been abandoned
+    Abandoned,
+}
+
+/// Project lifecycle states above tasks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectStatus {
+    Draft,
+    Planning,
+    Executing,
+    Review,
+    Done,
+    Cancelled,
+}
+
+/// Milestone lifecycle states within a project DAG.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MilestoneStatus {
+    Pending,
+    Ready,
+    Executing,
+    Validating,
+    Done,
+    Blocked,
+    Failed,
+}
+
+/// Reference to a validator gate attached to a milestone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ValidatorRef {
+    pub name: String,
+    #[serde(default)]
+    pub config: serde_json::Value,
+}
+
+impl ValidatorRef {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            config: serde_json::Value::Null,
+        }
+    }
+}
+
+/// Project root for the Goal → Milestone → Task spine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    pub id: ProjectId,
+    pub goal: Goal,
+    pub milestones: Vec<MilestoneId>,
+    pub status: ProjectStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl Project {
+    pub fn new(goal: Goal) -> Self {
+        let now = Utc::now();
+        Self {
+            id: ProjectId::new(),
+            goal,
+            milestones: Vec::new(),
+            status: ProjectStatus::Draft,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn with_milestone(mut self, milestone_id: MilestoneId) -> Self {
+        self.milestones.push(milestone_id);
+        self.updated_at = Utc::now();
+        self
+    }
+}
+
+/// Milestone grouping tasks under a project with DAG dependencies.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Milestone {
+    pub id: MilestoneId,
+    pub project: ProjectId,
+    pub title: String,
+    pub depends_on: Vec<MilestoneId>,
+    pub tasks: Vec<TaskId>,
+    pub validators: Vec<ValidatorRef>,
+    pub status: MilestoneStatus,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl Milestone {
+    pub fn new(project: ProjectId, title: impl Into<String>) -> Self {
+        let now = Utc::now();
+        Self {
+            id: MilestoneId::new(),
+            project,
+            title: title.into(),
+            depends_on: Vec::new(),
+            tasks: Vec::new(),
+            validators: Vec::new(),
+            status: MilestoneStatus::Pending,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    pub fn with_dependency(mut self, milestone_id: MilestoneId) -> Self {
+        self.depends_on.push(milestone_id);
+        self.updated_at = Utc::now();
+        self
+    }
+
+    pub fn with_task(mut self, task_id: TaskId) -> Self {
+        self.tasks.push(task_id);
+        self.updated_at = Utc::now();
+        self
+    }
+
+    pub fn ready_given<'a>(&self, milestones: impl IntoIterator<Item = &'a Milestone>) -> bool {
+        let statuses: HashMap<MilestoneId, MilestoneStatus> = milestones
+            .into_iter()
+            .map(|milestone| (milestone.id, milestone.status))
+            .collect();
+        self.depends_on
+            .iter()
+            .all(|id| matches!(statuses.get(id), Some(MilestoneStatus::Done)))
+    }
+}
+
 /// A unit of work to be executed by the orchestrator
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
@@ -134,6 +320,9 @@ pub struct Task {
     /// Contains discovered file paths, related tests, constraints, and prior attempts.
     #[serde(default)]
     pub enrichment: TaskEnrichment,
+    /// Optional milestone parent. `None` preserves legacy loose-task behavior.
+    #[serde(default)]
+    pub milestone: Option<MilestoneId>,
 }
 
 /// Scope defining task boundaries for modification
@@ -374,6 +563,7 @@ impl Task {
             original_scope: None,
             current_scope: TaskScope::default(),
             enrichment: TaskEnrichment::default(),
+            milestone: None,
         }
     }
 
@@ -403,6 +593,7 @@ impl Task {
             original_scope: None,
             current_scope: TaskScope::default(),
             enrichment: TaskEnrichment::default(),
+            milestone: None,
         }
     }
 
@@ -693,6 +884,17 @@ pub enum CliCommand {
         /// Task ID to query cost for. If None, returns aggregate cost across all tasks.
         task_id: Option<TaskId>,
     },
+    /// Trigger the global daemon kill switch.
+    KillSwitchTrigger {
+        /// Kill level to activate
+        level: crate::kill_switch::KillLevel,
+        /// Operator-provided reason
+        reason: String,
+    },
+    /// Reset the global daemon kill switch.
+    KillSwitchReset,
+    /// Query the global daemon kill switch state.
+    KillSwitchStatus,
 }
 
 /// A correlation ID used to track related events across the system.
@@ -970,6 +1172,12 @@ pub enum DataResponse {
         total_spent: u64,
         /// Remaining budget (tokens)
         remaining_budget: u64,
+        correlation_id: CorrelationId,
+    },
+    /// Kill switch state response - returned by KillSwitchStatus/Trigger/Reset
+    KillSwitchStatus {
+        /// Full kill switch state
+        state: crate::kill_switch::KillSwitchState,
         correlation_id: CorrelationId,
     },
 }
@@ -1650,6 +1858,7 @@ mod tests {
                     DataResponse::MemoryResults { correlation_id, .. } => *correlation_id,
                     DataResponse::CostData { correlation_id, .. } => *correlation_id,
                     DataResponse::DaemonHealth { correlation_id, .. } => *correlation_id,
+                    DataResponse::KillSwitchStatus { correlation_id, .. } => *correlation_id,
                 },
             }
         };
@@ -1731,6 +1940,7 @@ mod tests {
             original_scope: None,
             current_scope: TaskScope::default(),
             enrichment: Default::default(),
+            milestone: None,
         }];
         let task_list = DataResponse::TaskList {
             tasks: tasks.clone(),
@@ -1773,6 +1983,7 @@ mod tests {
             original_scope: None,
             current_scope: TaskScope::default(),
             enrichment: Default::default(),
+            milestone: None,
         };
         let task_detail = DataResponse::TaskDetail {
             task,
@@ -1931,6 +2142,7 @@ mod tests {
             original_scope: None,
             current_scope: TaskScope::default(),
             enrichment: Default::default(),
+            milestone: None,
         };
 
         let event = DaemonEvent::DataResponse(Box::new(DataResponse::TaskDetail {
@@ -1955,5 +2167,64 @@ mod tests {
             },
             other => panic!("Expected DataResponse::TaskDetail, got: {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_loose_task_has_no_milestone_by_default() {
+        let task = Task::new("loose task".to_string());
+        assert_eq!(task.milestone, None);
+
+        let json = serde_json::to_string(&task).expect("serialize task");
+        let parsed: Task = serde_json::from_str(&json).expect("deserialize task");
+        assert_eq!(parsed.milestone, None);
+    }
+
+    #[test]
+    fn test_legacy_task_json_without_milestone_still_deserializes() {
+        let mut value = serde_json::to_value(Task::new("legacy task".to_string()))
+            .expect("task serializes to json value");
+        value
+            .as_object_mut()
+            .expect("task serializes as object")
+            .remove("milestone");
+
+        let parsed: Task = serde_json::from_value(value).expect("legacy task json deserializes");
+        assert_eq!(parsed.milestone, None);
+    }
+
+    #[test]
+    fn test_project_dag_resolves_ready_milestones() {
+        let project = Project::new(Goal::project_root("ship project"));
+        let root = Milestone {
+            status: MilestoneStatus::Done,
+            ..Milestone::new(project.id, "root")
+        };
+        let child = Milestone::new(project.id, "child").with_dependency(root.id);
+        let blocked = Milestone::new(project.id, "blocked").with_dependency(child.id);
+
+        assert!(
+            child.ready_given([&root, &child, &blocked]),
+            "child should be ready once its only dependency is done"
+        );
+        assert!(
+            !blocked.ready_given([&root, &child, &blocked]),
+            "blocked should wait for child to reach Done"
+        );
+    }
+
+    #[test]
+    fn test_project_and_milestone_serde_roundtrip() {
+        let project = Project::new(Goal::project_root("roundtrip"));
+        let task_id = TaskId::new();
+        let milestone = Milestone::new(project.id, "implementation")
+            .with_task(task_id)
+            .with_dependency(MilestoneId::new());
+
+        let json = serde_json::to_string(&(project, milestone)).expect("serialize");
+        let (_project, parsed_milestone): (Project, Milestone) =
+            serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(parsed_milestone.tasks, vec![task_id]);
+        assert_eq!(parsed_milestone.status, MilestoneStatus::Pending);
     }
 }

@@ -89,6 +89,10 @@ pub mod contrastive_learning;
 
 // LanceDB vector store module - IVF-PQ indexing for approximate nearest neighbor search
 pub mod lancedb_vector;
+pub use lancedb_vector::{
+    LanceDbDistanceType, LanceDbVectorConfig, LanceDbVectorStore, VectorBackend, VectorEntry,
+    VectorSearchResult,
+};
 
 pub use contrastive_learning::{
     ContrastiveAnalyzer, ContrastiveLearningConfig, ContrastiveLearningResult,

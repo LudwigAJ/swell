@@ -11,6 +11,7 @@
 use crate::cross_encoder_rerank::{
     CrossEncoderConfig, CrossEncoderService, RerankCandidate, RerankResult, RerankerModelType,
 };
+use crate::lancedb_vector::{LanceDbVectorStore, VectorBackend};
 use crate::recall::{RecallQuery, RecallService};
 use crate::semantic::{
     SemanticRelationQuery, SemanticRelationType, SemanticStore, SqliteSemanticStore,
@@ -19,6 +20,7 @@ use crate::{MemorySearchResult, SqliteMemoryStore, SwellError};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use swell_core::MemoryStore;
 use uuid::Uuid;
 
@@ -67,6 +69,9 @@ impl Default for TripleStreamConfig {
 pub struct TripleStreamQuery {
     /// Text query for vector and BM25 search
     pub query_text: String,
+    /// Optional precomputed query embedding for the vector stream.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query_embedding: Option<Vec<f32>>,
     /// Keywords for BM25 (derived from query_text if not provided)
     pub keywords: Option<Vec<String>>,
     /// Repository scope for memory isolation
@@ -91,6 +96,7 @@ impl Default for TripleStreamQuery {
     fn default() -> Self {
         Self {
             query_text: String::new(),
+            query_embedding: None,
             keywords: None,
             repository: String::new(),
             graph_seed_ids: None,
@@ -457,6 +463,7 @@ pub struct TripleStreamService {
     memory_store: SqliteMemoryStore,
     semantic_store: SqliteSemanticStore,
     recall_service: RecallService,
+    vector_backend: Option<Arc<dyn VectorBackend>>,
     #[allow(dead_code)]
     config: TripleStreamConfig,
 }
@@ -471,6 +478,7 @@ impl TripleStreamService {
             memory_store,
             semantic_store,
             recall_service,
+            vector_backend: None,
             config: TripleStreamConfig::default(),
         }
     }
@@ -485,8 +493,18 @@ impl TripleStreamService {
             memory_store,
             semantic_store,
             recall_service,
+            vector_backend: None,
             config,
         }
+    }
+
+    pub fn with_vector_backend(mut self, vector_backend: Arc<dyn VectorBackend>) -> Self {
+        self.vector_backend = Some(vector_backend);
+        self
+    }
+
+    pub fn with_lancedb_vector_store(self, store: Arc<LanceDbVectorStore>) -> Self {
+        self.with_vector_backend(store)
     }
 
     /// Perform triple-stream retrieval and fuse results
@@ -693,6 +711,28 @@ impl TripleStreamService {
         &self,
         query: &TripleStreamQuery,
     ) -> Result<Vec<RankedItem>, SwellError> {
+        if let (Some(vector_backend), Some(query_embedding)) =
+            (&self.vector_backend, query.query_embedding.as_ref())
+        {
+            let results = vector_backend
+                .search(query_embedding, query.config.max_stream_results)
+                .await?;
+
+            let ranked = results
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, result)| {
+                    Uuid::parse_str(&result.id).ok().map(|id| RankedItem {
+                        id,
+                        score: result.score,
+                        rank: (i + 1) as u32,
+                    })
+                })
+                .collect();
+
+            return Ok(ranked);
+        }
+
         // In a real implementation, we would generate an embedding for the query
         // For now, we search using content matching and return mock vector scores
         // This is a placeholder that simulates vector similarity
@@ -1032,12 +1072,41 @@ mod integration_tests {
     use super::*;
     use crate::cross_encoder_rerank::CrossEncoderConfig;
     use crate::cross_encoder_rerank::RerankerModelType;
+    use crate::lancedb_vector::VectorSearchResult;
     use crate::recall::RecallService;
     use crate::MemoryBlockType;
     use crate::SemanticEntityType;
     use crate::SemanticRelationType;
     use crate::SqliteMemoryStore;
     use crate::SqliteSemanticStore;
+
+    struct FakeVectorBackend {
+        id: Uuid,
+    }
+
+    #[async_trait::async_trait]
+    impl VectorBackend for FakeVectorBackend {
+        async fn upsert(
+            &self,
+            _id: &str,
+            _vector: Vec<f32>,
+            _metadata: Option<serde_json::Value>,
+        ) -> Result<(), SwellError> {
+            Ok(())
+        }
+
+        async fn search(
+            &self,
+            _query: &[f32],
+            _k: usize,
+        ) -> Result<Vec<VectorSearchResult>, SwellError> {
+            Ok(vec![VectorSearchResult {
+                id: self.id.to_string(),
+                score: 0.01,
+                metadata: Some(serde_json::json!({"source": "fake_vector_backend"})),
+            }])
+        }
+    }
 
     #[tokio::test]
     async fn test_triple_stream_service_creation() {
@@ -1058,6 +1127,38 @@ mod integration_tests {
         assert!(service.config.enable_vector);
         assert!(service.config.enable_bm25);
         assert!(service.config.enable_graph);
+    }
+
+    #[tokio::test]
+    async fn test_triple_stream_uses_configured_vector_backend() {
+        let memory_store = SqliteMemoryStore::create("sqlite::memory:").await.unwrap();
+        let semantic_store = SqliteSemanticStore::create("sqlite::memory:")
+            .await
+            .unwrap();
+        let recall_service = RecallService::new(memory_store.clone());
+        let vector_id = Uuid::new_v4();
+
+        let service = TripleStreamService::new(memory_store, semantic_store, recall_service)
+            .with_vector_backend(Arc::new(FakeVectorBackend { id: vector_id }));
+
+        let results = service
+            .search(TripleStreamQuery {
+                query_text: "semantic query".to_string(),
+                query_embedding: Some(vec![0.1, 0.2, 0.3]),
+                config: TripleStreamConfig {
+                    enable_vector: true,
+                    enable_bm25: false,
+                    enable_graph: false,
+                    ..TripleStreamConfig::default()
+                },
+                ..TripleStreamQuery::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, vector_id);
+        assert!(results[0].vector_rank.is_some());
     }
 
     #[tokio::test]

@@ -12,11 +12,14 @@ use crate::os_sandbox::{
     SandboxAvailability,
 };
 use crate::post_tool_hooks::PostToolHookManager;
+use crate::pre_tool_hooks::PreToolHookManager;
 use crate::registry::ToolRegistry;
+use crate::sandbox_router::{SandboxBackend, SandboxRouter};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-use swell_core::{PermissionTier, SwellError, ToolOutput};
+use swell_core::{PermissionTier, Sandbox, SandboxCommand, SwellError, ToolOutput};
+use swell_sandbox::{GvisorConfig, GvisorNetworkMode, GvisorSandbox};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -87,6 +90,10 @@ pub struct SandboxPreHook {
     config: OsSandboxConfig,
     /// Cached availability check result
     availability: SandboxAvailability,
+    /// Router for lower-level swell-sandbox backends.
+    router: SandboxRouter,
+    /// Task worktree mounted for high-isolation sandbox execution.
+    workspace_path: PathBuf,
     /// Whether the sandbox is enabled
     enabled: bool,
 }
@@ -104,18 +111,24 @@ impl SandboxPreHook {
 
     /// Create a sandbox pre-hook with a specific workspace path.
     ///
-    /// The workspace path will be allowed read-only access in the sandbox.
+    /// The workspace path will be allowed read-write access in the sandbox.
+    ///
+    /// The production generator passes its task-specific git worktree here, so
+    /// write access is confined to that disposable worktree rather than the
+    /// user's root checkout.
     pub fn with_workspace_path(path: impl Into<PathBuf>) -> Self {
         let path = path.into();
         let mut config = OsSandboxConfig::default();
         config
             .allowed_dirs
-            .insert(path.clone(), FilesystemPermission::ReadOnly);
+            .insert(path.clone(), FilesystemPermission::ReadWrite);
         let availability = detect_available_sandbox_sync();
 
         Self {
             config,
             availability,
+            router: SandboxRouter::new(),
+            workspace_path: path,
             enabled: true,
         }
     }
@@ -150,6 +163,12 @@ impl SandboxPreHook {
         self
     }
 
+    /// Override the lower-level sandbox router.
+    pub fn with_router(mut self, router: SandboxRouter) -> Self {
+        self.router = router;
+        self
+    }
+
     /// Check if sandbox is available and enabled.
     pub fn is_available(&self) -> bool {
         self.enabled && self.availability.is_available
@@ -161,6 +180,11 @@ impl SandboxPreHook {
     /// for filesystem access and command injection.
     pub fn requires_sandboxing(tool_name: &str) -> bool {
         matches!(tool_name, "shell" | "bash" | "sh" | "exec")
+    }
+
+    /// Return true when a shell command is on the read-only host fast path.
+    pub fn is_host_allowlisted_command(cmd: &str, args: &[String]) -> bool {
+        SandboxRouter::is_host_allowlisted_command(cmd, args)
     }
 
     /// Apply the sandbox to a command and arguments.
@@ -178,6 +202,43 @@ impl SandboxPreHook {
         cmd: &str,
         args: Option<&[String]>,
     ) -> Result<swell_core::SandboxOutput, SwellError> {
+        let route = self
+            .router
+            .route_for_command(cmd, args.unwrap_or(&[]))
+            .await;
+        debug!(
+            backend = ?route.backend,
+            reason = %route.reason,
+            "swell-sandbox router selected backend"
+        );
+
+        match route.backend {
+            SandboxBackend::HostAllowlist => {
+                return Err(SwellError::SandboxError(
+                    "host allowlisted command bypasses sandbox".to_string(),
+                ));
+            }
+            SandboxBackend::Firecracker | SandboxBackend::Gvisor => {
+                if route.backend == SandboxBackend::Gvisor {
+                    match self.execute_gvisor(cmd, args.unwrap_or(&[])).await {
+                        Ok(output) => return Ok(output),
+                        Err(e) => {
+                            warn!(
+                                error = %e,
+                                "gVisor mount-aware execution failed, falling back to OS sandbox"
+                            );
+                        }
+                    }
+                } else {
+                    debug!(
+                        backend = ?route.backend,
+                        "Firecracker is available but remains probe-only until guest-agent workspace mounts are wired"
+                    );
+                }
+            }
+            SandboxBackend::OsSandbox | SandboxBackend::HostFallback => {}
+        }
+
         if !self.is_available() {
             debug!("Sandbox not available, executing without sandbox");
             return Err(SwellError::SandboxError(
@@ -221,6 +282,42 @@ impl SandboxPreHook {
         }
     }
 
+    async fn execute_gvisor(
+        &self,
+        cmd: &str,
+        args: &[String],
+    ) -> Result<swell_core::SandboxOutput, SwellError> {
+        let config = GvisorConfig {
+            sandbox_id: format!("swell-{}", uuid::Uuid::new_v4()),
+            workspace_mount: Some(self.workspace_path.clone()),
+            container_workspace_path: "/workspace".to_string(),
+            working_dir: Some("/workspace".to_string()),
+            user: workspace_mount_user(&self.workspace_path),
+            network_mode: match self.config.network_policy {
+                NetworkPolicy::DenyAll => GvisorNetworkMode::None,
+                NetworkPolicy::AllowAll | NetworkPolicy::AllowList => GvisorNetworkMode::Bridge,
+            },
+            ..Default::default()
+        };
+        let sandbox = GvisorSandbox::new(config);
+        sandbox.start().await?;
+
+        let command = SandboxCommand {
+            command: cmd.to_string(),
+            args: args.to_vec(),
+            env: self.config.env.clone(),
+            working_dir: Some("/workspace".to_string()),
+            timeout_secs: 300,
+        };
+        let output = sandbox.execute(command).await;
+        let stop_result = sandbox.stop().await;
+
+        match (output, stop_result) {
+            (Ok(output), Ok(())) => Ok(output),
+            (Err(e), _) | (Ok(_), Err(e)) => Err(e),
+        }
+    }
+
     /// Get the sandbox configuration.
     pub fn config(&self) -> &OsSandboxConfig {
         &self.config
@@ -230,6 +327,20 @@ impl SandboxPreHook {
     pub fn availability(&self) -> &SandboxAvailability {
         &self.availability
     }
+}
+
+#[cfg(unix)]
+fn workspace_mount_user(path: &std::path::Path) -> String {
+    use std::os::unix::fs::MetadataExt;
+
+    std::fs::metadata(path)
+        .map(|metadata| format!("{}:{}", metadata.uid(), metadata.gid()))
+        .unwrap_or_else(|_| "65534".to_string())
+}
+
+#[cfg(not(unix))]
+fn workspace_mount_user(_path: &std::path::Path) -> String {
+    "65534".to_string()
 }
 
 impl Default for SandboxPreHook {
@@ -248,6 +359,8 @@ impl Default for SandboxPreHook {
         Self {
             config,
             availability,
+            router: SandboxRouter::new(),
+            workspace_path: workspace,
             enabled: true,
         }
     }
@@ -258,6 +371,7 @@ pub struct ToolExecutor {
     registry: ToolRegistry,
     permissions: PermissionChecker,
     hook_manager: Option<Arc<RwLock<PostToolHookManager>>>,
+    pre_hook_manager: Option<Arc<RwLock<PreToolHookManager>>>,
     workspace_path: PathBuf,
     sandbox_hook: Option<SandboxPreHook>,
     cedar_policy: Option<CedarPolicyEngine>,
@@ -269,6 +383,7 @@ impl ToolExecutor {
             registry,
             permissions: PermissionChecker::new(),
             hook_manager: None,
+            pre_hook_manager: None,
             workspace_path: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             sandbox_hook: None,
             cedar_policy: None,
@@ -290,6 +405,17 @@ impl ToolExecutor {
     pub fn with_hook_manager(mut self, manager: PostToolHookManager) -> Self {
         self.hook_manager = Some(Arc::new(RwLock::new(manager)));
         self
+    }
+
+    /// Enable pre-tool hooks with the given manager.
+    pub fn with_pre_hook_manager(mut self, manager: PreToolHookManager) -> Self {
+        self.pre_hook_manager = Some(Arc::new(RwLock::new(manager)));
+        self
+    }
+
+    /// Enable the default pre-tool hook set.
+    pub fn with_default_pre_hooks(self) -> Self {
+        self.with_pre_hook_manager(PreToolHookManager::new())
     }
 
     /// Enable sandbox pre-execution hook with the given configuration.
@@ -357,6 +483,18 @@ impl ToolExecutor {
             self.registry.get(name).await.ok_or_else(|| {
                 SwellError::ToolExecutionFailed(format!("Tool not found: {}", name))
             })?;
+
+        if let Some(ref pre_hook_manager) = self.pre_hook_manager {
+            let manager = pre_hook_manager.read().await;
+            if let Some(output) = manager
+                .evaluate(name, &arguments, &self.workspace_path)
+                .await?
+                .into_tool_output()
+            {
+                warn!(tool = %name, "Pre-tool hook denied execution");
+                return Ok(output);
+            }
+        }
 
         // Check permissions
         if !self.permissions.is_allowed(name, tool.permission_tier()) {
@@ -455,16 +593,22 @@ impl ToolExecutor {
         // Apply sandbox pre-execution for shell commands
         if SandboxPreHook::requires_sandboxing(name) {
             if let Some(ref sandbox_hook) = self.sandbox_hook {
-                if sandbox_hook.is_available() {
-                    // Extract command from arguments and run under sandbox
-                    let (cmd, args) = self.extract_shell_command(&arguments)?;
+                // Extract command from arguments and run under sandbox when available.
+                let (cmd, args) = self.extract_shell_command(&arguments)?;
 
+                debug!(
+                    tool = %name,
+                    sandbox_available = sandbox_hook.is_available(),
+                    "Applying sandbox pre-execution hook"
+                );
+
+                if SandboxPreHook::is_host_allowlisted_command(&cmd, &args) {
                     debug!(
                         tool = %name,
-                        sandbox_available = true,
-                        "Applying sandbox pre-execution hook"
+                        command = %cmd,
+                        "Skipping sandbox for read-only host allowlisted command"
                     );
-
+                } else {
                     // Execute under sandbox
                     let sandbox_result = sandbox_hook.apply(&cmd, Some(&args)).await;
 
@@ -611,6 +755,11 @@ impl ToolExecutor {
         self.hook_manager.is_some()
     }
 
+    /// Check if pre-tool hooks are enabled.
+    pub fn has_pre_hook_manager(&self) -> bool {
+        self.pre_hook_manager.is_some()
+    }
+
     /// Set the Cedar policy engine for authorization checks.
     ///
     /// When a Cedar policy engine is configured, tool execution is authorized
@@ -639,6 +788,7 @@ impl Clone for ToolExecutor {
             registry: self.registry.clone(),
             permissions: self.permissions.clone(),
             hook_manager: self.hook_manager.clone(),
+            pre_hook_manager: self.pre_hook_manager.clone(),
             workspace_path: self.workspace_path.clone(),
             sandbox_hook: self.sandbox_hook.clone(),
             cedar_policy: self.cedar_policy.clone(),
@@ -783,6 +933,70 @@ mod tests {
             .with_sandbox_enabled();
 
         assert!(executor.sandbox_hook.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_executor_host_allowlisted_shell_bypasses_sandbox_router_probe() {
+        use crate::sandbox_router::{reset_sandbox_router_probe_count, sandbox_router_probe_count};
+        use crate::tools::ShellTool;
+
+        reset_sandbox_router_probe_count();
+
+        let registry = ToolRegistry::new();
+        registry
+            .register(
+                ShellTool::new(),
+                crate::registry::ToolCategory::Shell,
+                crate::registry::ToolLayer::Builtin,
+            )
+            .await;
+        let dir = tempdir().unwrap();
+        let executor = ToolExecutor::new(registry)
+            .with_workspace_path(dir.path().to_path_buf())
+            .with_permissions(PermissionChecker::new().allow_tool("shell"))
+            .with_sandbox_enabled();
+
+        let result = executor
+            .execute("shell", serde_json::json!({ "command": "ls" }))
+            .await
+            .expect("allowlisted shell command should execute");
+
+        assert!(!result.is_error, "ls should succeed in temp workspace");
+        assert_eq!(
+            sandbox_router_probe_count(),
+            0,
+            "allowlisted read-only shell command should bypass sandbox backend probes"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_executor_pre_hook_denies_shell_command() {
+        use crate::tools::ShellTool;
+
+        let registry = ToolRegistry::new();
+        registry
+            .register(
+                ShellTool::new(),
+                crate::registry::ToolCategory::Shell,
+                crate::registry::ToolLayer::Builtin,
+            )
+            .await;
+        let executor = ToolExecutor::new(registry)
+            .with_permissions(PermissionChecker::new().allow_tool("shell"))
+            .with_default_pre_hooks();
+
+        let result = executor
+            .execute("shell", serde_json::json!({ "command": "rm -rf /" }))
+            .await
+            .expect("pre-hook denial is returned as ToolOutput");
+
+        assert!(result.is_error);
+        let text = match result.content.first() {
+            Some(swell_core::ToolResultContent::Error(text)) => text,
+            other => panic!("expected error content, got {other:?}"),
+        };
+        assert!(text.contains("Pre-tool hook denied execution"));
+        assert!(text.contains("rm -rf /"));
     }
 
     // =============================================================================

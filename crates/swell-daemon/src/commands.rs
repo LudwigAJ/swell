@@ -36,6 +36,7 @@ use uuid::Uuid;
 /// - `DaemonStatus` - Returns daemon health status including connections, tasks, cost, and MCP health
 /// - `MemoryQuery` - Query memory with BM25 search and temporal filters
 /// - `CostQuery` - Query cost data for a task or aggregate across all tasks
+/// - `KillSwitchTrigger` / `KillSwitchReset` / `KillSwitchStatus` - Operator kill switch control
 ///
 /// # Error Handling
 /// Returns `DaemonEvent::Error` with a message for:
@@ -768,6 +769,43 @@ pub async fn handle_command(
                 model_breakdown: breakdown,
                 correlation_id,
             }
+        }
+        CliCommand::KillSwitchTrigger { level, reason } => {
+            info!(level = %level, reason = %reason, "Kill switch trigger requested");
+            let kill_switch = orchestrator.execution_controller().kill_switch().clone();
+            kill_switch
+                .trigger(level, reason.clone(), "daemon_operator")
+                .await;
+            let state = kill_switch.state().await;
+            let correlation_id = EventEmitter::new_correlation_id();
+            DaemonEvent::DataResponse(Box::new(DataResponse::KillSwitchStatus {
+                state,
+                correlation_id,
+            }))
+        }
+        CliCommand::KillSwitchReset => {
+            info!("Kill switch reset requested");
+            let kill_switch = orchestrator.execution_controller().kill_switch().clone();
+            kill_switch.reset().await;
+            let state = kill_switch.state().await;
+            let correlation_id = EventEmitter::new_correlation_id();
+            DaemonEvent::DataResponse(Box::new(DataResponse::KillSwitchStatus {
+                state,
+                correlation_id,
+            }))
+        }
+        CliCommand::KillSwitchStatus => {
+            info!("Kill switch status requested");
+            let state = orchestrator
+                .execution_controller()
+                .kill_switch()
+                .state()
+                .await;
+            let correlation_id = EventEmitter::new_correlation_id();
+            DaemonEvent::DataResponse(Box::new(DataResponse::KillSwitchStatus {
+                state,
+                correlation_id,
+            }))
         }
     }
 }

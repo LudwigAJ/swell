@@ -17,7 +17,8 @@ use swell_core::{
     TaskId, ToolCallResult, ToolOutput, ToolResultContent, ValidationGate,
 };
 use swell_state::CheckpointManager;
-use swell_tools::ToolRegistry;
+use swell_tools::executor::{PermissionChecker, ToolExecutor};
+use swell_tools::{PostToolHookManager, PreToolHookManager, ToolRegistry};
 use tracing::{debug, info};
 use uuid::Uuid;
 
@@ -861,32 +862,18 @@ fn tool_timeout_seconds() -> u64 {
         .unwrap_or(60)
 }
 
-/// Run post-tool hooks (cargo fmt / clippy) for file-mutating tool calls.
-/// No-ops when the tool didn't modify a file or the path can't be resolved.
-async fn run_post_tool_hooks(tool_name: &str, tool_args: &serde_json::Value, workspace_path: &str) {
+/// Extract the modified-file hint expected by `ToolExecutor` post-tool hooks.
+fn modified_files_from_tool_args(tool_name: &str, tool_args: &serde_json::Value) -> Vec<String> {
     if !matches!(tool_name, "write_file" | "edit_file") {
-        return;
+        return vec![];
     }
-    let path = tool_args
+
+    tool_args
         .get("path")
         .and_then(|v| v.as_str())
-        .or_else(|| tool_args.get("file_path").and_then(|v| v.as_str()));
-    let Some(path) = path else { return };
-
-    let manager = swell_tools::post_tool_hooks::PostToolHookManager::new();
-    let workspace = std::path::Path::new(workspace_path);
-    let results = manager
-        .execute_hooks(tool_name, workspace, &[path.to_string()])
-        .await;
-    for r in results {
-        if !r.success {
-            tracing::debug!(
-                hook = %r.hook_name,
-                stderr = %r.stderr,
-                "Post-tool hook reported non-success (non-fatal)"
-            );
-        }
-    }
+        .or_else(|| tool_args.get("file_path").and_then(|v| v.as_str()))
+        .map(|path| vec![path.to_string()])
+        .unwrap_or_default()
 }
 
 /// Generator agent - implements code based on plans using ReAct loop
@@ -1170,6 +1157,10 @@ impl GeneratorAgent {
                 thinking_blocks: Vec::new(),
             });
 
+            if observation.contains("Pre-tool hook denied execution") {
+                return Err(SwellError::PermissionDenied(observation));
+            }
+
             // Loop detection: record this tool call and bail out (or rescue)
             // if the shared detector reports a `LoopIntervention`.
             if let Some(detector) = &self.loop_detector {
@@ -1421,15 +1412,28 @@ impl GeneratorAgent {
 
         info!(tool = %tool_name, args = %tool_args, "Generator invoking tool");
 
-        // Execute the tool, guarded by a wall-clock timeout. Without
+        // Execute the tool through ToolExecutor, guarded by a wall-clock timeout. Without
         // this a runaway tool (e.g. recursive grep over the workspace)
         // can hang the entire ReAct loop indefinitely. The default is
         // 60s, overridable via the SWELL_TOOL_TIMEOUT_SECS env var
         // (until a real settings loader picks up
         // `execution.tool_timeout_seconds` from .swell/settings.json).
-        if let Some(tool) = registry.get(&tool_name).await {
+        if registry.get(&tool_name).await.is_some() {
             let timeout_secs = tool_timeout_seconds();
-            let exec_fut = tool.execute(tool_args.clone());
+            let permissions = PermissionChecker::new()
+                .allow_tool("shell")
+                .allow_tool("bash")
+                .allow_tool("sh")
+                .allow_tool("exec");
+            let executor = ToolExecutor::new(registry.as_ref().clone())
+                .with_permissions(permissions)
+                .with_workspace_path(Path::new(workspace_path).to_path_buf())
+                .with_pre_hook_manager(PreToolHookManager::new())
+                .with_hook_manager(PostToolHookManager::new())
+                .with_sandbox_enabled();
+            let modified_files = modified_files_from_tool_args(&tool_name, tool_args);
+            let exec_fut =
+                executor.execute_with_hooks(&tool_name, tool_args.clone(), modified_files);
             let result = match tokio::time::timeout(
                 std::time::Duration::from_secs(timeout_secs),
                 exec_fut,
@@ -1452,7 +1456,6 @@ impl GeneratorAgent {
             let text = extract_text_from_content(&result.content);
             if !result.is_error {
                 info!(tool = %tool_name, "Tool succeeded");
-                run_post_tool_hooks(&tool_name, tool_args, workspace_path).await;
                 Ok(format!("OK: {}", text))
             } else {
                 // Tools may report failure via either an Error content

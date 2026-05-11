@@ -2,7 +2,7 @@ use std::io::{self, Write};
 use std::time::Duration;
 use swell_cli::repl;
 use swell_cli::CliError;
-use swell_core::{CliCommand, DaemonEvent, DataResponse, Task, TaskId};
+use swell_core::{CliCommand, DaemonEvent, DataResponse, KillLevel, Task, TaskId};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio::signal::unix::{signal, SignalKind};
@@ -70,6 +70,7 @@ async fn main() {
             list_tasks(&socket_path, json_output).await
         }
         "status" => status(&socket_path).await,
+        "stop" => stop(&socket_path, &args[2..]).await,
         "watch" => {
             if args.len() < 3 {
                 Err(CliError::MissingArgument("task-id".to_string()))
@@ -724,6 +725,9 @@ fn handle_event(event: &DaemonEvent) {
                 println!("Total spent: {} tokens", total_spent);
                 println!("Remaining budget: {} tokens", remaining_budget);
             }
+            DataResponse::KillSwitchStatus { state, .. } => {
+                print_kill_switch_status(state);
+            }
         },
     }
 }
@@ -860,6 +864,9 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
                         println!("Total spent: {} tokens", total_spent);
                         println!("Remaining budget: {} tokens", remaining_budget);
                     }
+                    DataResponse::KillSwitchStatus { state, .. } => {
+                        print_kill_switch_status(state);
+                    }
                 }
             }
             DaemonEvent::Error { message, .. } => {
@@ -939,6 +946,93 @@ async fn status(socket_path: &str) -> Result<(), CliError> {
     Ok(())
 }
 
+fn parse_kill_level(value: &str) -> Result<KillLevel, CliError> {
+    match value {
+        "full_stop" | "full-stop" => Ok(KillLevel::FullStop),
+        "network_kill" | "network-kill" => Ok(KillLevel::NetworkKill),
+        "scope_block" | "scope-block" => Ok(KillLevel::ScopeBlock),
+        "throttle" => Ok(KillLevel::Throttle),
+        other => Err(CliError::InvalidCommand(format!(
+            "unknown kill level '{}'",
+            other
+        ))),
+    }
+}
+
+fn print_kill_switch_status(state: &swell_core::KillSwitchState) {
+    println!(
+        "Kill switch: {}",
+        if state.active { "active" } else { "inactive" }
+    );
+    if let Some(level) = state.level {
+        println!("  Level: {}", level);
+    }
+    if let Some(reason) = &state.reason {
+        println!("  Reason: {}", reason);
+    }
+    if let Some(trigger) = &state.trigger {
+        println!("  Trigger: {}", trigger);
+    }
+    if let Some(triggered_at) = state.triggered_at {
+        println!("  Triggered at: {}", triggered_at);
+    }
+}
+
+async fn stop(socket_path: &str, args: &[String]) -> Result<(), CliError> {
+    if args.first().is_some_and(|arg| arg == "status") {
+        return send_command(socket_path, CliCommand::KillSwitchStatus).await;
+    }
+
+    if args.first().is_some_and(|arg| arg == "reset") {
+        if !confirm("Reset the global kill switch?") {
+            println!("Kill switch reset aborted.");
+            return Ok(());
+        }
+        return send_command(socket_path, CliCommand::KillSwitchReset).await;
+    }
+
+    if !args.iter().any(|arg| arg == "--all") {
+        return Err(CliError::MissingArgument("--all".to_string()));
+    }
+
+    let mut level = KillLevel::FullStop;
+    let mut reason_parts = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--all" => i += 1,
+            "--level" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err(CliError::MissingArgument("kill level".to_string()));
+                };
+                level = parse_kill_level(value)?;
+                i += 2;
+            }
+            "--reason" => {
+                reason_parts.extend(args[i + 1..].iter().cloned());
+                break;
+            }
+            other => {
+                reason_parts.push(other.to_string());
+                i += 1;
+            }
+        }
+    }
+
+    let reason = if reason_parts.is_empty() {
+        "Operator requested global stop".to_string()
+    } else {
+        reason_parts.join(" ")
+    };
+
+    if !confirm(&format!("Trigger {} kill switch for all tasks?", level)) {
+        println!("Kill switch trigger aborted.");
+        return Ok(());
+    }
+
+    send_command(socket_path, CliCommand::KillSwitchTrigger { level, reason }).await
+}
+
 fn print_task_table(tasks: &[Task]) {
     if tasks.is_empty() {
         println!("No tasks found.");
@@ -972,6 +1066,9 @@ Usage:
     swell task <description>      Create a new task
     swell list [--json]           List all tasks (--json for raw JSON)
     swell status                 Show daemon status
+    swell stop --all [--level <level>] [--reason <reason>]   Trigger global kill switch
+    swell stop status            Show kill switch state
+    swell stop reset             Reset kill switch
     swell watch <task-id>        Watch task status
     swell approve <task-id>      Approve task plan
     swell reject <task-id> [--reason <reason>]   Reject task plan

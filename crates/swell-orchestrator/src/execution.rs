@@ -22,9 +22,14 @@ use swell_core::traits::Agent;
 use swell_core::TaskId;
 use swell_core::{
     AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, Plan, SessionId, StreamEvent,
-    SwellError, Task, TaskState, ToolOutput, ToolResultContent, ValidationResult,
+    SwellError, Task, TaskState, ToolCallResult, ToolOutput, ToolResultContent, ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
+use swell_memory::skill_extraction::{
+    ExtractionConfig, SkillExtractionService, ToolCallData, TrajectoryData,
+    TrajectoryStep as SkillTrajectoryStep,
+};
+use swell_memory::SqliteMemoryStore;
 use swell_tools::{
     resource_limits::{SessionLimits, SessionResourceTracker},
     BranchStrategy, CommitMetadata, CommitRequest, CommitStrategy, CommitStrategyError,
@@ -57,6 +62,21 @@ fn extract_error_from_content(content: &[ToolResultContent]) -> String {
     match content.first() {
         Some(ToolResultContent::Error(e)) => e.clone(),
         _ => String::new(),
+    }
+}
+
+fn changed_path_from_tool_call(tc: &ToolCallResult) -> Option<String> {
+    if tc.result.is_err() {
+        return None;
+    }
+
+    match tc.tool_name.as_str() {
+        "write_file" | "edit_file" | "multi_edit" => tc
+            .arguments
+            .get("path")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        _ => None,
     }
 }
 
@@ -855,6 +875,10 @@ impl ExecutionController {
             };
 
             let planner_result = planner.execute(context).await?;
+            let _ = self
+                .orchestrator()
+                .record_task_tokens(task_id, planner_result.tokens_used)
+                .await?;
 
             // Update task with planner output if successful
             if planner_result.success {
@@ -945,6 +969,18 @@ impl ExecutionController {
             });
         }
 
+        if let Some(result) = self.pause_if_token_budget_exceeded(task_id, &task).await? {
+            let released_count = file_lock_manager
+                .release_all_for_task(task_id_for_cleanup)
+                .await;
+            info!(
+                task_id = %task_id,
+                locks_released = released_count,
+                "File locks released due to CostGuard pause before generation"
+            );
+            return Ok(result);
+        }
+
         let worktree_allocation = self.allocate_task_worktree(&task).await?;
         let workspace_path = worktree_allocation
             .as_ref()
@@ -1024,6 +1060,25 @@ impl ExecutionController {
                 return Err(e);
             }
         };
+        let task_after_generator = self
+            .orchestrator()
+            .record_task_tokens(task_id, generator_result.tokens_used)
+            .await?;
+
+        if let Some(result) = self
+            .pause_if_token_budget_exceeded(task_id, &task_after_generator)
+            .await?
+        {
+            let released_count = file_lock_manager
+                .release_all_for_task(task_id_for_cleanup)
+                .await;
+            info!(
+                task_id = %task_id,
+                locks_released = released_count,
+                "File locks released due to CostGuard pause after generation"
+            );
+            return Ok(result);
+        }
 
         // VAL-ORCH-014: Check if agent confidence dropped below threshold.
         // If confidence_score is present and below threshold, emit a structured clarification
@@ -1167,8 +1222,8 @@ impl ExecutionController {
         };
 
         // Collect any generator errors
-        if let Some(err) = generator_result.error {
-            errors.push(err);
+        if let Some(err) = &generator_result.error {
+            errors.push(err.clone());
         }
 
         let result = ValidationResult {
@@ -1197,6 +1252,16 @@ impl ExecutionController {
             if worktree_allocation.is_some() {
                 self.commit_successful_task(&task, &result, Path::new(&workspace_path))
                     .await?;
+            }
+            if let Err(e) = self
+                .extract_skill_candidates(&task, &generator_result, Path::new(&workspace_path))
+                .await
+            {
+                warn!(
+                    task_id = %task_id,
+                    error = %e,
+                    "Skill extraction failed after successful task"
+                );
             }
         } else if worktree_allocation.is_some() {
             self.worktree_pool.release(task_id).await?;
@@ -1233,6 +1298,155 @@ impl ExecutionController {
         }
 
         Ok(result)
+    }
+
+    async fn pause_if_token_budget_exceeded(
+        &self,
+        task_id: TaskId,
+        task: &Task,
+    ) -> Result<Option<ValidationResult>, SwellError> {
+        if task.token_budget == 0 {
+            return Ok(None);
+        }
+
+        let usage_ratio = task.tokens_used as f64 / task.token_budget as f64;
+        if task.tokens_used >= task.token_budget {
+            let reason = format!(
+                "BudgetExceeded: task used {} / {} tokens",
+                task.tokens_used, task.token_budget
+            );
+            warn!(
+                task_id = %task_id,
+                tokens_used = task.tokens_used,
+                token_budget = task.token_budget,
+                "CostGuard hard stop reached"
+            );
+            self.orchestrator()
+                .pause_task(task_id, reason.clone())
+                .await?;
+
+            return Ok(Some(ValidationResult {
+                passed: false,
+                lint_passed: false,
+                tests_passed: false,
+                security_passed: false,
+                ai_review_passed: false,
+                errors: vec![reason],
+                warnings: vec![],
+            }));
+        }
+
+        if usage_ratio >= 0.75 {
+            warn!(
+                task_id = %task_id,
+                tokens_used = task.tokens_used,
+                token_budget = task.token_budget,
+                "CostGuard warning threshold reached"
+            );
+        }
+
+        Ok(None)
+    }
+
+    async fn extract_skill_candidates(
+        &self,
+        task: &Task,
+        generator_result: &AgentResult,
+        workspace_path: &Path,
+    ) -> Result<(), SwellError> {
+        if generator_result.tool_calls.is_empty() {
+            return Ok(());
+        }
+
+        let swell_dir = workspace_path.join(".swell");
+        tokio::fs::create_dir_all(&swell_dir).await.map_err(|e| {
+            SwellError::IoError(std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Failed to create memory directory {}: {}",
+                    swell_dir.display(),
+                    e
+                ),
+            ))
+        })?;
+
+        let memory_db_path = swell_dir.join("memory.db");
+        let database_url = format!("sqlite:{}?mode=rwc", memory_db_path.display());
+        let store = SqliteMemoryStore::create(&database_url).await?;
+        let service = SkillExtractionService::with_config(
+            store,
+            ExtractionConfig {
+                store_path: ".swell/skills/_candidates".to_string(),
+                ..ExtractionConfig::default()
+            },
+            workspace_path.to_path_buf(),
+        );
+
+        let plan_steps = task
+            .plan
+            .as_ref()
+            .map(|plan| {
+                plan.steps
+                    .iter()
+                    .map(|step| SkillTrajectoryStep {
+                        step_id: step.id,
+                        description: step.description.clone(),
+                        affected_files: step.affected_files.clone(),
+                        risk_level: format!("{:?}", step.risk_level),
+                        status: format!("{:?}", step.status),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let tool_calls: Vec<ToolCallData> = generator_result
+            .tool_calls
+            .iter()
+            .map(|tc| ToolCallData {
+                tool_name: tc.tool_name.clone(),
+                arguments: tc.arguments.clone(),
+                success: tc.result.is_ok(),
+                timestamp: chrono::Utc::now(),
+            })
+            .collect();
+
+        let files_modified = generator_result
+            .tool_calls
+            .iter()
+            .filter_map(changed_path_from_tool_call)
+            .collect();
+
+        let tests_run = task
+            .plan
+            .as_ref()
+            .map(|plan| {
+                plan.steps
+                    .iter()
+                    .flat_map(|step| step.expected_tests.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let trajectory = TrajectoryData {
+            task_id: task.id,
+            task_description: task.description.clone(),
+            plan_steps,
+            tool_calls,
+            files_modified,
+            tests_run,
+            validation_passed: true,
+            iteration_count: generator_result.tool_calls.len() as u32,
+        };
+
+        let result = service.extract_skills(trajectory).await?;
+        info!(
+            task_id = %task.id,
+            skills_extracted = result.skills_extracted,
+            patterns_found = result.patterns_found,
+            "Skill extraction completed after successful task"
+        );
+
+        Ok(())
     }
 
     /// Execute a structured turn loop with TurnSummary capture per iteration.

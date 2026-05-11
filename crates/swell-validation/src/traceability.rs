@@ -47,60 +47,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use swell_core::ids::TaskId;
+use swell_core::{Goal, GoalStatus};
 use uuid::Uuid;
-
-/// A high-level goal/objective linked to a task
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Goal {
-    /// Unique identifier
-    pub id: Uuid,
-    /// Task ID this goal belongs to
-    pub task_id: TaskId,
-    /// Goal description
-    pub description: String,
-    /// When goal was created
-    pub created_at: DateTime<Utc>,
-    /// When goal was last updated
-    pub updated_at: DateTime<Utc>,
-    /// Goal status
-    pub status: GoalStatus,
-    /// Linked criteria IDs (forward links)
-    pub criteria_ids: Vec<Uuid>,
-}
-
-impl Goal {
-    /// Create a new goal
-    pub fn new(description: impl Into<String>, task_id: TaskId) -> Self {
-        let now = Utc::now();
-        Self {
-            id: Uuid::new_v4(),
-            task_id,
-            description: description.into(),
-            created_at: now,
-            updated_at: now,
-            status: GoalStatus::Active,
-            criteria_ids: Vec::new(),
-        }
-    }
-
-    /// Update the goal status
-    pub fn with_status(mut self, status: GoalStatus) -> Self {
-        self.status = status;
-        self.updated_at = Utc::now();
-        self
-    }
-}
-
-/// Goal completion status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GoalStatus {
-    /// Goal is active and being worked on
-    Active,
-    /// Goal has been achieved
-    Achieved,
-    /// Goal has been abandoned
-    Abandoned,
-}
 
 /// Acceptance criteria linked to a goal
 #[derive(Debug, Clone, Serialize, Deserialize)]

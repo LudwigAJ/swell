@@ -23,6 +23,7 @@
 //! ```
 
 use async_trait::async_trait;
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Mutex;
 use std::time::Instant;
@@ -38,8 +39,16 @@ pub struct GvisorConfig {
     pub image: String,
     /// Working directory inside the container
     pub working_dir: Option<String>,
+    /// Optional host workspace mounted into the container.
+    pub workspace_mount: Option<PathBuf>,
+    /// Container path where the workspace is mounted.
+    pub container_workspace_path: String,
+    /// Mount workspace read-only.
+    pub workspace_read_only: bool,
     /// Enable user namespace isolation
     pub enable_user_namespace: bool,
+    /// User passed to Docker's `--user` flag when user isolation is enabled.
+    pub user: String,
     /// Enable seccomp filtering (default for gVisor)
     pub enable_seccomp: bool,
     /// Additional environment variables
@@ -58,7 +67,11 @@ impl Default for GvisorConfig {
             sandbox_id: uuid::Uuid::new_v4().to_string(),
             image: "ubuntu:22.04".to_string(),
             working_dir: None,
+            workspace_mount: None,
+            container_workspace_path: "/workspace".to_string(),
+            workspace_read_only: false,
             enable_user_namespace: true,
+            user: "65534".to_string(),
             enable_seccomp: true,
             env: std::collections::HashMap::new(),
             timeout_secs: 300,
@@ -184,12 +197,25 @@ impl GvisorSandbox {
         // User namespace isolation
         if self.config.enable_user_namespace {
             flags.push("--user".to_string());
-            flags.push("65534".to_string()); // Nobody user
+            flags.push(self.config.user.clone());
         }
 
         // Network mode
         flags.push("--network".to_string());
         flags.push(self.config.network_mode.to_string());
+
+        if let Some(workspace_mount) = &self.config.workspace_mount {
+            let mut mount_spec = format!(
+                "type=bind,source={},target={}",
+                workspace_mount.display(),
+                self.config.container_workspace_path
+            );
+            if self.config.workspace_read_only {
+                mount_spec.push_str(",readonly");
+            }
+            flags.push("--mount".to_string());
+            flags.push(mount_spec);
+        }
 
         // Auto-remove container when it exits
         flags.push("--rm".to_string());
@@ -385,10 +411,14 @@ impl Sandbox for GvisorSandbox {
             args.push(format!("{}={}", key, value));
         }
 
-        // Add working directory if specified
+        // Add working directory if specified. When a workspace mount is
+        // configured, default execution into that mounted worktree.
         if let Some(ref dir) = self.config.working_dir {
             args.push("-w".to_string());
             args.push(dir.clone());
+        } else if self.config.workspace_mount.is_some() {
+            args.push("-w".to_string());
+            args.push(self.config.container_workspace_path.clone());
         }
 
         // Detached mode
@@ -589,8 +619,27 @@ mod tests {
         assert!(flags.contains(&"--runtime".to_string()));
         assert!(flags.contains(&"runsc".to_string()));
         assert!(flags.contains(&"--user".to_string()));
+        assert!(flags.contains(&"65534".to_string()));
         assert!(flags.contains(&"--network".to_string()));
         assert!(flags.contains(&"none".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_gvisor_sandbox_build_docker_flags_with_workspace_mount() {
+        let config = GvisorConfig {
+            sandbox_id: "test".to_string(),
+            workspace_mount: Some(PathBuf::from("/tmp/swell-worktree")),
+            container_workspace_path: "/workspace".to_string(),
+            workspace_read_only: false,
+            ..Default::default()
+        };
+        let sandbox = GvisorSandbox::new(config);
+        let flags = sandbox.build_docker_flags();
+
+        assert!(flags.contains(&"--mount".to_string()));
+        assert!(
+            flags.contains(&"type=bind,source=/tmp/swell-worktree,target=/workspace".to_string())
+        );
     }
 
     #[tokio::test]
@@ -605,5 +654,19 @@ mod tests {
 
         // Should not contain --user flag when disabled
         assert!(!flags.contains(&"--user".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_gvisor_sandbox_custom_user() {
+        let config = GvisorConfig {
+            sandbox_id: "test".to_string(),
+            user: "501:20".to_string(),
+            ..Default::default()
+        };
+        let sandbox = GvisorSandbox::new(config);
+        let flags = sandbox.build_docker_flags();
+
+        assert!(flags.contains(&"--user".to_string()));
+        assert!(flags.contains(&"501:20".to_string()));
     }
 }

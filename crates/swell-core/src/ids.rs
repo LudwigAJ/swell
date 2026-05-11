@@ -76,6 +76,118 @@ impl FromStr for TaskId {
 }
 
 // ----------------------------------------------------------------------------
+// ProjectId
+// ----------------------------------------------------------------------------
+
+/// Newtype wrapper for project identifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ProjectId(Uuid);
+
+impl ProjectId {
+    /// Create a new ProjectId with a random UUID.
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Create a ProjectId from a UUID.
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    /// Create a nil (zero) ProjectId.
+    pub fn nil() -> Self {
+        Self(Uuid::nil())
+    }
+
+    /// Get the underlying UUID.
+    pub fn as_uuid(&self) -> Uuid {
+        self.0
+    }
+
+    /// Check if this is a nil (zero) ProjectId.
+    pub fn is_nil(&self) -> bool {
+        self.0.is_nil()
+    }
+}
+
+impl Default for ProjectId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Display for ProjectId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for ProjectId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from_uuid(s.parse()?))
+    }
+}
+
+// ----------------------------------------------------------------------------
+// MilestoneId
+// ----------------------------------------------------------------------------
+
+/// Newtype wrapper for milestone identifiers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct MilestoneId(Uuid);
+
+impl MilestoneId {
+    /// Create a new MilestoneId with a random UUID.
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Create a MilestoneId from a UUID.
+    pub fn from_uuid(uuid: Uuid) -> Self {
+        Self(uuid)
+    }
+
+    /// Create a nil (zero) MilestoneId.
+    pub fn nil() -> Self {
+        Self(Uuid::nil())
+    }
+
+    /// Get the underlying UUID.
+    pub fn as_uuid(&self) -> Uuid {
+        self.0
+    }
+
+    /// Check if this is a nil (zero) MilestoneId.
+    pub fn is_nil(&self) -> bool {
+        self.0.is_nil()
+    }
+}
+
+impl Default for MilestoneId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Display for MilestoneId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for MilestoneId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self::from_uuid(s.parse()?))
+    }
+}
+
+// ----------------------------------------------------------------------------
 // AgentId
 // ----------------------------------------------------------------------------
 

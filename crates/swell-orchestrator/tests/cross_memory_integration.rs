@@ -247,6 +247,7 @@ async fn test_generator_agent_receives_memory_context_in_prompt() {
         original_scope: None,
         current_scope: swell_core::TaskScope::default(),
         enrichment: swell_core::TaskEnrichment::default(),
+        milestone: None,
     };
 
     let session_id = SessionId::new();
@@ -531,6 +532,7 @@ async fn test_memory_context_preserved_across_turns() {
         original_scope: None,
         current_scope: swell_core::TaskScope::default(),
         enrichment: swell_core::TaskEnrichment::default(),
+        milestone: None,
     };
 
     let session_id = SessionId::new();

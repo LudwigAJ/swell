@@ -114,6 +114,7 @@ impl FollowUpProposal {
             original_scope: None,
             current_scope: Default::default(),
             enrichment: Default::default(),
+            milestone: None,
         }
     }
 

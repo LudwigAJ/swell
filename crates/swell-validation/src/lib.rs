@@ -264,10 +264,11 @@ pub use result_interpreter::{
 // Re-export traceability store for full traceability chain
 // Note: TestCase and TestResult from traceability conflict with same names from test_planning and evidence
 pub mod traceability;
+pub use swell_core::{Goal, GoalStatus};
 pub use traceability::sqlite_store::SqliteTraceabilityStore;
 pub use traceability::{
     AcceptanceCriteria as TraceAcceptanceCriteria, ChainCounts, CodeLocation, CriteriaCriticality,
-    CriteriaEvidence, CriteriaStatus, Evidence, EvidenceArtifact, EvidenceType, Goal, GoalStatus,
+    CriteriaEvidence, CriteriaStatus, Evidence, EvidenceArtifact, EvidenceType,
     InMemoryTraceabilityStore, MissingLink, MissingLinkType, TestCase as TraceTestCase,
     TestCaseEvidence, TestCaseStatus, TestCaseType, TestResult as TraceTestResult,
     TraceabilityChain, TraceabilityError, TraceabilityEvidencePack, TraceabilityStore,

@@ -19,6 +19,20 @@ use lancedb::query::{ExecutableQuery, QueryBase};
 use lancedb::{connect, DistanceType};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use swell_core::SwellError;
+
+/// Vector backend abstraction used by hybrid retrieval.
+#[async_trait::async_trait]
+pub trait VectorBackend: Send + Sync {
+    async fn upsert(
+        &self,
+        id: &str,
+        vector: Vec<f32>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(), SwellError>;
+
+    async fn search(&self, query: &[f32], k: usize) -> Result<Vec<VectorSearchResult>, SwellError>;
+}
 
 /// Configuration for IVF-PQ indexing
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -439,6 +453,28 @@ impl LanceDbVectorStore {
     }
 }
 
+#[async_trait::async_trait]
+impl VectorBackend for LanceDbVectorStore {
+    async fn upsert(
+        &self,
+        id: &str,
+        vector: Vec<f32>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<(), SwellError> {
+        self.insert(vec![VectorEntry {
+            id: id.to_string(),
+            vector,
+            metadata,
+        }])
+        .await?;
+        Ok(())
+    }
+
+    async fn search(&self, query: &[f32], k: usize) -> Result<Vec<VectorSearchResult>, SwellError> {
+        LanceDbVectorStore::search(self, query, k).await
+    }
+}
+
 // ============================================================================
 // Brute-force baseline for recall comparison
 // ============================================================================
@@ -534,12 +570,6 @@ pub fn compute_recall_at_k(
     let intersection = ann_set.intersection(&bf_set).count();
     intersection as f32 / k as f32
 }
-
-// ============================================================================
-// Error type re-export
-// ============================================================================
-
-pub use swell_core::SwellError;
 
 #[cfg(test)]
 mod tests {

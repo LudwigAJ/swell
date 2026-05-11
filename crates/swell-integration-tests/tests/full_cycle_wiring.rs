@@ -79,7 +79,7 @@ use std::time::Duration;
 
 use serial_test::serial;
 use swell_core::ids::{SocketPath, TaskId};
-use swell_core::{CliCommand, DaemonEvent, TaskState};
+use swell_core::{CliCommand, DaemonEvent, DataResponse, KillLevel, TaskState};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
@@ -121,7 +121,7 @@ async fn wait_for_terminal_state(
         let task = orchestrator.get_task(task_id).await.expect("task exists");
         if matches!(
             task.state,
-            TaskState::Accepted | TaskState::Rejected | TaskState::Failed
+            TaskState::Accepted | TaskState::Rejected | TaskState::Failed | TaskState::Paused
         ) {
             return task;
         }
@@ -156,6 +156,18 @@ async fn setup_git_workspace(root: &std::path::Path) {
     let swell_dir = root.join(".swell");
     std::fs::create_dir_all(&swell_dir).expect("create .swell");
     std::fs::create_dir_all(root.join("src")).expect("create src");
+    std::fs::write(
+        root.join("Cargo.toml"),
+        r#"[package]
+name = "swell-wiring-smoke"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+"#,
+    )
+    .expect("write Cargo.toml");
     std::fs::write(
         root.join("src/lib.rs"),
         "pub fn existing() -> &'static str { \"base\" }\n",
@@ -584,20 +596,91 @@ async fn wiring_success_produces_branch_and_commit_trailer() {
 // -----------------------------------------------------------------------------
 
 /// WIRING INVARIANT: the production `ToolExecutor` has a hook manager
-/// installed. Verified by counting invocations of a test hook plugged in
-/// via a dedicated test-only accessor.
+/// installed. Verified by running a daemon task that writes unformatted Rust
+/// and asserting the allocated worktree contains the formatted result.
 #[tokio::test]
-#[ignore = "Blocked by Tier 1.5 — see plan/audit-2026-04-16/04_tier1_blockers.md"]
+#[serial]
 async fn wiring_post_tool_hooks_fire_during_execution() {
-    // Expected shape:
-    //     - Install a TestPostHook whose count is observable.
-    //     - Run a task that makes at least one tool call.
-    //     - Assert the counter > 0.
-    //
-    // If the counter is 0, either hooks aren't installed or the executor
-    // used during execution is a different instance than the one we
-    // installed the hook on.
-    todo!("PostToolHookManager not yet installed on production executor")
+    use swell_daemon::Daemon;
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+    use tempfile::TempDir;
+
+    std::env::remove_var("SWELL_STRICT");
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    setup_git_workspace(temp_dir.path()).await;
+    std::env::set_current_dir(temp_dir.path()).expect("chdir to temp workspace");
+
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "post-hook-wiring",
+        vec![
+            ScenarioStep::text(
+                r#"{
+  "steps": [
+    {
+      "description": "Write intentionally unformatted Rust",
+      "affected_files": ["src/lib.rs"],
+      "expected_tests": [],
+      "risk_level": "low"
+    }
+  ],
+  "total_estimated_tokens": 100,
+  "risk_assessment": "Low risk post-tool hook smoke"
+}"#,
+            ),
+            ScenarioStep::tool_use(
+                "write_unformatted_lib",
+                "write_file",
+                serde_json::json!({
+                    "path": "src/lib.rs",
+                    "content": "pub fn hook_formatted( )->&'static str{\"ok\"}\n"
+                }),
+                "wrote file",
+                true,
+            ),
+            ScenarioStep::text("done"),
+        ],
+    ));
+    let socket_path = SocketPath::new(temp_dir.path().join("post-hook.sock"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    daemon.orchestrator().register_default_tools().await;
+    let orchestrator = daemon.orchestrator();
+
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+    });
+    wait_for_socket(&socket_path).await;
+
+    let created = send_command(
+        &socket_path,
+        CliCommand::TaskCreate {
+            description: "post-tool hook smoke".to_string(),
+        },
+    )
+    .await;
+    let task_id = match created {
+        DaemonEvent::TaskCreated { id, .. } => id,
+        other => panic!("expected TaskCreated, got {other:?}"),
+    };
+
+    let _ = send_command(&socket_path, CliCommand::TaskExecute { task_id }).await;
+    let final_task = wait_for_terminal_state(&orchestrator, task_id).await;
+    assert_eq!(final_task.state, TaskState::Accepted);
+
+    let allocation = orchestrator
+        .worktree_pool()
+        .get_allocation(task_id)
+        .await
+        .expect("task should retain a worktree allocation after successful validation");
+    let formatted =
+        std::fs::read_to_string(allocation.path.join("src/lib.rs")).expect("read generated lib.rs");
+    assert!(
+        formatted.contains("pub fn hook_formatted() -> &'static str {"),
+        "post-tool format hook should have normalized the generated Rust, got:\n{formatted}"
+    );
+
+    daemon_task.abort();
 }
 
 // -----------------------------------------------------------------------------
@@ -608,11 +691,290 @@ async fn wiring_post_tool_hooks_fire_during_execution() {
 /// `Failed` with the denial visible in the transcript. A silent success here
 /// would mean the permission layer is bypassed.
 ///
-/// Requires Tier 2.1 pre-tool hooks — remains ignored until then.
 #[tokio::test]
-#[ignore = "Blocked by Tier 2.2 (pre-tool hooks) — see plan/audit-2026-04-16/05_tier2_reliability.md"]
+#[serial]
 async fn wiring_pre_tool_denial_fails_task_not_done() {
-    todo!("pre-tool hooks not yet implemented")
+    use swell_daemon::Daemon;
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+    use tempfile::TempDir;
+
+    std::env::remove_var("SWELL_STRICT");
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    setup_git_workspace(temp_dir.path()).await;
+    std::env::set_current_dir(temp_dir.path()).expect("chdir to temp workspace");
+
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "pre-hook-denial",
+        vec![
+            ScenarioStep::text(
+                r#"{
+  "steps": [
+    {
+      "description": "Attempt a denied shell command",
+      "affected_files": ["denied.txt"],
+      "expected_tests": [],
+      "risk_level": "high"
+    }
+  ],
+  "total_estimated_tokens": 100,
+  "risk_assessment": "Denied command smoke"
+}"#,
+            ),
+            ScenarioStep::tool_use(
+                "denied_shell",
+                "shell",
+                serde_json::json!({
+                    "command": "echo denied --force > denied.txt"
+                }),
+                "should be denied before shell execution",
+                false,
+            ),
+        ],
+    ));
+    let socket_path = SocketPath::new(temp_dir.path().join("pre-hook.sock"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    daemon.orchestrator().register_default_tools().await;
+    let orchestrator = daemon.orchestrator();
+
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+    });
+    wait_for_socket(&socket_path).await;
+
+    let created = send_command(
+        &socket_path,
+        CliCommand::TaskCreate {
+            description: "pre-tool denial smoke".to_string(),
+        },
+    )
+    .await;
+    let task_id = match created {
+        DaemonEvent::TaskCreated { id, .. } => id,
+        other => panic!("expected TaskCreated, got {other:?}"),
+    };
+
+    let _ = send_command(&socket_path, CliCommand::TaskExecute { task_id }).await;
+    let final_task = wait_for_terminal_state(&orchestrator, task_id).await;
+    assert_eq!(
+        final_task.state,
+        TaskState::Failed,
+        "pre-tool denial must fail the task instead of silently continuing"
+    );
+
+    let allocation = orchestrator.worktree_pool().get_allocation(task_id).await;
+    if let Some(allocation) = allocation {
+        assert!(
+            !allocation.path.join("denied.txt").exists(),
+            "denied command must not execute shell side effects in the worktree"
+        );
+    }
+    assert!(
+        !temp_dir.path().join("denied.txt").exists(),
+        "denied command must not execute shell side effects in the workspace root"
+    );
+
+    daemon_task.abort();
+}
+
+/// WIRING INVARIANT: shell execution through the daemon crosses the
+/// `swell-sandbox` router before falling back to the platform executor.
+#[tokio::test]
+#[serial]
+async fn wiring_swell_sandbox_router_reached_by_shell_execution() {
+    use swell_daemon::Daemon;
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+    use swell_tools::{reset_sandbox_router_probe_count, sandbox_router_probe_count};
+    use tempfile::TempDir;
+
+    std::env::remove_var("SWELL_STRICT");
+    reset_sandbox_router_probe_count();
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    setup_git_workspace(temp_dir.path()).await;
+    std::env::set_current_dir(temp_dir.path()).expect("chdir to temp workspace");
+
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "swell-sandbox-router-wiring",
+        vec![
+            ScenarioStep::text(
+                r#"{
+  "steps": [
+    {
+      "description": "Run a shell command so the sandbox router is consulted",
+      "affected_files": ["sandbox-route.txt"],
+      "expected_tests": [],
+      "risk_level": "low"
+    }
+  ],
+  "total_estimated_tokens": 100,
+  "risk_assessment": "Low risk sandbox router smoke"
+}"#,
+            ),
+            ScenarioStep::tool_use(
+                "sandbox_routed_shell",
+                "shell",
+                serde_json::json!({
+                    "command": "sh -c 'printf routed > sandbox-route.txt'"
+                }),
+                "wrote routed marker",
+                true,
+            ),
+            ScenarioStep::text("done"),
+        ],
+    ));
+    let socket_path = SocketPath::new(temp_dir.path().join("sandbox-router.sock"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    daemon.orchestrator().register_default_tools().await;
+    let orchestrator = daemon.orchestrator();
+
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+    });
+    wait_for_socket(&socket_path).await;
+
+    let created = send_command(
+        &socket_path,
+        CliCommand::TaskCreate {
+            description: "swell-sandbox router smoke".to_string(),
+        },
+    )
+    .await;
+    let task_id = match created {
+        DaemonEvent::TaskCreated { id, .. } => id,
+        other => panic!("expected TaskCreated, got {other:?}"),
+    };
+
+    let _ = send_command(&socket_path, CliCommand::TaskExecute { task_id }).await;
+    let final_task = wait_for_terminal_state(&orchestrator, task_id).await;
+    assert_eq!(final_task.state, TaskState::Accepted);
+    assert!(
+        sandbox_router_probe_count() > 0,
+        "daemon shell execution should consult swell-tools::SandboxRouter"
+    );
+
+    daemon_task.abort();
+}
+
+/// WIRING INVARIANT: successful daemon execution reaches skill extraction and
+/// writes candidate skills into the task worktree, not active skills.
+#[tokio::test]
+#[serial]
+async fn wiring_skill_extraction_writes_candidate_after_success() {
+    use swell_daemon::Daemon;
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+    use tempfile::TempDir;
+
+    std::env::remove_var("SWELL_STRICT");
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    setup_git_workspace(temp_dir.path()).await;
+    std::env::set_current_dir(temp_dir.path()).expect("chdir to temp workspace");
+
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "skill-extraction-wiring",
+        vec![
+            ScenarioStep::text(
+                r#"{
+  "steps": [
+    {
+      "description": "Write the first Rust file for skill extraction",
+      "affected_files": ["src/lib.rs"],
+      "expected_tests": [],
+      "risk_level": "low"
+    },
+    {
+      "description": "Write the second Rust file for skill extraction",
+      "affected_files": ["src/generated_skill.rs"],
+      "expected_tests": [],
+      "risk_level": "low"
+    }
+  ],
+  "total_estimated_tokens": 100,
+  "risk_assessment": "Low risk skill extraction smoke"
+}"#,
+            ),
+            ScenarioStep::tool_use(
+                "write_skill_lib",
+                "write_file",
+                serde_json::json!({
+                    "path": "src/lib.rs",
+                    "content": "pub fn skill_extraction_lib() -> u8 { 1 }\n"
+                }),
+                "wrote lib",
+                true,
+            ),
+            ScenarioStep::tool_use(
+                "write_skill_extra",
+                "write_file",
+                serde_json::json!({
+                    "path": "src/generated_skill.rs",
+                    "content": "pub fn generated_skill_extra() -> u8 { 2 }\n"
+                }),
+                "wrote extra",
+                true,
+            ),
+            ScenarioStep::text("done"),
+        ],
+    ));
+    let socket_path = SocketPath::new(temp_dir.path().join("skill-extraction.sock"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    daemon.orchestrator().register_default_tools().await;
+    let orchestrator = daemon.orchestrator();
+
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+    });
+    wait_for_socket(&socket_path).await;
+
+    let created = send_command(
+        &socket_path,
+        CliCommand::TaskCreate {
+            description: "skill extraction smoke".to_string(),
+        },
+    )
+    .await;
+    let task_id = match created {
+        DaemonEvent::TaskCreated { id, .. } => id,
+        other => panic!("expected TaskCreated, got {other:?}"),
+    };
+
+    let _ = send_command(&socket_path, CliCommand::TaskExecute { task_id }).await;
+    let final_task = wait_for_terminal_state(&orchestrator, task_id).await;
+    assert_eq!(final_task.state, TaskState::Accepted);
+
+    let allocation = orchestrator
+        .worktree_pool()
+        .get_allocation(task_id)
+        .await
+        .expect("task should retain a worktree allocation after successful validation");
+    let candidate_dir = allocation.path.join(".swell/skills/_candidates");
+    let entries: Vec<_> = std::fs::read_dir(&candidate_dir)
+        .unwrap_or_else(|e| panic!("candidate skill dir should exist at {candidate_dir:?}: {e}"))
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read candidate dir entries");
+    assert!(
+        entries.iter().any(|entry| {
+            entry
+                .path()
+                .extension()
+                .is_some_and(|extension| extension == "json")
+        }),
+        "skill extraction should write at least one candidate JSON"
+    );
+    assert!(
+        !allocation
+            .path
+            .join(".swell/skills")
+            .join("skill.json")
+            .exists(),
+        "skill extraction must not silently activate a skill"
+    );
+
+    daemon_task.abort();
 }
 
 // -----------------------------------------------------------------------------
@@ -621,11 +983,90 @@ async fn wiring_pre_tool_denial_fails_task_not_done() {
 // -----------------------------------------------------------------------------
 
 /// WIRING INVARIANT: a task exceeding its token budget transitions to
-/// `Paused` with `FailureClass::BudgetExceeded`.
+/// `Paused` with a `BudgetExceeded` reason.
 #[tokio::test]
-#[ignore = "Blocked by Tier 2.4 — see plan/audit-2026-04-16/05_tier2_reliability.md"]
+#[serial]
 async fn wiring_cost_guard_pauses_at_budget_limit() {
-    todo!("CostGuard enforcement not yet implemented")
+    use swell_daemon::Daemon;
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+    use tempfile::TempDir;
+
+    std::env::remove_var("SWELL_STRICT");
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    setup_git_workspace(temp_dir.path()).await;
+    std::env::set_current_dir(temp_dir.path()).expect("chdir to temp workspace");
+
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "cost-guard-wiring",
+        vec![
+            ScenarioStep::text(
+                r#"{
+  "steps": [
+    {
+      "description": "Use enough model tokens to cross the budget",
+      "affected_files": ["src/lib.rs"],
+      "expected_tests": [],
+      "risk_level": "low"
+    }
+  ],
+  "total_estimated_tokens": 100,
+  "risk_assessment": "Low risk cost guard smoke"
+}"#,
+            ),
+            ScenarioStep::text("done"),
+        ],
+    ));
+    let socket_path = SocketPath::new(temp_dir.path().join("cost-guard.sock"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    daemon.orchestrator().register_default_tools().await;
+    let orchestrator = daemon.orchestrator();
+
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+    });
+    wait_for_socket(&socket_path).await;
+
+    let created = send_command(
+        &socket_path,
+        CliCommand::TaskCreate {
+            description: "cost guard smoke".to_string(),
+        },
+    )
+    .await;
+    let task_id = match created {
+        DaemonEvent::TaskCreated { id, .. } => id,
+        other => panic!("expected TaskCreated, got {other:?}"),
+    };
+
+    orchestrator
+        .set_task_token_budget(task_id, 1)
+        .await
+        .expect("set low token budget");
+
+    let _ = send_command(&socket_path, CliCommand::TaskExecute { task_id }).await;
+    let final_task = wait_for_terminal_state(&orchestrator, task_id).await;
+    assert_eq!(
+        final_task.state,
+        TaskState::Paused,
+        "CostGuard hard stop must pause instead of completing or failing"
+    );
+    assert!(
+        final_task.tokens_used >= final_task.token_budget,
+        "task usage should record the budget crossing: used {}, budget {}",
+        final_task.tokens_used,
+        final_task.token_budget
+    );
+    let reason = final_task
+        .paused_reason
+        .expect("paused task should carry a reason");
+    assert!(
+        reason.contains("BudgetExceeded"),
+        "pause reason should identify CostGuard, got {reason}"
+    );
+
+    daemon_task.abort();
 }
 
 /// WIRING INVARIANT: the turn loop emits a `TurnSummary` event per agent
@@ -634,6 +1075,85 @@ async fn wiring_cost_guard_pauses_at_budget_limit() {
 #[ignore = "Blocked by Tier 2.2 + 2.3 — see plan/audit-2026-04-16/05_tier2_reliability.md"]
 async fn wiring_turn_summary_events_emitted_per_iteration() {
     todo!("TurnSummary event emission not yet implemented")
+}
+
+/// WIRING INVARIANT: daemon socket commands reach the orchestrator kill switch
+/// that is checked by `ExecutionController` during task turns.
+#[tokio::test]
+#[serial]
+async fn wiring_kill_switch_reachable_from_daemon_socket() {
+    use swell_daemon::Daemon;
+    use swell_llm::mock::{ScenarioMockLlm, ScenarioStep};
+    use swell_llm::LlmBackend;
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().expect("temp dir");
+    let llm: Arc<dyn LlmBackend> = Arc::new(ScenarioMockLlm::new(
+        "kill-switch-wiring",
+        vec![ScenarioStep::text("ok")],
+    ));
+    let socket_path = SocketPath::new(temp_dir.path().join("kill-switch.sock"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    let orchestrator = daemon.orchestrator();
+
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+    });
+    wait_for_socket(&socket_path).await;
+
+    let trigger = send_command(
+        &socket_path,
+        CliCommand::KillSwitchTrigger {
+            level: KillLevel::FullStop,
+            reason: "wiring smoke".to_string(),
+        },
+    )
+    .await;
+    match trigger {
+        DaemonEvent::DataResponse(data) => match *data {
+            DataResponse::KillSwitchStatus { state, .. } => {
+                assert!(state.active, "kill switch should be active");
+                assert_eq!(state.level, Some(KillLevel::FullStop));
+                assert_eq!(state.reason.as_deref(), Some("wiring smoke"));
+            }
+            other => panic!("expected KillSwitchStatus response, got {other:?}"),
+        },
+        other => panic!("expected DataResponse, got {other:?}"),
+    }
+
+    let live_state = orchestrator
+        .execution_controller()
+        .kill_switch()
+        .state()
+        .await;
+    assert!(
+        live_state.active,
+        "socket command must update the live ExecutionController kill switch"
+    );
+    assert_eq!(live_state.level, Some(KillLevel::FullStop));
+    assert!(
+        orchestrator
+            .execution_controller()
+            .kill_switch()
+            .check_fullstop()
+            .await
+            .is_err(),
+        "ExecutionController kill-switch check must observe the socket trigger"
+    );
+
+    let reset = send_command(&socket_path, CliCommand::KillSwitchReset).await;
+    match reset {
+        DaemonEvent::DataResponse(data) => match *data {
+            DataResponse::KillSwitchStatus { state, .. } => {
+                assert!(!state.active, "kill switch should be inactive after reset");
+                assert_eq!(state.level, None);
+            }
+            other => panic!("expected KillSwitchStatus response, got {other:?}"),
+        },
+        other => panic!("expected DataResponse, got {other:?}"),
+    }
+
+    daemon_task.abort();
 }
 
 // -----------------------------------------------------------------------------
@@ -699,7 +1219,11 @@ async fn wiring_manifest_reports_all_subsystems() {
         "BranchStrategy",
         "CommitStrategy",
         "CostGuard",
+        "KillSwitch",
         "PreToolHookManager",
+        "SwellSandboxRouter",
+        "MemoryVectorBackend",
+        "SkillExtraction",
     ];
 
     for required in required_subsystems {
@@ -709,11 +1233,11 @@ async fn wiring_manifest_reports_all_subsystems() {
         );
     }
 
-    // Verify total count: 16 subsystems (14 wired + 2 Tier-2 stubs)
+    // Verify total count: 20 subsystems.
     assert_eq!(
         manifest.len(),
-        16,
-        "Expected exactly 16 subsystems in manifest, got {}: {names:?}",
+        20,
+        "Expected exactly 20 subsystems in manifest, got {}: {names:?}",
         manifest.len()
     );
 }
