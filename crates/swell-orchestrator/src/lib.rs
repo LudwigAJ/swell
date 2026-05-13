@@ -70,6 +70,7 @@ pub mod task_enrichment;
 pub mod task_graph;
 pub mod team_registry;
 pub mod tiered_merge;
+pub mod triggers;
 pub mod uncertainty;
 pub mod value_scorer;
 pub mod work_graph;

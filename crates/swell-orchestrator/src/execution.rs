@@ -6,6 +6,7 @@ use crate::{
     file_locks::LockAcquisitionResult,
     frozen_spec::FrozenSpecRef,
     killswitch::OrchestratorKillSwitch,
+    triggers::{Stage, TriggerContext, TriggerOutcome, TriggerRegistry},
     uncertainty::{
         generate_suggested_options, ConfidenceLevel, UncertaintyClarificationEvent,
         UncertaintyManager,
@@ -274,6 +275,12 @@ pub struct ExecutionController {
     /// Timeout in seconds for waiting for a clarification response during an uncertainty pause.
     /// Defaults to 3600 (1 hour). Use with_uncertainty_timeout() to change.
     uncertainty_timeout_secs: u64,
+    /// Trigger registry fired at `BeforeTask` / `AfterTask` lifecycle edges
+    /// (PR `02` of `plan/flow_integration_plan`). Default is an empty
+    /// registry, which makes firing a no-op — preserving the legacy linear
+    /// pipeline. Built-in triggers from PRs `07` / `08` / `09` will register
+    /// against this surface in follow-up slices.
+    trigger_registry: Arc<TriggerRegistry>,
 }
 
 impl ExecutionController {
@@ -338,6 +345,7 @@ impl ExecutionController {
             uncertainty_manager: Arc::new(UncertaintyManager::new()),
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
+            trigger_registry: Arc::new(TriggerRegistry::new()),
         }
     }
 
@@ -379,6 +387,7 @@ impl ExecutionController {
             uncertainty_manager: Arc::new(UncertaintyManager::new()),
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
+            trigger_registry: Arc::new(TriggerRegistry::new()),
         }
     }
 
@@ -424,6 +433,7 @@ impl ExecutionController {
             uncertainty_manager: Arc::new(UncertaintyManager::new()),
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
+            trigger_registry: Arc::new(TriggerRegistry::new()),
         }
     }
 
@@ -472,6 +482,7 @@ impl ExecutionController {
             uncertainty_manager: Arc::new(UncertaintyManager::new()),
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
+            trigger_registry: Arc::new(TriggerRegistry::new()),
         }
     }
 
@@ -506,6 +517,22 @@ impl ExecutionController {
     /// Commit strategy used by the production task execution path.
     pub fn commit_strategy(&self) -> Arc<CommitStrategy> {
         Arc::clone(&self.commit_strategy)
+    }
+
+    /// Trigger registry fired at `BeforeTask` / `AfterTask` lifecycle edges.
+    /// An empty registry makes firing a no-op.
+    pub fn trigger_registry(&self) -> Arc<TriggerRegistry> {
+        Arc::clone(&self.trigger_registry)
+    }
+
+    /// Install a `TriggerRegistry` to be fired at task lifecycle edges.
+    ///
+    /// Replacing the registry is intentionally an `Arc` swap rather than a
+    /// mutating push so callers (daemon bootstrap, tests) can construct a
+    /// registry once and hand the same `Arc` to every clone of this
+    /// controller produced for batch execution.
+    pub fn set_trigger_registry(&mut self, registry: Arc<TriggerRegistry>) {
+        self.trigger_registry = registry;
     }
 
     async fn is_git_worktree(path: &Path) -> bool {
@@ -808,6 +835,32 @@ impl ExecutionController {
         EXECUTE_TASK_INVOCATIONS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
         info!(task_id = %task_id, "Starting task execution");
+
+        // PR 02 trigger spine: fire BeforeTask before any side effects. An
+        // empty registry (the default) makes this a no-op. A registered
+        // trigger returning Halt short-circuits with a failed
+        // ValidationResult before locks / planning / generator run.
+        if !self.trigger_registry.is_empty() {
+            let ctx = TriggerContext::for_task(Stage::BeforeTask, task_id);
+            let report = self.trigger_registry.fire(&ctx).await;
+            if let Some((name, TriggerOutcome::Halt(reason))) = &report.short_circuit {
+                warn!(
+                    task_id = %task_id,
+                    trigger = %name,
+                    reason = %reason,
+                    "BeforeTask trigger halted execution"
+                );
+                return Ok(ValidationResult {
+                    passed: false,
+                    lint_passed: false,
+                    tests_passed: false,
+                    security_passed: false,
+                    ai_review_passed: false,
+                    errors: vec![format!("Halted by BeforeTask trigger '{name}': {reason}")],
+                    warnings: vec![],
+                });
+            }
+        }
 
         // Get the task and its estimated files for lock acquisition
         let task = self.orchestrator().get_task(task_id).await?;
@@ -1226,7 +1279,7 @@ impl ExecutionController {
             errors.push(err.clone());
         }
 
-        let result = ValidationResult {
+        let mut result = ValidationResult {
             passed: validation_passed,
             lint_passed: orchestrator_result
                 .as_ref()
@@ -1295,6 +1348,40 @@ impl ExecutionController {
                 locks_released = released_count,
                 "File locks released after task completion"
             );
+        }
+
+        // PR 02 trigger spine: fire AfterTask once the legacy pipeline has
+        // finished. A Halt at this stage cannot undo the work that already
+        // landed (commit / skill candidates / etc.) — instead we flip the
+        // result to failed and surface the halt reason so downstream
+        // callers see the trigger's veto. Continue / Reroute are logged for
+        // the milestone-scheduler slice to react to.
+        if !self.trigger_registry.is_empty() {
+            let ctx = TriggerContext::for_task(Stage::AfterTask, task_id);
+            let report = self.trigger_registry.fire(&ctx).await;
+            match &report.short_circuit {
+                Some((name, TriggerOutcome::Halt(reason))) => {
+                    warn!(
+                        task_id = %task_id,
+                        trigger = %name,
+                        reason = %reason,
+                        "AfterTask trigger halted post-execution pipeline"
+                    );
+                    result.passed = false;
+                    result
+                        .errors
+                        .push(format!("Halted by AfterTask trigger '{name}': {reason}"));
+                }
+                Some((name, TriggerOutcome::Reroute(milestone_id))) => {
+                    info!(
+                        task_id = %task_id,
+                        trigger = %name,
+                        milestone = %milestone_id,
+                        "AfterTask trigger requested milestone reroute (scheduler-handled in PR 03)"
+                    );
+                }
+                _ => {}
+            }
         }
 
         Ok(result)
@@ -2025,6 +2112,7 @@ impl Clone for ExecutionController {
             uncertainty_manager: Arc::clone(&self.uncertainty_manager),
             default_confidence_threshold: self.default_confidence_threshold,
             uncertainty_timeout_secs: self.uncertainty_timeout_secs,
+            trigger_registry: Arc::clone(&self.trigger_registry),
         }
     }
 }
@@ -2062,6 +2150,55 @@ mod tests {
     use swell_core::traits::Tool;
     use swell_llm::MockLlm;
     use swell_tools::ToolRegistry;
+
+    // PR 02 (TriggerRegistry) integration: prove that a BeforeTask Halt
+    // short-circuits execute_task before any planner / generator runs and
+    // surfaces the trigger's reason in the returned ValidationResult.
+    #[tokio::test]
+    async fn before_task_halt_short_circuits_execute_task() {
+        use crate::triggers::{Stage, Trigger, TriggerContext, TriggerOutcome, TriggerRegistry};
+        use async_trait::async_trait;
+
+        struct HaltTrigger;
+        #[async_trait]
+        impl Trigger for HaltTrigger {
+            fn name(&self) -> &'static str {
+                "halt_test"
+            }
+            fn stages(&self) -> &'static [Stage] {
+                &[Stage::BeforeTask]
+            }
+            async fn run(&self, _ctx: &TriggerContext) -> TriggerOutcome {
+                TriggerOutcome::Halt("denied by policy".into())
+            }
+        }
+
+        let orchestrator = OrchestratorBuilder::new().build();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+        let mut controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+
+        let mut registry = TriggerRegistry::new();
+        registry.register(Arc::new(HaltTrigger));
+        controller.set_trigger_registry(Arc::new(registry));
+
+        let task = orchestrator
+            .create_task("scaffold halt".to_string(), vec![])
+            .await
+            .unwrap();
+
+        let result = controller.execute_task(task.id).await.unwrap();
+        assert!(!result.passed, "halt must produce a failed result");
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("halt_test") && e.contains("denied by policy")),
+            "halt reason must surface in errors: {:?}",
+            result.errors
+        );
+    }
 
     #[tokio::test]
     async fn test_execution_controller_creation() {
