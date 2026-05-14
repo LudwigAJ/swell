@@ -2,8 +2,8 @@ use dashmap::DashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 use swell_core::{
-    AgentId, Goal, Milestone, MilestoneId, Plan, PriorAttempt, Project, ProjectId, SwellError,
-    Task, TaskId, TaskState,
+    AgentId, Goal, Milestone, MilestoneId, MilestoneStatus, Plan, PriorAttempt, Project, ProjectId,
+    SwellError, Task, TaskId, TaskState,
 };
 use tracing::{info, warn};
 
@@ -114,6 +114,32 @@ impl TaskStateMachine {
             .collect()
     }
 
+    /// Transition a milestone to a new lifecycle status. Used by
+    /// [`crate::milestone_scheduler::MilestoneScheduler`] to drive
+    /// `Pending` → `Ready` → `Executing` → `Done` / `Blocked` / `Failed`.
+    /// The state machine is intentionally permissive: it does not enforce a
+    /// per-edge legal-transition matrix yet — the scheduler is the only
+    /// caller today, so the responsibility for valid transitions stays
+    /// there until a second caller appears.
+    pub fn set_milestone_status(
+        &self,
+        milestone_id: MilestoneId,
+        status: MilestoneStatus,
+    ) -> Result<(), SwellError> {
+        let entry = self.milestones.get(&milestone_id).ok_or_else(|| {
+            SwellError::InvalidStateTransition(format!("Milestone {milestone_id} not found"))
+        })?;
+        let milestone_arc = entry.value().clone();
+        drop(entry);
+
+        let mut milestone = milestone_arc
+            .write()
+            .map_err(|_| SwellError::InvalidStateTransition("Poisoned lock".into()))?;
+        milestone.status = status;
+        milestone.updated_at = chrono::Utc::now();
+        Ok(())
+    }
+
     /// Link an existing task to a milestone.
     pub fn assign_task_to_milestone(
         &self,
@@ -200,6 +226,27 @@ impl TaskStateMachine {
 
         // Apply the mutation and flatten the result
         f(&mut task)
+    }
+
+    /// Withdraw a milestone for mutation through a closure. Counterpart to
+    /// [`Self::with_task_mut`]; used by the milestone scheduler and tests
+    /// that need to update DAG dependencies or task lists without going
+    /// through the (currently narrow) public setter surface.
+    pub fn with_milestone_mut<F, R>(&self, id: MilestoneId, f: F) -> Result<R, SwellError>
+    where
+        F: FnOnce(&mut Milestone) -> Result<R, SwellError>,
+    {
+        let entry = self.milestones.get(&id).ok_or_else(|| {
+            SwellError::InvalidStateTransition(format!("Milestone {id} not found"))
+        })?;
+        let milestone_arc = entry.value().clone();
+        drop(entry);
+        let mut milestone = milestone_arc
+            .write()
+            .map_err(|_| SwellError::InvalidStateTransition("Poisoned lock".into()))?;
+        let result = f(&mut milestone)?;
+        milestone.updated_at = chrono::Utc::now();
+        Ok(result)
     }
 
     /// Transition task to ENRICHED state

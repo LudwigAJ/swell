@@ -52,6 +52,7 @@ pub mod loop_detection;
 pub mod memory_write_trigger;
 pub mod merge_queue;
 pub mod metrics;
+pub mod milestone_scheduler;
 pub mod model_fallback;
 pub mod non_novel_retry;
 pub mod novelty_check;
@@ -1050,6 +1051,16 @@ impl Orchestrator {
     ) -> Result<Vec<Milestone>, SwellError> {
         let sm = self.state_machine.read().await;
         sm.get_milestones_for_project(project_id)
+    }
+
+    /// Update a milestone's lifecycle status.
+    pub async fn set_milestone_status(
+        &self,
+        milestone_id: MilestoneId,
+        status: swell_core::MilestoneStatus,
+    ) -> Result<(), SwellError> {
+        let sm = self.state_machine.read().await;
+        sm.set_milestone_status(milestone_id, status)
     }
 
     /// Link an existing loose task to a milestone.
