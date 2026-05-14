@@ -12,8 +12,166 @@
 //! `Orchestrator::execute_task`.
 
 use async_trait::async_trait;
-use std::sync::Arc;
-use swell_core::{MilestoneId, ProjectId, TaskId};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
+use swell_core::{MilestoneId, Plan, ProjectId, Task, TaskId, ToolCallResult};
+use swell_validation::orchestrator::{TaskExecutionMetadata, TaskValidationResult};
+
+/// Shared mutable payload that `AfterTask` (and future `AfterMilestone`)
+/// triggers can read from and write into during a single fire cycle.
+///
+/// PR `02` defined `TriggerOutcome` as `Continue` / `Halt` / `Reroute` — a
+/// strict control-flow channel with no data slot. The F3 slice from
+/// `plan/flow_integration_plan/08_validation_gates.md` needs a
+/// `ValidatorGateTrigger` to *produce* a [`TaskValidationResult`] that
+/// `execute_task` then uses to drive commit / skill extraction /
+/// `complete_task`. Threading the result back through `TriggerOutcome` would
+/// either bloat the enum or invent a stage-specific variant; sharing it
+/// through a per-fire payload keeps the registry surface clean and lets
+/// successor triggers (`GitCommitTrigger`, `MemoryWriteTrigger`) consume
+/// what `ValidatorGateTrigger` produced earlier in the same stage's
+/// registration order.
+///
+/// All fields are populated by the orchestrator before firing; only
+/// `validation_result` is written by triggers.
+pub struct TaskTriggerState {
+    pub workspace_path: PathBuf,
+    pub changed_files: Vec<String>,
+    pub plan: Option<Plan>,
+    pub execution_metadata: TaskExecutionMetadata,
+    /// The task being executed. Populated by `ExecutionController` before
+    /// firing so triggers that need to build commit messages, memory
+    /// payloads, etc. don't have to call back into the orchestrator.
+    pub task: Task,
+    /// Whether the task is running inside a dedicated worktree. Triggers
+    /// that touch git (e.g. `git_commit`) must skip when this is `false`
+    /// — same predicate as the legacy `worktree_allocation.is_some()` gate.
+    pub worktree_allocated: bool,
+    /// Output slot: a trigger (validator_gate) writes the validation result
+    /// here; `execute_task` reads it after the AfterTask fire completes. A
+    /// `None` here after fire means no trigger took responsibility for
+    /// validation, so the legacy inline `ValidationOrchestrator` call runs
+    /// as a fallback — this is what preserves the F3 "default-on without
+    /// behavior change" contract when `.swell/triggers.json` is missing.
+    pub validation_result: RwLock<Option<TaskValidationResult>>,
+    /// Flipped by `GitCommitTrigger` once it has taken responsibility for
+    /// committing the task's diff. `execute_task` reads this after the
+    /// AfterTask fire to decide whether to run its legacy inline
+    /// `commit_successful_task` call as a fallback. Same default-on-without
+    /// -behavior-change pattern as the validation slot above.
+    pub committed_by_trigger: AtomicBool,
+    /// Tool calls produced by the Generator agent during the task. Consumed
+    /// by `MemoryWriteTrigger` (F9, `plan/flow_integration_plan/07_memory_consolidation.md`)
+    /// to re-express the inline `extract_skill_candidates` side effect that
+    /// today runs inside `ExecutionController::execute_task`.
+    pub tool_calls: Vec<ToolCallResult>,
+    /// Flipped by `MemoryWriteTrigger` once it has run skill extraction /
+    /// memory writes against the task. `execute_task` reads this after the
+    /// AfterTask fire to decide whether to run its legacy inline
+    /// `extract_skill_candidates` call as a fallback. Mirrors
+    /// `committed_by_trigger` above.
+    pub memory_write_by_trigger: AtomicBool,
+}
+
+impl std::fmt::Debug for TaskTriggerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TaskTriggerState")
+            .field("workspace_path", &self.workspace_path)
+            .field("changed_files", &self.changed_files.len())
+            .field("plan", &self.plan.is_some())
+            .field(
+                "validation_result_present",
+                &self
+                    .validation_result
+                    .read()
+                    .map(|g| g.is_some())
+                    .unwrap_or(false),
+            )
+            .finish()
+    }
+}
+
+impl TaskTriggerState {
+    pub fn new(
+        workspace_path: PathBuf,
+        changed_files: Vec<String>,
+        plan: Option<Plan>,
+        execution_metadata: TaskExecutionMetadata,
+        task: Task,
+        worktree_allocated: bool,
+    ) -> Self {
+        Self {
+            workspace_path,
+            changed_files,
+            plan,
+            execution_metadata,
+            task,
+            worktree_allocated,
+            validation_result: RwLock::new(None),
+            committed_by_trigger: AtomicBool::new(false),
+            tool_calls: Vec::new(),
+            memory_write_by_trigger: AtomicBool::new(false),
+        }
+    }
+
+    /// Builder-style override of the generator tool-call list. Used by
+    /// `ExecutionController::execute_task` to thread the Generator's tool
+    /// trace through to `MemoryWriteTrigger` without breaking existing
+    /// callers of `TaskTriggerState::new`.
+    pub fn with_tool_calls(mut self, tool_calls: Vec<ToolCallResult>) -> Self {
+        self.tool_calls = tool_calls;
+        self
+    }
+
+    /// Take the validation result written by a trigger, if any.
+    pub fn take_validation_result(&self) -> Option<TaskValidationResult> {
+        self.validation_result
+            .write()
+            .ok()
+            .and_then(|mut g| g.take())
+    }
+
+    /// Non-destructive read of the validation result for triggers that need
+    /// to see what an earlier trigger (e.g. `validator_gate`) produced
+    /// during the same fire — `take_validation_result` is reserved for
+    /// `execute_task`, which consumes the slot once at the end of fire.
+    pub fn peek_validation_result(&self) -> Option<TaskValidationResult> {
+        self.validation_result
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().cloned())
+    }
+
+    /// Set the validation result. Used by validator-gate triggers; later
+    /// writers overwrite earlier ones in registration order.
+    pub fn set_validation_result(&self, result: TaskValidationResult) {
+        if let Ok(mut g) = self.validation_result.write() {
+            *g = Some(result);
+        }
+    }
+
+    /// Mark that a trigger has taken responsibility for committing the
+    /// task's diff. `execute_task` skips its inline commit when this is set.
+    pub fn mark_committed_by_trigger(&self) {
+        self.committed_by_trigger.store(true, Ordering::SeqCst);
+    }
+
+    pub fn was_committed_by_trigger(&self) -> bool {
+        self.committed_by_trigger.load(Ordering::SeqCst)
+    }
+
+    /// Mark that a trigger has run the memory-write / skill-extraction side
+    /// effect for this task. `execute_task` skips its inline
+    /// `extract_skill_candidates` call when this is set.
+    pub fn mark_memory_write_by_trigger(&self) {
+        self.memory_write_by_trigger.store(true, Ordering::SeqCst);
+    }
+
+    pub fn was_memory_write_by_trigger(&self) -> bool {
+        self.memory_write_by_trigger.load(Ordering::SeqCst)
+    }
+}
 
 /// Lifecycle edges at which the orchestrator fires registered triggers.
 ///
@@ -43,6 +201,11 @@ pub struct TriggerContext {
     pub project: Option<ProjectId>,
     pub milestone: Option<MilestoneId>,
     pub task: Option<TaskId>,
+    /// Optional shared payload for task-scoped stages (`BeforeTask` /
+    /// `AfterTask`). `None` for milestone/project stages and for callers
+    /// that don't need triggers to exchange data (e.g. the BeforeTask halt
+    /// path). See [`TaskTriggerState`].
+    pub task_state: Option<Arc<TaskTriggerState>>,
 }
 
 impl TriggerContext {
@@ -52,6 +215,7 @@ impl TriggerContext {
             project: None,
             milestone: None,
             task: Some(task),
+            task_state: None,
         }
     }
 
@@ -61,6 +225,7 @@ impl TriggerContext {
             project: Some(project),
             milestone: Some(milestone),
             task: None,
+            task_state: None,
         }
     }
 
@@ -70,7 +235,17 @@ impl TriggerContext {
             project: Some(project),
             milestone: None,
             task: None,
+            task_state: None,
         }
+    }
+
+    /// Attach a shared [`TaskTriggerState`] to this context. Used by
+    /// `ExecutionController` when firing `AfterTask` so the
+    /// `ValidatorGateTrigger` can write its [`TaskValidationResult`] back
+    /// for `execute_task` to consume.
+    pub fn with_task_state(mut self, state: Arc<TaskTriggerState>) -> Self {
+        self.task_state = Some(state);
+        self
     }
 }
 
@@ -104,19 +279,25 @@ pub trait Trigger: Send + Sync {
 /// Registration order is fire order. The first non-`Continue` outcome short
 /// circuits remaining triggers for the same stage and is returned to the
 /// caller, paired with the triggering trigger's name for diagnostics.
-#[derive(Default, Clone)]
+/// Registry of triggers fired at lifecycle edges.
+///
+/// Uses interior mutability so callers holding `Arc<TriggerRegistry>`
+/// (e.g. `ExecutionController`, `Orchestrator`) can register triggers
+/// after construction without an exclusive borrow. This is what lets the
+/// daemon bootstrap install triggers post-`Orchestrator::new` and what
+/// lets tests pre-register a `HaltTrigger` against the live registry the
+/// daemon will fire from.
+#[derive(Default)]
 pub struct TriggerRegistry {
-    triggers: Vec<Arc<dyn Trigger>>,
+    triggers: RwLock<Vec<Arc<dyn Trigger>>>,
 }
 
 impl std::fmt::Debug for TriggerRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names = self.names();
         f.debug_struct("TriggerRegistry")
-            .field("count", &self.triggers.len())
-            .field(
-                "names",
-                &self.triggers.iter().map(|t| t.name()).collect::<Vec<_>>(),
-            )
+            .field("count", &names.len())
+            .field("names", &names)
             .finish()
     }
 }
@@ -139,30 +320,56 @@ impl TriggerRegistry {
         Self::default()
     }
 
-    pub fn register(&mut self, trigger: Arc<dyn Trigger>) {
-        self.triggers.push(trigger);
+    /// Append a trigger to the registry. Registration order is fire order.
+    pub fn register(&self, trigger: Arc<dyn Trigger>) {
+        self.triggers
+            .write()
+            .expect("trigger registry write lock poisoned")
+            .push(trigger);
     }
 
     pub fn len(&self) -> usize {
-        self.triggers.len()
+        self.triggers
+            .read()
+            .expect("trigger registry read lock poisoned")
+            .len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.triggers.is_empty()
+        self.len() == 0
     }
 
     pub fn names(&self) -> Vec<&'static str> {
-        self.triggers.iter().map(|t| t.name()).collect()
+        self.triggers
+            .read()
+            .expect("trigger registry read lock poisoned")
+            .iter()
+            .map(|t| t.name())
+            .collect()
+    }
+
+    fn snapshot(&self) -> Vec<Arc<dyn Trigger>> {
+        self.triggers
+            .read()
+            .expect("trigger registry read lock poisoned")
+            .iter()
+            .map(Arc::clone)
+            .collect()
     }
 
     /// Run every trigger registered for `stage` in registration order,
     /// stopping at the first non-`Continue` outcome.
+    ///
+    /// The trigger list is snapshotted under the read lock and the lock is
+    /// released before any `await`, so concurrent registration during fire
+    /// will not affect the in-flight stage and will not deadlock.
     pub async fn fire(&self, ctx: &TriggerContext) -> FireReport {
+        let triggers = self.snapshot();
         let mut report = FireReport {
             fired: Vec::new(),
             short_circuit: None,
         };
-        for trigger in &self.triggers {
+        for trigger in triggers {
             if !trigger.stages().contains(&ctx.stage) {
                 continue;
             }
@@ -236,7 +443,7 @@ mod tests {
         let (t2, s2) = counting("b", &[Stage::BeforeTask], TriggerOutcome::Continue);
         let (t3, s3) = counting("c", &[Stage::AfterTask], TriggerOutcome::Continue);
 
-        let mut registry = TriggerRegistry::new();
+        let registry = TriggerRegistry::new();
         registry.register(t1);
         registry.register(t2);
         registry.register(t3);
@@ -261,7 +468,7 @@ mod tests {
         );
         let (t3, s3) = counting("c", &[Stage::AfterTask], TriggerOutcome::Continue);
 
-        let mut registry = TriggerRegistry::new();
+        let registry = TriggerRegistry::new();
         registry.register(t1);
         registry.register(t2);
         registry.register(t3);
@@ -288,7 +495,7 @@ mod tests {
             TriggerOutcome::Reroute(target),
         );
 
-        let mut registry = TriggerRegistry::new();
+        let registry = TriggerRegistry::new();
         registry.register(t1);
 
         let ctx = TriggerContext::for_task(Stage::AfterTask, TaskId::new());

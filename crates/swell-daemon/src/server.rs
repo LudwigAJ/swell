@@ -6,6 +6,10 @@ use swell_core::{CliCommand, DaemonEvent, TaskId, TaskState};
 use swell_llm::LlmBackend;
 use swell_memory::recall::RecallService;
 use swell_memory::SqliteMemoryStore;
+use swell_orchestrator::git_commit_trigger::register_git_commit_factory;
+use swell_orchestrator::memory_write_trigger::register_default_memory_write_factory;
+use swell_orchestrator::trigger_config::{load_triggers_from_dir, TriggerFactoryRegistry};
+use swell_orchestrator::validator_gate::register_default_validator_gate_factory;
 use swell_orchestrator::Orchestrator;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -237,6 +241,33 @@ impl Daemon {
             Err(e) => {
                 warn!(error = %e, path = %memory_db_path.display(), "Failed to initialize memory store, MemoryQuery will not be available");
             }
+        }
+
+        // PR 02 / flow_integration_plan: load .swell/triggers.json and
+        // install resolved triggers on the live ExecutionController. Empty
+        // file leaves the registry empty, so the legacy linear pipeline is
+        // preserved. `validator_gate` (F3, plan 08) is registered as a
+        // factory; absence from `.swell/triggers.json` falls back to the
+        // inline `ValidationOrchestrator` call inside `execute_task`.
+        // `GitCommitTrigger` / `MemoryWriteTrigger` factories register here
+        // in PRs 04 / 09 / 07.
+        let mut factories = TriggerFactoryRegistry::new();
+        register_default_validator_gate_factory(&mut factories);
+        register_git_commit_factory(
+            &mut factories,
+            self.orchestrator.commit_strategy(),
+            self.orchestrator.llm_backend().model().to_string(),
+        );
+        register_default_memory_write_factory(&mut factories);
+        let loaded = load_triggers_from_dir(&swell_dir, &factories);
+        for trigger in loaded.built {
+            self.orchestrator.install_trigger(trigger);
+        }
+        if !loaded.warnings.is_empty() {
+            warn!(
+                count = loaded.warnings.len(),
+                "trigger config loaded with warnings"
+            );
         }
 
         // Print wiring manifest at startup (exactly once, before binding socket)

@@ -31,3 +31,4 @@ swell-orchestrator = { path = "../swell-orchestrator", features = ["test-support
 futures = "0.3"
 tempfile = "3"
 serial_test = "3"
+async-trait = "0.1"

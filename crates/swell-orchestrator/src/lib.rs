@@ -43,11 +43,13 @@ pub mod file_locks;
 pub mod followup_generator;
 pub mod frozen_spec;
 pub mod gap_analyzer;
+pub mod git_commit_trigger;
 pub mod hard_limits;
 pub mod idempotent_actions;
 pub mod killswitch;
 pub mod langfuse_exporter;
 pub mod loop_detection;
+pub mod memory_write_trigger;
 pub mod merge_queue;
 pub mod metrics;
 pub mod model_fallback;
@@ -70,8 +72,10 @@ pub mod task_enrichment;
 pub mod task_graph;
 pub mod team_registry;
 pub mod tiered_merge;
+pub mod trigger_config;
 pub mod triggers;
 pub mod uncertainty;
+pub mod validator_gate;
 pub mod value_scorer;
 pub mod work_graph;
 pub mod worker_boot;
@@ -588,6 +592,23 @@ impl Orchestrator {
     /// Commit strategy used for task provenance commits after validation.
     pub fn commit_strategy(&self) -> Arc<CommitStrategy> {
         self.execution_controller.commit_strategy()
+    }
+
+    /// Append a trigger to the live trigger registry on the
+    /// `ExecutionController`.
+    ///
+    /// This is the bootstrap path used by the daemon (after loading
+    /// `.swell/triggers.json`) and by integration tests that need to install
+    /// triggers against the live `Orchestrator` before it starts driving
+    /// `execute_task`. Empty registry remains a no-op, so callers that
+    /// install nothing keep the legacy linear pipeline.
+    pub fn install_trigger(&self, trigger: Arc<dyn crate::triggers::Trigger>) {
+        self.execution_controller.install_trigger(trigger);
+    }
+
+    /// Snapshot of the names of all triggers currently registered.
+    pub fn trigger_names(&self) -> Vec<&'static str> {
+        self.execution_controller.trigger_registry().names()
     }
 
     /// Subscribe to orchestrator events.

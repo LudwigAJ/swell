@@ -6,7 +6,7 @@ use crate::{
     file_locks::LockAcquisitionResult,
     frozen_spec::FrozenSpecRef,
     killswitch::OrchestratorKillSwitch,
-    triggers::{Stage, TriggerContext, TriggerOutcome, TriggerRegistry},
+    triggers::{Stage, TaskTriggerState, TriggerContext, TriggerOutcome, TriggerRegistry},
     uncertainty::{
         generate_suggested_options, ConfidenceLevel, UncertaintyClarificationEvent,
         UncertaintyManager,
@@ -535,6 +535,16 @@ impl ExecutionController {
         self.trigger_registry = registry;
     }
 
+    /// Append a trigger to the live registry.
+    ///
+    /// Unlike [`Self::set_trigger_registry`] this works through `&self`, which
+    /// lets the daemon bootstrap (and tests) install triggers after the
+    /// `ExecutionController` is wrapped in `Arc` and owned by the
+    /// `Orchestrator`. Registration order is fire order.
+    pub fn install_trigger(&self, trigger: Arc<dyn crate::triggers::Trigger>) {
+        self.trigger_registry.register(trigger);
+    }
+
     async fn is_git_worktree(path: &Path) -> bool {
         let output = tokio::process::Command::new("git")
             .args(["rev-parse", "--is-inside-work-tree"])
@@ -839,7 +849,10 @@ impl ExecutionController {
         // PR 02 trigger spine: fire BeforeTask before any side effects. An
         // empty registry (the default) makes this a no-op. A registered
         // trigger returning Halt short-circuits with a failed
-        // ValidationResult before locks / planning / generator run.
+        // ValidationResult before locks / planning / generator run, *and*
+        // transitions the task to Failed with the result attached so daemon
+        // observers (TaskList / TaskWatch) see the halt as a terminal state
+        // rather than the task being stuck in its pre-execute state.
         if !self.trigger_registry.is_empty() {
             let ctx = TriggerContext::for_task(Stage::BeforeTask, task_id);
             let report = self.trigger_registry.fire(&ctx).await;
@@ -850,7 +863,7 @@ impl ExecutionController {
                     reason = %reason,
                     "BeforeTask trigger halted execution"
                 );
-                return Ok(ValidationResult {
+                let halted_result = ValidationResult {
                     passed: false,
                     lint_passed: false,
                     tests_passed: false,
@@ -858,7 +871,28 @@ impl ExecutionController {
                     ai_review_passed: false,
                     errors: vec![format!("Halted by BeforeTask trigger '{name}': {reason}")],
                     warnings: vec![],
-                });
+                };
+
+                let orch = self.orchestrator();
+                {
+                    let sm = orch.state_machine();
+                    let sm = sm.read().await;
+                    let _ = sm.with_task_mut(task_id, |task| {
+                        task.validation_result = Some(halted_result.clone());
+                        Ok(())
+                    });
+                }
+                if let Err(e) = orch.fail_task(task_id).await {
+                    warn!(
+                        task_id = %task_id,
+                        error = %e,
+                        "Failed to mark task Failed after BeforeTask halt"
+                    );
+                }
+
+                self.fire_on_task_failed(task_id).await;
+
+                return Ok(halted_result);
             }
         }
 
@@ -1236,30 +1270,72 @@ impl ExecutionController {
         // Step 5: Run ValidationOrchestrator to validate task completion.
         // VAL-WIRING-004: Runtime success depends on ValidationOrchestrator validation,
         // not only local default validation. This is the audited production entry point.
+        //
+        // F3 (plan/flow_integration_plan/08_validation_gates.md): if a
+        // `validator_gate` trigger is installed via `.swell/triggers.json`,
+        // it is the authoritative producer of the validation result. We
+        // fire `AfterTask` *before* the inline call so the trigger can
+        // populate `TaskTriggerState.validation_result`; the inline
+        // `ValidationOrchestrator` runs only as a fallback when no trigger
+        // wrote a result. This preserves the F3 default-on-without-behavior
+        // -change contract from `10_migration_plan.md`.
         let task = self.orchestrator().get_task(task_id).await?;
         let changed_files = task.enrichment.enriched_files.clone();
-        let validation_input = TaskCompletionInput {
-            task_id,
-            workspace_path: workspace_path.clone(),
-            changed_files,
-            plan: task.plan.clone(),
-            execution_metadata: Some(TaskExecutionMetadata {
-                completed_without_error: generator_result.success,
-                iteration_count: 0, // TODO: track from execution
-                input_tokens: 0,
-                output_tokens: 0,
-                duration_ms: 0,
-                tool_calls_made: 0,
-                max_iterations_reached: false,
-            }),
+        let execution_metadata = TaskExecutionMetadata {
+            completed_without_error: generator_result.success,
+            iteration_count: 0, // TODO: track from execution
+            input_tokens: 0,
+            output_tokens: 0,
+            duration_ms: 0,
+            tool_calls_made: 0,
+            max_iterations_reached: false,
         };
 
-        let orchestrator_result = self
-            .validation_orchestrator
-            .validate_task_completion(validation_input)
-            .await;
-        #[cfg(any(test, feature = "test-support"))]
-        VALIDATION_ORCHESTRATOR_INVOCATIONS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let trigger_state = Arc::new(
+            TaskTriggerState::new(
+                std::path::PathBuf::from(&workspace_path),
+                changed_files.clone(),
+                task.plan.clone(),
+                execution_metadata.clone(),
+                task.clone(),
+                worktree_allocation.is_some(),
+            )
+            .with_tool_calls(generator_result.tool_calls.clone()),
+        );
+
+        // Fire AfterTask. Triggers run in registration order; the
+        // `validator_gate` factory installs a trigger that writes its
+        // `TaskValidationResult` back into `trigger_state`. Subsequent
+        // AfterTask triggers (git_commit, memory_write — landing in PR
+        // 04 / 09) will read what validator_gate produced.
+        let after_task_report = if !self.trigger_registry.is_empty() {
+            let ctx = TriggerContext::for_task(Stage::AfterTask, task_id)
+                .with_task_state(Arc::clone(&trigger_state));
+            Some(self.trigger_registry.fire(&ctx).await)
+        } else {
+            None
+        };
+
+        let orchestrator_result = match trigger_state.take_validation_result() {
+            Some(result) => Ok(result),
+            None => {
+                let validation_input = TaskCompletionInput {
+                    task_id,
+                    workspace_path: workspace_path.clone(),
+                    changed_files,
+                    plan: task.plan.clone(),
+                    execution_metadata: Some(execution_metadata),
+                };
+                let r = self
+                    .validation_orchestrator
+                    .validate_task_completion(validation_input)
+                    .await;
+                #[cfg(any(test, feature = "test-support"))]
+                VALIDATION_ORCHESTRATOR_INVOCATIONS
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                r
+            }
+        };
 
         // Step 6: Build final validation result from ValidationOrchestrator output
         let (validation_passed, mut errors) = match orchestrator_result {
@@ -1301,20 +1377,64 @@ impl ExecutionController {
             warnings: vec![],
         };
 
+        // Apply AfterTask trigger short-circuit outcomes. A `Halt` from a
+        // post-validator trigger (e.g. a future policy gate) vetoes the
+        // task before commit / skill extraction runs. `Reroute` is logged
+        // for the milestone scheduler (PR 03) to act on.
+        if let Some(report) = after_task_report {
+            match &report.short_circuit {
+                Some((name, TriggerOutcome::Halt(reason))) => {
+                    warn!(
+                        task_id = %task_id,
+                        trigger = %name,
+                        reason = %reason,
+                        "AfterTask trigger halted post-execution pipeline"
+                    );
+                    result.passed = false;
+                    result
+                        .errors
+                        .push(format!("Halted by AfterTask trigger '{name}': {reason}"));
+                }
+                Some((name, TriggerOutcome::Reroute(milestone_id))) => {
+                    info!(
+                        task_id = %task_id,
+                        trigger = %name,
+                        milestone = %milestone_id,
+                        "AfterTask trigger requested milestone reroute (scheduler-handled in PR 03)"
+                    );
+                }
+                _ => {}
+            }
+        }
+
         if result.passed {
-            if worktree_allocation.is_some() {
+            // F4 (plan/flow_integration_plan/09_git_integration.md): if a
+            // `git_commit` trigger took responsibility for committing the
+            // diff during the AfterTask fire, skip the legacy inline call.
+            // When the trigger is not installed (or `worktree_allocated`
+            // false) the inline path runs as a fallback, preserving the
+            // default-on-without-behavior-change contract.
+            if worktree_allocation.is_some() && !trigger_state.was_committed_by_trigger() {
                 self.commit_successful_task(&task, &result, Path::new(&workspace_path))
                     .await?;
             }
-            if let Err(e) = self
-                .extract_skill_candidates(&task, &generator_result, Path::new(&workspace_path))
-                .await
-            {
-                warn!(
-                    task_id = %task_id,
-                    error = %e,
-                    "Skill extraction failed after successful task"
-                );
+            // F9 (plan/flow_integration_plan/07_memory_consolidation.md):
+            // when a `memory_write` trigger handled skill extraction
+            // during the AfterTask fire, skip the legacy inline call.
+            // Absent the trigger the inline path runs as a fallback,
+            // preserving the F9 default-on-without-behavior-change
+            // contract.
+            if !trigger_state.was_memory_write_by_trigger() {
+                if let Err(e) = self
+                    .extract_skill_candidates(&task, &generator_result, Path::new(&workspace_path))
+                    .await
+                {
+                    warn!(
+                        task_id = %task_id,
+                        error = %e,
+                        "Skill extraction failed after successful task"
+                    );
+                }
             }
         } else if worktree_allocation.is_some() {
             self.worktree_pool.release(task_id).await?;
@@ -1324,6 +1444,18 @@ impl ExecutionController {
         self.orchestrator()
             .complete_task(task_id, result.clone())
             .await?;
+
+        // PR 02 follow-up: route `OnTaskFailed` from the post-validation
+        // failure path. `complete_task(result.passed = false)` transitions
+        // the task to `Rejected` (validation failure / AfterTask halt veto);
+        // the BeforeTask halt path above fires `OnTaskFailed` separately
+        // for the `Failed` terminal state. Observational only — `Halt` /
+        // `Reroute` outcomes from `OnTaskFailed` triggers are logged but
+        // do not change task state. `Reroute` becomes actionable once PR
+        // `03`'s milestone scheduler is wired.
+        if !result.passed {
+            self.fire_on_task_failed(task_id).await;
+        }
 
         // Step 8: Apply decay function to backlog (when backlog is integrated)
         // NOTE: apply_decay adjusts auto-approve threshold based on run progress.
@@ -1350,41 +1482,44 @@ impl ExecutionController {
             );
         }
 
-        // PR 02 trigger spine: fire AfterTask once the legacy pipeline has
-        // finished. A Halt at this stage cannot undo the work that already
-        // landed (commit / skill candidates / etc.) — instead we flip the
-        // result to failed and surface the halt reason so downstream
-        // callers see the trigger's veto. Continue / Reroute are logged for
-        // the milestone-scheduler slice to react to.
-        if !self.trigger_registry.is_empty() {
-            let ctx = TriggerContext::for_task(Stage::AfterTask, task_id);
-            let report = self.trigger_registry.fire(&ctx).await;
-            match &report.short_circuit {
-                Some((name, TriggerOutcome::Halt(reason))) => {
-                    warn!(
-                        task_id = %task_id,
-                        trigger = %name,
-                        reason = %reason,
-                        "AfterTask trigger halted post-execution pipeline"
-                    );
-                    result.passed = false;
-                    result
-                        .errors
-                        .push(format!("Halted by AfterTask trigger '{name}': {reason}"));
-                }
-                Some((name, TriggerOutcome::Reroute(milestone_id))) => {
-                    info!(
-                        task_id = %task_id,
-                        trigger = %name,
-                        milestone = %milestone_id,
-                        "AfterTask trigger requested milestone reroute (scheduler-handled in PR 03)"
-                    );
-                }
-                _ => {}
-            }
-        }
-
         Ok(result)
+    }
+
+    /// Fire `Stage::OnTaskFailed` for `task_id` against the live registry.
+    ///
+    /// Called from the two terminal failure paths in `execute_task`:
+    /// the `BeforeTask` halt early return (task lands in `Failed`) and the
+    /// post-`complete_task` branch with `!result.passed` (task lands in
+    /// `Rejected` — covering both validation failure and AfterTask halt
+    /// veto). `Halt` / `Reroute` outcomes from `OnTaskFailed` triggers are
+    /// observational today; they log but do not change task state. The
+    /// `Reroute` arm becomes actionable once PR `03`'s milestone scheduler
+    /// is wired.
+    async fn fire_on_task_failed(&self, task_id: TaskId) {
+        if self.trigger_registry.is_empty() {
+            return;
+        }
+        let ctx = TriggerContext::for_task(Stage::OnTaskFailed, task_id);
+        let report = self.trigger_registry.fire(&ctx).await;
+        match report.short_circuit {
+            Some((name, TriggerOutcome::Halt(reason))) => {
+                warn!(
+                    task_id = %task_id,
+                    trigger = %name,
+                    reason = %reason,
+                    "OnTaskFailed trigger returned Halt (observational — task already terminal)"
+                );
+            }
+            Some((name, TriggerOutcome::Reroute(milestone_id))) => {
+                info!(
+                    task_id = %task_id,
+                    trigger = %name,
+                    milestone = %milestone_id,
+                    "OnTaskFailed trigger requested milestone reroute (scheduler-handled in PR 03)"
+                );
+            }
+            _ => {}
+        }
     }
 
     async fn pause_if_token_budget_exceeded(
@@ -2179,7 +2314,7 @@ mod tests {
         let mut controller =
             ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
 
-        let mut registry = TriggerRegistry::new();
+        let registry = TriggerRegistry::new();
         registry.register(Arc::new(HaltTrigger));
         controller.set_trigger_registry(Arc::new(registry));
 
@@ -2197,6 +2332,74 @@ mod tests {
                 .any(|e| e.contains("halt_test") && e.contains("denied by policy")),
             "halt reason must surface in errors: {:?}",
             result.errors
+        );
+    }
+
+    /// PR 02 follow-up: `Stage::OnTaskFailed` must fire when a `BeforeTask`
+    /// halt short-circuits execution. Same triggering shape as the existing
+    /// halt smoke; this asserts the failure-routing fire path is reachable.
+    #[tokio::test]
+    async fn on_task_failed_fires_after_before_task_halt() {
+        use crate::triggers::{Stage, Trigger, TriggerContext, TriggerOutcome, TriggerRegistry};
+        use async_trait::async_trait;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct HaltTrigger;
+        #[async_trait]
+        impl Trigger for HaltTrigger {
+            fn name(&self) -> &'static str {
+                "halt_before_task"
+            }
+            fn stages(&self) -> &'static [Stage] {
+                &[Stage::BeforeTask]
+            }
+            async fn run(&self, _ctx: &TriggerContext) -> TriggerOutcome {
+                TriggerOutcome::Halt("denied".into())
+            }
+        }
+
+        struct CountingOnFailed {
+            seen: Arc<AtomicUsize>,
+        }
+        #[async_trait]
+        impl Trigger for CountingOnFailed {
+            fn name(&self) -> &'static str {
+                "on_task_failed_probe"
+            }
+            fn stages(&self) -> &'static [Stage] {
+                &[Stage::OnTaskFailed]
+            }
+            async fn run(&self, _ctx: &TriggerContext) -> TriggerOutcome {
+                self.seen.fetch_add(1, Ordering::SeqCst);
+                TriggerOutcome::Continue
+            }
+        }
+
+        let orchestrator = OrchestratorBuilder::new().build();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+        let mut controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+
+        let registry = TriggerRegistry::new();
+        registry.register(Arc::new(HaltTrigger));
+        let seen = Arc::new(AtomicUsize::new(0));
+        registry.register(Arc::new(CountingOnFailed {
+            seen: Arc::clone(&seen),
+        }));
+        controller.set_trigger_registry(Arc::new(registry));
+
+        let task = orchestrator
+            .create_task("on_task_failed before halt".to_string(), vec![])
+            .await
+            .unwrap();
+
+        let result = controller.execute_task(task.id).await.unwrap();
+        assert!(!result.passed);
+        assert_eq!(
+            seen.load(Ordering::SeqCst),
+            1,
+            "OnTaskFailed must fire exactly once when BeforeTask halts the task"
         );
     }
 
