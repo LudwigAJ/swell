@@ -37,6 +37,7 @@ pub mod cron_registry;
 pub mod drift_detector;
 pub mod evidence_pipeline;
 pub mod execution;
+pub mod failure_extraction_trigger;
 pub mod feature_flag;
 pub mod feature_leads;
 pub mod file_locks;
@@ -58,6 +59,7 @@ pub mod non_novel_retry;
 pub mod novelty_check;
 pub mod policy;
 pub mod recovery_recipe;
+pub mod researcher_trigger;
 pub mod retry_policy;
 pub mod scheduler;
 pub mod search_router;
@@ -1038,6 +1040,119 @@ impl Orchestrator {
         sm.create_milestone(project_id, title)
     }
 
+    /// Create a milestone designated as the project's researcher /
+    /// recovery milestone. Stamps `kind = MilestoneKind::Researcher`
+    /// so [`Orchestrator::find_researcher_milestone`] (and downstream
+    /// `failure_extraction` auto-discovery) can resolve it without a
+    /// hard-coded UUID in `.swell/triggers.json`. See
+    /// `plan/flow_integration_plan/04_researcher_handoff.md`.
+    pub async fn create_researcher_milestone(
+        &self,
+        project_id: ProjectId,
+        title: String,
+    ) -> Result<Milestone, SwellError> {
+        let sm = self.state_machine.write().await;
+        let milestone = sm.create_milestone(project_id, title)?;
+        sm.with_milestone_mut(milestone.id, |m| {
+            m.kind = swell_core::MilestoneKind::Researcher;
+            Ok(())
+        })?;
+        sm.get_milestone(milestone.id)
+    }
+
+    /// Resolve the project's researcher milestone, if any. Returns the
+    /// first milestone in the project tagged
+    /// `MilestoneKind::Researcher`. Used by `FailureExtractionTrigger`
+    /// to escalate failures at the spawn-depth cap when no
+    /// `researcher_milestone` UUID is pinned in the trigger config.
+    pub async fn find_researcher_milestone(&self, project_id: ProjectId) -> Option<MilestoneId> {
+        let sm = self.state_machine.read().await;
+        sm.get_milestones_for_project(project_id)
+            .ok()?
+            .into_iter()
+            .find(|m| matches!(m.kind, swell_core::MilestoneKind::Researcher))
+            .map(|m| m.id)
+    }
+
+    /// Split `source` into a chain of new child milestones, rewire the
+    /// project's DAG so downstream milestones depend on the chain's
+    /// tail, and mark `source` `Blocked`. Returns the new child ids in
+    /// creation order.
+    ///
+    /// Used by the `ResearcherTrigger` when the diagnostic returns
+    /// `Handoff::SplitMilestone` — see
+    /// `plan/flow_integration_plan/04_researcher_handoff.md`. Layout:
+    ///
+    /// - Child `0` inherits `source.depends_on` so it can run as soon
+    ///   as the source's upstream is `Done`.
+    /// - Child `i > 0` has `depends_on = [child[i-1]]`, forming a
+    ///   sequential chain.
+    /// - Any sibling milestone in the project that had `source` in
+    ///   `depends_on` is rewritten to depend on the LAST child
+    ///   instead, so the downstream graph waits for the whole chain.
+    /// - `source` is set to `MilestoneStatus::Blocked` so the
+    ///   scheduler does not re-walk it. The caller is expected to
+    ///   `Reroute(child[0])` so the scheduler picks up the chain
+    ///   start next iteration.
+    ///
+    /// Errors if `sub_plans` is empty or `source` is unknown.
+    pub async fn split_milestone(
+        &self,
+        source: MilestoneId,
+        sub_plans: Vec<swell_core::MilestonePlan>,
+    ) -> Result<Vec<MilestoneId>, SwellError> {
+        if sub_plans.is_empty() {
+            return Err(SwellError::InvalidStateTransition(format!(
+                "split_milestone called with empty sub_plans for milestone {source}"
+            )));
+        }
+        let sm = self.state_machine.write().await;
+        let source_milestone = sm.get_milestone(source)?;
+        let project_id = source_milestone.project;
+        let upstream = source_milestone.depends_on.clone();
+
+        let mut child_ids: Vec<MilestoneId> = Vec::with_capacity(sub_plans.len());
+        for (idx, plan) in sub_plans.iter().enumerate() {
+            let child = sm.create_milestone(project_id, plan.name.clone())?;
+            let deps = if idx == 0 {
+                upstream.clone()
+            } else {
+                vec![child_ids[idx - 1]]
+            };
+            let parallel = plan.parallel_tasks;
+            sm.with_milestone_mut(child.id, |m| {
+                m.depends_on = deps;
+                m.parallel_tasks = parallel;
+                m.kind = swell_core::MilestoneKind::Work;
+                Ok(())
+            })?;
+            child_ids.push(child.id);
+        }
+
+        let tail = *child_ids
+            .last()
+            .expect("non-empty per sub_plans.is_empty() check");
+        let siblings = sm.get_milestones_for_project(project_id)?;
+        for sibling in siblings {
+            if sibling.id == source || child_ids.contains(&sibling.id) {
+                continue;
+            }
+            if sibling.depends_on.contains(&source) {
+                sm.with_milestone_mut(sibling.id, |m| {
+                    for dep in &mut m.depends_on {
+                        if *dep == source {
+                            *dep = tail;
+                        }
+                    }
+                    Ok(())
+                })?;
+            }
+        }
+
+        sm.set_milestone_status(source, swell_core::MilestoneStatus::Blocked)?;
+        Ok(child_ids)
+    }
+
     /// Get a milestone by ID.
     pub async fn get_milestone(&self, id: MilestoneId) -> Result<Milestone, SwellError> {
         let sm = self.state_machine.read().await;
@@ -1919,6 +2034,61 @@ mod tests {
             .unwrap();
 
         assert_ne!(task1.id, task2.id);
+    }
+
+    /// `create_researcher_milestone` stamps `kind = Researcher`, and
+    /// `find_researcher_milestone` resolves it through the live state
+    /// machine — both halves of the auto-discovery contract used by
+    /// `FailureExtractionTrigger`. See
+    /// `plan/flow_integration_plan/04_researcher_handoff.md`.
+    #[tokio::test]
+    async fn researcher_milestone_round_trips_through_orchestrator_api() {
+        let orchestrator = OrchestratorBuilder::new().build();
+        let project = orchestrator
+            .create_project(Goal::project_root("researcher discovery"))
+            .await;
+        // No researcher milestone yet — discovery returns None.
+        assert!(
+            orchestrator
+                .find_researcher_milestone(project.id)
+                .await
+                .is_none(),
+            "find_researcher_milestone must return None before any \
+             MilestoneKind::Researcher milestone exists"
+        );
+        // Plain work milestone alone is still not discoverable.
+        let _work = orchestrator
+            .create_milestone(project.id, "work".to_string())
+            .await
+            .unwrap();
+        assert!(
+            orchestrator
+                .find_researcher_milestone(project.id)
+                .await
+                .is_none(),
+            "a Work-kind milestone must not satisfy find_researcher_milestone"
+        );
+        let researcher = orchestrator
+            .create_researcher_milestone(project.id, "researcher".to_string())
+            .await
+            .unwrap();
+        assert_eq!(researcher.kind, swell_core::MilestoneKind::Researcher);
+        assert_eq!(
+            orchestrator.find_researcher_milestone(project.id).await,
+            Some(researcher.id),
+            "find_researcher_milestone must surface the kind-tagged milestone"
+        );
+        // Other projects must not see this one.
+        let other_project = orchestrator
+            .create_project(Goal::project_root("isolation check"))
+            .await;
+        assert!(
+            orchestrator
+                .find_researcher_milestone(other_project.id)
+                .await
+                .is_none(),
+            "researcher milestones must scope to their own project"
+        );
     }
 
     #[tokio::test]

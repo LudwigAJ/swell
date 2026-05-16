@@ -115,6 +115,8 @@ impl FollowUpProposal {
             current_scope: Default::default(),
             enrichment: Default::default(),
             milestone: None,
+            parent: Some(self.parent_task_id),
+            spawn_depth: 0,
         }
     }
 

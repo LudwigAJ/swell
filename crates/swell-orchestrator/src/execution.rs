@@ -22,8 +22,9 @@ use std::sync::{Arc, Weak};
 use swell_core::traits::Agent;
 use swell_core::TaskId;
 use swell_core::{
-    AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, Plan, SessionId, StreamEvent,
-    SwellError, Task, TaskState, ToolCallResult, ToolOutput, ToolResultContent, ValidationResult,
+    AgentContext, AgentId, AgentResult, AgentRole, LlmMessage, MilestoneId, Plan, SessionId,
+    StreamEvent, SwellError, Task, TaskState, ToolCallResult, ToolOutput, ToolResultContent,
+    ValidationResult,
 };
 use swell_llm::{LlmBackend, LlmToolDefinition};
 use swell_memory::skill_extraction::{
@@ -281,6 +282,13 @@ pub struct ExecutionController {
     /// pipeline. Built-in triggers from PRs `07` / `08` / `09` will register
     /// against this surface in follow-up slices.
     trigger_registry: Arc<TriggerRegistry>,
+    /// Side-channel for `AfterTask` reroute outcomes. `execute_task` writes
+    /// the target milestone here when a trigger returns
+    /// `TriggerOutcome::Reroute`; `MilestoneScheduler` drains it via
+    /// [`Self::take_reroute_hint`] after each task to redirect the next
+    /// milestone in the walk. See
+    /// `plan/flow_integration_plan/03_worker_pool_fanout.md`.
+    pending_reroutes: Arc<std::sync::Mutex<HashMap<TaskId, MilestoneId>>>,
 }
 
 impl ExecutionController {
@@ -346,6 +354,7 @@ impl ExecutionController {
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
             trigger_registry: Arc::new(TriggerRegistry::new()),
+            pending_reroutes: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -388,6 +397,7 @@ impl ExecutionController {
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
             trigger_registry: Arc::new(TriggerRegistry::new()),
+            pending_reroutes: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -434,6 +444,7 @@ impl ExecutionController {
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
             trigger_registry: Arc::new(TriggerRegistry::new()),
+            pending_reroutes: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -483,6 +494,7 @@ impl ExecutionController {
             default_confidence_threshold: 0.5,
             uncertainty_timeout_secs: 3600,
             trigger_registry: Arc::new(TriggerRegistry::new()),
+            pending_reroutes: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -523,6 +535,18 @@ impl ExecutionController {
     /// An empty registry makes firing a no-op.
     pub fn trigger_registry(&self) -> Arc<TriggerRegistry> {
         Arc::clone(&self.trigger_registry)
+    }
+
+    /// Take the AfterTask reroute hint, if any, recorded for `task_id`
+    /// during its most recent execution. Removes the entry on read so
+    /// repeated calls return `None`. Used by `MilestoneScheduler` to
+    /// redirect the next milestone walk. See
+    /// `plan/flow_integration_plan/03_worker_pool_fanout.md`.
+    pub fn take_reroute_hint(&self, task_id: TaskId) -> Option<MilestoneId> {
+        self.pending_reroutes
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.remove(&task_id))
     }
 
     /// Install a `TriggerRegistry` to be fired at task lifecycle edges.
@@ -1134,6 +1158,68 @@ impl ExecutionController {
 
         let generator_result: AgentResult = match generator.execute(context).await {
             Ok(result) => result,
+            Err(SwellError::LoopDetected { reason, pattern }) if pattern == "escalation" => {
+                // PR 04 (plan/flow_integration_plan/04_researcher_handoff.md):
+                // `LoopIntervention::Escalation` from the generator's
+                // ReAct tool loop is a recoverable failure — instead of
+                // propagating as a plain Err and letting the scheduler
+                // log it, fire `OnTaskFailed` with `escalation = true`
+                // so the researcher trigger (or any future
+                // escalation-aware trigger) gets a chance to reroute.
+                //
+                // Other loop patterns (`halt`, `strategy_change`) still
+                // propagate — `halt` is intentionally terminal, and
+                // `strategy_change` belongs to a future
+                // strategy-switch trigger that doesn't exist yet.
+                if worktree_allocation.is_some() {
+                    if let Err(release_err) = self.worktree_pool.release(task_id).await {
+                        warn!(
+                            task_id = %task_id,
+                            error = %release_err,
+                            "Failed to release worktree after loop escalation"
+                        );
+                    }
+                }
+
+                let escalation_result = ValidationResult {
+                    passed: false,
+                    lint_passed: false,
+                    tests_passed: false,
+                    security_passed: false,
+                    ai_review_passed: false,
+                    errors: vec![format!("Loop detector escalation: {reason}")],
+                    warnings: vec![],
+                };
+
+                let orch = self.orchestrator();
+                {
+                    let sm = orch.state_machine();
+                    let sm = sm.read().await;
+                    let _ = sm.with_task_mut(task_id, |task| {
+                        task.validation_result = Some(escalation_result.clone());
+                        Ok(())
+                    });
+                }
+                if let Err(e) = orch.fail_task(task_id).await {
+                    warn!(
+                        task_id = %task_id,
+                        error = %e,
+                        "Failed to mark task Failed after loop escalation"
+                    );
+                }
+
+                // Fire OnTaskFailed with the escalation discriminator
+                // set. Researcher (or any future escalation-aware
+                // trigger) can read `ctx.escalation` to differentiate
+                // this from a regular validation failure. The Reroute
+                // hint, if any, flows through the same `pending_reroutes`
+                // side-channel the scheduler drains on the
+                // BlockedByTaskFailure path.
+                self.fire_on_task_failed_with_escalation(task_id, true)
+                    .await;
+
+                return Ok(escalation_result);
+            }
             Err(e) => {
                 if worktree_allocation.is_some() {
                     if let Err(release_err) = self.worktree_pool.release(task_id).await {
@@ -1400,8 +1486,14 @@ impl ExecutionController {
                         task_id = %task_id,
                         trigger = %name,
                         milestone = %milestone_id,
-                        "AfterTask trigger requested milestone reroute (scheduler-handled in PR 03)"
+                        "AfterTask trigger requested milestone reroute"
                     );
+                    // Side-channel for MilestoneScheduler to consume after
+                    // the task completes. See
+                    // `plan/flow_integration_plan/03_worker_pool_fanout.md`.
+                    if let Ok(mut guard) = self.pending_reroutes.lock() {
+                        guard.insert(task_id, *milestone_id);
+                    }
                 }
                 _ => {}
             }
@@ -1491,15 +1583,29 @@ impl ExecutionController {
     /// the `BeforeTask` halt early return (task lands in `Failed`) and the
     /// post-`complete_task` branch with `!result.passed` (task lands in
     /// `Rejected` — covering both validation failure and AfterTask halt
-    /// veto). `Halt` / `Reroute` outcomes from `OnTaskFailed` triggers are
-    /// observational today; they log but do not change task state. The
-    /// `Reroute` arm becomes actionable once PR `03`'s milestone scheduler
-    /// is wired.
+    /// veto). `Halt` is observational (the task is already terminal).
+    /// `Reroute(target)` is stored on the same `pending_reroutes`
+    /// side-channel that `AfterTask` writes to; the milestone scheduler
+    /// drains it on the milestone-blocked path so a stuck task can punt
+    /// to a recovery milestone (e.g. Researcher handoff, see PR 04).
     async fn fire_on_task_failed(&self, task_id: TaskId) {
+        self.fire_on_task_failed_with_escalation(task_id, false)
+            .await
+    }
+
+    /// Same as [`Self::fire_on_task_failed`] but tags the
+    /// `TriggerContext` as a loop-detector escalation. Used by the
+    /// generator-error branch in [`Self::execute_task`] when the loop
+    /// detector returns `LoopIntervention::Escalation`. Researcher /
+    /// future escalation-aware triggers read `ctx.escalation` to
+    /// differentiate this from a regular validation failure. See
+    /// `plan/flow_integration_plan/04_researcher_handoff.md`.
+    async fn fire_on_task_failed_with_escalation(&self, task_id: TaskId, escalation: bool) {
         if self.trigger_registry.is_empty() {
             return;
         }
-        let ctx = TriggerContext::for_task(Stage::OnTaskFailed, task_id);
+        let ctx =
+            TriggerContext::for_task(Stage::OnTaskFailed, task_id).with_escalation(escalation);
         let report = self.trigger_registry.fire(&ctx).await;
         match report.short_circuit {
             Some((name, TriggerOutcome::Halt(reason))) => {
@@ -1507,6 +1613,7 @@ impl ExecutionController {
                     task_id = %task_id,
                     trigger = %name,
                     reason = %reason,
+                    escalation,
                     "OnTaskFailed trigger returned Halt (observational — task already terminal)"
                 );
             }
@@ -1515,8 +1622,12 @@ impl ExecutionController {
                     task_id = %task_id,
                     trigger = %name,
                     milestone = %milestone_id,
-                    "OnTaskFailed trigger requested milestone reroute (scheduler-handled in PR 03)"
+                    escalation,
+                    "OnTaskFailed trigger requested milestone reroute"
                 );
+                if let Ok(mut guard) = self.pending_reroutes.lock() {
+                    guard.insert(task_id, milestone_id);
+                }
             }
             _ => {}
         }
@@ -2248,6 +2359,7 @@ impl Clone for ExecutionController {
             default_confidence_threshold: self.default_confidence_threshold,
             uncertainty_timeout_secs: self.uncertainty_timeout_secs,
             trigger_registry: Arc::clone(&self.trigger_registry),
+            pending_reroutes: Arc::clone(&self.pending_reroutes),
         }
     }
 }
@@ -2335,6 +2447,70 @@ mod tests {
         );
     }
 
+    /// PR 04: `fire_on_task_failed_with_escalation(true)` builds a
+    /// `TriggerContext` with `escalation = true` so the researcher
+    /// trigger (or any future loop-aware trigger) can differentiate a
+    /// `LoopIntervention::Escalation` from a regular validation
+    /// failure. The plain `fire_on_task_failed` wrapper must keep
+    /// `escalation = false` for backwards compatibility with all the
+    /// existing failure paths.
+    #[tokio::test]
+    async fn fire_on_task_failed_with_escalation_sets_context_flag() {
+        use crate::triggers::{Stage, Trigger, TriggerContext, TriggerOutcome, TriggerRegistry};
+        use async_trait::async_trait;
+        use std::sync::Mutex as StdMutex;
+
+        struct CapturingProbe {
+            seen: Arc<StdMutex<Vec<bool>>>,
+        }
+        #[async_trait]
+        impl Trigger for CapturingProbe {
+            fn name(&self) -> &'static str {
+                "escalation_flag_probe"
+            }
+            fn stages(&self) -> &'static [Stage] {
+                &[Stage::OnTaskFailed]
+            }
+            async fn run(&self, ctx: &TriggerContext) -> TriggerOutcome {
+                self.seen.lock().unwrap().push(ctx.escalation);
+                TriggerOutcome::Continue
+            }
+        }
+
+        let orchestrator = OrchestratorBuilder::new().build();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+        let mut controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+
+        let seen = Arc::new(StdMutex::new(Vec::new()));
+        let registry = TriggerRegistry::new();
+        registry.register(Arc::new(CapturingProbe {
+            seen: Arc::clone(&seen),
+        }));
+        controller.set_trigger_registry(Arc::new(registry));
+
+        let task = orchestrator
+            .create_task("escalation smoke".to_string(), vec![])
+            .await
+            .unwrap();
+
+        // Default fire — must observe escalation = false.
+        controller.fire_on_task_failed(task.id).await;
+        // Escalation fire — must observe escalation = true.
+        controller
+            .fire_on_task_failed_with_escalation(task.id, true)
+            .await;
+
+        let observed = seen.lock().unwrap().clone();
+        assert_eq!(
+            observed,
+            vec![false, true],
+            "first fire was the default wrapper (escalation false); second was escalation true. \
+             Got {observed:?}"
+        );
+    }
+
     /// PR 02 follow-up: `Stage::OnTaskFailed` must fire when a `BeforeTask`
     /// halt short-circuits execution. Same triggering shape as the existing
     /// halt smoke; this asserts the failure-routing fire path is reachable.
@@ -2400,6 +2576,77 @@ mod tests {
             seen.load(Ordering::SeqCst),
             1,
             "OnTaskFailed must fire exactly once when BeforeTask halts the task"
+        );
+    }
+
+    /// PR 04 prep: an `OnTaskFailed` trigger that returns `Reroute(target)`
+    /// must record the target on the `pending_reroutes` side-channel keyed
+    /// by the failing task id, where `MilestoneScheduler` drains it on
+    /// the milestone-blocked path. Mirrors the AfterTask reroute hand-off.
+    #[tokio::test]
+    async fn on_task_failed_reroute_writes_pending_reroute_hint() {
+        use crate::triggers::{Stage, Trigger, TriggerContext, TriggerOutcome, TriggerRegistry};
+        use async_trait::async_trait;
+        use swell_core::MilestoneId;
+
+        struct HaltBefore;
+        #[async_trait]
+        impl Trigger for HaltBefore {
+            fn name(&self) -> &'static str {
+                "halt_before_task"
+            }
+            fn stages(&self) -> &'static [Stage] {
+                &[Stage::BeforeTask]
+            }
+            async fn run(&self, _ctx: &TriggerContext) -> TriggerOutcome {
+                TriggerOutcome::Halt("denied".into())
+            }
+        }
+
+        struct ReroutingOnFailed {
+            target: MilestoneId,
+        }
+        #[async_trait]
+        impl Trigger for ReroutingOnFailed {
+            fn name(&self) -> &'static str {
+                "reroute_on_task_failed"
+            }
+            fn stages(&self) -> &'static [Stage] {
+                &[Stage::OnTaskFailed]
+            }
+            async fn run(&self, _ctx: &TriggerContext) -> TriggerOutcome {
+                TriggerOutcome::Reroute(self.target)
+            }
+        }
+
+        let orchestrator = OrchestratorBuilder::new().build();
+        let mock_llm = Arc::new(MockLlm::new("claude-sonnet"));
+        let tool_registry = Arc::new(ToolRegistry::new());
+        let mut controller =
+            ExecutionController::new(Arc::downgrade(&orchestrator), mock_llm, tool_registry);
+
+        let target = MilestoneId::new();
+        let registry = TriggerRegistry::new();
+        registry.register(Arc::new(HaltBefore));
+        registry.register(Arc::new(ReroutingOnFailed { target }));
+        controller.set_trigger_registry(Arc::new(registry));
+
+        let task = orchestrator
+            .create_task("on_task_failed reroute".to_string(), vec![])
+            .await
+            .unwrap();
+
+        let result = controller.execute_task(task.id).await.unwrap();
+        assert!(!result.passed);
+        assert_eq!(
+            controller.take_reroute_hint(task.id),
+            Some(target),
+            "OnTaskFailed Reroute must populate the pending_reroutes side-channel"
+        );
+        assert_eq!(
+            controller.take_reroute_hint(task.id),
+            None,
+            "take_reroute_hint must drain the hint exactly once"
         );
     }
 
