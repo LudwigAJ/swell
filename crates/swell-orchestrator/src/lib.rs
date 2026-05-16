@@ -1204,6 +1204,78 @@ impl Orchestrator {
         sm.assign_task_to_milestone(task_id, milestone_id)
     }
 
+    /// Promote an approved-eligible follow-up proposal into a real `Task`.
+    ///
+    /// PR 12 (`plan/flow_integration_plan/12_task_generation_failure_and_followup.md`):
+    /// `FollowUpProposerTrigger` enqueues `FollowUpProposal`s on AfterTask
+    /// success; this is the operator-side promotion path. The proposal
+    /// must currently be `Pending` — calling this also approves it,
+    /// transitioning the queue entry to `Approved` for audit. The new
+    /// task is stamped with:
+    ///
+    /// - `parent = Some(<proposal.parent_task_id>)`
+    /// - `spawn_depth = parent.spawn_depth + 1` (clamped at `u8::MAX`)
+    /// - `dependencies` includes the parent so the scheduler waits on it
+    /// - milestone inherited from the parent task if any (mirrors
+    ///   `FailureExtractionTrigger`)
+    ///
+    /// Created through the state machine's low-level `create_task` to
+    /// bypass novelty checking — a follow-up by design overlaps the
+    /// parent's scope.
+    ///
+    /// Returns the new `TaskId` on success. Returns
+    /// [`SwellError::InvalidOperation`] if the proposal is unknown or
+    /// not in `Pending`. Returns [`SwellError::TaskNotFound`] if the
+    /// parent task referenced by the proposal no longer exists.
+    pub async fn promote_proposal(&self, proposal_id: uuid::Uuid) -> Result<TaskId, SwellError> {
+        let proposal = self.proposal_queue.approve(proposal_id).ok_or_else(|| {
+            SwellError::InvalidOperation(format!(
+                "proposal {proposal_id} is not pending or does not exist"
+            ))
+        })?;
+        let parent_id = proposal.parent_task_id;
+        let parent = self.get_task(parent_id).await?;
+        let derived = proposal.into_task();
+        let description = derived.description.clone();
+        let parent_spawn_depth = parent.spawn_depth;
+
+        let sm = self.state_machine.read().await;
+        let child = sm.create_task(description);
+        let child_id = child.id;
+        if let Err(e) = sm.with_task_mut(child_id, |t| {
+            t.parent = Some(parent_id);
+            t.spawn_depth = parent_spawn_depth.saturating_add(1);
+            t.dependencies = derived.dependencies.clone();
+            t.source = derived.source.clone();
+            Ok(())
+        }) {
+            tracing::warn!(
+                parent = %parent_id,
+                child = %child_id,
+                error = %e,
+                "promote_proposal: child created but parent/depth not stamped"
+            );
+        }
+        if let Some(milestone_id) = parent.milestone {
+            if let Err(e) = sm.assign_task_to_milestone(child_id, milestone_id) {
+                tracing::warn!(
+                    parent = %parent_id,
+                    child = %child_id,
+                    milestone = %milestone_id,
+                    error = %e,
+                    "promote_proposal: failed to inherit parent milestone"
+                );
+            }
+        }
+        tracing::info!(
+            proposal = %proposal_id,
+            parent = %parent_id,
+            child = %child_id,
+            "promote_proposal: approved follow-up promoted to task"
+        );
+        Ok(child_id)
+    }
+
     /// Get tasks by state
     pub async fn get_tasks_by_state(&self, state: TaskState) -> Vec<Task> {
         let sm = self.state_machine.read().await;
@@ -3165,5 +3237,130 @@ mod tests {
         // 20. SkillExtraction
         // Total: 20 entries
         assert_eq!(manifest.len(), 20, "Expected 20 subsystems in manifest");
+    }
+
+    // --- promote_proposal Tests (PR 12) ---
+
+    fn make_followup(parent: TaskId) -> crate::followup_generator::FollowUpProposal {
+        use crate::followup_generator::{FollowUpOpportunityType, FollowUpProposal};
+        FollowUpProposal {
+            id: Uuid::new_v4(),
+            parent_task_id: parent,
+            description: "Add docs for new public API".to_string(),
+            rationale: "public API touched; docs follow".to_string(),
+            opportunity_type: FollowUpOpportunityType::DocumentationGap,
+            affected_items: vec!["src/lib.rs".to_string()],
+            initial_steps: vec!["write docs".to_string()],
+            risk_level: RiskLevel::Low,
+            priority: 50,
+        }
+    }
+
+    #[tokio::test]
+    async fn promote_proposal_creates_child_task_stamped_with_parent() {
+        let orch = OrchestratorBuilder::new().build();
+        let parent = orch
+            .create_task("parent".to_string(), vec!["src/lib.rs".to_string()])
+            .await
+            .unwrap();
+        let proposal = make_followup(parent.id);
+        let pid = orch.proposal_queue().submit(proposal);
+
+        let child_id = orch.promote_proposal(pid).await.expect("promotion ok");
+        let child = orch.get_task(child_id).await.unwrap();
+        assert_eq!(child.parent, Some(parent.id));
+        assert_eq!(child.spawn_depth, parent.spawn_depth.saturating_add(1));
+        assert!(child.dependencies.contains(&parent.id));
+        assert!(child.description.contains("Add docs"));
+
+        // Queue entry transitioned to Approved (drained but retained for audit).
+        let entry = orch.proposal_queue().get(pid).expect("entry retained");
+        assert!(matches!(entry.status, ProposalStatus::Approved { .. }));
+        assert!(
+            orch.proposal_queue().pending().is_empty(),
+            "approved entry must not show as pending"
+        );
+    }
+
+    #[tokio::test]
+    async fn promote_proposal_inherits_parent_milestone() {
+        let orch = OrchestratorBuilder::new().build();
+        let project = orch
+            .create_project(swell_core::Goal::new("promote-inherit", TaskId::new()))
+            .await;
+        let milestone = orch
+            .create_milestone(project.id, "m1".to_string())
+            .await
+            .unwrap();
+        let parent = orch
+            .create_task("parent".to_string(), vec!["src/x.rs".to_string()])
+            .await
+            .unwrap();
+        orch.assign_task_to_milestone(parent.id, milestone.id)
+            .await
+            .unwrap();
+
+        let pid = orch.proposal_queue().submit(make_followup(parent.id));
+        let child_id = orch.promote_proposal(pid).await.unwrap();
+        let child = orch.get_task(child_id).await.unwrap();
+        assert_eq!(
+            child.milestone,
+            Some(milestone.id),
+            "child must inherit parent's milestone"
+        );
+    }
+
+    #[tokio::test]
+    async fn promote_proposal_unknown_id_is_invalid_operation() {
+        let orch = OrchestratorBuilder::new().build();
+        let err = orch.promote_proposal(Uuid::new_v4()).await.unwrap_err();
+        assert!(
+            matches!(err, SwellError::InvalidOperation(_)),
+            "unknown id must be InvalidOperation, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn promote_proposal_twice_second_attempt_fails() {
+        let orch = OrchestratorBuilder::new().build();
+        let parent = orch
+            .create_task("parent".to_string(), vec!["src/x.rs".to_string()])
+            .await
+            .unwrap();
+        let pid = orch.proposal_queue().submit(make_followup(parent.id));
+        orch.promote_proposal(pid).await.unwrap();
+        let err = orch.promote_proposal(pid).await.unwrap_err();
+        assert!(matches!(err, SwellError::InvalidOperation(_)));
+    }
+
+    #[tokio::test]
+    async fn promote_proposal_after_reject_fails() {
+        let orch = OrchestratorBuilder::new().build();
+        let parent = orch
+            .create_task("parent".to_string(), vec!["src/x.rs".to_string()])
+            .await
+            .unwrap();
+        let pid = orch.proposal_queue().submit(make_followup(parent.id));
+        assert!(orch.proposal_queue().reject(pid, "out of scope"));
+        let err = orch.promote_proposal(pid).await.unwrap_err();
+        assert!(
+            matches!(err, SwellError::InvalidOperation(_)),
+            "rejected proposal must not be promotable"
+        );
+    }
+
+    #[tokio::test]
+    async fn promote_proposal_missing_parent_task_returns_task_not_found() {
+        // Build a proposal that references a parent id no orchestrator
+        // knows about. The queue accepts arbitrary `parent_task_id`s,
+        // but promotion must fail-fast when the parent vanished.
+        let orch = OrchestratorBuilder::new().build();
+        let stray_parent = TaskId::new();
+        let pid = orch.proposal_queue().submit(make_followup(stray_parent));
+        let err = orch.promote_proposal(pid).await.unwrap_err();
+        assert!(
+            matches!(err, SwellError::TaskNotFound(_)),
+            "promotion against a vanished parent must be TaskNotFound, got {err:?}"
+        );
     }
 }
