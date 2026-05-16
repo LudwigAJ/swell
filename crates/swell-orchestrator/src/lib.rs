@@ -42,6 +42,7 @@ pub mod feature_flag;
 pub mod feature_leads;
 pub mod file_locks;
 pub mod followup_generator;
+pub mod followup_proposer_trigger;
 pub mod frozen_spec;
 pub mod gap_analyzer;
 pub mod git_commit_trigger;
@@ -58,6 +59,7 @@ pub mod model_fallback;
 pub mod non_novel_retry;
 pub mod novelty_check;
 pub mod policy;
+pub mod proposal_queue;
 pub mod recovery_recipe;
 pub mod researcher_trigger;
 pub mod retry_policy;
@@ -142,6 +144,7 @@ pub use followup_generator::{
     FollowUpContext, FollowUpGenerator, FollowUpGeneratorConfig, FollowUpOpportunity,
     FollowUpOpportunityType, FollowUpProposal,
 };
+pub use followup_proposer_trigger::{register_followup_proposer_factory, FollowUpProposerTrigger};
 pub use frozen_spec::{FrozenRequirementRegistry, FrozenSpec, FrozenSpecRef, TraceabilityResult};
 pub use gap_analyzer::{
     CategoryGapReport, GapAnalysisReport, GapAnalyzer, GapAnalyzerConfig, ImplementationStatus,
@@ -179,6 +182,7 @@ pub use policy::{
     action, PolicyAction, PolicyCondition, PolicyDecision, PolicyEffect, PolicyEngine, PolicyFile,
     PolicyRule,
 };
+pub use proposal_queue::{ProposalQueue, ProposalStatus, QueuedProposal};
 pub use recovery_recipe::{
     BackoffStrategy, FailureScenario, RecoveryRecipe, RecoveryStep, RecoverySteps,
 };
@@ -419,6 +423,10 @@ pub struct Orchestrator {
     /// The construction cycle is broken by giving ExecutionController a
     /// `Weak<Orchestrator>` back-pointer (populated via `Arc::new_cyclic`).
     execution_controller: Arc<ExecutionController>,
+    /// Follow-up proposal queue. Populated by `FollowUpProposerTrigger`
+    /// on AfterTask success; drained by operator approve/reject (PR 13).
+    /// Always present after construction — no `Option` wrapper.
+    proposal_queue: Arc<ProposalQueue>,
 }
 
 impl Orchestrator {
@@ -467,12 +475,20 @@ impl Orchestrator {
                 llm_for_controller,
                 tool_registry_for_controller,
             )),
+            proposal_queue: Arc::new(ProposalQueue::new()),
         })
     }
 
     /// Tool registry shared with the execution controller.
     pub fn tool_registry(&self) -> Arc<ToolRegistry> {
         Arc::clone(&self.tool_registry)
+    }
+
+    /// Follow-up proposal queue. Populated by
+    /// [`FollowUpProposerTrigger`][crate::followup_proposer_trigger::FollowUpProposerTrigger]
+    /// on the AfterTask success path; drained by operator approve/reject.
+    pub fn proposal_queue(&self) -> Arc<ProposalQueue> {
+        Arc::clone(&self.proposal_queue)
     }
 
     /// Register the default set of built-in tools (`read_file`,

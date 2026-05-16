@@ -7,6 +7,7 @@ use swell_llm::LlmBackend;
 use swell_memory::recall::RecallService;
 use swell_memory::SqliteMemoryStore;
 use swell_orchestrator::failure_extraction_trigger::register_failure_extraction_factory;
+use swell_orchestrator::followup_proposer_trigger::register_followup_proposer_factory;
 use swell_orchestrator::git_commit_trigger::register_git_commit_factory;
 use swell_orchestrator::memory_write_trigger::register_default_memory_write_factory;
 use swell_orchestrator::researcher_trigger::register_mode_switched_researcher_factory;
@@ -266,6 +267,11 @@ impl Daemon {
         // Weak<Orchestrator> so the trigger can fetch the failed task and
         // create the child through the live state machine at fire time.
         register_failure_extraction_factory(&mut factories, Arc::downgrade(&self.orchestrator));
+        // PR 12 follow-up proposer: AfterTask success-path trigger that
+        // enqueues `FollowUpProposal`s into the orchestrator's
+        // `ProposalQueue`. Opt-in via `.swell/triggers.json` — absent an
+        // entry, no behavior change ships.
+        register_followup_proposer_factory(&mut factories, Arc::downgrade(&self.orchestrator));
         // PR 04 (plan/flow_integration_plan/04_researcher_handoff.md):
         // ResearcherTrigger factory with config-driven mode selection.
         // Operators set `mode: "stub" | "live"` (default `"stub"`) on

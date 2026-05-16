@@ -1750,3 +1750,69 @@ impl LateBoundScenarioLlm {
             .expect("scripted LLM not bound before first call")
     }
 }
+
+/// PR 12 follow-up proposer wiring smoke. Verifies that
+/// `.swell/triggers.json` opting in `followup_proposer` builds a trigger
+/// that registers on the live `Orchestrator`. We don't drive a task
+/// through the daemon here — just prove the factory wires through and
+/// the trigger appears on `orchestrator.trigger_names()`. End-to-end
+/// behavior (validator_gate passes → proposer enqueues into the
+/// orchestrator's ProposalQueue) is covered by the per-trigger unit
+/// smokes in `crates/swell-orchestrator/src/followup_proposer_trigger.rs`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
+async fn followup_proposer_trigger_registers_from_config() {
+    std::env::remove_var("SWELL_STRICT");
+    swell_orchestrator::execution::reset_wiring_probe_counts();
+
+    let temp = TempDir::new().expect("tempdir");
+    let swell_dir = temp.path().join(".swell");
+    std::fs::create_dir_all(&swell_dir).unwrap();
+    std::fs::write(
+        swell_dir.join("triggers.json"),
+        r#"{
+  "followup_proposer": {
+    "stages": ["AfterTask"],
+    "enabled": true,
+    "config": { "max_proposals_per_task": 3 }
+  }
+}"#,
+    )
+    .unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+
+    let socket_path = SocketPath::new(temp.path().join("daemon-followup.sock"));
+    let llm: Arc<dyn LlmBackend> = Arc::new(MockLlm::new("followup-smoke"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    let orchestrator = daemon.orchestrator();
+
+    let socket_for_task = socket_path.clone();
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+        let _ = socket_for_task;
+    });
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if socket_path.as_path_buf().exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        socket_path.as_path_buf().exists(),
+        "daemon socket never bound at {}",
+        socket_path
+    );
+
+    let names = orchestrator.trigger_names();
+    assert!(
+        names.contains(&"followup_proposer"),
+        "followup_proposer trigger must be installed from .swell/triggers.json; got {names:?}"
+    );
+    // ProposalQueue is constructed eagerly and reachable even when no
+    // task has fired the trigger yet.
+    assert!(orchestrator.proposal_queue().is_empty());
+
+    daemon_task.abort();
+}
