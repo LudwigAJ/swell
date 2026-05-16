@@ -206,6 +206,14 @@ pub struct TriggerContext {
     /// that don't need triggers to exchange data (e.g. the BeforeTask halt
     /// path). See [`TaskTriggerState`].
     pub task_state: Option<Arc<TaskTriggerState>>,
+    /// True when this fire was triggered by a
+    /// [`crate::loop_detection::LoopIntervention::Escalation`] from the
+    /// generator's tool loop, rather than by validation failure / halt.
+    /// Only meaningful on [`Stage::OnTaskFailed`]; defaults to `false`
+    /// everywhere else. Lets the researcher trigger differentiate
+    /// loop-driven escalations from regular failures without losing the
+    /// `OnTaskFailed` Reroute path.
+    pub escalation: bool,
 }
 
 impl TriggerContext {
@@ -216,6 +224,7 @@ impl TriggerContext {
             milestone: None,
             task: Some(task),
             task_state: None,
+            escalation: false,
         }
     }
 
@@ -226,6 +235,7 @@ impl TriggerContext {
             milestone: Some(milestone),
             task: None,
             task_state: None,
+            escalation: false,
         }
     }
 
@@ -236,6 +246,7 @@ impl TriggerContext {
             milestone: None,
             task: None,
             task_state: None,
+            escalation: false,
         }
     }
 
@@ -245,6 +256,14 @@ impl TriggerContext {
     /// for `execute_task` to consume.
     pub fn with_task_state(mut self, state: Arc<TaskTriggerState>) -> Self {
         self.task_state = Some(state);
+        self
+    }
+
+    /// Mark this fire as a loop-detector escalation. Builder-style so
+    /// existing call sites that build a `TriggerContext::for_task` don't
+    /// need to know about the flag.
+    pub fn with_escalation(mut self, escalation: bool) -> Self {
+        self.escalation = escalation;
         self
     }
 }
