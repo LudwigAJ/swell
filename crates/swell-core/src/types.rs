@@ -225,6 +225,36 @@ impl Project {
     }
 }
 
+/// Classifies a milestone's intended role inside a project. Default
+/// `Work` matches every milestone that exists today; `Researcher`
+/// designates the per-project recovery milestone the `ResearcherTrigger`
+/// reroutes failed tasks into (see
+/// `plan/flow_integration_plan/04_researcher_handoff.md`). Additive +
+/// `#[serde(default)]` so legacy milestone JSON still loads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+pub enum MilestoneKind {
+    #[default]
+    Work,
+    Researcher,
+}
+
+/// Spec for one child milestone the `ResearcherTrigger` will create
+/// when its diagnostic returns `Handoff::SplitMilestone`. Consumed by
+/// [`crate::Milestone`]-creation paths in
+/// `Orchestrator::split_milestone`. Lives in `swell-core` so the LLM
+/// wire format in `researcher_trigger` and the orchestrator API can
+/// share one type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MilestonePlan {
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Whether the child milestone should run its tasks in parallel.
+    /// Default off matches `Milestone::new`.
+    #[serde(default)]
+    pub parallel_tasks: bool,
+}
+
 /// Milestone grouping tasks under a project with DAG dependencies.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Milestone {
@@ -235,6 +265,19 @@ pub struct Milestone {
     pub tasks: Vec<TaskId>,
     pub validators: Vec<ValidatorRef>,
     pub status: MilestoneStatus,
+    /// When true, tasks within this milestone are dispatched concurrently
+    /// (bounded by `ExecutionController::max_concurrent`). Default off:
+    /// existing milestones deserialize sequentially, preserving today's
+    /// serial-walk semantics. See `plan/flow_integration_plan/03_worker_pool_fanout.md`.
+    #[serde(default)]
+    pub parallel_tasks: bool,
+    /// Role classification. Default `Work`. Set to `Researcher` so
+    /// `Orchestrator::find_researcher_milestone` and the
+    /// `failure_extraction` trigger can auto-discover the per-project
+    /// recovery milestone without operators copying UUIDs into
+    /// `.swell/triggers.json`.
+    #[serde(default)]
+    pub kind: MilestoneKind,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -250,9 +293,20 @@ impl Milestone {
             tasks: Vec::new(),
             validators: Vec::new(),
             status: MilestoneStatus::Pending,
+            parallel_tasks: false,
+            kind: MilestoneKind::default(),
             created_at: now,
             updated_at: now,
         }
+    }
+
+    /// Builder-style setter for [`MilestoneKind`]. Pair with
+    /// `Orchestrator::find_researcher_milestone` to designate the
+    /// per-project recovery milestone.
+    pub fn with_kind(mut self, kind: MilestoneKind) -> Self {
+        self.kind = kind;
+        self.updated_at = Utc::now();
+        self
     }
 
     pub fn with_dependency(mut self, milestone_id: MilestoneId) -> Self {
@@ -323,6 +377,17 @@ pub struct Task {
     /// Optional milestone parent. `None` preserves legacy loose-task behavior.
     #[serde(default)]
     pub milestone: Option<MilestoneId>,
+    /// Parent task that spawned this one (failure-derived narrow re-run or
+    /// follow-up proposal). `None` for operator-created roots. See
+    /// `plan/flow_integration_plan/12_task_generation_failure_and_followup.md`.
+    #[serde(default)]
+    pub parent: Option<TaskId>,
+    /// Depth in the parent-spawn chain. `0` for roots. The
+    /// `FailureExtractionTrigger` refuses to spawn further children once a
+    /// task's depth reaches the configured cap (default 3), escalating
+    /// instead.
+    #[serde(default)]
+    pub spawn_depth: u8,
 }
 
 /// Scope defining task boundaries for modification
@@ -564,6 +629,8 @@ impl Task {
             current_scope: TaskScope::default(),
             enrichment: TaskEnrichment::default(),
             milestone: None,
+            parent: None,
+            spawn_depth: 0,
         }
     }
 
@@ -594,6 +661,8 @@ impl Task {
             current_scope: TaskScope::default(),
             enrichment: TaskEnrichment::default(),
             milestone: None,
+            parent: None,
+            spawn_depth: 0,
         }
     }
 
@@ -895,6 +964,13 @@ pub enum CliCommand {
     KillSwitchReset,
     /// Query the global daemon kill switch state.
     KillSwitchStatus,
+    /// Drive every milestone in a project through the `MilestoneScheduler`.
+    /// The daemon walks milestones in dependency order, fires the
+    /// `BeforeMilestone` / `AfterMilestone` / `OnMilestoneBlocked` triggers,
+    /// and returns a per-milestone report.
+    ProjectRun {
+        project_id: ProjectId,
+    },
 }
 
 /// A correlation ID used to track related events across the system.
@@ -1180,6 +1256,36 @@ pub enum DataResponse {
         state: crate::kill_switch::KillSwitchState,
         correlation_id: CorrelationId,
     },
+    /// Project-run report response - returned by `CliCommand::ProjectRun`.
+    /// Mirrors `swell_orchestrator::milestone_scheduler::MilestoneSchedulerReport`
+    /// in a serializable form so the daemon ↔ CLI wire stays in `swell-core`.
+    ProjectRunReport {
+        project_id: ProjectId,
+        /// `true` iff every attempted milestone reached `Done` and nothing stalled.
+        all_done: bool,
+        /// Per-milestone outcome, in the order they were walked.
+        attempted: Vec<MilestoneRunOutcomeEntry>,
+        /// Milestones the scheduler could not start (cycle / upstream blocked).
+        stalled: Vec<MilestoneId>,
+        correlation_id: CorrelationId,
+    },
+}
+
+/// Per-milestone outcome inside `DataResponse::ProjectRunReport`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MilestoneRunOutcomeEntry {
+    pub milestone_id: MilestoneId,
+    pub outcome: MilestoneRunOutcome,
+}
+
+/// Serializable mirror of `MilestoneOutcome` from `swell-orchestrator`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", content = "payload")]
+pub enum MilestoneRunOutcome {
+    Done,
+    BlockedBeforeStart { reason: String },
+    BlockedByTaskFailure { failing_task: TaskId },
+    BlockedAfterTasks { reason: String },
 }
 
 // ============================================================================
@@ -1859,6 +1965,7 @@ mod tests {
                     DataResponse::CostData { correlation_id, .. } => *correlation_id,
                     DataResponse::DaemonHealth { correlation_id, .. } => *correlation_id,
                     DataResponse::KillSwitchStatus { correlation_id, .. } => *correlation_id,
+                    DataResponse::ProjectRunReport { correlation_id, .. } => *correlation_id,
                 },
             }
         };
@@ -1941,6 +2048,8 @@ mod tests {
             current_scope: TaskScope::default(),
             enrichment: Default::default(),
             milestone: None,
+            parent: None,
+            spawn_depth: 0,
         }];
         let task_list = DataResponse::TaskList {
             tasks: tasks.clone(),
@@ -1984,6 +2093,8 @@ mod tests {
             current_scope: TaskScope::default(),
             enrichment: Default::default(),
             milestone: None,
+            parent: None,
+            spawn_depth: 0,
         };
         let task_detail = DataResponse::TaskDetail {
             task,
@@ -2143,6 +2254,8 @@ mod tests {
             current_scope: TaskScope::default(),
             enrichment: Default::default(),
             milestone: None,
+            parent: None,
+            spawn_depth: 0,
         };
 
         let event = DaemonEvent::DataResponse(Box::new(DataResponse::TaskDetail {
@@ -2226,5 +2339,73 @@ mod tests {
 
         assert_eq!(parsed_milestone.tasks, vec![task_id]);
         assert_eq!(parsed_milestone.status, MilestoneStatus::Pending);
+    }
+
+    /// `parallel_tasks` is additive (default off) and survives a serde
+    /// round-trip when omitted, so legacy milestones load unchanged.
+    /// See `plan/flow_integration_plan/03_worker_pool_fanout.md`.
+    #[test]
+    fn milestone_parallel_tasks_defaults_off_and_roundtrips() {
+        let project = Project::new(Goal::project_root("parallel"));
+        let m = Milestone::new(project.id, "fanout");
+        assert!(!m.parallel_tasks, "default must be sequential");
+
+        // Legacy JSON without the field deserializes with the default.
+        let legacy = serde_json::json!({
+            "id": MilestoneId::new(),
+            "project": project.id,
+            "title": "legacy",
+            "depends_on": [],
+            "tasks": [],
+            "validators": [],
+            "status": "Pending",
+            "created_at": chrono::Utc::now(),
+            "updated_at": chrono::Utc::now(),
+        });
+        let parsed: Milestone = serde_json::from_value(legacy).expect("deserialize legacy");
+        assert!(!parsed.parallel_tasks);
+
+        // Round-trip with the flag set preserves it.
+        let mut enabled = m.clone();
+        enabled.parallel_tasks = true;
+        let json = serde_json::to_string(&enabled).unwrap();
+        let parsed: Milestone = serde_json::from_str(&json).unwrap();
+        assert!(parsed.parallel_tasks);
+    }
+
+    /// `MilestoneKind` is additive (default `Work`) and survives a
+    /// serde round-trip when omitted from legacy JSON. See
+    /// `plan/flow_integration_plan/04_researcher_handoff.md` →
+    /// "auto-discover researcher milestone".
+    #[test]
+    fn milestone_kind_defaults_to_work_and_roundtrips() {
+        let project = Project::new(Goal::project_root("kind"));
+        let m = Milestone::new(project.id, "default");
+        assert_eq!(
+            m.kind,
+            MilestoneKind::Work,
+            "default kind must be Work to match legacy milestones"
+        );
+
+        // Legacy JSON without the `kind` field deserializes with the default.
+        let legacy = serde_json::json!({
+            "id": MilestoneId::new(),
+            "project": project.id,
+            "title": "legacy",
+            "depends_on": [],
+            "tasks": [],
+            "validators": [],
+            "status": "Pending",
+            "created_at": chrono::Utc::now(),
+            "updated_at": chrono::Utc::now(),
+        });
+        let parsed: Milestone = serde_json::from_value(legacy).expect("deserialize legacy");
+        assert_eq!(parsed.kind, MilestoneKind::Work);
+
+        // Round-trip with `Researcher` preserves the variant.
+        let researcher = m.with_kind(MilestoneKind::Researcher);
+        let json = serde_json::to_string(&researcher).unwrap();
+        let parsed: Milestone = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.kind, MilestoneKind::Researcher);
     }
 }
