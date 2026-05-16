@@ -6,8 +6,10 @@ use swell_core::{CliCommand, DaemonEvent, TaskId, TaskState};
 use swell_llm::LlmBackend;
 use swell_memory::recall::RecallService;
 use swell_memory::SqliteMemoryStore;
+use swell_orchestrator::failure_extraction_trigger::register_failure_extraction_factory;
 use swell_orchestrator::git_commit_trigger::register_git_commit_factory;
 use swell_orchestrator::memory_write_trigger::register_default_memory_write_factory;
+use swell_orchestrator::researcher_trigger::register_mode_switched_researcher_factory;
 use swell_orchestrator::trigger_config::{load_triggers_from_dir, TriggerFactoryRegistry};
 use swell_orchestrator::validator_gate::register_default_validator_gate_factory;
 use swell_orchestrator::Orchestrator;
@@ -259,6 +261,25 @@ impl Daemon {
             self.orchestrator.llm_backend().model().to_string(),
         );
         register_default_memory_write_factory(&mut factories);
+        // PR 12 (plan/flow_integration_plan/12_task_generation_failure_and_followup.md):
+        // OnTaskFailed factory that spawns narrow child tasks. Captures a
+        // Weak<Orchestrator> so the trigger can fetch the failed task and
+        // create the child through the live state machine at fire time.
+        register_failure_extraction_factory(&mut factories, Arc::downgrade(&self.orchestrator));
+        // PR 04 (plan/flow_integration_plan/04_researcher_handoff.md):
+        // ResearcherTrigger factory with config-driven mode selection.
+        // Operators set `mode: "stub" | "live"` (default `"stub"`) on
+        // the entry in `.swell/triggers.json`. Live mode plumbs the
+        // shared LLM + ToolRegistry through so the diagnostic can
+        // issue read-only tool calls before deciding. Absent an entry,
+        // or absent `mode = "live"`, no behavior change ships
+        // (default-on-without-behavior-change contract).
+        register_mode_switched_researcher_factory(
+            &mut factories,
+            Arc::downgrade(&self.orchestrator),
+            self.orchestrator.llm_backend(),
+            Some(self.orchestrator.tool_registry()),
+        );
         let loaded = load_triggers_from_dir(&swell_dir, &factories);
         for trigger in loaded.built {
             self.orchestrator.install_trigger(trigger);

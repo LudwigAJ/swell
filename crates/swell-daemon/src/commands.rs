@@ -13,6 +13,9 @@ use swell_core::{
     DataResponse, FailureClass, TaskId, TaskState,
 };
 use swell_memory::recall::{RecallQuery, RecallService};
+use swell_orchestrator::milestone_scheduler::{
+    MilestoneOutcome, MilestoneScheduler, MilestoneSchedulerError,
+};
 use swell_orchestrator::Orchestrator;
 use tokio::sync::OnceCell;
 use tracing::{error, info, warn};
@@ -793,6 +796,88 @@ pub async fn handle_command(
                 state,
                 correlation_id,
             }))
+        }
+        CliCommand::ProjectRun { project_id } => {
+            info!(project_id = %project_id, "Project run requested");
+            // Treat an explicit `swell project-run` as user authorization for
+            // every task in the project: promote autonomy to FullAuto so the
+            // scheduler does not park tasks at the AwaitingApproval gate
+            // after planning. Mirrors the same gesture in `TaskExecute`.
+            if let Ok(milestones) = orchestrator.get_milestones_for_project(project_id).await {
+                for milestone in &milestones {
+                    for tid in &milestone.tasks {
+                        if let Err(e) = orchestrator
+                            .set_autonomy_level(*tid, AutonomyLevel::FullAuto)
+                            .await
+                        {
+                            warn!(
+                                project_id = %project_id,
+                                task_id = %tid,
+                                error = %e,
+                                "Failed to promote task to FullAuto for project run"
+                            );
+                        }
+                    }
+                }
+            }
+            let scheduler = MilestoneScheduler::from_orchestrator(&orchestrator);
+            let correlation_id = EventEmitter::new_correlation_id();
+            match scheduler.run_project(project_id).await {
+                Ok(report) => {
+                    let attempted = report
+                        .attempted
+                        .into_iter()
+                        .map(|(milestone_id, outcome)| {
+                            let outcome = match outcome {
+                                MilestoneOutcome::Done => swell_core::MilestoneRunOutcome::Done,
+                                MilestoneOutcome::BlockedBeforeStart { reason } => {
+                                    swell_core::MilestoneRunOutcome::BlockedBeforeStart { reason }
+                                }
+                                MilestoneOutcome::BlockedByTaskFailure { failing_task } => {
+                                    swell_core::MilestoneRunOutcome::BlockedByTaskFailure {
+                                        failing_task,
+                                    }
+                                }
+                                MilestoneOutcome::BlockedAfterTasks { reason } => {
+                                    swell_core::MilestoneRunOutcome::BlockedAfterTasks { reason }
+                                }
+                            };
+                            swell_core::MilestoneRunOutcomeEntry {
+                                milestone_id,
+                                outcome,
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    let all_done = report.stalled.is_empty()
+                        && attempted
+                            .iter()
+                            .all(|e| matches!(e.outcome, swell_core::MilestoneRunOutcome::Done));
+                    DaemonEvent::DataResponse(Box::new(DataResponse::ProjectRunReport {
+                        project_id: report.project,
+                        all_done,
+                        attempted,
+                        stalled: report.stalled,
+                        correlation_id,
+                    }))
+                }
+                Err(err) => {
+                    error!(project_id = %project_id, error = %err, "Project run failed");
+                    let failure_class = match &err {
+                        MilestoneSchedulerError::ProjectNotFound(_) => {
+                            Some(FailureClass::InvalidState)
+                        }
+                        MilestoneSchedulerError::OrchestratorDropped => {
+                            Some(FailureClass::InternalError)
+                        }
+                        MilestoneSchedulerError::Swell(_) => Some(FailureClass::InternalError),
+                    };
+                    DaemonEvent::Error {
+                        message: err.to_string(),
+                        failure_class,
+                        correlation_id,
+                    }
+                }
+            }
         }
         CliCommand::KillSwitchStatus => {
             info!("Kill switch status requested");

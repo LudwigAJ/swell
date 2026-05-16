@@ -14,7 +14,8 @@ use serial_test::serial;
 use std::sync::Arc;
 use std::time::Duration;
 use swell_core::{
-    CliCommand, DaemonEvent, Plan, PlanStep, RiskLevel, SocketPath, StepStatus, TaskState,
+    CliCommand, DaemonEvent, DataResponse, Goal, MilestoneRunOutcome, MilestoneStatus, Plan,
+    PlanStep, RiskLevel, SocketPath, StepStatus, TaskState,
 };
 use swell_daemon::Daemon;
 use swell_llm::{LlmBackend, MockLlm, ScenarioMockLlm, ScenarioStep};
@@ -954,4 +955,798 @@ async fn memory_write_trigger_registers_and_does_not_block_accepted_task() {
     );
 
     daemon_task.abort();
+}
+
+// CliCommand::ProjectRun drives the MilestoneScheduler through the daemon
+// socket and returns a `DataResponse::ProjectRunReport`. Smallest end-to-end
+// proof that the scheduler has a daemon entry point: create a project + a
+// milestone + a task assigned to the milestone via the orchestrator handle,
+// send `ProjectRun` over the wire, and assert the report has the milestone
+// `Done` and the task `Accepted`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
+async fn project_run_drives_milestone_scheduler_through_unix_socket() {
+    std::env::remove_var("SWELL_STRICT");
+    swell_orchestrator::execution::reset_wiring_probe_counts();
+
+    let temp = TempDir::new().expect("tempdir");
+    let swell_dir = temp.path().join(".swell");
+    std::fs::create_dir_all(&swell_dir).unwrap();
+    std::fs::write(
+        swell_dir.join("validation.json"),
+        r#"{
+  "version": "1.0.0",
+  "lint": { "commands": [["true"]], "output_format": "generic" },
+  "test": { "commands": [["true"]], "concurrency": "parallel" }
+}"#,
+    )
+    .unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+
+    let socket_path = SocketPath::new(temp.path().join("daemon-project-run.sock"));
+    let scenario_llm = Arc::new(ScenarioMockLlm::new(
+        "project-run-smoke",
+        vec![
+            ScenarioStep::text(
+                r#"{
+  "steps": [
+    {
+      "description": "Report that the project-run smoke path is reachable",
+      "affected_files": [],
+      "expected_tests": [],
+      "risk_level": "low"
+    }
+  ],
+  "total_estimated_tokens": 100,
+  "risk_assessment": "Low risk project-run smoke"
+}"#,
+            ),
+            ScenarioStep::text("Project-run smoke completed without file changes."),
+        ],
+    ));
+    let llm: Arc<dyn LlmBackend> = scenario_llm.clone();
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    let orchestrator = daemon.orchestrator();
+
+    let task = orchestrator
+        .create_task("project-run smoke task".to_string(), vec![])
+        .await
+        .expect("create task");
+    let task_id = task.id;
+    let project = orchestrator
+        .create_project(Goal::new("project-run smoke", task_id))
+        .await;
+    let milestone = orchestrator
+        .create_milestone(project.id, "m1".to_string())
+        .await
+        .expect("create milestone");
+    orchestrator
+        .assign_task_to_milestone(task_id, milestone.id)
+        .await
+        .expect("assign task to milestone");
+
+    let socket_for_task = socket_path.clone();
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+        let _ = socket_for_task;
+    });
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if socket_path.as_path_buf().exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        socket_path.as_path_buf().exists(),
+        "daemon socket never bound at {}",
+        socket_path
+    );
+
+    let response = send_command(
+        &socket_path,
+        CliCommand::ProjectRun {
+            project_id: project.id,
+        },
+    )
+    .await;
+
+    let report = match response {
+        DaemonEvent::DataResponse(data) => match *data {
+            DataResponse::ProjectRunReport {
+                project_id,
+                all_done,
+                attempted,
+                stalled,
+                ..
+            } => {
+                assert_eq!(project_id, project.id);
+                (all_done, attempted, stalled)
+            }
+            other => panic!("expected ProjectRunReport, got {other:?}"),
+        },
+        other => panic!("expected DataResponse, got {other:?}"),
+    };
+    let (all_done, attempted, stalled) = report;
+    assert!(
+        stalled.is_empty(),
+        "no milestone should stall, got {stalled:?}; attempted={attempted:?}"
+    );
+    assert!(
+        all_done,
+        "all_done must be true when the milestone is Done; attempted={attempted:?}"
+    );
+    assert_eq!(attempted.len(), 1, "exactly one milestone attempted");
+    assert_eq!(attempted[0].milestone_id, milestone.id);
+    assert!(
+        matches!(attempted[0].outcome, MilestoneRunOutcome::Done),
+        "milestone outcome must be Done, got {:?}",
+        attempted[0].outcome
+    );
+
+    let m = orchestrator
+        .get_milestone(milestone.id)
+        .await
+        .expect("milestone exists");
+    assert_eq!(m.status, MilestoneStatus::Done);
+
+    let final_task = orchestrator.get_task(task_id).await.expect("task exists");
+    assert_eq!(
+        final_task.state,
+        TaskState::Accepted,
+        "task within milestone must reach Accepted; was {:?}",
+        final_task.state
+    );
+
+    daemon_task.abort();
+}
+
+/// PR 04 (plan/flow_integration_plan/04_researcher_handoff.md): the
+/// daemon installs the `researcher` factory at boot, and an entry in
+/// `.swell/triggers.json` with `mode = "live"` builds a trigger that
+/// is registered alongside the other built-ins. We don't drive a
+/// failure path here — just prove the factory wires through and the
+/// trigger appears on `orchestrator.trigger_names()`. Confirms the
+/// daemon's `register_mode_switched_researcher_factory` call site
+/// reaches the config loader.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
+async fn researcher_trigger_live_mode_registers_from_config() {
+    std::env::remove_var("SWELL_STRICT");
+    swell_orchestrator::execution::reset_wiring_probe_counts();
+
+    let temp = TempDir::new().expect("tempdir");
+    let swell_dir = temp.path().join(".swell");
+    std::fs::create_dir_all(&swell_dir).unwrap();
+    std::fs::write(
+        swell_dir.join("triggers.json"),
+        r#"{
+  "researcher": {
+    "stages": ["OnMilestoneBlocked", "OnTaskFailed"],
+    "enabled": true,
+    "config": { "mode": "live", "use_tools": true, "max_invocations": 2 }
+  }
+}"#,
+    )
+    .unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+
+    let socket_path = SocketPath::new(temp.path().join("daemon-researcher.sock"));
+    // Daemon won't actually call the LLM in this smoke (no failure
+    // path fires); MockLlm is fine.
+    let llm: Arc<dyn LlmBackend> = Arc::new(MockLlm::new("researcher-smoke"));
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    let orchestrator = daemon.orchestrator();
+
+    let socket_for_task = socket_path.clone();
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+        let _ = socket_for_task;
+    });
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if socket_path.as_path_buf().exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        socket_path.as_path_buf().exists(),
+        "daemon socket never bound at {}",
+        socket_path
+    );
+
+    let names = orchestrator.trigger_names();
+    assert!(
+        names.contains(&"researcher"),
+        "researcher trigger must be installed from .swell/triggers.json; got {names:?}"
+    );
+
+    daemon_task.abort();
+}
+
+/// PR 04 (plan/flow_integration_plan/04_researcher_handoff.md): live-path
+/// end-to-end smoke proving the entire researcher → reroute → recovery
+/// milestone spine is reachable through the daemon socket. This is the
+/// proof-of-life for PR 04 — every prior researcher slice (reroute
+/// consumer, trigger spine, LLM diagnostic, tool-aware loop, mode-switched
+/// daemon wiring) was unit-tested in isolation; here they all run
+/// together against a real failing task.
+///
+/// Topology:
+///   Project P
+///     ├── Milestone A (one task, forced to fail via in-process BeforeTask
+///     │   halt trigger so we don't depend on validation-shell behavior)
+///     └── Milestone B (empty recovery milestone, depends_on A so it
+///         would `stall` under normal DAG order — only a reroute can
+///         reach it)
+///
+/// Flow:
+///   1. `.swell/triggers.json` registers the researcher in `mode: "live"`,
+///      `use_tools: false` (single-shot, so each fire = exactly one LLM
+///      call against the scripted backend) on `[OnTaskFailed,
+///      OnMilestoneBlocked]`.
+///   2. ScenarioMockLlm scripts two verdict turns, both `replan` with
+///      `replan_milestone = <B.id>`. Fire #1 comes from
+///      `fire_on_task_failed` inside `execute_task`'s BeforeTask halt
+///      branch; fire #2 comes from the scheduler's `fire_on_blocked`.
+///   3. Send `ProjectRun(P)`.
+///
+/// Assertions:
+///   - Milestone A → `BlockedByTaskFailure`.
+///   - Milestone B → `Done`.
+///   - Stalled is empty (without the reroute, B would stall because
+///     A is blocked).
+///   - Scripted LLM consumed both verdict steps (proves the researcher
+///     actually called out to the shared LLM backend on both fires).
+///   - Milestone A status = `Blocked`, milestone B status = `Done`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
+async fn researcher_live_mode_reroutes_failed_task_to_recovery_milestone() {
+    use async_trait::async_trait;
+    use swell_orchestrator::triggers::{Stage, Trigger, TriggerContext, TriggerOutcome};
+
+    std::env::remove_var("SWELL_STRICT");
+    swell_orchestrator::execution::reset_wiring_probe_counts();
+
+    let temp = TempDir::new().expect("tempdir");
+    let swell_dir = temp.path().join(".swell");
+    std::fs::create_dir_all(&swell_dir).unwrap();
+    // No-op validation (the BeforeTask halt fires before validation runs;
+    // but the daemon still inspects this file at boot).
+    std::fs::write(
+        swell_dir.join("validation.json"),
+        r#"{
+  "version": "1.0.0",
+  "lint": { "commands": [["true"]], "output_format": "generic" },
+  "test": { "commands": [["true"]], "concurrency": "parallel" }
+}"#,
+    )
+    .unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+
+    let socket_path = SocketPath::new(temp.path().join("daemon-researcher-live-reroute.sock"));
+
+    // `Daemon::new` captures its LLM up front, but the scripted verdict
+    // needs milestone B's UUID — which we only know after creating B
+    // through the daemon's orchestrator. Resolve the ordering via a
+    // tiny late-bound shim: construct the daemon with `LateBoundScenarioLlm`,
+    // create entities, then set the script.
+    let scripted: Arc<std::sync::RwLock<Option<Arc<ScenarioMockLlm>>>> =
+        Arc::new(std::sync::RwLock::new(None));
+    let backend: Arc<dyn LlmBackend> = Arc::new(LateBoundScenarioLlm {
+        inner: Arc::clone(&scripted),
+    });
+
+    let daemon = Daemon::new(socket_path.clone(), backend);
+    let orchestrator = daemon.orchestrator();
+
+    // Build project: A (with one task), B (empty, depends on A).
+    let task_a = orchestrator
+        .create_task("force-failure task".to_string(), vec![])
+        .await
+        .expect("create task A");
+    let task_a_id = task_a.id;
+
+    let project = orchestrator
+        .create_project(Goal::new("researcher live-path smoke", task_a_id))
+        .await;
+    let milestone_a = orchestrator
+        .create_milestone(project.id, "A".to_string())
+        .await
+        .expect("create milestone A");
+    let milestone_b = orchestrator
+        .create_milestone(project.id, "B".to_string())
+        .await
+        .expect("create milestone B");
+
+    orchestrator
+        .assign_task_to_milestone(task_a_id, milestone_a.id)
+        .await
+        .expect("assign task to milestone A");
+
+    // B depends on A so the only way the scheduler reaches B is via the
+    // researcher's reroute. Without reroute, B would stall (A blocked
+    // → upstream dep unmet).
+    {
+        let sm = orchestrator.state_machine();
+        let sm = sm.read().await;
+        sm.with_milestone_mut(milestone_b.id, |m| {
+            m.depends_on.push(milestone_a.id);
+            Ok(())
+        })
+        .expect("wire B depends_on A");
+    }
+
+    // Now we know B.id — script the LLM. Two researcher fires per
+    // failing task: one from OnTaskFailed, one from OnMilestoneBlocked.
+    // Each fire is a single-shot single LLM call (use_tools: false in
+    // the config below).
+    let verdict_json = format!(
+        r#"{{"verdict":"replan","replan_milestone":"{}","reason":"reroute to recovery milestone"}}"#,
+        milestone_b.id
+    );
+    let scenario = Arc::new(ScenarioMockLlm::new(
+        "researcher-live-smoke",
+        vec![
+            ScenarioStep::text(verdict_json.clone()),
+            ScenarioStep::text(verdict_json),
+        ],
+    ));
+    *scripted.write().unwrap() = Some(Arc::clone(&scenario));
+
+    // Install BeforeTask halt trigger to force task A into Failed. This
+    // fires OnTaskFailed from inside `execute_task`, which the researcher
+    // (config-loaded below) then consumes.
+    struct ForceFailTrigger;
+    #[async_trait]
+    impl Trigger for ForceFailTrigger {
+        fn name(&self) -> &'static str {
+            "force_fail_before_task"
+        }
+        fn stages(&self) -> &'static [Stage] {
+            &[Stage::BeforeTask]
+        }
+        async fn run(&self, _ctx: &TriggerContext) -> TriggerOutcome {
+            TriggerOutcome::Halt("force-failure smoke trigger".into())
+        }
+    }
+    orchestrator.install_trigger(Arc::new(ForceFailTrigger));
+
+    // Write the researcher trigger config. `daemon.run()` reads this at
+    // boot before binding the socket and installs the trigger through
+    // the mode-switched factory. `use_tools: false` keeps every fire as
+    // a single LLM call so the scripted scenario stays counted exactly.
+    std::fs::write(
+        swell_dir.join("triggers.json"),
+        r#"{
+  "researcher": {
+    "stages": ["OnTaskFailed", "OnMilestoneBlocked"],
+    "enabled": true,
+    "config": { "mode": "live", "use_tools": false, "max_invocations": 2 }
+  }
+}"#,
+    )
+    .unwrap();
+
+    let socket_for_task = socket_path.clone();
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+        let _ = socket_for_task;
+    });
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if socket_path.as_path_buf().exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        socket_path.as_path_buf().exists(),
+        "daemon socket never bound at {}",
+        socket_path
+    );
+
+    // Sanity: both triggers are wired before we drive ProjectRun.
+    let names = orchestrator.trigger_names();
+    assert!(
+        names.contains(&"force_fail_before_task"),
+        "force-fail trigger must be installed; got {names:?}"
+    );
+    assert!(
+        names.contains(&"researcher"),
+        "researcher trigger must be installed from .swell/triggers.json; got {names:?}"
+    );
+
+    let response = send_command(
+        &socket_path,
+        CliCommand::ProjectRun {
+            project_id: project.id,
+        },
+    )
+    .await;
+
+    let (all_done, attempted, stalled) = match response {
+        DaemonEvent::DataResponse(data) => match *data {
+            DataResponse::ProjectRunReport {
+                project_id,
+                all_done,
+                attempted,
+                stalled,
+                ..
+            } => {
+                assert_eq!(project_id, project.id);
+                (all_done, attempted, stalled)
+            }
+            other => panic!("expected ProjectRunReport, got {other:?}"),
+        },
+        other => panic!("expected DataResponse, got {other:?}"),
+    };
+
+    assert!(
+        stalled.is_empty(),
+        "stalled must be empty — recovery milestone B should have been \
+         reached via reroute, not left to stall. attempted={attempted:?} \
+         stalled={stalled:?}"
+    );
+    assert_eq!(
+        attempted.len(),
+        2,
+        "scheduler must attempt both milestones (A then B-via-reroute); \
+         got attempted={attempted:?}"
+    );
+    assert_eq!(attempted[0].milestone_id, milestone_a.id);
+    assert!(
+        matches!(
+            attempted[0].outcome,
+            MilestoneRunOutcome::BlockedByTaskFailure { failing_task } if failing_task == task_a_id
+        ),
+        "milestone A must end BlockedByTaskFailure(task_a); got {:?}",
+        attempted[0].outcome
+    );
+    assert_eq!(attempted[1].milestone_id, milestone_b.id);
+    assert!(
+        matches!(attempted[1].outcome, MilestoneRunOutcome::Done),
+        "milestone B (recovery) must end Done; got {:?}",
+        attempted[1].outcome
+    );
+    assert!(
+        !all_done,
+        "all_done must be false because milestone A ended \
+         BlockedByTaskFailure; got all_done=true"
+    );
+
+    let m_a = orchestrator
+        .get_milestone(milestone_a.id)
+        .await
+        .expect("milestone A exists");
+    assert_eq!(
+        m_a.status,
+        MilestoneStatus::Blocked,
+        "milestone A must end Blocked"
+    );
+    let m_b = orchestrator
+        .get_milestone(milestone_b.id)
+        .await
+        .expect("milestone B exists");
+    assert_eq!(
+        m_b.status,
+        MilestoneStatus::Done,
+        "milestone B (recovery) must end Done"
+    );
+
+    // The researcher trigger fires twice for a single failing task in a
+    // single milestone: once from `fire_on_task_failed` inside
+    // `execute_task`, once from `fire_on_blocked` inside the scheduler.
+    // Both are single-shot LLM calls because `use_tools: false`.
+    assert_eq!(
+        scenario.current_index(),
+        2,
+        "researcher must consume two verdict steps (OnTaskFailed + \
+         OnMilestoneBlocked); got {}",
+        scenario.current_index()
+    );
+
+    daemon_task.abort();
+}
+
+/// PR 04 (plan/flow_integration_plan/04_researcher_handoff.md): live-path
+/// E2E for `Handoff::SplitMilestone`. Proves the researcher → orchestrator
+/// `split_milestone` factory → scheduler-reroute-into-first-child path
+/// is reachable through the production daemon socket.
+///
+/// Topology:
+///   Project P
+///     └── Milestone A (one task, forced to fail via in-process
+///         BeforeTask halt). No sibling milestones — the only way
+///         the scheduler reaches a non-blocked terminal state is by
+///         the researcher actually creating new milestones at fire
+///         time.
+///
+/// Flow:
+///   1. `.swell/triggers.json` registers the researcher in `mode: "live"`,
+///      `use_tools: false`, `max_invocations: 1` on `[OnTaskFailed,
+///      OnMilestoneBlocked]`. The `max_invocations: 1` is deliberate:
+///      the OnTaskFailed fire consumes the budget, the OnMilestoneBlocked
+///      fire short-circuits with `Halt("researcher budget exceeded")`
+///      which is observational at that stage (does NOT override the
+///      Reroute from OnTaskFailed). One LLM call total.
+///   2. ScenarioMockLlm scripts one verdict turn:
+///      `{"verdict":"split_milestone","sub_plans":[{"name":"narrow-x"}]}`.
+///   3. Send `ProjectRun(P)`.
+///
+/// Assertions:
+///   - Project ends with 2 milestones: A (Blocked) and a new
+///     child titled "narrow-x" (Done).
+///   - `attempted = [A=BlockedByTaskFailure, narrow-x=Done]`.
+///   - Stalled is empty.
+///   - LLM consumed exactly one verdict step.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial]
+async fn researcher_live_mode_split_milestone_creates_children_and_walks_first() {
+    use async_trait::async_trait;
+    use swell_orchestrator::triggers::{Stage, Trigger, TriggerContext, TriggerOutcome};
+
+    std::env::remove_var("SWELL_STRICT");
+    swell_orchestrator::execution::reset_wiring_probe_counts();
+
+    let temp = TempDir::new().expect("tempdir");
+    let swell_dir = temp.path().join(".swell");
+    std::fs::create_dir_all(&swell_dir).unwrap();
+    std::fs::write(
+        swell_dir.join("validation.json"),
+        r#"{
+  "version": "1.0.0",
+  "lint": { "commands": [["true"]], "output_format": "generic" },
+  "test": { "commands": [["true"]], "concurrency": "parallel" }
+}"#,
+    )
+    .unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+
+    let socket_path = SocketPath::new(temp.path().join("daemon-researcher-split.sock"));
+
+    // Split-milestone responses don't reference UUIDs (the child IDs
+    // are minted by the orchestrator at apply time), so we don't need
+    // the late-bound shim — a plain ScenarioMockLlm is enough.
+    let scenario = Arc::new(ScenarioMockLlm::new(
+        "researcher-split-smoke",
+        vec![ScenarioStep::text(
+            r#"{"verdict":"split_milestone","reason":"milestone too broad","sub_plans":[{"name":"narrow-x","description":"narrowed scope"}]}"#,
+        )],
+    ));
+    let llm: Arc<dyn LlmBackend> = scenario.clone();
+
+    let daemon = Daemon::new(socket_path.clone(), llm);
+    let orchestrator = daemon.orchestrator();
+
+    let task_a = orchestrator
+        .create_task("force-failure task".to_string(), vec![])
+        .await
+        .expect("create task A");
+    let task_a_id = task_a.id;
+    let project = orchestrator
+        .create_project(Goal::new("split smoke", task_a_id))
+        .await;
+    let milestone_a = orchestrator
+        .create_milestone(project.id, "A".to_string())
+        .await
+        .expect("create milestone A");
+    orchestrator
+        .assign_task_to_milestone(task_a_id, milestone_a.id)
+        .await
+        .expect("assign task to milestone A");
+
+    // BeforeTask halt → fail task A → fire OnTaskFailed → researcher
+    // fires → split_milestone verdict → orchestrator creates child.
+    struct ForceFailTrigger;
+    #[async_trait]
+    impl Trigger for ForceFailTrigger {
+        fn name(&self) -> &'static str {
+            "force_fail_before_task"
+        }
+        fn stages(&self) -> &'static [Stage] {
+            &[Stage::BeforeTask]
+        }
+        async fn run(&self, _ctx: &TriggerContext) -> TriggerOutcome {
+            TriggerOutcome::Halt("force-failure smoke trigger".into())
+        }
+    }
+    orchestrator.install_trigger(Arc::new(ForceFailTrigger));
+
+    // `max_invocations: 1` keeps the script size at exactly one verdict.
+    std::fs::write(
+        swell_dir.join("triggers.json"),
+        r#"{
+  "researcher": {
+    "stages": ["OnTaskFailed", "OnMilestoneBlocked"],
+    "enabled": true,
+    "config": { "mode": "live", "use_tools": false, "max_invocations": 1 }
+  }
+}"#,
+    )
+    .unwrap();
+
+    let socket_for_task = socket_path.clone();
+    let daemon_task = tokio::spawn(async move {
+        let _ = daemon.run().await;
+        let _ = socket_for_task;
+    });
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if socket_path.as_path_buf().exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        socket_path.as_path_buf().exists(),
+        "daemon socket never bound at {}",
+        socket_path
+    );
+
+    let response = send_command(
+        &socket_path,
+        CliCommand::ProjectRun {
+            project_id: project.id,
+        },
+    )
+    .await;
+
+    let (attempted, stalled) = match response {
+        DaemonEvent::DataResponse(data) => match *data {
+            DataResponse::ProjectRunReport {
+                project_id,
+                attempted,
+                stalled,
+                ..
+            } => {
+                assert_eq!(project_id, project.id);
+                (attempted, stalled)
+            }
+            other => panic!("expected ProjectRunReport, got {other:?}"),
+        },
+        other => panic!("expected DataResponse, got {other:?}"),
+    };
+
+    assert!(
+        stalled.is_empty(),
+        "no milestone should stall — the split child must be reachable; \
+         attempted={attempted:?} stalled={stalled:?}"
+    );
+    // attempted = [A=BlockedByTaskFailure, child=Done]
+    assert_eq!(
+        attempted.len(),
+        2,
+        "expected source + one child to be attempted; got {attempted:?}"
+    );
+    assert_eq!(attempted[0].milestone_id, milestone_a.id);
+    assert!(
+        matches!(
+            attempted[0].outcome,
+            MilestoneRunOutcome::BlockedByTaskFailure { failing_task } if failing_task == task_a_id
+        ),
+        "source milestone must end BlockedByTaskFailure(task_a); got {:?}",
+        attempted[0].outcome
+    );
+    let child_entry = &attempted[1];
+    assert!(
+        matches!(child_entry.outcome, MilestoneRunOutcome::Done),
+        "split child must end Done; got {:?}",
+        child_entry.outcome
+    );
+    assert_ne!(
+        child_entry.milestone_id, milestone_a.id,
+        "child must be a NEW milestone, not the source"
+    );
+
+    // Verify the project really has two milestones now and the new
+    // one is the named child.
+    let project_milestones = orchestrator
+        .get_milestones_for_project(project.id)
+        .await
+        .expect("project milestones");
+    assert_eq!(
+        project_milestones.len(),
+        2,
+        "project must contain source + one child after split"
+    );
+    let child = project_milestones
+        .iter()
+        .find(|m| m.id != milestone_a.id)
+        .expect("child milestone present");
+    assert_eq!(child.title, "narrow-x");
+    assert_eq!(child.id, child_entry.milestone_id);
+    assert_eq!(child.status, MilestoneStatus::Done);
+    let source_post = project_milestones
+        .iter()
+        .find(|m| m.id == milestone_a.id)
+        .unwrap();
+    assert_eq!(
+        source_post.status,
+        MilestoneStatus::Blocked,
+        "source milestone must be parked Blocked after split"
+    );
+
+    // Budget cap=1 + only one fire-with-diagnostic = exactly one LLM call.
+    assert_eq!(
+        scenario.current_index(),
+        1,
+        "researcher must consume exactly one verdict (OnTaskFailed). The \
+         OnMilestoneBlocked fire is halted pre-diagnostic by the budget \
+         cap, so no second LLM call. Got {}",
+        scenario.current_index()
+    );
+
+    daemon_task.abort();
+}
+
+/// Test-only LLM backend that defers to a `ScenarioMockLlm` set after
+/// construction. Lets the test create the daemon (which captures its
+/// LLM up front), discover the recovery milestone's id from the live
+/// orchestrator, then bind a script that embeds that id.
+struct LateBoundScenarioLlm {
+    inner: Arc<std::sync::RwLock<Option<Arc<ScenarioMockLlm>>>>,
+}
+
+impl std::fmt::Debug for LateBoundScenarioLlm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LateBoundScenarioLlm").finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl LlmBackend for LateBoundScenarioLlm {
+    fn model(&self) -> &str {
+        "researcher-live-smoke"
+    }
+
+    async fn chat(
+        &self,
+        messages: Vec<swell_llm::LlmMessage>,
+        tools: Option<Vec<swell_llm::LlmToolDefinition>>,
+        config: swell_llm::LlmConfig,
+    ) -> Result<swell_llm::LlmResponse, swell_core::SwellError> {
+        let inner = self.bound();
+        inner.chat(messages, tools, config).await
+    }
+
+    async fn health_check(&self) -> bool {
+        match self.inner.read().ok().and_then(|g| g.clone()) {
+            Some(inner) => inner.health_check().await,
+            None => true,
+        }
+    }
+
+    async fn stream(
+        &self,
+        messages: Vec<swell_llm::LlmMessage>,
+        tools: Option<Vec<swell_llm::LlmToolDefinition>>,
+        config: swell_llm::LlmConfig,
+    ) -> Result<
+        std::pin::Pin<
+            Box<
+                dyn futures::Stream<Item = Result<swell_core::StreamEvent, swell_core::SwellError>>
+                    + Send,
+            >,
+        >,
+        swell_core::SwellError,
+    > {
+        let inner = self.bound();
+        inner.stream(messages, tools, config).await
+    }
+}
+
+impl LateBoundScenarioLlm {
+    fn bound(&self) -> Arc<ScenarioMockLlm> {
+        let guard = self.inner.read().expect("scripted LLM poisoned");
+        guard
+            .as_ref()
+            .cloned()
+            .expect("scripted LLM not bound before first call")
+    }
 }

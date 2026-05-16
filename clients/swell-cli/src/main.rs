@@ -728,6 +728,21 @@ fn handle_event(event: &DaemonEvent) {
             DataResponse::KillSwitchStatus { state, .. } => {
                 print_kill_switch_status(state);
             }
+            DataResponse::ProjectRunReport {
+                project_id,
+                all_done,
+                attempted,
+                stalled,
+                ..
+            } => {
+                println!(
+                    "Project {} run: all_done={} attempted={} stalled={}",
+                    project_id,
+                    all_done,
+                    attempted.len(),
+                    stalled.len()
+                );
+            }
         },
     }
 }
@@ -866,6 +881,28 @@ async fn list_tasks(socket_path: &str, json_output: bool) -> Result<(), CliError
                     }
                     DataResponse::KillSwitchStatus { state, .. } => {
                         print_kill_switch_status(state);
+                    }
+                    DataResponse::ProjectRunReport {
+                        project_id,
+                        all_done,
+                        attempted,
+                        stalled,
+                        ..
+                    } => {
+                        if json_output {
+                            let json = serde_json::to_string(&**data).map_err(|e| {
+                                CliError::JsonParseError(format!("Project run report: {}", e))
+                            })?;
+                            println!("{}", json);
+                        } else {
+                            println!(
+                                "Project {} run: all_done={} attempted={} stalled={}",
+                                project_id,
+                                all_done,
+                                attempted.len(),
+                                stalled.len()
+                            );
+                        }
                     }
                 }
             }

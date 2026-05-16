@@ -492,6 +492,23 @@ impl From<DaemonEvent> for DashboardEvent {
                     ),
                     correlation_id: Uuid::nil(),
                 },
+                DataResponse::ProjectRunReport {
+                    project_id,
+                    all_done,
+                    attempted,
+                    stalled,
+                    ..
+                } => DashboardEvent::TaskProgress {
+                    id: TaskId::nil(),
+                    message: format!(
+                        "Project {} run: all_done={} attempted={} stalled={}",
+                        project_id,
+                        all_done,
+                        attempted.len(),
+                        stalled.len()
+                    ),
+                    correlation_id: Uuid::nil(),
+                },
             },
         }
     }
